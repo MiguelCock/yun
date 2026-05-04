@@ -38,7 +38,10 @@ fn int main(String[] args)
 	defer glfw::destroyWindow(window);
 
 	glfw::makeContextCurrent(window);
-	gl::load_gl_internal((GLLoadFn)&glfw::getProcAddress);
+	if (catch err = opengl::init((GLLoadFn)&glfw::getProcAddress))
+	{
+		io::printfn("opengl loading error: %s", err);
+	}
 
 	// --- Vertex data ---
 	float[6] vertices = {
@@ -50,8 +53,8 @@ fn int main(String[] args)
 	// --- VBO ---
 	uint vbo;
 	gl::genBuffers(1, &vbo);
-	gl::bindBuffer((GLenum)gl::GL_ARRAY_BUFFER, vbo);
-	gl::bufferData((GLenum)gl::GL_ARRAY_BUFFER, $sizeof(vertices), &vertices[0], (GLenum)gl::GL_STATIC_DRAW);
+	gl::bindBuffer(gl::GL_ARRAY_BUFFER, vbo);
+	gl::bufferData(gl::GL_ARRAY_BUFFER, $sizeof(vertices), &vertices[0], gl::GL_STATIC_DRAW);
 
 	// --- VAO ---
 	uint vao;
@@ -62,17 +65,17 @@ fn int main(String[] args)
 	gl::vertexAttribPointer(
 		0,              // location
 		2,              // vec2
-		(GLenum)gl::GL_FLOAT,
-		(GLboolean)false,
+		gl::GL_FLOAT,
+		gl::GL_FALSE,
 		2 * $sizeof(float),
 		null
 	);
 
-	uint vertex_shader = gl::createShader((GLenum)gl::GL_VERTEX_SHADER);
+	uint vertex_shader = gl::createShader(gl::GL_VERTEX_SHADER);
 	gl::shaderSource(vertex_shader, 1, &VERT_SHAD_SRC, null);
 	gl::compileShader(vertex_shader);
 
-	uint fragment_shader = gl::createShader((GLenum)gl::GL_FRAGMENT_SHADER);
+	uint fragment_shader = gl::createShader(gl::GL_FRAGMENT_SHADER);
 	gl::shaderSource(fragment_shader, 1, &FRAG_SHAD_SRC, null);
 	gl::compileShader(fragment_shader);
 
@@ -91,7 +94,7 @@ fn int main(String[] args)
 
 		gl::useProgram(shader_program);
 		gl::bindVertexArray(vao);
-		gl::drawArrays((GLenum)gl::GL_TRIANGLES, 0, 3);
+		gl::drawArrays(gl::GL_TRIANGLES, 0, 3);
 
         /* Swap front and back buffers */
         glfw::swapBuffers(window);

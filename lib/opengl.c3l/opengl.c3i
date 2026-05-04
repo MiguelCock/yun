@@ -12,14 +12,14 @@ macro int gl_version() @public
 module opengl::gl;
 
 /* Global type definitions */
-typedef GLenum = uint;
-typedef GLbitfield = uint;
-typedef GLclampx = int;
-typedef GLclampf = float;
-typedef GLclampd = double;
-typedef GLsync = uptr;
-typedef GLeglClientBufferEXT = void*;
-typedef GLeglImageOES = void*;
+alias GLenum = uint;
+alias GLbitfield = uint;
+alias GLclampx = int;
+alias GLclampf = float;
+alias GLclampd = double;
+alias GLsync = uptr;
+alias GLeglClientBufferEXT = void*;
+alias GLeglImageOES = void*;
 
 alias GLbyte = ichar;
 alias GLubyte = char;
