@@ -10,6 +10,7 @@ import yun::minimap;
 import yun::notify;
 import yun::project;
 import yun::prompt;
+import yun::workspace;
 
 fn void set_project_title(project::Project* project)
 {
@@ -18,25 +19,33 @@ fn void set_project_title(project::Project* project)
 	rl::set_window_title((ZString)title.ptr);
 }
 
-fn void open_from_cli(project::Project* project, notify::Notifier* notifier, String arg)
+fn bool open_project(project::Project* project, canvas::Canvas* canvas, String root)
+{
+	if (!project.open(root)) return false;
+	workspace::load(project, canvas);
+	return true;
+}
+
+fn bool open_from_cli(project::Project* project, canvas::Canvas* canvas, notify::Notifier* notifier, String arg)
 {
 	String? resolved = project::resolve_path(project.allocator, arg);
 	if (catch excuse = resolved)
 	{
 		notifier.push("Could not resolve the given path");
-		return;
+		return false;
 	}
 	if (!path::is_dir((Path)resolved))
 	{
 		notifier.push("Not a directory");
-		return;
+		return false;
 	}
-	if (!project.open(resolved))
+	if (!open_project(project, canvas, resolved))
 	{
 		notifier.push("Could not open the folder");
-		return;
+		return false;
 	}
 	set_project_title(project);
+	return true;
 }
 
 fn bool ctrl_down()
@@ -74,7 +83,8 @@ fn int main(String[] args)
 	int pending_parent      = project::ROOT_FOLDER;
 	RLVector2 pending_world = { 0.0f, 0.0f };
 
-	if (args.len > 1) open_from_cli(&project, &notifier, args[1]);
+	bool project_open = false;
+	if (args.len > 1) project_open = open_from_cli(&project, &canvas, &notifier, args[1]);
 
 	while (!rl::window_should_close())
 	{
@@ -84,8 +94,9 @@ fn int main(String[] args)
 		{
 			if (browser.update())
 			{
-				if (project.open((String)browser.dir))
+				if (open_project(&project, &canvas, (String)browser.dir))
 				{
+					project_open = true;
 					set_project_title(&project);
 				}
 				else
@@ -130,6 +141,22 @@ fn int main(String[] args)
 		else
 		{
 			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.O)) browser.open_at((String)project.root);
+
+			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.S))
+			{
+				if (!project_open)
+				{
+					notifier.push("No project open");
+				}
+				else if (workspace::save(&project, &canvas))
+				{
+					notifier.push("Saved workspace");
+				}
+				else
+				{
+					notifier.push("Could not save workspace");
+				}
+			}
 
 			RLVector2 mouse = rl::get_mouse_position();
 			RLVector2 world = canvas.screen_to_world(mouse);
@@ -190,5 +217,7 @@ fn int main(String[] args)
 			rl::draw_fps(10, 10);
 		};
 	}
+
+	if (project_open) workspace::save(&project, &canvas);
 	return 0;
 }
