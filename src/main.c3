@@ -28,19 +28,22 @@ fn int main()
 		RLVector2 mouse = rl::get_mouse_position();
 		RLVector2 world = canvas.screen_to_world(mouse);
 
-		canvas.pointer_over_ui = project.hit_test(world) >= 0 || project.drag_card;
+		canvas.pointer_over_ui = project.pointer_over_ui(world);
 
 		if (rl::is_file_dropped())
 		{
 			RLFilePathList files = rl::load_dropped_files();
 			for (uint i = 0; i < files.count; i++)
 			{
+				String path = files.paths[i].str_view().copy(mem);
 				if (!rl::is_path_file(files.paths[i]))
 				{
-					notifier.push("Folders are not supported yet (see #7)");
+					if (project.add_folder_from_disk(path, world) < 0)
+					{
+						notifier.push("Drop folders from inside the project root");
+					}
 					continue;
 				}
-				String path = files.paths[i].str_view().copy(mem);
 				if (project.add_card(path, world) < 0)
 				{
 					notifier.push("Could not add dropped file");

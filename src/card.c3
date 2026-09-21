@@ -20,7 +20,11 @@ struct FileCard
 	Rect rect;
 	bool open;
 	bool dirty;
-	int folder;
+}
+
+fn RLVector2 FileCard.center(&self)
+{
+	return { self.rect.x + self.rect.width / 2.0f, self.rect.y + self.rect.height / 2.0f };
 }
 
 fn bool FileCard.contains(&self, RLVector2 world)
