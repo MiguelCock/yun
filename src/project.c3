@@ -287,6 +287,61 @@ fn Rect Project.cluster_visual_bounds(&self, int index)
 	};
 }
 
+fn bool Project.content_bounds(&self, Rect* out)
+{
+	bool found  = false;
+	float min_x = 0.0f;
+	float min_y = 0.0f;
+	float max_x = 0.0f;
+	float max_y = 0.0f;
+
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		if (!self.card_visible((int)i)) continue;
+		Rect r = self.cards[i].rect;
+		if (!found)
+		{
+			min_x = r.x;
+			min_y = r.y;
+			max_x = r.x + r.width;
+			max_y = r.y + r.height;
+			found = true;
+		}
+		else
+		{
+			min_x = math::min(min_x, r.x);
+			min_y = math::min(min_y, r.y);
+			max_x = math::max(max_x, r.x + r.width);
+			max_y = math::max(max_y, r.y + r.height);
+		}
+	}
+
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		if (!self.cluster_visible((int)i)) continue;
+		Rect r = self.cluster_visual_bounds((int)i);
+		if (!found)
+		{
+			min_x = r.x;
+			min_y = r.y;
+			max_x = r.x + r.width;
+			max_y = r.y + r.height;
+			found = true;
+		}
+		else
+		{
+			min_x = math::min(min_x, r.x);
+			min_y = math::min(min_y, r.y);
+			max_x = math::max(max_x, r.x + r.width);
+			max_y = math::max(max_y, r.y + r.height);
+		}
+	}
+
+	if (!found) return false;
+	*out = { .x = min_x, .y = min_y, .width = max_x - min_x, .height = max_y - min_y };
+	return true;
+}
+
 fn int Project.cluster_hit(&self, RLVector2 world)
 {
 	int best     = ROOT_FOLDER;

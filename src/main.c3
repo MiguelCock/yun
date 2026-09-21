@@ -5,6 +5,7 @@ import std::io::path;
 import std::math;
 import yun::browser;
 import yun::canvas;
+import yun::minimap;
 import yun::notify;
 import yun::project;
 
@@ -86,7 +87,10 @@ fn int main(String[] args)
 
 			RLVector2 mouse = rl::get_mouse_position();
 			RLVector2 world = canvas.screen_to_world(mouse);
-			canvas.pointer_over_ui = project.pointer_over_ui(world);
+			canvas.pointer_over_ui = project.pointer_over_ui(
+				world
+			) || minimap::contains_screen(&project, &canvas, mouse);
+			minimap::update(&project, &canvas);
 
 			if (rl::is_file_dropped())
 			{
@@ -123,6 +127,7 @@ fn int main(String[] args)
 			{
 				project.draw();
 			};
+			minimap::draw(&project, &canvas);
 			browser.draw();
 			notifier.draw();
 			rl::draw_fps(10, 10);
