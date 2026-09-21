@@ -8,6 +8,7 @@ import std::io::path;
 import std::math;
 import yun::canvas;
 import yun::card;
+import yun::editor;
 
 const int ROOT_FOLDER               = -1;
 const float CLUSTER_PADDING         =  24.0f;
@@ -818,7 +819,7 @@ fn void Project.draw_cluster(&self, int index)
 	);
 }
 
-fn void Project.draw(&self)
+fn void Project.draw(&self, RLFont font, EditorMetrics metrics)
 {
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
@@ -826,9 +827,21 @@ fn void Project.draw(&self)
 	}
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
-		if (self.card_visible((int)i))
+		if (!self.card_visible((int)i)) continue;
+		self.cards[i].draw((int)i == self.focused);
+
+		Rect inner = editor::inner_rect(self.cards[i].rect, metrics);
+		if ((int)i == self.focused)
 		{
-			self.cards[i].draw((int)i == self.focused);
+			editor::ensure_buffer(&self.cards[i], self.allocator);
+			if (self.cards[i].buffer)
+			{
+				editor::draw_text(self.cards[i].buffer, inner, 0.0f, metrics, font, 16.0f, editor::EDITOR_TEXT);
+			}
+		}
+		else
+		{
+			editor::draw_placeholder(inner, metrics, editor::EDITOR_PLACEHOLDER);
 		}
 	}
 }

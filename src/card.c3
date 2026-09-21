@@ -3,6 +3,7 @@ module yun::card;
 import raylib6::rl;
 import std::io::path;
 import std::math;
+import yun::text;
 
 const float CARD_WIDTH        = 240.0f;
 const float CARD_HEIGHT       = 160.0f;
@@ -21,6 +22,7 @@ struct FileCard
 	bool open;
 	bool dirty;
 	int folder;
+	PieceTable* buffer;
 }
 
 fn RLVector2 FileCard.center(&self)
