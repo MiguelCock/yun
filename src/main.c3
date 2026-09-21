@@ -5,9 +5,11 @@ import std::io::path;
 import std::math;
 import yun::browser;
 import yun::canvas;
+import yun::menu;
 import yun::minimap;
 import yun::notify;
 import yun::project;
+import yun::prompt;
 
 fn void set_project_title(project::Project* project)
 {
@@ -61,6 +63,16 @@ fn int main(String[] args)
 	browser::Browser browser;
 	browser.init(mem);
 
+	menu::Menu context_menu;
+	context_menu.init(mem);
+
+	prompt::Prompt name_prompt;
+	name_prompt.init();
+
+	int pending_kind        = 0;
+	int pending_parent      = project::ROOT_FOLDER;
+	RLVector2 pending_world = { 0.0f, 0.0f };
+
 	if (args.len > 1) open_from_cli(&project, &notifier, args[1]);
 
 	while (!rl::window_should_close())
@@ -81,6 +93,39 @@ fn int main(String[] args)
 				}
 			}
 		}
+		else if (name_prompt.open)
+		{
+			if (name_prompt.update())
+			{
+				String name = name_prompt.text_view();
+				if (!project::is_valid_name(name))
+				{
+					notifier.push("Invalid name");
+				}
+				else
+				{
+					int result = pending_kind == 0 ? project.create_file(pending_parent, name, pending_world)
+						: project.create_folder_on_disk(pending_parent, name, pending_world);
+					if (result < 0)
+					{
+						notifier.push("Could not create");
+					}
+					else
+					{
+						name_prompt.close();
+					}
+				}
+			}
+		}
+		else if (context_menu.open)
+		{
+			int chosen = context_menu.update();
+			if (chosen >= 0)
+			{
+				pending_kind = chosen;
+				name_prompt.open_with(chosen == 0 ? "New file" : "New folder", "");
+			}
+		}
 		else
 		{
 			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.O)) browser.open_at((String)project.root);
@@ -91,6 +136,13 @@ fn int main(String[] args)
 				world
 			) || minimap::contains_screen(&project, &canvas, mouse);
 			minimap::update(&project, &canvas);
+
+			if (rl::is_mouse_button_pressed(rl::RLMouseButton.RIGHT) && !canvas.pointer_over_ui)
+			{
+				pending_parent = project.folder_at(world);
+				pending_world = world;
+				context_menu.open_at(mouse, { "New file", "New folder" });
+			}
 
 			if (rl::is_file_dropped())
 			{
@@ -129,6 +181,8 @@ fn int main(String[] args)
 			};
 			minimap::draw(&project, &canvas);
 			browser.draw();
+			context_menu.draw();
+			name_prompt.draw();
 			notifier.draw();
 			rl::draw_fps(10, 10);
 		};
