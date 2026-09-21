@@ -1,0 +1,3 @@
+[submodule "lib/lua54.c3l"]
+	path = lib/lua54.c3l
+	url = https://github.com/MiguelCock/lua54.c3l.git
