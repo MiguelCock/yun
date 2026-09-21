@@ -149,6 +149,25 @@ fn void test_collapsed_cluster_hides_cards()
 	};
 }
 
+fn void test_collapsing_parent_hides_child_clusters()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int b = p.add_folder("/root/a/b", a);
+		assert(p.cluster_visible(a));
+		assert(p.cluster_visible(b));
+		p.toggle_collapse(a);
+		assert(p.cluster_visible(a));
+		assert(!p.cluster_visible(b));
+		p.toggle_collapse(a);
+		assert(p.cluster_visible(b));
+	};
+}
+
 fn void test_collapsed_cluster_is_compact()
 {
 	@pool()
