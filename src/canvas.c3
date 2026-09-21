@@ -29,6 +29,7 @@ struct Canvas
 	RLCamera2D camera;
 	RLCamera2D target;
 	RLVector2 velocity;
+	bool pointer_over_ui;
 	bool drag_pending;
 	bool dragging;
 	RLMouseButton drag_button;
@@ -208,7 +209,7 @@ fn RLVector2 Canvas.clamp_delta(&self, RLVector2 delta)
 
 fn bool Canvas.is_over_ui(&self, RLVector2 screen)
 {
-	return false;
+	return self.pointer_over_ui;
 }
 
 fn RLVector2 Canvas.screen_to_world(&self, RLVector2 screen)
