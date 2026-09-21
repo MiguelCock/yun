@@ -32,8 +32,8 @@ fn void test_find_card_dedup()
 	{
 		Project p;
 		p.init(tmem);
-		p.cards.push({ .path = (Path)"/tmp/a.c3".copy(tmem), .name = "a.c3".copy(tmem) });
-		p.cards.push({ .path = (Path)"/tmp/b.c3".copy(tmem), .name = "b.c3".copy(tmem) });
+		p.cards.push({ .path = (Path)"/tmp/a.c3".copy(tmem), .name = "a.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.cards.push({ .path = (Path)"/tmp/b.c3".copy(tmem), .name = "b.c3".copy(tmem), .folder = ROOT_FOLDER });
 		assert(p.find_card("/tmp/a.c3") == 0);
 		assert(p.find_card("/tmp/b.c3") == 1);
 		assert(p.find_card("/tmp/c.c3") == -1);
@@ -50,12 +50,14 @@ fn void test_hit_test_topmost()
 			{
 				.path = (Path)"/tmp/a".copy(tmem),
 				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
 			}
 		);
 		p.cards.push(
 			{
 				.path = (Path)"/tmp/b".copy(tmem),
 				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
 			}
 		);
 		assert(p.hit_test({ 50.0f, 50.0f }) == 1);
@@ -95,6 +97,7 @@ fn void test_cluster_bounds_union()
 			{
 				.path = (Path)"/root/a/x.c3".copy(tmem),
 				.rect = { .x = 100.0f, .y = 100.0f, .width = 200.0f, .height = 100.0f },
+				.folder = f,
 			}
 		);
 		Rect b = p.cluster_bounds(f);
@@ -115,12 +118,14 @@ fn void test_move_cluster_moves_children()
 			{
 				.path = (Path)"/root/a/x.c3".copy(tmem),
 				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				.folder = f,
 			}
 		);
 		p.cards.push(
 			{
 				.path = (Path)"/root/other.c3".copy(tmem),
 				.rect = { .x = 500.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				.folder = ROOT_FOLDER,
 			}
 		);
 		p.move_cluster(f, { 10.0f, 5.0f });
@@ -140,6 +145,7 @@ fn void test_collapsed_cluster_hides_cards()
 			{
 				.path = (Path)"/root/a/x.c3".copy(tmem),
 				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				.folder = f,
 			}
 		);
 		assert(p.card_visible(0));
@@ -255,6 +261,26 @@ fn void test_open_scans_directory()
 		assert(p.folder_by_path((String)src) >= 0);
 		assert(p.folder_by_path((String)subdir) >= 0);
 
+		// opened with every folder collapsed, and cached membership matches folder_for
+		for (sz i = 0; i < p.folders.len(); i++)
+		{
+			assert(p.folders[i].collapsed);
+		}
+		for (sz i = 0; i < p.cards.len(); i++)
+		{
+			assert(p.cards[i].folder == p.folder_for((String)p.cards[i].path));
+		}
+
+		// expanding all folders makes every card visible again
+		for (sz i = 0; i < p.folders.len(); i++)
+		{
+			p.toggle_collapse((int)i);
+		}
+		for (sz i = 0; i < p.cards.len(); i++)
+		{
+			assert(p.card_visible((int)i));
+		}
+
 		(void)path::rmtree(dir);
 	};
 }
@@ -270,6 +296,7 @@ fn void test_collapsed_cluster_is_compact()
 			{
 				.path = (Path)"/root/a/x.c3".copy(tmem),
 				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				.folder = f,
 			}
 		);
 		Rect expanded = p.cluster_visual_bounds(f);
@@ -300,6 +327,7 @@ fn void test_content_bounds()
 			{
 				.path = (Path)"/root/a.c3".copy(tmem),
 				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				.folder = ROOT_FOLDER,
 			}
 		);
 		assert(p.content_bounds(&out));

@@ -20,6 +20,7 @@ struct FileCard
 	Rect rect;
 	bool open;
 	bool dirty;
+	int folder;
 }
 
 fn RLVector2 FileCard.center(&self)
