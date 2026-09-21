@@ -133,6 +133,11 @@ fn bool Project.card_visible(&self, int card_index)
 	return !self.folder_collapsed(self.folder_for((String)self.cards[card_index].path));
 }
 
+fn bool Project.cluster_visible(&self, int index)
+{
+	return !self.folder_collapsed(self.folders[index].parent);
+}
+
 fn int Project.add_folder(&self, String folder_path, int parent)
 {
 	FolderCluster cluster = {
@@ -177,7 +182,7 @@ fn Rect Project.cluster_bounds(&self, int index)
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
 		if (self.folders[i].parent != index) continue;
-		Rect r = self.cluster_bounds((int)i);
+		Rect r = self.cluster_visual_bounds((int)i);
 		if (!found)
 		{
 			min_x = r.x;
@@ -222,6 +227,7 @@ fn int Project.cluster_hit(&self, RLVector2 world)
 	usz best_len = 0;
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
+		if (!self.cluster_visible((int)i)) continue;
 		if (!rect_contains(self.cluster_visual_bounds((int)i), world)) continue;
 		String fp = (String)self.folders[i].path;
 		if (fp.len >= best_len)
@@ -239,6 +245,7 @@ fn int Project.folder_at(&self, RLVector2 world)
 	usz best_len = 0;
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
+		if (!self.cluster_visible((int)i)) continue;
 		if (!rect_contains(self.cluster_visual_bounds((int)i), world)) continue;
 		String fp = (String)self.folders[i].path;
 		if (fp.len >= best_len)
@@ -528,7 +535,7 @@ fn void Project.draw(&self)
 {
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
-		self.draw_cluster((int)i);
+		if (self.cluster_visible((int)i)) self.draw_cluster((int)i);
 	}
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
