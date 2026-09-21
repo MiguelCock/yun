@@ -196,7 +196,7 @@ fn bool Project.folder_collapsed(&self, int index)
 
 fn bool Project.card_visible(&self, int card_index)
 {
-	return !self.folder_collapsed(self.folder_for((String)self.cards[card_index].path));
+	return !self.folder_collapsed(self.cards[card_index].folder);
 }
 
 fn bool Project.cluster_visible(&self, int index)
@@ -401,6 +401,24 @@ fn String? Project.copy_into_root(&self, String abs)
 	return (String)dest;
 }
 
+fn int Project.append_card(&self, String abs, RLVector2 world_pos)
+{
+	FileCard card = {
+		.path = (Path)abs.copy(self.allocator),
+		.name = rl::get_file_name((ZString)abs.ptr)
+		.str_view()
+		.copy(
+			self.allocator
+		), .rect = {
+			.x = world_pos[0] - card::CARD_WIDTH / 2.0f,
+			.y = world_pos[1] - card::CARD_HEIGHT / 2.0f,
+			.width = card::CARD_WIDTH,
+			.height = card::CARD_HEIGHT,
+		}, .open = false, .dirty = false, .folder = self.folder_for(abs), };
+	self.cards.push(card);
+	return (int)(self.cards.len() - 1);
+}
+
 fn int Project.add_card(&self, String abs, RLVector2 world_pos)
 {
 	int existing = self.find_card(abs);
@@ -418,20 +436,7 @@ fn int Project.add_card(&self, String abs, RLVector2 world_pos)
 		final = copied;
 	}
 
-	FileCard card = {
-		.path = (Path)final.copy(self.allocator),
-		.name = rl::get_file_name((ZString)final.ptr)
-		.str_view()
-		.copy(
-			self.allocator
-		), .rect = {
-			.x = world_pos[0] - card::CARD_WIDTH / 2.0f,
-			.y = world_pos[1] - card::CARD_HEIGHT / 2.0f,
-			.width = card::CARD_WIDTH,
-			.height = card::CARD_HEIGHT,
-		}, .open = false, .dirty = false, };
-	self.cards.push(card);
-	self.focused = (int)(self.cards.len() - 1);
+	self.focused = self.append_card(final, world_pos);
 	return self.focused;
 }
 
@@ -475,7 +480,7 @@ fn void Project.place_cards(&self, int folder_index, RLVector2 origin)
 	float y = origin[1] + CLUSTER_TITLE_HEIGHT + CLUSTER_PADDING;
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
-		if (self.folder_for((String)self.cards[i].path) != folder_index) continue;
+		if (self.cards[i].folder != folder_index) continue;
 		self.cards[i].rect = {
 			.x = x,
 			.y = y,
@@ -530,9 +535,13 @@ fn bool Project.open(&self, String new_root)
 		String p = (String)entry;
 		if (path_is_ignored(p)) continue;
 		if (path::is_dir(entry)) continue;
-		self.add_card(p, { 0.0f, 0.0f });
+		self.append_card(p, { 0.0f, 0.0f });
 	}
 	self.layout();
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		self.folders[i].collapsed = true;
+	}
 	self.focused = -1;
 	return true;
 }
@@ -633,6 +642,7 @@ fn bool Project.move_card_to_folder(&self, int card_index, int folder_index)
 	String dest_str = (String)dest;
 	self.cards[card_index].path = (Path)dest_str.copy(self.allocator);
 	self.cards[card_index].name = rl::get_file_name((ZString)dest_str.ptr).str_view().copy(self.allocator);
+	self.cards[card_index].folder = self.folder_for(dest_str);
 	return true;
 }
 
