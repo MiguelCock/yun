@@ -30,6 +30,7 @@ struct Canvas
 	RLCamera2D target;
 	RLVector2 velocity;
 	bool pointer_over_ui;
+	bool block_zoom;
 	bool drag_pending;
 	bool dragging;
 	RLMouseButton drag_button;
@@ -57,7 +58,7 @@ fn void Canvas.update(&self)
 	RLVector2 mouse = rl::get_mouse_position();
 
 	float wheel = rl::get_mouse_wheel_move();
-	if (wheel != 0.0f)
+	if (wheel != 0.0f && !self.block_zoom)
 	{
 		self.velocity = { 0.0f, 0.0f };
 		self.zoom_at(wheel, mouse);

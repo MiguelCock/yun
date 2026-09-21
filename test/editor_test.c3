@@ -1,5 +1,6 @@
 module yun::editor @test;
 
+import raylib6::rl;
 import std::io::file;
 import std::io::path;
 import std::math;
@@ -107,6 +108,46 @@ fn void test_ensure_buffer()
 
 		(void)path::rmtree(dir);
 	};
+}
+
+fn void test_world_rect_to_screen()
+{
+	RLCamera2D camera = { .offset = { 0.0f, 0.0f }, .target = { 0.0f, 0.0f }, .rotation = 0.0f, .zoom = 1.0f };
+	Rect area         = { .x = 10.0f, .y = 20.0f, .width = 100.0f, .height = 50.0f };
+	Rect screen       = world_rect_to_screen(area, camera);
+	assert(math::is_approx(screen.x, 10.0f, 0.001f));
+	assert(math::is_approx(screen.y, 20.0f, 0.001f));
+	assert(math::is_approx(screen.width, 100.0f, 0.001f));
+	assert(math::is_approx(screen.height, 50.0f, 0.001f));
+
+	RLCamera2D shifted_camera = {
+		.offset = { 100.0f, 100.0f },
+		.target = { 0.0f, 0.0f },
+		.rotation = 0.0f,
+		.zoom = 1.0f,
+	};
+	Rect shifted = world_rect_to_screen(area, shifted_camera);
+	assert(math::is_approx(shifted.x, 110.0f, 0.001f));
+	assert(math::is_approx(shifted.y, 120.0f, 0.001f));
+}
+
+fn void test_max_scroll()
+{
+	EditorMetrics metrics = { .char_width = 8.0f, .line_height = 16.0f, .padding_x = 8.0f, .padding_y = 6.0f };
+	assert(max_scroll(10, metrics, 100.0f) == 72.0f);
+	assert(max_scroll(1, metrics, 200.0f) == 0.0f);
+}
+
+fn void test_effective_rect_and_marker()
+{
+	FileCard card = { .rect = { .x = 0.0f, .y = 0.0f, .width = 240.0f, .height = 160.0f }, .open = true };
+	assert(card.effective_rect().height == 160.0f);
+	assert(card.marker_hit({ 230.0f, 10.0f }));
+
+	card.open = false;
+	assert(card.effective_rect().height == 28.0f);
+	assert(!card.contains({ 50.0f, 100.0f }));
+	assert(card.contains({ 50.0f, 10.0f }));
 }
 
 fn void test_gutter_and_content_width()

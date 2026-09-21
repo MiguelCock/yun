@@ -166,18 +166,39 @@ fn void ensure_buffer(FileCard* card, Allocator allocator)
 	card.buffer = buffer;
 }
 
+fn Rect world_rect_to_screen(Rect area, RLCamera2D camera)
+{
+	RLVector2 tl = rl::get_world_to_screen2d({ area.x, area.y }, camera);
+	RLVector2 br = rl::get_world_to_screen2d({ area.x + area.width, area.y + area.height }, camera);
+	return { .x = tl[0], .y = tl[1], .width = br[0] - tl[0], .height = br[1] - tl[1] };
+}
+
+fn void apply_scissor(Rect area, RLCamera2D camera)
+{
+	Rect screen = world_rect_to_screen(area, camera);
+	rl::begin_scissor_mode((int)screen.x, (int)screen.y, (int)screen.width, (int)screen.height);
+}
+
+fn float max_scroll(usz line_count, EditorMetrics metrics, float area_height)
+{
+	float content = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
+	float max     = content - area_height;
+	return max > 0.0f ? max : 0.0f;
+}
+
 fn void draw_text(
 	PieceTable* table,
 	Rect area,
 	float scroll_y,
 	EditorMetrics metrics,
+	RLCamera2D camera,
 	RLFont font,
 	float font_size,
 	RLColor color
 )
 {
 	if (table.length() == 0 || metrics.line_height <= 0.0f) return;
-	rl::begin_scissor_mode((int)area.x, (int)area.y, (int)area.width, (int)area.height);
+	apply_scissor(area, camera);
 	@pool()
 	{
 		VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
@@ -203,10 +224,10 @@ fn float placeholder_bar_width(int line_index, float max_width, float char_width
 	return (float)target * char_width;
 }
 
-fn void draw_placeholder(Rect area, EditorMetrics metrics, RLColor color)
+fn void draw_placeholder(Rect area, EditorMetrics metrics, RLCamera2D camera, RLColor color)
 {
 	if (metrics.line_height <= 0.0f) return;
-	rl::begin_scissor_mode((int)area.x, (int)area.y, (int)area.width, (int)area.height);
+	apply_scissor(area, camera);
 	int lines = (int)(area.height / metrics.line_height);
 	for (int i = 0; i < lines; i++)
 	{

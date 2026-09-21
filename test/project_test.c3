@@ -51,6 +51,7 @@ fn void test_hit_test_topmost()
 				.path = (Path)"/tmp/a".copy(tmem),
 				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
 				.folder = ROOT_FOLDER,
+				.open = true,
 			}
 		);
 		p.cards.push(
@@ -58,6 +59,7 @@ fn void test_hit_test_topmost()
 				.path = (Path)"/tmp/b".copy(tmem),
 				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
 				.folder = ROOT_FOLDER,
+				.open = true,
 			}
 		);
 		assert(p.hit_test({ 50.0f, 50.0f }) == 1);

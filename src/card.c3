@@ -23,6 +23,21 @@ struct FileCard
 	bool dirty;
 	int folder;
 	PieceTable* buffer;
+	float scroll;
+}
+
+fn Rect FileCard.effective_rect(&self)
+{
+	Rect r = self.rect;
+	if (!self.open) r.height = CARD_TITLE_HEIGHT;
+	return r;
+}
+
+fn bool FileCard.marker_hit(&self, RLVector2 world)
+{
+	Rect r  = self.effective_rect();
+	float x = r.x + r.width - 24.0f;
+	return world[0] >= x && world[0] <= r.x + r.width && world[1] >= r.y && world[1] <= r.y + CARD_TITLE_HEIGHT;
 }
 
 fn RLVector2 FileCard.center(&self)
@@ -32,8 +47,8 @@ fn RLVector2 FileCard.center(&self)
 
 fn bool FileCard.contains(&self, RLVector2 world)
 {
-	return world[0] >= self.rect.x && world[0] <= self.rect.x + self.rect.width && world[1] >= self.rect.y
-		&& world[1] <= self.rect.y + self.rect.height;
+	Rect r = self.effective_rect();
+	return world[0] >= r.x && world[0] <= r.x + r.width && world[1] >= r.y && world[1] <= r.y + r.height;
 }
 
 fn void FileCard.move_by(&self, RLVector2 world_delta)
@@ -44,21 +59,23 @@ fn void FileCard.move_by(&self, RLVector2 world_delta)
 
 fn void FileCard.draw(&self, bool focused)
 {
-	rl::draw_rectangle_rec(self.rect, CARD_BODY);
+	Rect r = self.effective_rect();
+	rl::draw_rectangle_rec(r, CARD_BODY);
 	Rect title = {
-		.x = self.rect.x,
-		.y = self.rect.y,
-		.width = self.rect.width,
+		.x = r.x,
+		.y = r.y,
+		.width = r.width,
 		.height = CARD_TITLE_HEIGHT,
 	};
 	rl::draw_rectangle_rec(title, CARD_TITLE);
 	if (focused)
 	{
-		rl::draw_rectangle_lines_ex(self.rect, 1.0f, CARD_FOCUS);
+		rl::draw_rectangle_lines_ex(r, 1.0f, CARD_FOCUS);
 	}
 	else
 	{
-		rl::draw_rectangle_lines_ex(self.rect, 1.0f, CARD_BORDER);
+		rl::draw_rectangle_lines_ex(r, 1.0f, CARD_BORDER);
 	}
-	rl::draw_text((ZString)self.name.ptr, (int)(self.rect.x + 10.0f), (int)(self.rect.y + 7.0f), 16, CARD_TEXT);
+	rl::draw_text((ZString)self.name.ptr, (int)(r.x + 10.0f), (int)(r.y + 7.0f), 16, CARD_TEXT);
+	rl::draw_text(self.open ? "-" : "+", (int)(r.x + r.width - 18.0f), (int)(r.y + 7.0f), 16, CARD_TEXT);
 }

@@ -201,8 +201,8 @@ fn int main(String[] args)
 				rl::unload_dropped_files(files);
 			}
 
+			project.update(&canvas, metrics);
 			canvas.update();
-			project.update(&canvas);
 		}
 
 		notifier.update(dt);
@@ -212,7 +212,7 @@ fn int main(String[] args)
 			canvas.draw();
 			rl::@mode2d(canvas.camera)
 			{
-				project.draw(font, metrics);
+				project.draw(canvas.camera, font, metrics);
 			};
 			minimap::draw(&project, &canvas);
 			browser.draw();
