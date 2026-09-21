@@ -23,7 +23,7 @@ Prefix every commit with the issue number:
 2. Implement against the issue's acceptance criteria; keep its task checklist updated.
 3. Verify locally (below).
 4. Push and open a PR into `development` using the template; link `Closes #N`.
-5. CI must pass. Merge with **Squash and merge**, then delete the branch.
+5. Stop at the open PR. The maintainer reviews it (with CI green) and merges with **Squash and merge**, then deletes the branch. Agents must never merge a PR themselves.
 
 The `start-issue` and `finish-issue` opencode commands automate steps 1 and 3-4.
 

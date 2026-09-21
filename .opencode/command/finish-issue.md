@@ -10,6 +10,6 @@ Steps:
 3. `git push -u origin HEAD`.
 4. Open a PR into `development` using the repo template, linking `Closes #<issue>`:
    `gh pr create --base development --title "#<issue> <summary>" --body-file <filled template>`
-5. Report the PR URL.
+5. Report the PR URL and stop. **Do not merge the PR** — the maintainer reviews every PR before merging.
 
 Follow the branch/PR workflow in CONTRIBUTING.md.
