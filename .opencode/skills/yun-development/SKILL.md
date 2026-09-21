@@ -12,7 +12,7 @@ description: Use when writing, reviewing, or refactoring C3 code in Yun, or when
 - The `no-unused` warning is on: leave no unused declarations.
 - Tabs for indentation. Do not add comments unless asked.
 - The roadmap is the flat GitHub issue backlog; work issue by issue and reference `#N`.
-- Follow the branch/PR workflow in `CONTRIBUTING.md`: branch `<issue>-<slug>` off `development`, commit `#N ...`, PR into `development`, squash-merge. After cloning run `git submodule update --init --recursive`.
+- Follow the branch/PR workflow in `CONTRIBUTING.md`: branch `<issue>-<slug>` off `development`, commit `#N ...`, open a PR into `development`. **Never merge a PR** — the maintainer reviews every PR before merging. After cloning run `git submodule update --init --recursive`.
 
 ## C3 conventions (from the bundled manual, 5_7)
 - Naming is enforced by the grammar: types `PascalCase`; constants and enum members `SCREAMING_SNAKE_CASE`; functions, macros, variables, and members `snake_case`; modules lowercase (`<=31` chars per sub-path, `<=63` total).
@@ -42,6 +42,7 @@ description: Use when writing, reviewing, or refactoring C3 code in Yun, or when
 ## Workflow
 - Branch model: `main` (release) <- `development` (integration) <- `<issue>-<slug>` features. Full process in `CONTRIBUTING.md`.
 - Use the `start-issue` / `finish-issue` opencode commands to branch, verify, commit, push, and open a PR into `development`.
+- Stop at the open PR. Never merge, squash, or close a PR (or push to `main`); leave it for the maintainer to review and merge.
 - Start from an issue's acceptance criteria and keep its task checklist updated as you go.
 - Make small focused changes; build, test, and `c3fmt --check` before calling work done.
 - Add `@test` coverage for pure logic (piece table, config layering, fuzzy matching, JSON-RPC framing).
