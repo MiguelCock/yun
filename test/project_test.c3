@@ -287,6 +287,27 @@ fn void test_collapsed_cluster_is_compact()
 	};
 }
 
+fn void test_content_bounds()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		Rect out;
+		assert(!p.content_bounds(&out));
+
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+			}
+		);
+		assert(p.content_bounds(&out));
+		assert(out.x == 0.0f && out.y == 0.0f);
+		assert(out.width == 100.0f && out.height == 50.0f);
+	};
+}
+
 fn void test_collapsing_parent_hides_child_clusters()
 {
 	@pool()
