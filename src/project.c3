@@ -562,6 +562,77 @@ fn String? resolve_path(Allocator allocator, String arg)
 	return cwd.append(allocator, arg);
 }
 
+fn bool is_valid_name(String name)
+{
+	if (name.len == 0 || name.len > 255) return false;
+	if (name.compare_to(".") == 0 || name.compare_to("..") == 0) return false;
+	for (usz i = 0; i < name.len; i++)
+	{
+		char c = name[i];
+		if ((int)c < 32) return false;
+		if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
+		{
+			return false;
+		}
+	}
+	return rl::is_file_name_valid((ZString)name.ptr);
+}
+
+fn String Project.folder_path(&self, int folder_index)
+{
+	if (folder_index < 0 || folder_index >= (int)self.folders.len()) return (String)self.root;
+	return (String)self.folders[folder_index].path;
+}
+
+fn int Project.create_file(&self, int folder_index, String name, RLVector2 world_pos)
+{
+	if (!is_valid_name(name)) return -1;
+	String dir = self.folder_path(folder_index);
+
+	String candidate = collision_name(self.allocator, file_stem(name), file_ext(name), 0);
+	Path? appended   = ((Path)dir).append(self.allocator, candidate);
+	if (catch excuse = appended) return -1;
+	Path dest = appended;
+
+	int index = 1;
+	while (path::exists(dest))
+	{
+		String alt = collision_name(self.allocator, file_stem(name), file_ext(name), index);
+		Path? next = ((Path)dir).append(self.allocator, alt);
+		if (catch excuse = next) return -1;
+		dest = next;
+		index++;
+	}
+
+	File? created = file::open(dest, "w");
+	if (catch excuse = created) return -1;
+	(void)created.close();
+
+	self.focused = self.append_card((String)dest, world_pos);
+	return self.focused;
+}
+
+fn int Project.create_folder_on_disk(&self, int parent_index, String name, RLVector2 world_pos)
+{
+	if (!is_valid_name(name)) return -1;
+	String dir = self.folder_path(parent_index);
+
+	Path? appended = ((Path)dir).append(self.allocator, name);
+	if (catch excuse = appended) return -1;
+	Path dest = appended;
+	if (path::exists(dest)) return -1;
+	if (catch excuse = path::mkdir(dest, recursive: false)) return -1;
+
+	int index = self.add_folder((String)dest, parent_index);
+	self.folders[index].bounds = {
+		.x = world_pos[0],
+		.y = world_pos[1],
+		.width = CLUSTER_COLLAPSED_WIDTH,
+		.height = CLUSTER_TITLE_HEIGHT,
+	};
+	return index;
+}
+
 fn int Project.focus(&self, int index)
 {
 	if (index < 0 || index >= (int)self.cards.len()) return self.focused;

@@ -314,6 +314,70 @@ fn void test_collapsed_cluster_is_compact()
 	};
 }
 
+fn void test_is_valid_name()
+{
+	assert(is_valid_name("notes.txt"));
+	assert(is_valid_name("a b c"));
+	assert(!is_valid_name(""));
+	assert(!is_valid_name("."));
+	assert(!is_valid_name(".."));
+	assert(!is_valid_name("a/b"));
+	assert(!is_valid_name("a\\b"));
+	assert(!is_valid_name("a:b"));
+}
+
+fn void test_create_file_and_folder()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_create_test");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+
+		Project p;
+		p.init(tmem);
+		p.root = dir.copy(tmem);
+
+		int first = p.create_file(ROOT_FOLDER, "hello.txt", { 0.0f, 0.0f });
+		assert(first == 0);
+		assert(p.cards.len() == 1);
+		assert(p.focused == 0);
+		assert(path::exists(p.cards[0].path));
+
+		int second = p.create_file(ROOT_FOLDER, "hello.txt", { 0.0f, 0.0f });
+		assert(second == 1);
+		assert(p.cards.len() == 2);
+		assert(p.cards[1].name.compare_to("hello (1).txt") == 0);
+
+		int folder = p.create_folder_on_disk(ROOT_FOLDER, "sub", { 0.0f, 0.0f });
+		assert(folder == 0);
+		assert(p.folders.len() == 1);
+		assert(path::exists(p.folders[0].path));
+		assert(p.create_folder_on_disk(ROOT_FOLDER, "sub", { 0.0f, 0.0f }) == -1);
+
+		(void)path::rmtree(dir);
+	};
+}
+
+fn void test_folder_at_returns_cluster()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int f = p.add_folder("/root/a", ROOT_FOLDER);
+		p.folders[f].bounds = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f };
+		assert(p.folder_at({ 50.0f, 50.0f }) == f);
+		assert(p.folder_at({ 200.0f, 200.0f }) == ROOT_FOLDER);
+		assert(p.hit_test({ 50.0f, 50.0f }) == -1);
+	};
+}
+
 fn void test_content_bounds()
 {
 	@pool()
