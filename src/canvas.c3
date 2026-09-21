@@ -3,18 +3,24 @@ module yun::canvas;
 import raylib6::rl;
 import std::math;
 
-const RLColor BACKGROUND = { 24, 24, 28, 255 };
-const RLColor GRID_MINOR = { 40, 40, 47, 255 };
-const RLColor GRID_MAJOR = { 64, 64, 74, 255 };
-const float BASE_CELL    = 64.0f;
-const float MIN_GRID_PX  = 16.0f;
-const float MAX_GRID_PX  = 64.0f;
-const int MAJOR_EVERY    = 8;
-const int MAX_GRID_LINES = 4096;
+const RLColor BACKGROUND      = { 24, 24, 28, 255 };
+const RLColor GRID_MINOR      = { 40, 40, 47, 255 };
+const RLColor GRID_MAJOR      = { 64, 64, 74, 255 };
+const float BASE_CELL         = 64.0f;
+const float MIN_GRID_PX       = 16.0f;
+const float MAX_GRID_PX       = 64.0f;
+const int MAJOR_EVERY         = 8;
+const int MAX_GRID_LINES      = 4096;
+const float DRAG_THRESHOLD_PX = 4.0f;
+const float MAX_PAN_DELTA_PX  = 200.0f;
 
 struct Canvas
 {
 	RLCamera2D camera;
+	bool drag_pending;
+	bool dragging;
+	RLMouseButton drag_button;
+	RLVector2 drag_start;
 }
 
 fn void Canvas.init(&self)
@@ -30,6 +36,66 @@ fn void Canvas.init(&self)
 fn void Canvas.update(&self)
 {
 	self.camera.offset = { (float)rl::get_screen_width() / 2.0f, (float)rl::get_screen_height() / 2.0f };
+
+	RLVector2 mouse = rl::get_mouse_position();
+
+	if (!self.drag_pending && !self.dragging)
+	{
+		if (rl::is_mouse_button_pressed(rl::RLMouseButton.MIDDLE))
+		{
+			self.drag_pending = true;
+			self.drag_button = rl::RLMouseButton.MIDDLE;
+			self.drag_start = mouse;
+		}
+		else if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && !self.is_over_ui(mouse))
+		{
+			self.drag_pending = true;
+			self.drag_button = rl::RLMouseButton.LEFT;
+			self.drag_start = mouse;
+		}
+	}
+
+	if (self.drag_pending || self.dragging)
+	{
+		if (!rl::is_mouse_button_down(self.drag_button))
+		{
+			self.drag_pending = false;
+			self.dragging = false;
+		}
+		else
+		{
+			float dx = mouse[0] - self.drag_start[0];
+			float dy = mouse[1] - self.drag_start[1];
+			if (self.drag_pending && dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX)
+			{
+				self.dragging = true;
+			}
+			if (self.dragging)
+			{
+				self.pan_by(self.clamp_delta(rl::get_mouse_delta()));
+			}
+		}
+	}
+}
+
+fn void Canvas.pan_by(&self, RLVector2 screen_delta)
+{
+	if (self.camera.zoom <= 0.0f) return;
+	self.camera.target[0] -= screen_delta[0] / self.camera.zoom;
+	self.camera.target[1] -= screen_delta[1] / self.camera.zoom;
+}
+
+fn RLVector2 Canvas.clamp_delta(&self, RLVector2 delta)
+{
+	float len_sq = delta[0] * delta[0] + delta[1] * delta[1];
+	if (len_sq <= MAX_PAN_DELTA_PX * MAX_PAN_DELTA_PX) return delta;
+	float scale = MAX_PAN_DELTA_PX / math::sqrt(len_sq);
+	return { delta[0] * scale, delta[1] * scale };
+}
+
+fn bool Canvas.is_over_ui(&self, RLVector2 screen)
+{
+	return false;
 }
 
 fn RLVector2 Canvas.screen_to_world(&self, RLVector2 screen)
