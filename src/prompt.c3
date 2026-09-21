@@ -18,7 +18,7 @@ struct Prompt
 {
 	bool open;
 	String title;
-	char[PROMPT_MAX] text;
+	char[PROMPT_MAX + 1] text;
 	int len;
 }
 
@@ -38,6 +38,7 @@ fn void Prompt.open_with(&self, String title, String default_text)
 		self.text[self.len] = default_text[i];
 		self.len++;
 	}
+	self.text[self.len] = 0;
 	self.open = true;
 }
 
@@ -90,6 +91,7 @@ fn bool Prompt.append_codepoint(&self, int codepoint)
 		self.text[self.len] = encoded[i];
 		self.len++;
 	}
+	self.text[self.len] = 0;
 	return true;
 }
 
@@ -101,6 +103,7 @@ fn void Prompt.backspace(&self)
 	{
 		self.len--;
 	}
+	self.text[self.len] = 0;
 }
 
 fn Rect Prompt.panel_rect(&self)
