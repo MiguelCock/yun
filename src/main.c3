@@ -3,9 +3,17 @@ module yun;
 import raylib6::rl;
 import std::io::path;
 import std::math;
+import yun::browser;
 import yun::canvas;
 import yun::notify;
 import yun::project;
+
+fn void set_project_title(project::Project* project)
+{
+	String name  = rl::get_file_name((ZString)project.root.ptr).str_view();
+	String title = string::format(project.allocator, "Yun - %s", name);
+	rl::set_window_title((ZString)title.ptr);
+}
 
 fn void open_from_cli(project::Project* project, notify::Notifier* notifier, String arg)
 {
@@ -25,9 +33,12 @@ fn void open_from_cli(project::Project* project, notify::Notifier* notifier, Str
 		notifier.push("Could not open the folder");
 		return;
 	}
-	String name  = rl::get_file_name((ZString)project.root.ptr).str_view();
-	String title = string::format(project.allocator, "Yun - %s", name);
-	rl::set_window_title((ZString)title.ptr);
+	set_project_title(project);
+}
+
+fn bool ctrl_down()
+{
+	return rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
 }
 
 fn int main(String[] args)
@@ -46,40 +57,63 @@ fn int main(String[] args)
 	notify::Notifier notifier;
 	notifier.init(mem);
 
+	browser::Browser browser;
+	browser.init(mem);
+
 	if (args.len > 1) open_from_cli(&project, &notifier, args[1]);
 
 	while (!rl::window_should_close())
 	{
-		float dt        = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
-		RLVector2 mouse = rl::get_mouse_position();
-		RLVector2 world = canvas.screen_to_world(mouse);
+		float dt = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
 
-		canvas.pointer_over_ui = project.pointer_over_ui(world);
-
-		if (rl::is_file_dropped())
+		if (browser.open)
 		{
-			RLFilePathList files = rl::load_dropped_files();
-			for (uint i = 0; i < files.count; i++)
+			if (browser.update())
 			{
-				String path = files.paths[i].str_view().copy(mem);
-				if (!rl::is_path_file(files.paths[i]))
+				if (project.open((String)browser.dir))
 				{
-					if (project.add_folder_from_disk(path, world) < 0)
-					{
-						notifier.push("Drop folders from inside the project root");
-					}
-					continue;
+					set_project_title(&project);
 				}
-				if (project.add_card(path, world) < 0)
+				else
 				{
-					notifier.push("Could not add dropped file");
+					notifier.push("Could not open the folder");
 				}
 			}
-			rl::unload_dropped_files(files);
+		}
+		else
+		{
+			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.O)) browser.open_at((String)project.root);
+
+			RLVector2 mouse = rl::get_mouse_position();
+			RLVector2 world = canvas.screen_to_world(mouse);
+			canvas.pointer_over_ui = project.pointer_over_ui(world);
+
+			if (rl::is_file_dropped())
+			{
+				RLFilePathList files = rl::load_dropped_files();
+				for (uint i = 0; i < files.count; i++)
+				{
+					String path = files.paths[i].str_view().copy(mem);
+					if (!rl::is_path_file(files.paths[i]))
+					{
+						if (project.add_folder_from_disk(path, world) < 0)
+						{
+							notifier.push("Drop folders from inside the project root");
+						}
+						continue;
+					}
+					if (project.add_card(path, world) < 0)
+					{
+						notifier.push("Could not add dropped file");
+					}
+				}
+				rl::unload_dropped_files(files);
+			}
+
+			canvas.update();
+			project.update(&canvas);
 		}
 
-		canvas.update();
-		project.update(&canvas);
 		notifier.update(dt);
 
 		rl::@drawing()
@@ -89,6 +123,7 @@ fn int main(String[] args)
 			{
 				project.draw();
 			};
+			browser.draw();
 			notifier.draw();
 			rl::draw_fps(10, 10);
 		};
