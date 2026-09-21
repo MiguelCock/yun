@@ -1,7 +1,10 @@
 module yun;
 
 import raylib6::rl;
+import std::math;
 import yun::canvas;
+import yun::notify;
+import yun::project;
 
 fn int main()
 {
@@ -13,12 +16,51 @@ fn int main()
 	canvas::Canvas canvas;
 	canvas.init();
 
+	project::Project project;
+	project.init(mem);
+
+	notify::Notifier notifier;
+	notifier.init(mem);
+
 	while (!rl::window_should_close())
 	{
+		float dt        = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
+		RLVector2 mouse = rl::get_mouse_position();
+		RLVector2 world = canvas.screen_to_world(mouse);
+
+		canvas.pointer_over_ui = project.hit_test(world) >= 0 || project.drag_card;
+
+		if (rl::is_file_dropped())
+		{
+			RLFilePathList files = rl::load_dropped_files();
+			for (uint i = 0; i < files.count; i++)
+			{
+				if (!rl::is_path_file(files.paths[i]))
+				{
+					notifier.push("Folders are not supported yet (see #7)");
+					continue;
+				}
+				String path = files.paths[i].str_view().copy(mem);
+				if (project.add_card(path, world) < 0)
+				{
+					notifier.push("Could not add dropped file");
+				}
+			}
+			rl::unload_dropped_files(files);
+		}
+
 		canvas.update();
+		project.update(&canvas);
+		notifier.update(dt);
+
 		rl::@drawing()
 		{
 			canvas.draw();
+			rl::@mode2d(canvas.camera)
+			{
+				project.draw();
+			};
+			notifier.draw();
 			rl::draw_fps(10, 10);
 		};
 	}
