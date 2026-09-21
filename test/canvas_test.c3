@@ -78,3 +78,61 @@ fn void test_clamp_delta_caps_magnitude()
 	RLVector2 small = c.clamp_delta({ 1.0f, 2.0f });
 	assert(small[0] == 1.0f && small[1] == 2.0f);
 }
+
+fn void test_zoom_preserves_world_point_under_cursor()
+{
+	Canvas c;
+	c.camera = {
+		.offset = { 400.0f, 300.0f },
+		.target = { 0.0f, 0.0f },
+		.rotation = 0.0f,
+		.zoom = 1.0f,
+	};
+	RLVector2 anchor = { 120.0f, 90.0f };
+	RLVector2 before = c.screen_to_world(anchor);
+	c.zoom_at(1.0f, anchor);
+	RLVector2 after = c.screen_to_world(anchor);
+	assert(math::is_approx(before[0], after[0], 0.001f));
+	assert(math::is_approx(before[1], after[1], 0.001f));
+}
+
+fn void test_zoom_is_geometric()
+{
+	Canvas c;
+	c.camera.offset = { 400.0f, 300.0f };
+	c.camera.target = { 0.0f, 0.0f };
+	c.camera.zoom = 1.0f;
+	c.zoom_at(1.0f, { 400.0f, 300.0f });
+	assert(math::is_approx(c.camera.zoom, ZOOM_STEP, 0.0001f));
+	c.zoom_at(2.0f, { 400.0f, 300.0f });
+	assert(math::is_approx(c.camera.zoom, ZOOM_STEP * ZOOM_STEP * ZOOM_STEP, 0.0001f));
+}
+
+fn void test_zoom_clamps()
+{
+	Canvas c;
+	c.camera.offset = { 400.0f, 300.0f };
+	c.camera.target = { 0.0f, 0.0f };
+	c.camera.zoom = 1.0f;
+	for (int i = 0; i < 100; i++)
+	{
+		c.zoom_at(10.0f, { 400.0f, 300.0f });
+	}
+	assert(c.camera.zoom == MAX_ZOOM);
+	for (int i = 0; i < 100; i++)
+	{
+		c.zoom_at(-10.0f, { 400.0f, 300.0f });
+	}
+	assert(c.camera.zoom == MIN_ZOOM);
+}
+
+fn void test_zoom_at_zero_is_noop()
+{
+	Canvas c;
+	c.camera.offset = { 400.0f, 300.0f };
+	c.camera.target = { 5.0f, -3.0f };
+	c.camera.zoom = 2.0f;
+	c.zoom_at(0.0f, { 10.0f, 10.0f });
+	assert(c.camera.target[0] == 5.0f && c.camera.target[1] == -3.0f);
+	assert(c.camera.zoom == 2.0f);
+}

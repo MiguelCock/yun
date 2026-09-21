@@ -13,6 +13,9 @@ const int MAJOR_EVERY         = 8;
 const int MAX_GRID_LINES      = 4096;
 const float DRAG_THRESHOLD_PX = 4.0f;
 const float MAX_PAN_DELTA_PX  = 200.0f;
+const float MIN_ZOOM          = 0.1f;
+const float MAX_ZOOM          = 8.0f;
+const float ZOOM_STEP         = 1.1f;
 
 struct Canvas
 {
@@ -38,6 +41,9 @@ fn void Canvas.update(&self)
 	self.camera.offset = { (float)rl::get_screen_width() / 2.0f, (float)rl::get_screen_height() / 2.0f };
 
 	RLVector2 mouse = rl::get_mouse_position();
+
+	float wheel = rl::get_mouse_wheel_move();
+	if (wheel != 0.0f) self.zoom_at(wheel, mouse);
 
 	if (!self.drag_pending && !self.dragging)
 	{
@@ -76,6 +82,16 @@ fn void Canvas.update(&self)
 			}
 		}
 	}
+}
+
+fn void Canvas.zoom_at(&self, float wheel, RLVector2 screen_anchor)
+{
+	if (wheel == 0.0f || self.camera.zoom <= 0.0f) return;
+	RLVector2 before = self.screen_to_world(screen_anchor);
+	self.camera.zoom = math::clamp(self.camera.zoom * math::pow(ZOOM_STEP, wheel), MIN_ZOOM, MAX_ZOOM);
+	RLVector2 after = self.screen_to_world(screen_anchor);
+	self.camera.target[0] += before[0] - after[0];
+	self.camera.target[1] += before[1] - after[1];
 }
 
 fn void Canvas.pan_by(&self, RLVector2 screen_delta)
