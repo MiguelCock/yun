@@ -5,6 +5,7 @@ import std::io::path;
 import std::math;
 import yun::browser;
 import yun::canvas;
+import yun::editor;
 import yun::menu;
 import yun::minimap;
 import yun::notify;
@@ -60,6 +61,10 @@ fn int main(String[] args)
 	defer rl::close_window();
 	rl::set_target_fps(60);
 	rl::set_exit_key(rl::RLKeyboardKey.NONE);
+
+	RLFont font = rl::load_font_ex("assets/fonts/JetBrainsMono-Regular.ttf", 16, null, 0);
+	defer rl::unload_font(font);
+	editor::EditorMetrics metrics = editor::metrics_for_font(font, 16.0f);
 
 	canvas::Canvas canvas;
 	canvas.init();
@@ -196,8 +201,8 @@ fn int main(String[] args)
 				rl::unload_dropped_files(files);
 			}
 
+			project.update(&canvas, metrics);
 			canvas.update();
-			project.update(&canvas);
 		}
 
 		notifier.update(dt);
@@ -207,7 +212,7 @@ fn int main(String[] args)
 			canvas.draw();
 			rl::@mode2d(canvas.camera)
 			{
-				project.draw();
+				project.draw(canvas.camera, font, metrics);
 			};
 			minimap::draw(&project, &canvas);
 			browser.draw();

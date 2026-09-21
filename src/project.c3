@@ -8,6 +8,7 @@ import std::io::path;
 import std::math;
 import yun::canvas;
 import yun::card;
+import yun::editor;
 
 const int ROOT_FOLDER               = -1;
 const float CLUSTER_PADDING         =  24.0f;
@@ -414,7 +415,7 @@ fn int Project.append_card(&self, String abs, RLVector2 world_pos)
 			.y = world_pos[1] - card::CARD_HEIGHT / 2.0f,
 			.width = card::CARD_WIDTH,
 			.height = card::CARD_HEIGHT,
-		}, .open = false, .dirty = false, .folder = self.folder_for(abs), };
+		}, .open = true, .dirty = false, .folder = self.folder_for(abs), };
 	self.cards.push(card);
 	return (int)(self.cards.len() - 1);
 }
@@ -733,15 +734,41 @@ fn bool Project.pointer_over_ui(&self, RLVector2 world)
 	return self.drag_card || self.drag_cluster || self.hit_test(world) >= 0 || self.cluster_hit(world) >= 0;
 }
 
-fn void Project.update(&self, Canvas* canvas)
+fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 {
 	RLVector2 mouse = rl::get_mouse_position();
 	RLVector2 world = canvas.screen_to_world(mouse);
+	canvas.block_zoom = false;
+
+	float wheel = rl::get_mouse_wheel_move();
+	if (wheel != 0.0f)
+	{
+		int wheel_hit = self.hit_test(world);
+		if (wheel_hit >= 0 && self.cards[wheel_hit].open)
+		{
+			int index = self.focus(wheel_hit);
+			editor::ensure_buffer(&self.cards[index], self.allocator);
+			if (self.cards[index].buffer)
+			{
+				Rect inner  = editor::inner_rect(self.cards[index].rect, metrics);
+				float max   = editor::max_scroll(self.cards[index].buffer.line_count(), metrics, inner.height);
+				float value = self.cards[index].scroll - wheel * metrics.line_height * 3.0f;
+				if (value < 0.0f) value = 0.0f;
+				if (value > max) value = max;
+				self.cards[index].scroll = value;
+			}
+			canvas.block_zoom = true;
+		}
+	}
 
 	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && canvas.pointer_over_ui)
 	{
 		int card_hit = self.hit_test(world);
-		if (card_hit >= 0)
+		if (card_hit >= 0 && self.cards[card_hit].marker_hit(world))
+		{
+			self.cards[card_hit].open = !self.cards[card_hit].open;
+		}
+		else if (card_hit >= 0)
 		{
 			self.drag_index = self.focus(card_hit);
 			self.drag_card = true;
@@ -818,7 +845,7 @@ fn void Project.draw_cluster(&self, int index)
 	);
 }
 
-fn void Project.draw(&self)
+fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metrics)
 {
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
@@ -826,9 +853,28 @@ fn void Project.draw(&self)
 	}
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
-		if (self.card_visible((int)i))
+		if (!self.card_visible((int)i)) continue;
+		self.cards[i].draw((int)i == self.focused);
+		if (!self.cards[i].open) continue;
+
+		Rect inner = editor::inner_rect(self.cards[i].rect, metrics);
+		if ((int)i == self.focused) editor::ensure_buffer(&self.cards[i], self.allocator);
+		if (self.cards[i].buffer)
 		{
-			self.cards[i].draw((int)i == self.focused);
+			editor::draw_text(
+				self.cards[i].buffer,
+				inner,
+				self.cards[i].scroll,
+				metrics,
+				camera,
+				font,
+				16.0f,
+				editor::EDITOR_TEXT
+			);
+		}
+		else
+		{
+			editor::draw_placeholder(inner, metrics, camera, editor::EDITOR_PLACEHOLDER);
 		}
 	}
 }
