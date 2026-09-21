@@ -108,6 +108,7 @@ fn int Menu.update(&self)
 	if (mouse[0] < panel.x || mouse[0] > panel.x + panel.width || mouse[1] < panel.y
 		|| mouse[1] > panel.y + panel.height)
 	{
+		if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT)) self.open = false;
 		return -1;
 	}
 	int row = (int)((mouse[1] - panel.y - (float)MENU_PADDING_Y) / (float)MENU_ROW_HEIGHT);

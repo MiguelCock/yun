@@ -50,6 +50,7 @@ fn int main(String[] args)
 	rl::init_window(1280, 720, "Yun");
 	defer rl::close_window();
 	rl::set_target_fps(60);
+	rl::set_exit_key(rl::RLKeyboardKey.NONE);
 
 	canvas::Canvas canvas;
 	canvas.init();
@@ -137,7 +138,9 @@ fn int main(String[] args)
 			) || minimap::contains_screen(&project, &canvas, mouse);
 			minimap::update(&project, &canvas);
 
-			if (rl::is_mouse_button_pressed(rl::RLMouseButton.RIGHT) && !canvas.pointer_over_ui)
+			if (rl::is_mouse_button_pressed(
+				rl::RLMouseButton.RIGHT
+			) && project.hit_test(world) < 0 && !minimap::contains_screen(&project, &canvas, mouse))
 			{
 				pending_parent = project.folder_at(world);
 				pending_world = world;

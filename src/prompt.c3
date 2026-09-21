@@ -103,6 +103,13 @@ fn void Prompt.backspace(&self)
 	}
 }
 
+fn Rect Prompt.panel_rect(&self)
+{
+	int x = (rl::get_screen_width() - PROMPT_WIDTH) / 2;
+	int y = (rl::get_screen_height() - PROMPT_HEIGHT) / 2;
+	return { .x = (float)x, .y = (float)y, .width = (float)PROMPT_WIDTH, .height = (float)PROMPT_HEIGHT };
+}
+
 fn bool Prompt.update(&self)
 {
 	if (!self.open) return false;
@@ -111,6 +118,17 @@ fn bool Prompt.update(&self)
 	{
 		self.open = false;
 		return false;
+	}
+	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
+	{
+		Rect panel      = self.panel_rect();
+		RLVector2 mouse = rl::get_mouse_position();
+		if (mouse[0] < panel.x || mouse[0] > panel.x + panel.width || mouse[1] < panel.y
+			|| mouse[1] > panel.y + panel.height)
+		{
+			self.open = false;
+			return false;
+		}
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE)) self.backspace();
 	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER)) return true;
@@ -128,8 +146,9 @@ fn void Prompt.draw(&self)
 {
 	if (!self.open) return;
 
-	int x = (rl::get_screen_width() - PROMPT_WIDTH) / 2;
-	int y = (rl::get_screen_height() - PROMPT_HEIGHT) / 2;
+	Rect panel = self.panel_rect();
+	int x      = (int)panel.x;
+	int y      = (int)panel.y;
 	rl::draw_rectangle(x, y, PROMPT_WIDTH, PROMPT_HEIGHT, PROMPT_BG);
 	rl::draw_rectangle_lines(x, y, PROMPT_WIDTH, PROMPT_HEIGHT, PROMPT_BORDER);
 	rl::draw_text((ZString)self.title.ptr, x + 12, y + 8, 16, PROMPT_TITLE);

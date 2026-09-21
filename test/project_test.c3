@@ -363,6 +363,21 @@ fn void test_create_file_and_folder()
 	};
 }
 
+fn void test_folder_at_returns_cluster()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int f = p.add_folder("/root/a", ROOT_FOLDER);
+		p.folders[f].bounds = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f };
+		assert(p.folder_at({ 50.0f, 50.0f }) == f);
+		assert(p.folder_at({ 200.0f, 200.0f }) == ROOT_FOLDER);
+		assert(p.hit_test({ 50.0f, 50.0f }) == -1);
+	};
+}
+
 fn void test_content_bounds()
 {
 	@pool()
