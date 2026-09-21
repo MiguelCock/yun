@@ -1,6 +1,7 @@
 module yun::project @test;
 
 import raylib6::rl;
+import std::io::file;
 import std::io::path;
 import std::math;
 import yun::card;
@@ -149,22 +150,112 @@ fn void test_collapsed_cluster_hides_cards()
 	};
 }
 
-fn void test_collapsing_parent_hides_child_clusters()
+fn void test_path_is_ignored()
+{
+	assert(path_is_ignored("/home/x/proj/.git/config"));
+	assert(path_is_ignored("/home/x/proj/build/out.o"));
+	assert(path_is_ignored("/home/x/proj/node_modules/pkg/index.js"));
+	assert(path_is_ignored("C:\\proj\\.yun\\workspace.json"));
+	assert(!path_is_ignored("/home/x/proj/src/main.c3"));
+	assert(!path_is_ignored("/home/x/proj/builder/main.c3"));
+}
+
+fn void test_ensure_folder_chain()
 {
 	@pool()
 	{
 		Project p;
 		p.init(tmem);
 		p.root = (Path)"/root".copy(tmem);
-		int a = p.add_folder("/root/a", ROOT_FOLDER);
-		int b = p.add_folder("/root/a/b", a);
-		assert(p.cluster_visible(a));
-		assert(p.cluster_visible(b));
-		p.toggle_collapse(a);
-		assert(p.cluster_visible(a));
-		assert(!p.cluster_visible(b));
-		p.toggle_collapse(a);
-		assert(p.cluster_visible(b));
+		int b = p.ensure_folder("/root/a/b");
+		int a = p.folder_by_path("/root/a");
+		assert(a >= 0);
+		assert(p.folders[b].parent == a);
+		assert(p.folders[a].parent == ROOT_FOLDER);
+		assert(p.ensure_folder("/root") == ROOT_FOLDER);
+		assert(p.folder_by_path("/root/a/b") == b);
+	};
+}
+
+fn void test_layout_position_grid()
+{
+	assert(layout_position(0)[0] == 0.0f && layout_position(0)[1] == 0.0f);
+	assert(layout_position(1)[0] == LAYOUT_CELL_W);
+	assert(layout_position(LAYOUT_COLUMNS)[0] == 0.0f);
+	assert(layout_position(LAYOUT_COLUMNS)[1] == LAYOUT_CELL_H);
+}
+
+fn void test_resolve_path_absolute()
+{
+	@pool()
+	{
+		String? r = resolve_path(tmem, "/tmp/foo");
+		if (catch excuse = r)
+		{
+			assert(false);
+			return;
+		}
+		assert(r.compare_to("/tmp/foo") == 0);
+	};
+}
+
+fn void test_resolve_path_relative()
+{
+	@pool()
+	{
+		Path? cwd = path::cwd(tmem);
+		if (catch excuse = cwd) return;
+		String? r = resolve_path(tmem, "sub/dir");
+		if (catch excuse = r)
+		{
+			assert(false);
+			return;
+		}
+		assert(path_is_inside((String)cwd, r));
+	};
+}
+
+fn void test_open_scans_directory()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_open_test");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? s = dir.append(tmem, "src");
+		if (catch excuse = s) return;
+		Path src = s;
+		if (catch excuse = path::mkdir(src)) return;
+		Path? sub = src.append(tmem, "sub");
+		if (catch excuse = sub) return;
+		Path subdir = sub;
+		if (catch excuse = path::mkdir(subdir)) return;
+
+		char[] content = { 'x' };
+		Path? readme   = dir.append(tmem, "README.md");
+		if (catch excuse = readme) return;
+		if (catch excuse = file::save(readme, content)) return;
+		Path? fa = src.append(tmem, "a.c3");
+		if (catch excuse = fa) return;
+		if (catch excuse = file::save(fa, content)) return;
+		Path? fb = subdir.append(tmem, "b.c3");
+		if (catch excuse = fb) return;
+		if (catch excuse = file::save(fb, content)) return;
+
+		Project p;
+		p.init(tmem);
+		assert(p.open((String)dir));
+		assert(p.cards.len() == 3);
+		assert(p.folders.len() == 2);
+		assert(p.folder_by_path((String)src) >= 0);
+		assert(p.folder_by_path((String)subdir) >= 0);
+
+		(void)path::rmtree(dir);
 	};
 }
 
@@ -193,5 +284,24 @@ fn void test_collapsed_cluster_is_compact()
 		p.toggle_collapse(f);
 		Rect again = p.cluster_visual_bounds(f);
 		assert(again.width == expanded.width && again.height == expanded.height);
+	};
+}
+
+fn void test_collapsing_parent_hides_child_clusters()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int b = p.add_folder("/root/a/b", a);
+		assert(p.cluster_visible(a));
+		assert(p.cluster_visible(b));
+		p.toggle_collapse(a);
+		assert(p.cluster_visible(a));
+		assert(!p.cluster_visible(b));
+		p.toggle_collapse(a);
+		assert(p.cluster_visible(b));
 	};
 }
