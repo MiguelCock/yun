@@ -19,9 +19,9 @@ const RLColor CLUSTER_BODY          =  { 26, 28, 36, 200 };
 const RLColor CLUSTER_BORDER        =  { 60, 70, 90, 255 };
 const RLColor CLUSTER_TITLE         =  { 40, 46, 60, 255 };
 const RLColor CLUSTER_TEXT          =  { 180, 200, 230, 255 };
-const float LAYOUT_CELL_W           =  640.0f;
-const float LAYOUT_CELL_H           =  520.0f;
-const int LAYOUT_COLUMNS            =  3;
+const float LAYOUT_CELL_W           =  280.0f;
+const float LAYOUT_CELL_H           =  60.0f;
+const int LAYOUT_COLUMNS            =  6;
 const String[] IGNORED_NAMES        =  { ".git", ".yun", "build", "out", "node_modules" };
 
 faultdef COPY_FAILED;
@@ -506,8 +506,8 @@ fn void Project.layout(&self)
 		self.folders[f].bounds = {
 			.x = origin[0],
 			.y = origin[1],
-			.width = LAYOUT_CELL_W - 40.0f,
-			.height = LAYOUT_CELL_H - 40.0f,
+			.width = CLUSTER_COLLAPSED_WIDTH,
+			.height = CLUSTER_TITLE_HEIGHT,
 		};
 		self.place_cards((int)f, origin);
 	}
