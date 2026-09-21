@@ -9,15 +9,16 @@ import std::math;
 import yun::canvas;
 import yun::card;
 
-const int ROOT_FOLDER            = -1;
-const float CLUSTER_PADDING      =  24.0f;
-const float CLUSTER_TITLE_HEIGHT =  26.0f;
-const float CARD_GAP             =  16.0f;
-const int CLUSTER_COLUMNS        =  3;
-const RLColor CLUSTER_BODY       =  { 26, 28, 36, 200 };
-const RLColor CLUSTER_BORDER     =  { 60, 70, 90, 255 };
-const RLColor CLUSTER_TITLE      =  { 40, 46, 60, 255 };
-const RLColor CLUSTER_TEXT       =  { 180, 200, 230, 255 };
+const int ROOT_FOLDER               = -1;
+const float CLUSTER_PADDING         =  24.0f;
+const float CLUSTER_TITLE_HEIGHT    =  26.0f;
+const float CLUSTER_COLLAPSED_WIDTH =  240.0f;
+const float CARD_GAP                =  16.0f;
+const int CLUSTER_COLUMNS           =  3;
+const RLColor CLUSTER_BODY          =  { 26, 28, 36, 200 };
+const RLColor CLUSTER_BORDER        =  { 60, 70, 90, 255 };
+const RLColor CLUSTER_TITLE         =  { 40, 46, 60, 255 };
+const RLColor CLUSTER_TEXT          =  { 180, 200, 230, 255 };
 
 faultdef COPY_FAILED;
 
@@ -205,8 +206,14 @@ fn Rect Project.cluster_bounds(&self, int index)
 
 fn Rect Project.cluster_visual_bounds(&self, int index)
 {
-	if (self.folders[index].collapsed) return self.folders[index].bounds;
-	return self.cluster_bounds(index);
+	if (!self.folders[index].collapsed) return self.cluster_bounds(index);
+	Rect b = self.folders[index].bounds;
+	return {
+		.x = b.x,
+		.y = b.y,
+		.width = CLUSTER_COLLAPSED_WIDTH,
+		.height = CLUSTER_TITLE_HEIGHT,
+	};
 }
 
 fn int Project.cluster_hit(&self, RLVector2 world)
@@ -232,8 +239,7 @@ fn int Project.folder_at(&self, RLVector2 world)
 	usz best_len = 0;
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
-		if (self.folders[i].collapsed) continue;
-		if (!rect_contains(self.cluster_bounds((int)i), world)) continue;
+		if (!rect_contains(self.cluster_visual_bounds((int)i), world)) continue;
 		String fp = (String)self.folders[i].path;
 		if (fp.len >= best_len)
 		{

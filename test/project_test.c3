@@ -148,3 +148,31 @@ fn void test_collapsed_cluster_hides_cards()
 		assert(p.hit_test({ 50.0f, 25.0f }) == -1);
 	};
 }
+
+fn void test_collapsed_cluster_is_compact()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		int f = p.add_folder("/root/a", ROOT_FOLDER);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a/x.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+			}
+		);
+		Rect expanded = p.cluster_visual_bounds(f);
+		assert(expanded.height > CLUSTER_TITLE_HEIGHT);
+
+		p.toggle_collapse(f);
+		Rect collapsed = p.cluster_visual_bounds(f);
+		assert(collapsed.height == CLUSTER_TITLE_HEIGHT);
+		assert(collapsed.width == CLUSTER_COLLAPSED_WIDTH);
+		assert(collapsed.x == expanded.x && collapsed.y == expanded.y);
+
+		p.toggle_collapse(f);
+		Rect again = p.cluster_visual_bounds(f);
+		assert(again.width == expanded.width && again.height == expanded.height);
+	};
+}
