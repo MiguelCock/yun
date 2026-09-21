@@ -19,8 +19,13 @@ const RLColor CLUSTER_BODY          =  { 26, 28, 36, 200 };
 const RLColor CLUSTER_BORDER        =  { 60, 70, 90, 255 };
 const RLColor CLUSTER_TITLE         =  { 40, 46, 60, 255 };
 const RLColor CLUSTER_TEXT          =  { 180, 200, 230, 255 };
+const float LAYOUT_CELL_W           =  640.0f;
+const float LAYOUT_CELL_H           =  520.0f;
+const int LAYOUT_COLUMNS            =  3;
+const String[] IGNORED_NAMES        =  { ".git", ".yun", "build", "out", "node_modules" };
 
 faultdef COPY_FAILED;
+faultdef RESOLVE_FAILED;
 
 struct FolderCluster
 {
@@ -62,6 +67,16 @@ fn void Project.init(&self, Allocator allocator)
 	self.root = cwd;
 }
 
+fn void Project.reset(&self)
+{
+	self.cards.clear();
+	self.folders.clear();
+	self.focused = -1;
+	self.drag_card = false;
+	self.drag_cluster = false;
+	self.cluster_moved = false;
+}
+
 fn bool path_is_inside(String root, String abs)
 {
 	if (root.len == 0 || abs.len < root.len) return false;
@@ -69,6 +84,36 @@ fn bool path_is_inside(String root, String abs)
 	if (abs.len == root.len) return true;
 	char next = abs[root.len];
 	return next == '/' || next == '\\';
+}
+
+fn bool path_is_ignored(String path)
+{
+	usz start = 0;
+	for (usz i = 0; i <= path.len; i++)
+	{
+		if (i != path.len && path[i] != '/' && path[i] != '\\') continue;
+		String component = path[start:i - start];
+		foreach (String ignored : IGNORED_NAMES)
+		{
+			if (component.compare_to(ignored) == 0) return true;
+		}
+		start = i + 1;
+	}
+	return false;
+}
+
+fn int path_compare(void* a, void* b)
+{
+	Path pa = *(Path*)a;
+	Path pb = *(Path*)b;
+	return ((String)pa).compare_to((String)pb);
+}
+
+fn RLVector2 layout_position(int index)
+{
+	int col = index % LAYOUT_COLUMNS;
+	int row = index / LAYOUT_COLUMNS;
+	return { (float)col * LAYOUT_CELL_W, (float)row * LAYOUT_CELL_H };
 }
 
 fn bool rect_contains(Rect r, RLVector2 point)
@@ -115,6 +160,27 @@ fn int Project.folder_for(&self, String file)
 		}
 	}
 	return best;
+}
+
+fn int Project.folder_by_path(&self, String path)
+{
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		if (((String)self.folders[i].path).compare_to(path) == 0) return (int)i;
+	}
+	return ROOT_FOLDER;
+}
+
+fn int Project.ensure_folder(&self, String dir)
+{
+	if (dir.compare_to((String)self.root) == 0) return ROOT_FOLDER;
+	int existing = self.folder_by_path(dir);
+	if (existing >= 0) return existing;
+
+	String parent = rl::get_prev_directory_path((ZString)dir.ptr).str_view().copy(self.allocator);
+	if (parent.compare_to(dir) == 0) return ROOT_FOLDER;
+	int parent_index = self.ensure_folder(parent);
+	return self.add_folder(dir, parent_index);
 }
 
 fn bool Project.folder_collapsed(&self, int index)
@@ -338,6 +404,91 @@ fn int Project.add_folder_from_disk(&self, String dir, RLVector2 world_pos)
 		}
 	}
 	return index;
+}
+
+fn void Project.place_cards(&self, int folder_index, RLVector2 origin)
+{
+	int col = 0;
+	float x = origin[0] + CLUSTER_PADDING;
+	float y = origin[1] + CLUSTER_TITLE_HEIGHT + CLUSTER_PADDING;
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		if (self.folder_for((String)self.cards[i].path) != folder_index) continue;
+		self.cards[i].rect = {
+			.x = x,
+			.y = y,
+			.width = card::CARD_WIDTH,
+			.height = card::CARD_HEIGHT,
+		};
+		x += card::CARD_WIDTH + CARD_GAP;
+		col++;
+		if (col >= CLUSTER_COLUMNS)
+		{
+			col = 0;
+			x = origin[0] + CLUSTER_PADDING;
+			y += card::CARD_HEIGHT + CARD_GAP;
+		}
+	}
+}
+
+fn void Project.layout(&self)
+{
+	for (sz f = 0; f < self.folders.len(); f++)
+	{
+		RLVector2 origin = layout_position((int)f);
+		self.folders[f].bounds = {
+			.x = origin[0],
+			.y = origin[1],
+			.width = LAYOUT_CELL_W - 40.0f,
+			.height = LAYOUT_CELL_H - 40.0f,
+		};
+		self.place_cards((int)f, origin);
+	}
+	self.place_cards(ROOT_FOLDER, layout_position((int)self.folders.len()));
+}
+
+fn bool Project.open(&self, String new_root)
+{
+	self.reset();
+	self.root = (Path)new_root.copy(self.allocator);
+
+	PathList? entries = path::ls(self.allocator, (Path)new_root, no_dirs: false, recursive: true, relative: false);
+	if (catch excuse = entries) return false;
+
+	libc::qsort(entries.entries, (usz)entries.size, Path::size, &path_compare);
+
+	foreach (Path entry : entries)
+	{
+		String p = (String)entry;
+		if (path_is_ignored(p)) continue;
+		if (path::is_dir(entry)) self.ensure_folder(p);
+	}
+	foreach (Path entry : entries)
+	{
+		String p = (String)entry;
+		if (path_is_ignored(p)) continue;
+		if (path::is_dir(entry)) continue;
+		self.add_card(p, { 0.0f, 0.0f });
+	}
+	self.layout();
+	self.focused = -1;
+	return true;
+}
+
+fn String? resolve_path(Allocator allocator, String arg)
+{
+	if (arg.len == 0) return RESOLVE_FAILED~;
+	if (arg[0] == '~')
+	{
+		Path? home = path::home_directory(allocator);
+		if (catch excuse = home) return RESOLVE_FAILED~;
+		if (arg.len == 1) return (String)home;
+		return ((Path)home).append(allocator, arg[2..]);
+	}
+	if (arg[0] == '/' || (arg.len > 1 && arg[1] == ':')) return arg.copy(allocator);
+	Path? cwd = path::cwd(allocator);
+	if (catch excuse = cwd) return RESOLVE_FAILED~;
+	return cwd.append(allocator, arg);
 }
 
 fn int Project.focus(&self, int index)

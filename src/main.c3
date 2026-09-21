@@ -1,12 +1,36 @@
 module yun;
 
 import raylib6::rl;
+import std::io::path;
 import std::math;
 import yun::canvas;
 import yun::notify;
 import yun::project;
 
-fn int main()
+fn void open_from_cli(project::Project* project, notify::Notifier* notifier, String arg)
+{
+	String? resolved = project::resolve_path(project.allocator, arg);
+	if (catch excuse = resolved)
+	{
+		notifier.push("Could not resolve the given path");
+		return;
+	}
+	if (!path::is_dir((Path)resolved))
+	{
+		notifier.push("Not a directory");
+		return;
+	}
+	if (!project.open(resolved))
+	{
+		notifier.push("Could not open the folder");
+		return;
+	}
+	String name  = rl::get_file_name((ZString)project.root.ptr).str_view();
+	String title = string::format(project.allocator, "Yun - %s", name);
+	rl::set_window_title((ZString)title.ptr);
+}
+
+fn int main(String[] args)
 {
 	rl::set_config_flags((RLConfigFlag)(rl::RLConfigFlag.WINDOW_RESIZABLE | rl::RLConfigFlag.VSYNC_HINT));
 	rl::init_window(1280, 720, "Yun");
@@ -21,6 +45,8 @@ fn int main()
 
 	notify::Notifier notifier;
 	notifier.init(mem);
+
+	if (args.len > 1) open_from_cli(&project, &notifier, args[1]);
 
 	while (!rl::window_should_close())
 	{
