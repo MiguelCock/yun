@@ -1,0 +1,11 @@
+{
+  "provides": "tree_sitter",
+  "linklib-dir": "linked-libs",
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter"
+      ]
+    }
+  }
+}
