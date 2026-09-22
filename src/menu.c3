@@ -11,12 +11,14 @@ const int MENU_MIN_WIDTH    = 140;
 const RLColor MENU_BG       = { 28, 30, 40, 245 };
 const RLColor MENU_BORDER   = { 90, 110, 150, 255 };
 const RLColor MENU_TEXT     = { 220, 220, 230, 255 };
+const RLColor MENU_DISABLED = { 110, 116, 128, 255 };
 const RLColor MENU_SELECTED = { 60, 90, 150, 255 };
 
 struct Menu
 {
 	bool open;
 	List{String} items;
+	List{bool} enabled;
 	Allocator allocator;
 	int selected;
 	RLVector2 position;
@@ -26,6 +28,7 @@ fn void Menu.init(&self, Allocator allocator)
 {
 	self.allocator = allocator;
 	self.items.init(allocator);
+	self.enabled.init(allocator);
 	self.open = false;
 	self.selected = 0;
 	self.position = { 0.0f, 0.0f };
@@ -34,11 +37,27 @@ fn void Menu.init(&self, Allocator allocator)
 fn void Menu.open_at(&self, RLVector2 position, String[] items)
 {
 	self.items.clear();
-	foreach (String item : items)
+	self.enabled.clear();
+	for (usz i = 0; i < items.len; i++)
 	{
-		self.items.push(item.copy(self.allocator));
+		self.items.push(items[i].copy(self.allocator));
+		self.enabled.push(true);
 	}
-	self.selected = 0;
+	self.selected = self.first_enabled(0);
+	self.position = position;
+	self.open = true;
+}
+
+fn void Menu.open_with(&self, RLVector2 position, String[] items, bool[] enabled)
+{
+	self.items.clear();
+	self.enabled.clear();
+	for (usz i = 0; i < items.len; i++)
+	{
+		self.items.push(items[i].copy(self.allocator));
+		self.enabled.push(i < enabled.len ? enabled[i] : true);
+	}
+	self.selected = self.first_enabled(0);
 	self.position = position;
 	self.open = true;
 }
@@ -53,12 +72,42 @@ fn int Menu.rows(&self)
 	return (int)self.items.len();
 }
 
+fn bool Menu.is_enabled(&self, int index)
+{
+	if (index < 0 || index >= self.rows()) return false;
+	return self.enabled[index];
+}
+
+fn int Menu.first_enabled(&self, int from)
+{
+	for (int i = from; i < self.rows(); i++)
+	{
+		if (self.enabled[i]) return i;
+	}
+	return 0;
+}
+
 fn void Menu.move_selection(&self, int delta)
 {
-	if (self.rows() == 0) return;
-	self.selected += delta;
-	if (self.selected < 0) self.selected = 0;
-	if (self.selected >= self.rows()) self.selected = self.rows() - 1;
+	int rows = self.rows();
+	if (rows == 0) return;
+
+	int step      = delta > 0 ? 1 : -1;
+	int remaining = delta > 0 ? delta : -delta;
+	int current   = self.selected;
+	for (int i = 0; i < remaining; i++)
+	{
+		int next = current;
+		for (int j = 0; j < rows; j++)
+		{
+			next += step;
+			if (next < 0) next = rows - 1;
+			if (next >= rows) next = 0;
+			if (self.enabled[next]) break;
+		}
+		current = next;
+	}
+	self.selected = current;
 }
 
 fn int Menu.width(&self)
@@ -98,9 +147,12 @@ fn int Menu.update(&self)
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER))
 	{
-		int chosen = self.selected;
-		self.open = false;
-		return chosen;
+		if (self.is_enabled(self.selected))
+		{
+			int chosen = self.selected;
+			self.open = false;
+			return chosen;
+		}
 	}
 
 	Rect panel      = self.panel_rect();
@@ -112,12 +164,15 @@ fn int Menu.update(&self)
 		return -1;
 	}
 	int row = (int)((mouse[1] - panel.y - (float)MENU_PADDING_Y) / (float)MENU_ROW_HEIGHT);
-	if (row >= 0 && row < self.rows()) self.selected = row;
+	if (row >= 0 && row < self.rows() && self.enabled[row]) self.selected = row;
 	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
 	{
-		int chosen = self.selected;
-		self.open = false;
-		return chosen;
+		if (row >= 0 && row < self.rows() && self.enabled[row])
+		{
+			int chosen = row;
+			self.open = false;
+			return chosen;
+		}
 	}
 	return -1;
 }
@@ -147,7 +202,7 @@ fn void Menu.draw(&self)
 			(int)(panel.x + (float)MENU_PADDING_X),
 			(int)(row_y + 4.0f),
 			16,
-			MENU_TEXT
+			self.enabled[(sz)i] ? MENU_TEXT : MENU_DISABLED
 		);
 	}
 }

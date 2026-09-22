@@ -3,6 +3,7 @@ module yun::project;
 import libc;
 import raylib6::rl;
 import std::collections::list;
+import std::core::mem::alloc;
 import std::io::file;
 import std::io::path;
 import std::math;
@@ -645,6 +646,117 @@ fn int Project.create_folder_on_disk(&self, int parent_index, String name, RLVec
 		.height = CLUSTER_TITLE_HEIGHT,
 	};
 	return index;
+}
+
+fn void Project.remove_card(&self, int index)
+{
+	if (index < 0 || index >= (int)self.cards.len()) return;
+	FileCard* card = &self.cards[index];
+	editor::destroy_buffer(card, self.allocator);
+	((String)card.path).free(self.allocator);
+	card.name.free(self.allocator);
+	self.cards.remove_at(index);
+	if (self.focused == index)
+	{
+		self.focused = -1;
+	}
+	else if (self.focused > index)
+	{
+		self.focused--;
+	}
+}
+
+fn bool Project.rename_card(&self, int index, String new_name)
+{
+	if (index < 0 || index >= (int)self.cards.len()) return false;
+	if (!is_valid_name(new_name)) return false;
+
+	FileCard* card = &self.cards[index];
+	String dir     = rl::get_prev_directory_path((ZString)((String)card.path).ptr).str_view().copy(self.allocator);
+	defer dir.free(self.allocator);
+
+	Path? appended = ((Path)dir).append(self.allocator, new_name);
+	if (catch excuse = appended) return false;
+	Path dest = appended;
+	defer ((String)dest).free(self.allocator);
+	if (path::exists(dest)) return false;
+
+	bool renamed = false;
+	@pool()
+	{
+		renamed = libc::rename(((String)card.path).zstr_tcopy(), ((String)dest).zstr_tcopy()) == 0;
+	};
+	if (!renamed) return false;
+
+	((String)card.path).free(self.allocator);
+	card.path = (Path)((String)dest).copy(self.allocator);
+	card.name.free(self.allocator);
+	card.name = new_name.copy(self.allocator);
+	card.folder = self.folder_for((String)card.path);
+	editor::stamp_file(card);
+	return true;
+}
+
+fn int Project.duplicate_card(&self, int index, RLVector2 world_pos)
+{
+	if (index < 0 || index >= (int)self.cards.len()) return -1;
+
+	String src = (String)self.cards[index].path;
+	String dir = rl::get_prev_directory_path((ZString)src.ptr).str_view().copy(self.allocator);
+	defer dir.free(self.allocator);
+	String stem = file_stem(src).copy(self.allocator);
+	defer stem.free(self.allocator);
+	String ext = file_ext(src).copy(self.allocator);
+	defer ext.free(self.allocator);
+
+	String name    = collision_name(self.allocator, stem, ext, 0);
+	Path? appended = ((Path)dir).append(self.allocator, name);
+	name.free(self.allocator);
+	if (catch excuse = appended) return -1;
+	Path dest = appended;
+
+	int counter = 1;
+	while (path::exists(dest))
+	{
+		String alt = collision_name(self.allocator, stem, ext, counter);
+		Path? next = ((Path)dir).append(self.allocator, alt);
+		alt.free(self.allocator);
+		if (catch excuse = next)
+		{
+			((String)dest).free(self.allocator);
+			return -1;
+		}
+		((String)dest).free(self.allocator);
+		dest = next;
+		counter++;
+	}
+
+	char[]? data = file::load(self.allocator, src);
+	if (catch excuse = data)
+	{
+		((String)dest).free(self.allocator);
+		return -1;
+	}
+	defer alloc::free(self.allocator, data.ptr);
+	if (catch excuse = file::save(dest, data))
+	{
+		((String)dest).free(self.allocator);
+		return -1;
+	}
+
+	RLVector2 offset = { world_pos[0] + 24.0f, world_pos[1] + 24.0f };
+	int result       = self.append_card((String)dest, offset);
+	((String)dest).free(self.allocator);
+	return result;
+}
+
+fn bool Project.delete_card_file(&self, int index)
+{
+	if (index < 0 || index >= (int)self.cards.len()) return false;
+	Path path = self.cards[index].path;
+	if (catch excuse = path::delete(path)) return false;
+	self.remove_card(index);
+	return true;
 }
 
 fn int Project.focus(&self, int index)

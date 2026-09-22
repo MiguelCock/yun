@@ -201,7 +201,6 @@ fn void test_resolve_path_absolute()
 		if (catch excuse = r)
 		{
 			assert(false);
-			return;
 		}
 		assert(r.compare_to("/tmp/foo") == 0);
 	};
@@ -217,7 +216,6 @@ fn void test_resolve_path_relative()
 		if (catch excuse = r)
 		{
 			assert(false);
-			return;
 		}
 		assert(path_is_inside((String)cwd, r));
 	};
@@ -418,5 +416,50 @@ fn void test_collapsing_parent_hides_child_clusters()
 		assert(!p.cluster_visible(b));
 		p.toggle_collapse(a);
 		assert(p.cluster_visible(b));
+	};
+}
+fn void test_card_file_operations()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_card_ops");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+
+		Project p;
+		p.init(tmem);
+		p.root = dir.copy(tmem);
+
+		assert(p.create_file(ROOT_FOLDER, "a.txt", { 0.0f, 0.0f }) == 0);
+		Path old = p.cards[0].path.copy(tmem);
+		if (catch excuse = file::save(p.cards[0].path, "hello")) return;
+
+		assert(p.rename_card(0, "b.txt"));
+		assert(p.cards[0].name.compare_to("b.txt") == 0);
+		assert(path::exists(p.cards[0].path));
+		assert(!path::exists(old));
+		assert(!p.rename_card(0, "b.txt"));
+
+		int dup = p.duplicate_card(0, { 0.0f, 0.0f });
+		assert(dup == 1);
+		assert(p.cards.len() == 2);
+		assert(p.cards[1].name.compare_to("b (1).txt") == 0);
+		assert(path::exists(p.cards[1].path));
+		Path dup_path = p.cards[1].path.copy(tmem);
+
+		assert(p.delete_card_file(1));
+		assert(p.cards.len() == 1);
+		assert(!path::exists(dup_path));
+
+		p.focused = 0;
+		p.remove_card(0);
+		assert(p.cards.len() == 0);
+		assert(p.focused == -1);
+
+		(void)path::rmtree(dir);
 	};
 }
