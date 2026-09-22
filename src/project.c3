@@ -752,9 +752,10 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 			editor::ensure_buffer(&self.cards[index], self.allocator);
 			if (self.cards[index].buffer)
 			{
-				Rect inner  = editor::inner_rect(self.cards[index].rect, metrics);
-				float max   = editor::max_scroll(self.cards[index].buffer.line_count(), metrics, inner.height);
-				float value = self.cards[index].scroll - wheel * metrics.line_height * 3.0f;
+				usz line_count = self.cards[index].buffer.line_count();
+				Rect text      = editor::text_rect(self.cards[index].rect, metrics, line_count);
+				float max      = editor::max_scroll(line_count, metrics, text.height);
+				float value    = self.cards[index].scroll - wheel * metrics.line_height * 3.0f;
 				if (value < 0.0f) value = 0.0f;
 				if (value > max) value = max;
 				self.cards[index].scroll = value;
@@ -776,8 +777,8 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 			editor::ensure_buffer(card, self.allocator);
 			if (card.buffer)
 			{
-				Rect inner      = editor::inner_rect(card.rect, metrics);
-				RLVector2 local = { world[0] - inner.x, world[1] - inner.y };
+				Rect text       = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+				RLVector2 local = { world[0] - text.x, world[1] - text.y };
 				card.cursor = editor::offset_for_point(card.buffer, local[0], local[1], card.scroll, metrics);
 				usz line = card.buffer.line_of(card.cursor);
 				card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
@@ -961,8 +962,8 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics)
 		card.preferred_column = editor::column_for_offset(table, line, card.cursor);
 	}
 
-	Rect inner = editor::inner_rect(card.rect, metrics);
-	card.scroll = editor::scroll_to_reveal(table, metrics, inner.height, card.cursor, card.scroll);
+	Rect text = editor::text_rect(card.rect, metrics, table.line_count());
+	card.scroll = editor::scroll_to_reveal(table, metrics, text.height, card.cursor, card.scroll);
 
 	if (changed)
 	{
@@ -1007,39 +1008,56 @@ fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metric
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
 		if (!self.card_visible((int)i)) continue;
-		self.cards[i].draw((int)i == self.focused);
-		if (!self.cards[i].open) continue;
+		FileCard* card  = &self.cards[i];
+		bool is_focused = (int)i == self.focused;
+		card.draw(is_focused);
+		if (!card.open) continue;
 
-		Rect inner = editor::inner_rect(self.cards[i].rect, metrics);
-		if ((int)i == self.focused) editor::ensure_buffer(&self.cards[i], self.allocator);
-		if (self.cards[i].buffer)
+		if (is_focused) editor::ensure_buffer(card, self.allocator);
+		if (!card.buffer)
 		{
-			editor::draw_text(
-				self.cards[i].buffer,
-				inner,
-				self.cards[i].scroll,
+			editor::draw_placeholder(
+				editor::inner_rect(card.rect, metrics),
 				metrics,
 				camera,
-				font,
-				16.0f,
-				editor::EDITOR_TEXT
+				editor::EDITOR_PLACEHOLDER
 			);
-			if ((int)i == self.focused && caret_on)
-			{
-				editor::draw_caret(
-					self.cards[i].buffer,
-					inner,
-					self.cards[i].scroll,
-					metrics,
-					camera,
-					self.cards[i].cursor,
-					editor::EDITOR_CARET
-				);
-			}
+			continue;
 		}
-		else
+
+		usz line_count = card.buffer.line_count();
+		Rect gutter    = editor::gutter_rect(card.rect, metrics, line_count);
+		Rect text      = editor::text_rect(card.rect, metrics, line_count);
+
+		if (is_focused)
 		{
-			editor::draw_placeholder(inner, metrics, camera, editor::EDITOR_PLACEHOLDER);
+			editor::draw_current_line(
+				card.buffer,
+				text,
+				card.scroll,
+				metrics,
+				camera,
+				card.cursor,
+				editor::EDITOR_CURRENT_LINE
+			);
 		}
+		editor::draw_gutter(
+			card.buffer,
+			gutter,
+			card.scroll,
+			metrics,
+			camera,
+			font,
+			16.0f,
+			editor::EDITOR_GUTTER_TEXT,
+			editor::EDITOR_GUTTER_BG
+		);
+		editor::draw_text(card.buffer, text, card.scroll, metrics, camera, font, 16.0f, editor::EDITOR_TEXT);
+		if (is_focused && caret_on)
+		{
+			editor::draw_caret(card.buffer, text, card.scroll, metrics, camera, card.cursor, editor::EDITOR_CARET);
+		}
+		float content_height = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
+		editor::draw_scrollbar(text, content_height, card.scroll, camera, editor::EDITOR_SCROLLBAR);
 	}
 }

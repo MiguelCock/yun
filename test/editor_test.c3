@@ -263,3 +263,45 @@ fn void test_gutter_and_content_width()
 		t.destroy();
 	};
 }
+fn void test_gutter_and_text_rects()
+{
+	EditorMetrics metrics = { .char_width = 8.0f, .line_height = 16.0f, .padding_x = 8.0f, .padding_y = 6.0f };
+	Rect card             = { .x = 10.0f, .y = 20.0f, .width = 240.0f, .height = 160.0f };
+	Rect gutter           = gutter_rect(card, metrics, 9);
+	Rect text             = text_rect(card, metrics, 9);
+	assert(gutter.x == 18.0f && gutter.y == 54.0f);
+	assert(gutter.width == 24.0f);
+	assert(text.x == 42.0f);
+	assert(text.width == 200.0f);
+	assert(gutter_rect(card, metrics, 100).width == 40.0f);
+}
+
+fn void test_current_line_rect()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "a\nb\nc");
+		EditorMetrics metrics = { .char_width = 8.0f, .line_height = 16.0f, .padding_x = 0.0f, .padding_y = 0.0f };
+		Rect area             = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f };
+
+		Rect r1 = current_line_rect(&t, area, 0.0f, metrics, t.line_start(1));
+		assert(r1.y == 16.0f && r1.height == 16.0f);
+		Rect r2 = current_line_rect(&t, area, 10.0f, metrics, t.line_start(2));
+		assert(r2.y == 22.0f);
+		t.destroy();
+	};
+}
+
+fn void test_scrollbar_thumb()
+{
+	Rect area = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f };
+	Rect full = scrollbar_thumb(area, 50.0f, 0.0f);
+	assert(full.height == 100.0f && full.x == 96.0f);
+
+	Rect top = scrollbar_thumb(area, 400.0f, 0.0f);
+	assert(top.height == 25.0f && top.y == 0.0f);
+
+	Rect bottom = scrollbar_thumb(area, 400.0f, 300.0f);
+	assert(bottom.y == 75.0f);
+}
