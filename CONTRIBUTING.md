@@ -44,9 +44,15 @@ CI runs the same checks on every pull request.
 git clone --recurse-submodules https://github.com/MiguelCock/yun.git
 git submodule update --init --recursive
 ```
+Submodules include `lib/lua54.c3l` and the tree-sitter `upstream/` sources under `lib/tree_sitter*.c3l/`.
+- Build/link needs no submodules (prebuilt `linux-x64` static libs are committed), but rebuilding them or targeting another platform uses `scripts/build-tree-sitter.sh <target>`.
 - Lua mods (#33+) will additionally require a system Lua 5.4 (e.g. `liblua5.4-dev`).
 
 ## Ground rules
 - Do not hand-edit vendored libraries (`lib/*.c3l`, `lib/lua54.c3l`); they are packed or submodules.
 - Keep a successful `c3c build` free of `no-unused` warnings.
 - Match the C3 style in `.opencode/skills/yun-development/SKILL.md`.
+
+## License
+Yun is MIT-licensed (see [`LICENSE`](LICENSE)): use it freely, but any copy or fork must retain the copyright and license notice. By contributing you agree your changes are licensed under the same terms. Vendored libraries and assets keep their own licenses.
+
