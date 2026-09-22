@@ -6,6 +6,7 @@ enum CommandId
 	NEW_FOLDER,
 	OPEN,
 	SAVE,
+	SHOW_PALETTE,
 }
 
 struct CommandDef
@@ -21,6 +22,7 @@ const CommandDef[] COMMAND_DEFS = {
 	{ .id = CommandId.NEW_FOLDER, .label = "New Folder", .shortcut = "", .in_top_bar = false },
 	{ .id = CommandId.OPEN, .label = "Open", .shortcut = "Ctrl+O", .in_top_bar = true },
 	{ .id = CommandId.SAVE, .label = "Save", .shortcut = "Ctrl+S", .in_top_bar = true },
+	{ .id = CommandId.SHOW_PALETTE, .label = "Command Palette", .shortcut = "Ctrl+Shift+P", .in_top_bar = false },
 };
 
 fn usz command_count()
@@ -45,7 +47,18 @@ fn String command_name(CommandId id)
 			return "open";
 		case CommandId.SAVE:
 			return "save";
+		case CommandId.SHOW_PALETTE:
+			return "show_palette";
 	}
+}
+
+fn int command_from_name(String name)
+{
+	for (usz i = 0; i < command_count(); i++)
+	{
+		if (command_name((CommandId)i).compare_to(name) == 0) return (int)i;
+	}
+	return -1;
 }
 
 fn usz bar_command_count()
@@ -82,6 +95,8 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 			return true;
 		case CommandId.SAVE:
 			return has_buffer;
+		case CommandId.SHOW_PALETTE:
+			return true;
 	}
 }
 
