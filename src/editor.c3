@@ -16,6 +16,7 @@ const RLColor EDITOR_GUTTER_TEXT  = { 120, 132, 150, 255 };
 const RLColor EDITOR_CURRENT_LINE = { 255, 255, 255, 18 };
 const RLColor EDITOR_SCROLLBAR    = { 90, 100, 120, 200 };
 const RLColor EDITOR_HANDLE       = { 120, 160, 240, 220 };
+const int SCROLL_MARGIN_LINES     = 1;
 
 fn float min_card_width(EditorMetrics metrics)
 {
@@ -433,10 +434,13 @@ fn float scroll_to_reveal(PieceTable* table, EditorMetrics metrics, float area_h
 	usz line     = table.line_of(cursor);
 	float top    = (float)line * metrics.line_height;
 	float bottom = top + metrics.line_height;
+	float margin = (float)SCROLL_MARGIN_LINES * metrics.line_height;
 	float scroll = current_scroll;
-	if (top < scroll) scroll = top;
-	if (bottom > scroll + area_height) scroll = bottom - area_height;
+	if (top < scroll + margin) scroll = top - margin;
+	if (bottom > scroll + area_height - margin) scroll = bottom - area_height + margin;
 	if (scroll < 0.0f) scroll = 0.0f;
+	float max = max_scroll(table.line_count(), metrics, area_height);
+	if (scroll > max) scroll = max;
 	return scroll;
 }
 

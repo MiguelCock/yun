@@ -927,6 +927,7 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics)
 	History* history  = card.history;
 	double now        = rl::get_time();
 	bool changed      = false;
+	bool moved        = false;
 	bool vertical     = false;
 
 	if (ctrl_down() && !shift_down() && rl::is_key_pressed(rl::RLKeyboardKey.Z))
@@ -994,32 +995,38 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics)
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_prev(table, card.cursor);
+		moved = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT))
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_next(table, card.cursor);
+		moved = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.HOME))
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_home(table, card.cursor);
+		moved = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.END))
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_end(table, card.cursor);
+		moved = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP))
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_up(table, card.cursor, card.preferred_column, &card.preferred_column);
+		moved = true;
 		vertical = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN))
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_down(table, card.cursor, card.preferred_column, &card.preferred_column);
+		moved = true;
 		vertical = true;
 	}
 
@@ -1029,8 +1036,11 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics)
 		card.preferred_column = editor::column_for_offset(table, line, card.cursor);
 	}
 
-	Rect text = editor::text_rect(card.rect, metrics, table.line_count());
-	card.scroll = editor::scroll_to_reveal(table, metrics, text.height, card.cursor, card.scroll);
+	if (changed || moved)
+	{
+		Rect text = editor::text_rect(card.rect, metrics, table.line_count());
+		card.scroll = editor::scroll_to_reveal(table, metrics, text.height, card.cursor, card.scroll);
+	}
 
 	if (changed)
 	{
