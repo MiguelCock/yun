@@ -6,6 +6,7 @@ import std::math;
 import yun::browser;
 import yun::canvas;
 import yun::commands;
+import yun::config;
 import yun::editor;
 import yun::menu;
 import yun::minimap;
@@ -23,14 +24,21 @@ fn void set_project_title(project::Project* project)
 	rl::set_window_title((ZString)title.ptr);
 }
 
-fn bool open_project(project::Project* project, canvas::Canvas* canvas, String root)
+fn bool open_project(project::Project* project, canvas::Canvas* canvas, config::Config* config, String root)
 {
 	if (!project.open(root)) return false;
 	workspace::load(project, canvas);
+	config.load((String)project.root);
 	return true;
 }
 
-fn bool open_from_cli(project::Project* project, canvas::Canvas* canvas, notify::Notifier* notifier, String arg)
+fn bool open_from_cli(
+	project::Project* project,
+	canvas::Canvas* canvas,
+	config::Config* config,
+	notify::Notifier* notifier,
+	String arg
+)
 {
 	String? resolved = project::resolve_path(project.allocator, arg);
 	if (catch excuse = resolved)
@@ -43,13 +51,21 @@ fn bool open_from_cli(project::Project* project, canvas::Canvas* canvas, notify:
 		notifier.push("Not a directory");
 		return false;
 	}
-	if (!open_project(project, canvas, resolved))
+	if (!open_project(project, canvas, config, resolved))
 	{
 		notifier.push("Could not open the folder");
 		return false;
 	}
 	set_project_title(project);
 	return true;
+}
+
+fn void push_config_warnings(config::Config* config, notify::Notifier* notifier)
+{
+	for (sz i = 0; i < config.warnings.len(); i++)
+	{
+		notifier.push(config.warnings[i]);
+	}
 }
 
 fn bool ctrl_down()
@@ -179,6 +195,10 @@ fn int main(String[] args)
 	notify::Notifier notifier;
 	notifier.init(mem);
 
+	config::Config config;
+	config.init(mem);
+	defer config.destroy();
+
 	browser::Browser browser;
 	browser.init(mem);
 
@@ -205,7 +225,15 @@ fn int main(String[] args)
 	RLVector2 pending_world = { 0.0f, 0.0f };
 
 	bool project_open = false;
-	if (args.len > 1) project_open = open_from_cli(&project, &canvas, &notifier, args[1]);
+	if (args.len > 1)
+	{
+		project_open = open_from_cli(&project, &canvas, &config, &notifier, args[1]);
+	}
+	else
+	{
+		config.load("");
+	}
+	push_config_warnings(&config, &notifier);
 
 	App app = {
 		.project = &project,
@@ -227,10 +255,11 @@ fn int main(String[] args)
 		{
 			if (browser.update())
 			{
-				if (open_project(&project, &canvas, (String)browser.dir))
+				if (open_project(&project, &canvas, &config, (String)browser.dir))
 				{
 					project_open = true;
 					set_project_title(&project);
+					push_config_warnings(&config, &notifier);
 				}
 				else
 				{

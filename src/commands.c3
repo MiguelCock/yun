@@ -33,6 +33,21 @@ fn CommandDef command_def(CommandId id)
 	return COMMAND_DEFS[(int)id];
 }
 
+fn String command_name(CommandId id)
+{
+	switch (id)
+	{
+		case CommandId.NEW_FILE:
+			return "new_file";
+		case CommandId.NEW_FOLDER:
+			return "new_folder";
+		case CommandId.OPEN:
+			return "open";
+		case CommandId.SAVE:
+			return "save";
+	}
+}
+
 fn usz bar_command_count()
 {
 	usz count = 0;
