@@ -29,6 +29,7 @@ struct Canvas
 	RLCamera2D camera;
 	RLCamera2D target;
 	RLVector2 velocity;
+	float top_inset;
 	bool pointer_over_ui;
 	bool block_zoom;
 	bool drag_pending;
@@ -47,11 +48,12 @@ fn void Canvas.init(&self)
 	};
 	self.camera = initial;
 	self.target = initial;
+	self.top_inset = 0.0f;
 }
 
 fn void Canvas.update(&self)
 {
-	self.camera.offset = { (float)rl::get_screen_width() / 2.0f, (float)rl::get_screen_height() / 2.0f };
+	self.camera.offset = { (float)rl::get_screen_width() / 2.0f, self.usable_offset_y() };
 	self.target.offset = self.camera.offset;
 
 	float dt        = math::min(rl::get_frame_time(), MAX_FRAME_DT);
@@ -114,6 +116,13 @@ fn void Canvas.update(&self)
 	}
 
 	self.ease_camera(dt);
+}
+
+fn float Canvas.usable_offset_y(&self)
+{
+	float height = (float)rl::get_screen_height() - self.top_inset;
+	if (height < 0.0f) height = 0.0f;
+	return self.top_inset + height / 2.0f;
 }
 
 fn void Canvas.begin_drag(&self, RLMouseButton button, RLVector2 mouse)

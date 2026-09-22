@@ -116,3 +116,33 @@ fn void test_mmap_file()
 		(void)path::rmtree(dir);
 	};
 }
+fn void test_save_to_file()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_text_save");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? f = dir.append(tmem, "save.txt");
+		if (catch excuse = f) return;
+		if (catch excuse = file::save(f, "abc")) return;
+
+		PieceTable t;
+		assert(t.init_from_file(tmem, (String)f));
+		t.insert(3, "def");
+		assert(t.save_to_file((String)f, tmem));
+		assert(t.slice(0, t.length(), tmem).compare_to("abcdef") == 0);
+		t.destroy();
+
+		PieceTable check;
+		assert(check.init_from_file(tmem, (String)f));
+		assert(check.slice(0, check.length(), tmem).compare_to("abcdef") == 0);
+		check.destroy();
+
+		(void)path::rmtree(dir);
+	};
+}

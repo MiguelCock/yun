@@ -1,5 +1,6 @@
 module yun::text;
 
+import libc;
 import std::collections::list;
 import std::core::dstring;
 import std::io::file;
@@ -282,6 +283,26 @@ fn String PieceTable.slice(&self, usz offset, usz len, Allocator allocator)
 	String result = out.str_view().copy(allocator);
 	out.free();
 	return result;
+}
+
+fn bool PieceTable.save_to_file(&self, String path, Allocator allocator)
+{
+	@pool()
+	{
+		String data = self.slice(0, self.total, allocator);
+		defer data.free(allocator);
+
+		String tmp = string::format(allocator, "%s.yun-tmp", path);
+		defer tmp.free(allocator);
+
+		if (catch excuse = file::save(tmp, data)) return false;
+		if (libc::rename(tmp.zstr_tcopy(), path.zstr_tcopy()) != 0)
+		{
+			(void)libc::remove(tmp.zstr_tcopy());
+			return false;
+		}
+		return true;
+	};
 }
 
 fn usz utf8_char_len(char lead)

@@ -747,14 +747,14 @@ fn bool Project.pointer_over_ui(&self, RLVector2 world)
 	return self.drag_card || self.drag_cluster || self.hit_test(world) >= 0 || self.cluster_hit(world) >= 0;
 }
 
-fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
+fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointer_blocked)
 {
 	RLVector2 mouse = rl::get_mouse_position();
 	RLVector2 world = canvas.screen_to_world(mouse);
 	canvas.block_zoom = false;
 
 	float wheel = rl::get_mouse_wheel_move();
-	if (wheel != 0.0f)
+	if (wheel != 0.0f && !pointer_blocked)
 	{
 		int wheel_hit = self.hit_test(world);
 		if (wheel_hit >= 0 && self.cards[wheel_hit].open)
@@ -775,7 +775,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 		}
 	}
 
-	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && canvas.pointer_over_ui)
+	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && canvas.pointer_over_ui && !pointer_blocked)
 	{
 		int card_hit = self.hit_test(world);
 		int handle   = card_hit >= 0 ? self.cards[card_hit].resize_handle_at(world, canvas.camera) : -1;
@@ -885,7 +885,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 		}
 	}
 
-	if (!self.resizing && !rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
+	if (!pointer_blocked && !self.resizing && !rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
 	{
 		int hover  = self.hit_test(world);
 		int handle = hover >= 0 ? self.cards[hover].resize_handle_at(world, canvas.camera) : -1;

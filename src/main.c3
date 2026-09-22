@@ -5,12 +5,14 @@ import std::io::path;
 import std::math;
 import yun::browser;
 import yun::canvas;
+import yun::commands;
 import yun::editor;
 import yun::menu;
 import yun::minimap;
 import yun::notify;
 import yun::project;
 import yun::prompt;
+import yun::topbar;
 import yun::workspace;
 
 fn void set_project_title(project::Project* project)
@@ -54,6 +56,82 @@ fn bool ctrl_down()
 	return rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
 }
 
+struct App
+{
+	project::Project* project;
+	canvas::Canvas* canvas;
+	browser::Browser* browser;
+	notify::Notifier* notifier;
+	prompt::Prompt* name_prompt;
+	bool* project_open;
+	int* pending_kind;
+	int* pending_parent;
+	RLVector2* pending_world;
+}
+
+fn bool has_focused_buffer(project::Project* project)
+{
+	int index = project.focused;
+	return index >= 0 && index < (int)project.cards.len() && project.cards[index].buffer != null;
+}
+
+fn void run_command(commands::CommandId id, App* app)
+{
+	project::Project* project = app.project;
+	switch (id)
+	{
+		case commands::CommandId.NEW_FILE:
+
+			{
+				if (!*app.project_open)
+				{
+					app.notifier.push("No project open");
+					return;
+				}
+				RLVector2 center = {
+					(float)rl::get_screen_width() / 2.0f,
+					(float)rl::get_screen_height() / 2.0f,
+				};
+				RLVector2 world = app.canvas.screen_to_world(center);
+				*app.pending_kind = 0;
+				*app.pending_parent = project.folder_at(world);
+				*app.pending_world = world;
+				app.name_prompt.open_with("New file", "");
+				return;
+			}
+		case commands::CommandId.OPEN:
+
+			{
+				app.browser.open_at((String)project.root);
+				return;
+			}
+		case commands::CommandId.SAVE:
+
+			{
+				if (!*app.project_open)
+				{
+					app.notifier.push("No project open");
+					return;
+				}
+				int index = project.focused;
+				if (index < 0 || index >= (int)project.cards.len() || !project.cards[index].buffer)
+				{
+					app.notifier.push("No file to save");
+					return;
+				}
+				if (editor::save_buffer(&project.cards[index], project.allocator))
+				{
+					app.notifier.push("Saved");
+				}
+				else
+				{
+					app.notifier.push("Could not save");
+				}
+				return;
+			}
+	}
+}
+
 fn int main(String[] args)
 {
 	rl::set_config_flags((RLConfigFlag)(rl::RLConfigFlag.WINDOW_RESIZABLE | rl::RLConfigFlag.VSYNC_HINT));
@@ -68,6 +146,7 @@ fn int main(String[] args)
 
 	canvas::Canvas canvas;
 	canvas.init();
+	canvas.top_inset = topbar::TOP_BAR_HEIGHT;
 
 	project::Project project;
 	project.init(mem);
@@ -90,12 +169,27 @@ fn int main(String[] args)
 	prompt::Prompt name_prompt;
 	name_prompt.init();
 
+	topbar::TopBar bar;
+	bar.init();
+
 	int pending_kind        = 0;
 	int pending_parent      = project::ROOT_FOLDER;
 	RLVector2 pending_world = { 0.0f, 0.0f };
 
 	bool project_open = false;
 	if (args.len > 1) project_open = open_from_cli(&project, &canvas, &notifier, args[1]);
+
+	App app = {
+		.project = &project,
+		.canvas = &canvas,
+		.browser = &browser,
+		.notifier = &notifier,
+		.name_prompt = &name_prompt,
+		.project_open = &project_open,
+		.pending_kind = &pending_kind,
+		.pending_parent = &pending_parent,
+		.pending_world = &pending_world,
+	};
 
 	while (!rl::window_should_close())
 	{
@@ -184,32 +278,33 @@ fn int main(String[] args)
 		}
 		else
 		{
-			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.O)) browser.open_at((String)project.root);
-
-			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.S))
-			{
-				if (!project_open)
-				{
-					notifier.push("No project open");
-				}
-				else if (workspace::save(&project, &canvas))
-				{
-					notifier.push("Saved workspace");
-				}
-				else
-				{
-					notifier.push("Could not save workspace");
-				}
-			}
-
 			RLVector2 mouse = rl::get_mouse_position();
 			RLVector2 world = canvas.screen_to_world(mouse);
-			canvas.pointer_over_ui = project.pointer_over_ui(
+			bool over_top   = topbar::contains_screen(mouse);
+			bool has_buffer = has_focused_buffer(&project);
+
+			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.N))
+			{
+				run_command(commands::CommandId.NEW_FILE, &app);
+			}
+			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.O))
+			{
+				run_command(commands::CommandId.OPEN, &app);
+			}
+			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.S))
+			{
+				run_command(commands::CommandId.SAVE, &app);
+			}
+
+			int bar_cmd = bar.update(mouse, project_open, has_buffer);
+			if (bar_cmd >= 0) run_command((commands::CommandId)bar_cmd, &app);
+
+			canvas.pointer_over_ui = over_top || project.pointer_over_ui(
 				world
 			) || minimap::contains_screen(&project, &canvas, mouse);
 			minimap::update(&project, &canvas);
 
-			if (rl::is_mouse_button_pressed(
+			if (!over_top && rl::is_mouse_button_pressed(
 				rl::RLMouseButton.RIGHT
 			) && project.hit_test(world) < 0 && !minimap::contains_screen(&project, &canvas, mouse))
 			{
@@ -218,7 +313,7 @@ fn int main(String[] args)
 				context_menu.open_at(mouse, { "New file", "New folder" });
 			}
 
-			if (rl::is_file_dropped())
+			if (!over_top && rl::is_file_dropped())
 			{
 				RLFilePathList files = rl::load_dropped_files();
 				for (uint i = 0; i < files.count; i++)
@@ -240,7 +335,8 @@ fn int main(String[] args)
 				rl::unload_dropped_files(files);
 			}
 
-			project.update(&canvas, metrics);
+			project.update(&canvas, metrics, over_top);
+			if (over_top) canvas.block_zoom = true;
 			canvas.update();
 
 			if (project.pending_reload >= 0 && !reload_menu.open)
@@ -273,13 +369,16 @@ fn int main(String[] args)
 				project.draw(canvas.camera, font, metrics);
 			};
 			minimap::draw(&project, &canvas);
+			String project_name = "";
+			if (project_open) project_name = rl::get_file_name((ZString)project.root.ptr).str_view();
+			bar.draw(project_open, has_focused_buffer(&project), project_name, canvas.camera.zoom, font);
 			browser.draw();
 			close_menu.draw();
 			reload_menu.draw();
 			context_menu.draw();
 			name_prompt.draw();
 			notifier.draw();
-			rl::draw_fps(10, 10);
+			rl::draw_fps(10, (int)topbar::TOP_BAR_HEIGHT + 10);
 		};
 	}
 
