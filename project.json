@@ -1,29 +1,12 @@
 {
   "langrev": "1",
-  "warnings": [
-    "no-unused"
-  ],
-  "dependency-search-paths": [
-    "lib"
-  ],
-  "dependencies": [
-    "raylib6",
-    "tree_sitter",
-    "tree_sitter_c",
-    "tree_sitter_python",
-    "tree_sitter_javascript",
-    "tree_sitter_c3"
-  ],
-  "authors": [
-    "John Doe <john.doe@example.com>"
-  ],
+  "warnings":  [ "no-unused" ],
+  "dependency-search-paths":  [ "lib" ],
+  "dependencies":  [ "raylib6", "tree_sitter", "tree_sitter_c", "tree_sitter_python", "tree_sitter_javascript", "tree_sitter_c3" ],
+  "authors":  [ "John Doe <john.doe@example.com>" ],
   "version": "0.1.0",
-  "sources": [
-    "src/**"
-  ],
-  "test-sources": [
-    "test/**"
-  ],
+  "sources":  [ "src/**" ],
+  "test-sources":  [ "test/**" ],
   "build-dir": "build",
   "output": "build",
   "targets": {
