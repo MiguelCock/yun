@@ -842,6 +842,11 @@ fn bool ctrl_down()
 	return rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
 }
 
+fn bool shift_down()
+{
+	return rl::is_key_down(rl::RLKeyboardKey.LEFT_SHIFT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_SHIFT);
+}
+
 fn void Project.handle_keyboard(&self, EditorMetrics metrics)
 {
 	if (self.focused < 0 || self.focused >= (int)self.cards.len()) return;
@@ -856,10 +861,21 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics)
 	bool changed      = false;
 	bool vertical     = false;
 
-	if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.Z))
+	if (ctrl_down() && !shift_down() && rl::is_key_pressed(rl::RLKeyboardKey.Z))
 	{
 		usz cursor = card.cursor;
 		if (history.undo(table, &cursor))
+		{
+			card.cursor = cursor;
+			changed = true;
+		}
+	}
+	if (ctrl_down() && (rl::is_key_pressed(
+		rl::RLKeyboardKey.Y
+	) || (shift_down() && rl::is_key_pressed(rl::RLKeyboardKey.Z))))
+	{
+		usz cursor = card.cursor;
+		if (history.redo(table, &cursor))
 		{
 			card.cursor = cursor;
 			changed = true;

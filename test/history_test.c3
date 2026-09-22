@@ -154,3 +154,111 @@ fn void test_budget_eviction()
 		h.free();
 	};
 }
+fn void test_redo()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "hello");
+		History h;
+		h.init(tmem);
+
+		usz cursor = h.insert(&t, 5, " world", 1.0);
+		assert(cursor == 11);
+		usz after = 0;
+		assert(h.undo(&t, &after));
+		assert(after == 5);
+		assert(t.slice(0, t.length(), tmem).compare_to("hello") == 0);
+
+		assert(h.redo(&t, &after));
+		assert(after == 11);
+		assert(t.slice(0, t.length(), tmem).compare_to("hello world") == 0);
+		assert(!h.redo(&t, &after));
+
+		t.destroy();
+		h.free();
+	};
+}
+
+fn void test_undo_redo_cycles()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_empty(tmem);
+		History h;
+		h.init(tmem);
+
+		usz cursor = 0;
+		cursor = h.insert(&t, cursor, "a", 1.0);
+		cursor = h.insert(&t, cursor, "b", 1.1);
+		cursor = h.insert(&t, cursor, "c", 1.2);
+		assert(h.commands.len() == 1);
+
+		usz after = 0;
+		for (int i = 0; i < 5; i++)
+		{
+			assert(h.undo(&t, &after));
+			assert(t.length() == 0);
+			assert(h.redo(&t, &after));
+			assert(t.slice(0, t.length(), tmem).compare_to("abc") == 0);
+			assert(after == 3);
+		}
+
+		t.destroy();
+		h.free();
+	};
+}
+
+fn void test_new_edit_truncates_redo()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "abc");
+		History h;
+		h.init(tmem);
+
+		usz cursor = h.insert(&t, 3, "d", 1.0);
+		assert(cursor == 4);
+		usz after = 0;
+		assert(h.undo(&t, &after));
+		assert(t.slice(0, t.length(), tmem).compare_to("abc") == 0);
+
+		h.break_coalescing();
+		cursor = h.insert(&t, 3, "e", 2.0);
+		assert(!h.can_redo());
+		assert(!h.redo(&t, &after));
+		assert(t.slice(0, t.length(), tmem).compare_to("abce") == 0);
+
+		t.destroy();
+		h.free();
+	};
+}
+
+fn void test_redo_backspace()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "abcd");
+		History h;
+		h.init(tmem);
+
+		usz cursor = h.backspace(&t, 4, 1.0);
+		assert(cursor == 3);
+		assert(t.slice(0, t.length(), tmem).compare_to("abc") == 0);
+
+		usz after = 0;
+		assert(h.undo(&t, &after));
+		assert(after == 4);
+		assert(t.slice(0, t.length(), tmem).compare_to("abcd") == 0);
+
+		assert(h.redo(&t, &after));
+		assert(after == 3);
+		assert(t.slice(0, t.length(), tmem).compare_to("abc") == 0);
+
+		t.destroy();
+		h.free();
+	};
+}

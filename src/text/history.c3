@@ -183,6 +183,37 @@ fn usz History.delete_forward(&self, PieceTable* table, usz cursor, double now)
 	return cursor;
 }
 
+fn bool History.can_undo(&self)
+{
+	return self.index > 0;
+}
+
+fn bool History.can_redo(&self)
+{
+	return self.index < (sz)self.commands.len();
+}
+
+fn bool History.redo(&self, PieceTable* table, usz* cursor)
+{
+	if (self.index >= (sz)self.commands.len()) return false;
+	EditCommand* cmd = self.commands.get_ref(self.index);
+
+	if (cmd.kind == CommandKind.INSERT)
+	{
+		(void)table.insert(cmd.offset, cmd.text);
+		*cursor = cmd.offset + cmd.text.len;
+	}
+	else
+	{
+		(void)table.delete(cmd.offset, cmd.text.len);
+		*cursor = cmd.offset;
+	}
+
+	self.index++;
+	self.last_time = -1000.0;
+	return true;
+}
+
 fn bool History.undo(&self, PieceTable* table, usz* cursor)
 {
 	if (self.index <= 0) return false;
