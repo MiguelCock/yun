@@ -15,6 +15,17 @@ const RLColor EDITOR_GUTTER_BG    = { 24, 26, 32, 255 };
 const RLColor EDITOR_GUTTER_TEXT  = { 120, 132, 150, 255 };
 const RLColor EDITOR_CURRENT_LINE = { 255, 255, 255, 18 };
 const RLColor EDITOR_SCROLLBAR    = { 90, 100, 120, 200 };
+const RLColor EDITOR_HANDLE       = { 120, 160, 240, 220 };
+
+fn float min_card_width(EditorMetrics metrics)
+{
+	return (80.0f + 6.0f) * metrics.char_width + metrics.padding_x * 2.0f;
+}
+
+fn float min_card_height(EditorMetrics metrics)
+{
+	return 30.0f * metrics.line_height + card::CARD_TITLE_HEIGHT + metrics.padding_y * 2.0f;
+}
 
 struct EditorMetrics
 {

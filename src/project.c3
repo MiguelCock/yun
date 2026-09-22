@@ -54,6 +54,9 @@ struct Project
 	double last_input_time;
 	double last_poll;
 	int pending_reload;
+	bool resizing;
+	int resize_card;
+	int resize_handle;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -66,6 +69,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.drag_cluster = false;
 	self.last_poll = 0.0;
 	self.pending_reload = -1;
+	self.resizing = false;
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
 	{
@@ -772,7 +776,15 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && canvas.pointer_over_ui)
 	{
 		int card_hit = self.hit_test(world);
-		if (card_hit >= 0 && self.cards[card_hit].marker_hit(world))
+		int handle   = card_hit >= 0 ? self.cards[card_hit].resize_handle_at(world, canvas.camera) : -1;
+		if (card_hit >= 0 && handle >= 0)
+		{
+			self.resizing = true;
+			self.resize_card = self.focus(card_hit);
+			self.resize_handle = handle;
+			self.drag_world = world;
+		}
+		else if (card_hit >= 0 && self.cards[card_hit].marker_hit(world))
 		{
 			self.cards[card_hit].open = !self.cards[card_hit].open;
 		}
@@ -840,8 +852,40 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 		}
 	}
 
+	if (self.resizing)
+	{
+		if (!rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
+		{
+			self.resizing = false;
+		}
+		else
+		{
+			RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
+			float min_w     = editor::min_card_width(metrics);
+			float min_h     = editor::min_card_height(metrics);
+			self.cards[self.resize_card].resize_from(self.resize_handle, delta, min_w, min_h);
+			self.drag_world = world;
+		}
+	}
+
+	if (!self.resizing && !rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
+	{
+		int hover  = self.hit_test(world);
+		int handle = hover >= 0 ? self.cards[hover].resize_handle_at(world, canvas.camera) : -1;
+		rl::set_mouse_cursor(handle < 0 ? rl::RLMouseCursor.DEFAULT : cursor_for_handle(handle));
+	}
+
 	self.poll_external(rl::get_time());
 	self.handle_keyboard(metrics);
+}
+
+fn RLMouseCursor cursor_for_handle(int handle)
+{
+	if (handle == 0 || handle == 4) return rl::RLMouseCursor.RESIZE_NWSE;
+	if (handle == 2 || handle == 6) return rl::RLMouseCursor.RESIZE_NESW;
+	if (handle == 1 || handle == 5) return rl::RLMouseCursor.RESIZE_NS;
+	if (handle == 3 || handle == 7) return rl::RLMouseCursor.RESIZE_EW;
+	return rl::RLMouseCursor.DEFAULT;
 }
 
 fn void Project.poll_external(&self, double now)
@@ -1082,5 +1126,6 @@ fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metric
 		}
 		float content_height = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
 		editor::draw_scrollbar(text, content_height, card.scroll, camera, editor::EDITOR_SCROLLBAR);
+		if (is_focused) card.draw_handles(camera, editor::EDITOR_HANDLE);
 	}
 }
