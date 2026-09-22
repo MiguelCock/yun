@@ -6,9 +6,13 @@ import std::math;
 import yun::card;
 import yun::text;
 
-const RLColor EDITOR_TEXT        = { 210, 214, 222, 255 };
-const RLColor EDITOR_PLACEHOLDER = { 70, 76, 90, 255 };
-const RLColor EDITOR_CARET       = { 230, 230, 235, 255 };
+const RLColor EDITOR_TEXT         = { 210, 214, 222, 255 };
+const RLColor EDITOR_PLACEHOLDER  = { 70, 76, 90, 255 };
+const RLColor EDITOR_CARET        = { 230, 230, 235, 255 };
+const RLColor EDITOR_GUTTER_BG    = { 24, 26, 32, 255 };
+const RLColor EDITOR_GUTTER_TEXT  = { 120, 132, 150, 255 };
+const RLColor EDITOR_CURRENT_LINE = { 255, 255, 255, 18 };
+const RLColor EDITOR_SCROLLBAR    = { 90, 100, 120, 200 };
 
 struct EditorMetrics
 {
@@ -393,5 +397,99 @@ fn void draw_caret(
 {
 	apply_scissor(area, camera);
 	rl::draw_rectangle_rec(caret_rect(table, area, scroll_y, metrics, cursor), color);
+	rl::end_scissor_mode();
+}
+fn Rect gutter_rect(Rect card_rect, EditorMetrics metrics, usz line_count)
+{
+	Rect inner = inner_rect(card_rect, metrics);
+	inner.width = gutter_width(line_count, metrics);
+	return inner;
+}
+
+fn Rect text_rect(Rect card_rect, EditorMetrics metrics, usz line_count)
+{
+	Rect inner   = inner_rect(card_rect, metrics);
+	float gutter = gutter_width(line_count, metrics);
+	inner.x += gutter;
+	inner.width -= gutter;
+	return inner;
+}
+
+fn Rect current_line_rect(PieceTable* table, Rect area, float scroll_y, EditorMetrics metrics, usz cursor)
+{
+	usz line = table.line_of(cursor);
+	float y  = area.y + (float)line * metrics.line_height - scroll_y;
+	return { .x = area.x, .y = y, .width = area.width, .height = metrics.line_height };
+}
+
+fn Rect scrollbar_thumb(Rect area, float content_height, float scroll_y)
+{
+	float width = 4.0f;
+	if (content_height <= area.height || content_height <= 0.0f)
+	{
+		return { .x = area.x + area.width - width, .y = area.y, .width = width, .height = area.height };
+	}
+
+	float thumb_height = area.height * (area.height / content_height);
+	if (thumb_height < 20.0f) thumb_height = 20.0f;
+
+	float max_scroll = content_height - area.height;
+	float t          = max_scroll > 0.0f ? scroll_y / max_scroll : 0.0f;
+	if (t < 0.0f) t = 0.0f;
+	if (t > 1.0f) t = 1.0f;
+
+	float y = area.y + t * (area.height - thumb_height);
+	return { .x = area.x + area.width - width, .y = y, .width = width, .height = thumb_height };
+}
+
+fn void draw_current_line(
+	PieceTable* table,
+	Rect area,
+	float scroll_y,
+	EditorMetrics metrics,
+	RLCamera2D camera,
+	usz cursor,
+	RLColor color
+)
+{
+	apply_scissor(area, camera);
+	rl::draw_rectangle_rec(current_line_rect(table, area, scroll_y, metrics, cursor), color);
+	rl::end_scissor_mode();
+}
+
+fn void draw_gutter(
+	PieceTable* table,
+	Rect area,
+	float scroll_y,
+	EditorMetrics metrics,
+	RLCamera2D camera,
+	RLFont font,
+	float font_size,
+	RLColor text_color,
+	RLColor bg_color
+)
+{
+	apply_scissor(area, camera);
+	rl::draw_rectangle_rec(area, bg_color);
+	@pool()
+	{
+		VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
+		for (usz line = range.first; line < range.last; line++)
+		{
+			String label   = string::format(tmem, "%d", (int)(line + 1));
+			RLVector2 size = rl::measure_text_ex(font, (ZString)label.ptr, font_size, 0.0f);
+			float x        = area.x + area.width - metrics.padding_x - size[0];
+			float y        = area.y + (float)line * metrics.line_height - scroll_y;
+			rl::draw_text_ex(font, (ZString)label.ptr, { x, y }, font_size, 0.0f, text_color);
+		}
+	};
+	rl::end_scissor_mode();
+}
+
+fn void draw_scrollbar(Rect area, float content_height, float scroll_y, RLCamera2D camera, RLColor color)
+{
+	if (content_height <= area.height) return;
+	apply_scissor(area, camera);
+	rl::draw_rectangle_rec(scrollbar_thumb(area, content_height, scroll_y), color);
 	rl::end_scissor_mode();
 }
