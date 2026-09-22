@@ -222,14 +222,14 @@ fn bool file_changed(FileCard* card)
 	return (long)mtime != card.mtime || size != card.size;
 }
 
-fn bool unload_buffer(FileCard* card, Allocator allocator)
+fn void destroy_buffer(FileCard* card, Allocator allocator)
 {
-	if (!card.buffer) return false;
-	if (card.dirty) return false;
-
-	card.buffer.destroy();
-	alloc::free(allocator, card.buffer);
-	card.buffer = null;
+	if (card.buffer)
+	{
+		card.buffer.destroy();
+		alloc::free(allocator, card.buffer);
+		card.buffer = null;
+	}
 
 	if (card.history)
 	{
@@ -242,6 +242,13 @@ fn bool unload_buffer(FileCard* card, Allocator allocator)
 	card.preferred_column = 0;
 	card.scroll = 0.0f;
 	card.dirty = false;
+}
+
+fn bool unload_buffer(FileCard* card, Allocator allocator)
+{
+	if (!card.buffer) return false;
+	if (card.dirty) return false;
+	destroy_buffer(card, allocator);
 	return true;
 }
 

@@ -488,3 +488,30 @@ fn void test_save_buffer()
 		(void)path::rmtree(dir);
 	};
 }
+fn void test_destroy_buffer()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_destroy_buffer");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? f = dir.append(tmem, "d.txt");
+		if (catch excuse = f) return;
+		if (catch excuse = file::save(f, "abc")) return;
+
+		FileCard card = { .path = (Path)((String)f).copy(tmem) };
+		ensure_buffer(&card, tmem);
+		card.dirty = true;
+		assert(card.buffer != null && card.history != null);
+
+		destroy_buffer(&card, tmem);
+		assert(card.buffer == null && card.history == null);
+		assert(card.dirty == false && card.cursor == 0 && card.scroll == 0.0f);
+
+		(void)path::rmtree(dir);
+	};
+}

@@ -7,6 +7,7 @@ import yun::browser;
 import yun::canvas;
 import yun::commands;
 import yun::config;
+import yun::context;
 import yun::editor;
 import yun::keymap;
 import yun::menu;
@@ -220,6 +221,9 @@ fn int main(String[] args)
 	menu::Menu close_menu;
 	close_menu.init(mem);
 
+	menu::Menu delete_menu;
+	delete_menu.init(mem);
+
 	prompt::Prompt name_prompt;
 	name_prompt.init();
 
@@ -236,6 +240,14 @@ fn int main(String[] args)
 	int pending_kind        = 0;
 	int pending_parent      = project::ROOT_FOLDER;
 	RLVector2 pending_world = { 0.0f, 0.0f };
+
+	context::ContextItem[context::CONTEXT_MAX_ITEMS] context_items;
+	usz context_item_count  =  0;
+	int context_card        = -1;
+	int context_parent      =  project::ROOT_FOLDER;
+	RLVector2 context_world =  { 0.0f, 0.0f };
+	int pending_rename_card = -1;
+	int pending_delete_card = -1;
 
 	bool project_open = false;
 	if (args.len > 1)
@@ -303,6 +315,17 @@ fn int main(String[] args)
 				{
 					notifier.push("Invalid name");
 				}
+				else if (pending_kind == 2)
+				{
+					if (project.rename_card(pending_rename_card, name))
+					{
+						name_prompt.close();
+					}
+					else
+					{
+						notifier.push("Could not rename");
+					}
+				}
 				else
 				{
 					int result = pending_kind == 0 ? project.create_file(pending_parent, name, pending_world)
@@ -331,6 +354,25 @@ fn int main(String[] args)
 				project.pending_close = -1;
 			}
 		}
+		else if (delete_menu.open)
+		{
+			int chosen = delete_menu.update();
+			if (chosen >= 0)
+			{
+				if (chosen == 0 && pending_delete_card >= 0 && pending_delete_card < (int)project.cards.len())
+				{
+					if (project.delete_card_file(pending_delete_card))
+					{
+						notifier.push("Deleted");
+					}
+					else
+					{
+						notifier.push("Could not delete");
+					}
+				}
+				pending_delete_card = -1;
+			}
+		}
 		else if (reload_menu.open)
 		{
 			int chosen = reload_menu.update();
@@ -354,10 +396,85 @@ fn int main(String[] args)
 		else if (context_menu.open)
 		{
 			int chosen = context_menu.update();
-			if (chosen >= 0)
+			if (chosen >= 0 && chosen < (int)context_item_count)
 			{
-				pending_kind = chosen;
-				name_prompt.open_with(chosen == 0 ? "New file" : "New folder", "");
+				context::ContextAction action = context_items[chosen].action;
+				switch (action)
+				{
+					case context::ContextAction.NEW_FILE:
+					case context::ContextAction.NEW_FOLDER:
+
+						{
+							pending_kind = action == context::ContextAction.NEW_FILE ? 0 : 1;
+							pending_parent = context_parent;
+							pending_world = context_world;
+							name_prompt.open_with(pending_kind == 0 ? "New file" : "New folder", "");
+							break;
+						}
+					case context::ContextAction.OPEN_PROJECT:
+						run_command(commands::CommandId.OPEN, &app);
+						break;
+					case context::ContextAction.TOGGLE_CARD:
+
+						{
+							if (context_card >= 0 && context_card < (int)project.cards.len())
+							{
+								project.cards[context_card].open = !project.cards[context_card].open;
+							}
+							break;
+						}
+					case context::ContextAction.RENAME_CARD:
+
+						{
+							if (context_card >= 0 && context_card < (int)project.cards.len())
+							{
+								pending_rename_card = context_card;
+								pending_kind = 2;
+								name_prompt.open_with("Rename", project.cards[context_card].name);
+							}
+							break;
+						}
+					case context::ContextAction.DUPLICATE_CARD:
+
+						{
+							if (project.duplicate_card(context_card, context_world) < 0)
+							{
+								notifier.push("Could not duplicate");
+							}
+							else
+							{
+								notifier.push("Duplicated");
+							}
+							break;
+						}
+					case context::ContextAction.COPY_PATH:
+
+						{
+							if (context_card >= 0 && context_card < (int)project.cards.len())
+							{
+								@pool()
+								{
+									rl::set_clipboard_text(((String)project.cards[context_card].path).zstr_tcopy());
+								};
+								notifier.push("Path copied");
+							}
+							break;
+						}
+					case context::ContextAction.DELETE_CARD:
+
+						{
+							if (context_card >= 0 && context_card < (int)project.cards.len())
+							{
+								pending_delete_card = context_card;
+								RLVector2 center = {
+									(float)rl::get_screen_width() / 2.0f,
+									(float)rl::get_screen_height() / 2.0f,
+								};
+								delete_menu.open_at(center, { "Delete", "Cancel" });
+							}
+							break;
+						}
+				}
 			}
 		}
 		else
@@ -380,11 +497,42 @@ fn int main(String[] args)
 
 			if (!over_top && rl::is_mouse_button_pressed(
 				rl::RLMouseButton.RIGHT
-			) && project.hit_test(world) < 0 && !minimap::contains_screen(&project, &canvas, mouse))
+			) && !minimap::contains_screen(&project, &canvas, mouse))
 			{
-				pending_parent = project.folder_at(world);
-				pending_world = world;
-				context_menu.open_at(mouse, { "New file", "New folder" });
+				int card   = project.hit_test(world);
+				int folder = project.cluster_hit(world);
+				context_card = card;
+				context_parent = folder;
+				context_world = world;
+
+				context::ContextTarget target = context::ContextTarget.CANVAS;
+				if (card >= 0)
+				{
+					target = context::ContextTarget.CARD;
+				}
+				else if (folder >= 0)
+				{
+					target = context::ContextTarget.CLUSTER;
+				}
+
+				bool card_open    = card >= 0 && project.cards[card].open;
+				bool card_missing = card >= 0 && project.cards[card].missing;
+				context_item_count = context::build(
+					target,
+					card_open,
+					card_missing,
+					project_open,
+					context_items[0:context::CONTEXT_MAX_ITEMS]
+				);
+
+				String[context::CONTEXT_MAX_ITEMS] labels;
+				bool[context::CONTEXT_MAX_ITEMS] enabled;
+				for (usz i = 0; i < context_item_count; i++)
+				{
+					labels[i] = context_items[i].label;
+					enabled[i] = context_items[i].enabled;
+				}
+				context_menu.open_with(mouse, labels[0:context_item_count], enabled[0:context_item_count]);
 			}
 
 			if (!over_top && rl::is_file_dropped())
@@ -448,6 +596,7 @@ fn int main(String[] args)
 			bar.draw(project_open, has_focused_buffer(&project), project_name, canvas.camera.zoom, font);
 			browser.draw();
 			close_menu.draw();
+			delete_menu.draw();
 			reload_menu.draw();
 			context_menu.draw();
 			name_prompt.draw();
