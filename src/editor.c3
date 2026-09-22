@@ -245,6 +245,15 @@ fn bool unload_buffer(FileCard* card, Allocator allocator)
 	return true;
 }
 
+fn bool save_buffer(FileCard* card, Allocator allocator)
+{
+	if (!card.buffer) return false;
+	if (!card.buffer.save_to_file((String)card.path, allocator)) return false;
+	card.dirty = false;
+	stamp_file(card);
+	return true;
+}
+
 fn void reload_buffer(FileCard* card, Allocator allocator)
 {
 	if (!card.buffer) return;

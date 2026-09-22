@@ -455,3 +455,36 @@ fn void test_unload_buffer()
 		(void)path::rmtree(dir);
 	};
 }
+fn void test_save_buffer()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_save_buffer");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? f = dir.append(tmem, "s.txt");
+		if (catch excuse = f) return;
+		if (catch excuse = file::save(f, "one")) return;
+
+		FileCard card = { .path = (Path)((String)f).copy(tmem) };
+		ensure_buffer(&card, tmem);
+		card.buffer.insert(card.buffer.length(), " two");
+		card.dirty = true;
+		assert(save_buffer(&card, tmem));
+		assert(card.dirty == false);
+
+		PieceTable check;
+		assert(check.init_from_file(tmem, (String)f));
+		assert(check.slice(0, check.length(), tmem).compare_to("one two") == 0);
+		check.destroy();
+
+		FileCard empty;
+		assert(!save_buffer(&empty, tmem));
+
+		(void)path::rmtree(dir);
+	};
+}
