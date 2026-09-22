@@ -161,10 +161,18 @@ fn Rect inner_rect(Rect card_rect, EditorMetrics metrics)
 
 fn void ensure_buffer(FileCard* card, Allocator allocator)
 {
-	if (card.buffer) return;
-	PieceTable* buffer = alloc::new(allocator, PieceTable);
-	(void)buffer.init_from_file(allocator, (String)card.path);
-	card.buffer = buffer;
+	if (!card.buffer)
+	{
+		PieceTable* buffer = alloc::new(allocator, PieceTable);
+		(void)buffer.init_from_file(allocator, (String)card.path);
+		card.buffer = buffer;
+	}
+	if (!card.history)
+	{
+		History* history = alloc::new(allocator, History);
+		history.init(allocator);
+		card.history = history;
+	}
 }
 
 fn Rect world_rect_to_screen(Rect area, RLCamera2D camera)

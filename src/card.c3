@@ -23,6 +23,7 @@ struct FileCard
 	bool dirty;
 	int folder;
 	PieceTable* buffer;
+	History* history;
 	float scroll;
 	usz cursor;
 	usz preferred_column;
