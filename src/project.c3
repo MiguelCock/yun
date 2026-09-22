@@ -12,6 +12,7 @@ import yun::canvas;
 import yun::card;
 import yun::editor;
 import yun::findbar;
+import yun::highlight;
 import yun::text;
 
 const int ROOT_FOLDER               = -1;
@@ -1272,6 +1273,7 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 	if (changed)
 	{
 		card.dirty = true;
+		if (card.highlight) card.highlight.mark_dirty();
 		self.last_input_time = rl::get_time();
 		if (out_changed) *out_changed = true;
 	}
@@ -1359,7 +1361,17 @@ fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metric
 			editor::EDITOR_GUTTER_TEXT,
 			editor::EDITOR_GUTTER_BG
 		);
-		editor::draw_text(card.buffer, text, card.scroll, metrics, camera, font, 16.0f, editor::EDITOR_TEXT);
+		editor::draw_text_highlighted(
+			card.highlight,
+			card.buffer,
+			text,
+			card.scroll,
+			metrics,
+			camera,
+			font,
+			16.0f,
+			editor::EDITOR_TEXT
+		);
 		if (is_focused && caret_on)
 		{
 			editor::draw_caret(card.buffer, text, card.scroll, metrics, camera, card.cursor, editor::EDITOR_CARET);

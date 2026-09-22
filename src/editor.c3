@@ -2,10 +2,13 @@ module yun::editor;
 
 import libc;
 import raylib6::rl;
+import std::collections::list;
+import std::core::dstring;
 import std::core::mem::alloc;
 import std::io::os;
 import std::math;
 import yun::card;
+import yun::highlight;
 import yun::text;
 
 const RLColor EDITOR_TEXT          = { 210, 214, 222, 255 };
@@ -193,6 +196,10 @@ fn void ensure_buffer(FileCard* card, Allocator allocator)
 		history.init(allocator);
 		card.history = history;
 	}
+	if (!card.highlight && card.buffer)
+	{
+		card.highlight = highlight::create(allocator, card.buffer, (String)card.path);
+	}
 	stamp_file(card);
 }
 
@@ -240,6 +247,12 @@ fn void destroy_buffer(FileCard* card, Allocator allocator)
 		card.history = null;
 	}
 
+	if (card.highlight)
+	{
+		highlight::destroy(card.highlight, allocator);
+		card.highlight = null;
+	}
+
 	card.cursor = 0;
 	card.preferred_column = 0;
 	card.scroll = 0.0f;
@@ -269,6 +282,7 @@ fn void reload_buffer(FileCard* card, Allocator allocator)
 	card.buffer.destroy();
 	(void)card.buffer.init_from_file(allocator, (String)card.path);
 	if (card.history) card.history.reset();
+	if (card.highlight) card.highlight.mark_dirty();
 	card.cursor = 0;
 	card.preferred_column = 0;
 	card.scroll = 0.0f;
@@ -319,6 +333,77 @@ fn void draw_text(
 			float y = area.y + (float)line * metrics.line_height - scroll_y;
 			rl::draw_text_ex(font, (ZString)text.ptr, { area.x, y }, font_size, 0.0f, color);
 		}
+	};
+	rl::end_scissor_mode();
+}
+
+fn void draw_text_highlighted(
+	highlight::Highlighter* highlighter,
+	PieceTable* table,
+	Rect area,
+	float scroll_y,
+	EditorMetrics metrics,
+	RLCamera2D camera,
+	RLFont font,
+	float font_size,
+	RLColor base
+)
+{
+	if (!highlighter || table.length() == 0 || metrics.line_height <= 0.0f)
+	{
+		draw_text(table, area, scroll_y, metrics, camera, font, font_size, base);
+		return;
+	}
+
+	highlighter.ensure_parsed();
+	apply_scissor(area, camera);
+	@pool()
+	{
+		VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
+		List{highlight::Span} runs;
+		runs.init(tmem);
+		for (usz line = range.first; line < range.last; line++)
+		{
+			usz line_start = table.line_start(line);
+			usz len        = line_length_bytes(table, line);
+			if (len == 0) continue;
+
+			String text = table.slice(line_start, len, tmem);
+			highlighter.runs_for_line(line_start, line_start + len, &runs);
+
+			DString buffer;
+			buffer.init(tmem, (sz)(len + 1));
+			buffer.append_string(text);
+			buffer.append_char(0);
+			char* raw = buffer.str_view().ptr;
+
+			float y = area.y + (float)line * metrics.line_height - scroll_y;
+			usz pos = 0;
+			usz col = 0;
+			foreach (highlight::Span run : runs)
+			{
+				usz start = run.start - line_start;
+				usz end   = run.end - line_start;
+				while (pos < start)
+				{
+					if (((int)text[pos] & 0xC0) != 0x80) col++;
+					pos++;
+				}
+				char saved = raw[end];
+				raw[end] = 0;
+				rl::draw_text_ex(
+					font,
+					(ZString)(raw + start),
+					{ area.x + (float)col * metrics.char_width, y },
+					font_size,
+					0.0f,
+					highlight::role_color(run.role)
+				);
+				raw[end] = saved;
+			}
+			buffer.free();
+		}
+		runs.free();
 	};
 	rl::end_scissor_mode();
 }
