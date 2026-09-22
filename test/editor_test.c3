@@ -305,3 +305,67 @@ fn void test_scrollbar_thumb()
 	Rect bottom = scrollbar_thumb(area, 400.0f, 300.0f);
 	assert(bottom.y == 75.0f);
 }
+fn void test_file_changed()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_ext_test");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? f = dir.append(tmem, "f.txt");
+		if (catch excuse = f) return;
+		if (catch excuse = file::save(f, "abc")) return;
+
+		FileCard card = { .path = (Path)((String)f).copy(tmem) };
+		stamp_file(&card);
+		assert(!card.missing);
+		assert(!file_changed(&card));
+
+		if (catch excuse = file::save(f, "abcdef")) return;
+		assert(file_changed(&card));
+
+		stamp_file(&card);
+		assert(!file_changed(&card));
+
+		(void)path::rmtree(dir);
+	};
+}
+
+fn void test_reload_buffer()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_reload_test");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? f = dir.append(tmem, "g.txt");
+		if (catch excuse = f) return;
+		if (catch excuse = file::save(f, "abc")) return;
+
+		FileCard card = { .path = (Path)((String)f).copy(tmem) };
+		ensure_buffer(&card, tmem);
+		assert(card.buffer.length() == 3);
+
+		usz cursor = card.history.insert(card.buffer, 3, "X", 1.0);
+		assert(cursor == 4 && card.buffer.length() == 4);
+		card.dirty = true;
+		card.cursor = 4;
+
+		reload_buffer(&card, tmem);
+		assert(card.buffer.length() == 3);
+		assert(line_text(card.buffer, 0, tmem).compare_to("abc") == 0);
+		assert(card.history.commands.len() == 0);
+		assert(!card.dirty);
+		assert(card.cursor == 0);
+
+		(void)path::rmtree(dir);
+	};
+}
