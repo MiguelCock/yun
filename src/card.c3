@@ -14,6 +14,7 @@ const RLColor CARD_TITLE      = { 44, 44, 54, 255 };
 const RLColor CARD_BORDER     = { 70, 70, 84, 255 };
 const RLColor CARD_FOCUS      = { 120, 160, 240, 255 };
 const RLColor CARD_TEXT       = { 220, 220, 228, 255 };
+const RLColor CARD_DIRTY      = { 240, 180, 90, 255 };
 
 struct FileCard
 {
@@ -45,6 +46,13 @@ fn bool FileCard.marker_hit(&self, RLVector2 world)
 	Rect r  = self.effective_rect();
 	float x = r.x + r.width - 24.0f;
 	return world[0] >= x && world[0] <= r.x + r.width && world[1] >= r.y && world[1] <= r.y + CARD_TITLE_HEIGHT;
+}
+
+fn bool FileCard.close_marker_hit(&self, RLVector2 world)
+{
+	Rect r  = self.effective_rect();
+	float x = r.x + r.width - 44.0f;
+	return world[0] >= x && world[0] <= r.x + r.width - 24.0f && world[1] >= r.y && world[1] <= r.y + CARD_TITLE_HEIGHT;
 }
 
 fn RLVector2 FileCard.center(&self)
@@ -84,6 +92,8 @@ fn void FileCard.draw(&self, bool focused)
 		rl::draw_rectangle_lines_ex(r, 1.0f, CARD_BORDER);
 	}
 	rl::draw_text((ZString)self.name.ptr, (int)(r.x + 10.0f), (int)(r.y + 7.0f), 16, CARD_TEXT);
+	if (self.dirty) rl::draw_circle((int)(r.x + r.width - 52.0f), (int)(r.y + 14.0f), 3.0f, CARD_DIRTY);
+	if (self.buffer) rl::draw_text("x", (int)(r.x + r.width - 40.0f), (int)(r.y + 7.0f), 16, CARD_TEXT);
 	rl::draw_text(self.open ? "-" : "+", (int)(r.x + r.width - 18.0f), (int)(r.y + 7.0f), 16, CARD_TEXT);
 }
 fn void FileCard.handle_points(&self, RLVector2[8]* points)

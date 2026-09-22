@@ -54,6 +54,7 @@ struct Project
 	double last_input_time;
 	double last_poll;
 	int pending_reload;
+	int pending_close;
 	bool resizing;
 	int resize_card;
 	int resize_handle;
@@ -69,6 +70,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.drag_cluster = false;
 	self.last_poll = 0.0;
 	self.pending_reload = -1;
+	self.pending_close = -1;
 	self.resizing = false;
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
@@ -783,6 +785,21 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 			self.resize_card = self.focus(card_hit);
 			self.resize_handle = handle;
 			self.drag_world = world;
+		}
+		else if (card_hit >= 0 && self.cards[card_hit].close_marker_hit(world))
+		{
+			FileCard* card = &self.cards[card_hit];
+			if (card.buffer)
+			{
+				if (card.dirty)
+				{
+					self.pending_close = self.focus(card_hit);
+				}
+				else
+				{
+					(void)editor::unload_buffer(card, self.allocator);
+				}
+			}
 		}
 		else if (card_hit >= 0 && self.cards[card_hit].marker_hit(world))
 		{
