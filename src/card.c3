@@ -8,6 +8,7 @@ import yun::text;
 const float CARD_WIDTH        = 240.0f;
 const float CARD_HEIGHT       = 160.0f;
 const float CARD_TITLE_HEIGHT = 28.0f;
+const float HANDLE_PX         = 10.0f;
 const RLColor CARD_BODY       = { 32, 32, 38, 255 };
 const RLColor CARD_TITLE      = { 44, 44, 54, 255 };
 const RLColor CARD_BORDER     = { 70, 70, 84, 255 };
@@ -84,4 +85,95 @@ fn void FileCard.draw(&self, bool focused)
 	}
 	rl::draw_text((ZString)self.name.ptr, (int)(r.x + 10.0f), (int)(r.y + 7.0f), 16, CARD_TEXT);
 	rl::draw_text(self.open ? "-" : "+", (int)(r.x + r.width - 18.0f), (int)(r.y + 7.0f), 16, CARD_TEXT);
+}
+fn void FileCard.handle_points(&self, RLVector2[8]* points)
+{
+	Rect r = self.rect;
+	(*points)[0] = { r.x, r.y };
+	(*points)[1] = { r.x + r.width / 2.0f, r.y };
+	(*points)[2] = { r.x + r.width, r.y };
+	(*points)[3] = { r.x + r.width, r.y + r.height / 2.0f };
+	(*points)[4] = { r.x + r.width, r.y + r.height };
+	(*points)[5] = { r.x + r.width / 2.0f, r.y + r.height };
+	(*points)[6] = { r.x, r.y + r.height };
+	(*points)[7] = { r.x, r.y + r.height / 2.0f };
+}
+
+fn int FileCard.resize_handle_at(&self, RLVector2 world, RLCamera2D camera)
+{
+	if (!self.open) return -1;
+	RLVector2[8] points;
+	self.handle_points(&points);
+	float half = (HANDLE_PX / camera.zoom) / 2.0f;
+	for (int i = 0; i < 8; i++)
+	{
+		if (world[0] >= points[i][0] - half && world[0] <= points[i][0] + half && world[1] >= points[i][1] - half
+			&& world[1] <= points[i][1] + half)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+fn void FileCard.resize_from(&self, int handle, RLVector2 delta, float min_w, float min_h)
+{
+	Rect r = self.rect;
+
+	if (handle == 0 || handle == 6 || handle == 7)
+	{
+		float new_width = r.width - delta[0];
+		float new_x     = r.x + delta[0];
+		if (new_width < min_w)
+		{
+			new_x = r.x + r.width - min_w;
+			new_width = min_w;
+		}
+		r.x = new_x;
+		r.width = new_width;
+	}
+	if (handle == 2 || handle == 3 || handle == 4)
+	{
+		float new_width = r.width + delta[0];
+		if (new_width < min_w) new_width = min_w;
+		r.width = new_width;
+	}
+	if (handle == 0 || handle == 1 || handle == 2)
+	{
+		float new_height = r.height - delta[1];
+		float new_y      = r.y + delta[1];
+		if (new_height < min_h)
+		{
+			new_y = r.y + r.height - min_h;
+			new_height = min_h;
+		}
+		r.y = new_y;
+		r.height = new_height;
+	}
+	if (handle == 4 || handle == 5 || handle == 6)
+	{
+		float new_height = r.height + delta[1];
+		if (new_height < min_h) new_height = min_h;
+		r.height = new_height;
+	}
+
+	self.rect = r;
+}
+
+fn void FileCard.draw_handles(&self, RLCamera2D camera, RLColor color)
+{
+	if (!self.open) return;
+	RLVector2[8] points;
+	self.handle_points(&points);
+	float half = (HANDLE_PX / camera.zoom) / 2.0f;
+	for (int i = 0; i < 8; i++)
+	{
+		Rect square = {
+			.x = points[i][0] - half,
+			.y = points[i][1] - half,
+			.width = half * 2.0f,
+			.height = half * 2.0f
+		};
+		rl::draw_rectangle_rec(square, color);
+	}
 }

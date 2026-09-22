@@ -369,3 +369,45 @@ fn void test_reload_buffer()
 		(void)path::rmtree(dir);
 	};
 }
+fn void test_min_card_size()
+{
+	EditorMetrics metrics = { .char_width = 8.0f, .line_height = 16.0f, .padding_x = 8.0f, .padding_y = 6.0f };
+	assert(min_card_width(metrics) == 704.0f);
+	assert(min_card_height(metrics) == 520.0f);
+}
+
+fn void test_resize_handle_at()
+{
+	RLCamera2D camera = { .offset = { 0.0f, 0.0f }, .target = { 0.0f, 0.0f }, .rotation = 0.0f, .zoom = 1.0f };
+	FileCard card     = { .rect = { .x = 0.0f, .y = 0.0f, .width = 200.0f, .height = 100.0f }, .open = true };
+	assert(card.resize_handle_at({ 0.0f, 0.0f }, camera) == 0);
+	assert(card.resize_handle_at({ 200.0f, 50.0f }, camera) == 3);
+	assert(card.resize_handle_at({ 100.0f, 100.0f }, camera) == 5);
+	assert(card.resize_handle_at({ 100.0f, 50.0f }, camera) == -1);
+	assert(card.resize_handle_at({ 300.0f, 300.0f }, camera) == -1);
+
+	card.open = false;
+	assert(card.resize_handle_at({ 0.0f, 0.0f }, camera) == -1);
+}
+
+fn void test_resize_from()
+{
+	FileCard card = { .rect = { .x = 100.0f, .y = 100.0f, .width = 400.0f, .height = 300.0f }, .open = true };
+	float min_w   = 200.0f;
+	float min_h   = 150.0f;
+
+	card.resize_from(3, { 50.0f, 0.0f }, min_w, min_h);
+	assert(card.rect.x == 100.0f && card.rect.width == 450.0f);
+
+	card.resize_from(7, { 50.0f, 0.0f }, min_w, min_h);
+	assert(card.rect.x == 150.0f && card.rect.width == 400.0f);
+
+	card.resize_from(5, { 0.0f, 50.0f }, min_w, min_h);
+	assert(card.rect.y == 100.0f && card.rect.height == 350.0f);
+
+	card.resize_from(1, { 0.0f, 50.0f }, min_w, min_h);
+	assert(card.rect.y == 150.0f && card.rect.height == 300.0f);
+
+	card.resize_from(7, { 10000.0f, 0.0f }, min_w, min_h);
+	assert(card.rect.width == min_w);
+}
