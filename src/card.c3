@@ -24,6 +24,8 @@ struct FileCard
 	int folder;
 	PieceTable* buffer;
 	float scroll;
+	usz cursor;
+	usz preferred_column;
 }
 
 fn Rect FileCard.effective_rect(&self)

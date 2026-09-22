@@ -81,6 +81,102 @@ fn void test_placeholder_bar_width()
 	assert(placeholder_bar_width(0, 8.0f, 8.0f) == 8.0f);
 }
 
+fn void test_cursor_navigation()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "ab\ncde");
+		assert(cursor_prev(&t, 0) == 0);
+		assert(cursor_next(&t, 0) == 1);
+		assert(cursor_next(&t, 2) == 3);
+		assert(cursor_home(&t, 5) == 3);
+		assert(cursor_end(&t, 0) == 2);
+		assert(cursor_end(&t, 3) == 6);
+
+		usz column = 0;
+		assert(cursor_up(&t, 5, 5, &column) == 2);
+		assert(column == 2);
+		assert(cursor_down(&t, 0, 0, &column) == 3);
+		assert(column == 0);
+		t.destroy();
+	};
+}
+
+fn void test_insert_backspace_delete()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "ab\ncde");
+
+		usz cursor = insert_text(&t, 2, "X");
+		assert(cursor == 3);
+		assert(t.slice(0, t.length(), tmem).compare_to("abX\ncde") == 0);
+
+		cursor = backspace(&t, cursor);
+		assert(cursor == 2);
+		assert(t.slice(0, t.length(), tmem).compare_to("ab\ncde") == 0);
+
+		cursor = delete_forward(&t, 2);
+		assert(cursor == 2);
+		assert(t.slice(0, t.length(), tmem).compare_to("abcde") == 0);
+		t.destroy();
+	};
+}
+
+fn void test_utf8_and_cursor()
+{
+	@pool()
+	{
+		char[4] encoded;
+		int count = utf8_encode(0xE9, &encoded[0]);
+		assert(count == 2);
+		assert((int)encoded[0] == 0xC3 && (int)encoded[1] == 0xA9);
+
+		PieceTable t;
+		t.init_from_buffer(tmem, "aé b");
+		assert(t.length() == 5);
+		usz cursor = insert_text(&t, 3, (String)encoded[0:count]);
+		assert(t.length() == 7);
+		cursor = backspace(&t, cursor);
+		assert(t.length() == 5);
+		assert(t.slice(0, t.length(), tmem).compare_to("aé b") == 0);
+		t.destroy();
+	};
+}
+
+fn void test_caret_rect_and_scroll()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "ab\ncdef");
+		EditorMetrics metrics = { .char_width = 8.0f, .line_height = 16.0f, .padding_x = 0.0f, .padding_y = 0.0f };
+		Rect area             = { .x = 10.0f, .y = 20.0f, .width = 100.0f, .height = 50.0f };
+
+		usz cursor = 5;
+		Rect caret = caret_rect(&t, area, 0.0f, metrics, cursor);
+		assert(caret.x == 26.0f && caret.y == 36.0f);
+		assert(caret.height == 16.0f);
+		t.destroy();
+	};
+}
+
+fn void test_scroll_to_reveal()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10");
+		EditorMetrics metrics = { .char_width = 8.0f, .line_height = 16.0f, .padding_x = 0.0f, .padding_y = 0.0f };
+		usz cursor            = t.line_start(10);
+		assert(scroll_to_reveal(&t, metrics, 100.0f, cursor, 0.0f) == 76.0f);
+		assert(scroll_to_reveal(&t, metrics, 100.0f, 0, 100.0f) == 0.0f);
+		t.destroy();
+	};
+}
+
 fn void test_ensure_buffer()
 {
 	@pool()
