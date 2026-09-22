@@ -1,7 +1,9 @@
 module yun::editor;
 
+import libc;
 import raylib6::rl;
 import std::core::mem::alloc;
+import std::io::os;
 import std::math;
 import yun::card;
 import yun::text;
@@ -177,6 +179,48 @@ fn void ensure_buffer(FileCard* card, Allocator allocator)
 		history.init(allocator);
 		card.history = history;
 	}
+	stamp_file(card);
+}
+
+fn void stamp_file(FileCard* card)
+{
+	Time_t? mtime = os::native_get_modified_time((String)card.path);
+	long? size    = os::native_file_size((String)card.path);
+	if (catch excuse = mtime)
+	{
+		card.missing = true;
+		return;
+	}
+	if (catch excuse = size)
+	{
+		card.missing = true;
+		return;
+	}
+	card.mtime = (long)mtime;
+	card.size = size;
+	card.missing = false;
+}
+
+fn bool file_changed(FileCard* card)
+{
+	Time_t? mtime = os::native_get_modified_time((String)card.path);
+	long? size    = os::native_file_size((String)card.path);
+	if (catch excuse = mtime) return true;
+	if (catch excuse = size) return true;
+	return (long)mtime != card.mtime || size != card.size;
+}
+
+fn void reload_buffer(FileCard* card, Allocator allocator)
+{
+	if (!card.buffer) return;
+	card.buffer.destroy();
+	(void)card.buffer.init_from_file(allocator, (String)card.path);
+	if (card.history) card.history.reset();
+	card.cursor = 0;
+	card.preferred_column = 0;
+	card.scroll = 0.0f;
+	card.dirty = false;
+	stamp_file(card);
 }
 
 fn Rect world_rect_to_screen(Rect area, RLCamera2D camera)

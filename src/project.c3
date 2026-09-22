@@ -12,6 +12,7 @@ import yun::editor;
 import yun::text;
 
 const int ROOT_FOLDER               = -1;
+const double POLL_SECONDS           =  1.0;
 const float CLUSTER_PADDING         =  24.0f;
 const float CLUSTER_TITLE_HEIGHT    =  26.0f;
 const float CLUSTER_COLLAPSED_WIDTH =  240.0f;
@@ -51,6 +52,8 @@ struct Project
 	bool cluster_moved;
 	RLVector2 drag_world;
 	double last_input_time;
+	double last_poll;
+	int pending_reload;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -61,6 +64,8 @@ fn void Project.init(&self, Allocator allocator)
 	self.focused = -1;
 	self.drag_card = false;
 	self.drag_cluster = false;
+	self.last_poll = 0.0;
+	self.pending_reload = -1;
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
 	{
@@ -835,7 +840,25 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 		}
 	}
 
+	self.poll_external(rl::get_time());
 	self.handle_keyboard(metrics);
+}
+
+fn void Project.poll_external(&self, double now)
+{
+	if (self.pending_reload >= 0) return;
+	if (now - self.last_poll < POLL_SECONDS) return;
+	self.last_poll = now;
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		FileCard* card = &self.cards[i];
+		if (!card.buffer || card.missing) continue;
+		if (editor::file_changed(card))
+		{
+			self.pending_reload = (int)i;
+			return;
+		}
+	}
 }
 
 fn bool ctrl_down()

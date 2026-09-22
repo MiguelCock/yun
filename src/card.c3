@@ -27,6 +27,9 @@ struct FileCard
 	float scroll;
 	usz cursor;
 	usz preferred_column;
+	long mtime;
+	long size;
+	bool missing;
 }
 
 fn Rect FileCard.effective_rect(&self)
