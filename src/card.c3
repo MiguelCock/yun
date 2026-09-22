@@ -3,6 +3,7 @@ module yun::card;
 import raylib6::rl;
 import std::io::path;
 import std::math;
+import yun::highlight;
 import yun::text;
 
 const float CARD_WIDTH        = 240.0f;
@@ -26,6 +27,7 @@ struct FileCard
 	int folder;
 	PieceTable* buffer;
 	History* history;
+	highlight::Highlighter* highlight;
 	float scroll;
 	usz cursor;
 	usz preferred_column;
