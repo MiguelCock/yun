@@ -1,0 +1,14 @@
+{
+  "provides": "tree_sitter_c3",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-c3"
+      ]
+    }
+  }
+}
