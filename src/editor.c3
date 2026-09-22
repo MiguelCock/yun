@@ -8,6 +8,7 @@ import yun::text;
 
 const RLColor EDITOR_TEXT        = { 210, 214, 222, 255 };
 const RLColor EDITOR_PLACEHOLDER = { 70, 76, 90, 255 };
+const RLColor EDITOR_CARET       = { 230, 230, 235, 255 };
 
 struct EditorMetrics
 {
@@ -235,5 +236,154 @@ fn void draw_placeholder(Rect area, EditorMetrics metrics, RLCamera2D camera, RL
 		float width = placeholder_bar_width(i, area.width, metrics.char_width);
 		rl::draw_rectangle((int)area.x, (int)y, (int)width, (int)(metrics.line_height * 0.5f), color);
 	}
+	rl::end_scissor_mode();
+}
+fn int utf8_encode(int codepoint, char* out)
+{
+	if (codepoint < 0x80)
+	{
+		out[0] = (char)codepoint;
+		return 1;
+	}
+	if (codepoint < 0x800)
+	{
+		out[0] = (char)(0xC0 | (codepoint >> 6));
+		out[1] = (char)(0x80 | (codepoint & 0x3F));
+		return 2;
+	}
+	if (codepoint < 0x10000)
+	{
+		out[0] = (char)(0xE0 | (codepoint >> 12));
+		out[1] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+		out[2] = (char)(0x80 | (codepoint & 0x3F));
+		return 3;
+	}
+	out[0] = (char)(0xF0 | (codepoint >> 18));
+	out[1] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
+	out[2] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+	out[3] = (char)(0x80 | (codepoint & 0x3F));
+	return 4;
+}
+
+fn usz cursor_prev(PieceTable* table, usz cursor)
+{
+	if (cursor == 0) return 0;
+	return table.prev_boundary(cursor - 1);
+}
+
+fn usz cursor_next(PieceTable* table, usz cursor)
+{
+	if (cursor >= table.length()) return table.length();
+	return table.next_boundary(cursor);
+}
+
+fn usz cursor_home(PieceTable* table, usz cursor)
+{
+	return table.line_start(table.line_of(cursor));
+}
+
+fn usz cursor_end(PieceTable* table, usz cursor)
+{
+	usz line = table.line_of(cursor);
+	return table.line_start(line) + line_length_bytes(table, line);
+}
+
+fn usz offset_for_column(PieceTable* table, usz line, usz column)
+{
+	usz start = table.line_start(line);
+	usz end   = start + line_length_bytes(table, line);
+	usz pos   = start;
+	usz col   = 0;
+	while (col < column && pos < end)
+	{
+		pos = table.next_boundary(pos);
+		col++;
+	}
+	return pos;
+}
+
+fn usz cursor_up(PieceTable* table, usz cursor, usz desired_column, usz* out_column)
+{
+	usz line = table.line_of(cursor);
+	if (line == 0)
+	{
+		*out_column = column_for_offset(table, line, cursor);
+		return cursor;
+	}
+	usz target = offset_for_column(table, line - 1, desired_column);
+	*out_column = column_for_offset(table, line - 1, target);
+	return target;
+}
+
+fn usz cursor_down(PieceTable* table, usz cursor, usz desired_column, usz* out_column)
+{
+	usz line       = table.line_of(cursor);
+	usz line_count = table.line_count();
+	if (line + 1 >= line_count)
+	{
+		*out_column = column_for_offset(table, line, cursor);
+		return cursor;
+	}
+	usz target = offset_for_column(table, line + 1, desired_column);
+	*out_column = column_for_offset(table, line + 1, target);
+	return target;
+}
+
+fn usz insert_text(PieceTable* table, usz cursor, String text)
+{
+	(void)table.insert(cursor, text);
+	return cursor + text.len;
+}
+
+fn usz backspace(PieceTable* table, usz cursor)
+{
+	if (cursor == 0) return 0;
+	usz prev = cursor_prev(table, cursor);
+	(void)table.delete(prev, cursor - prev);
+	return prev;
+}
+
+fn usz delete_forward(PieceTable* table, usz cursor)
+{
+	if (cursor >= table.length()) return cursor;
+	usz next = cursor_next(table, cursor);
+	(void)table.delete(cursor, next - cursor);
+	return cursor;
+}
+
+fn Rect caret_rect(PieceTable* table, Rect area, float scroll_y, EditorMetrics metrics, usz cursor)
+{
+	usz line    = table.line_of(cursor);
+	usz column  = column_for_offset(table, line, cursor);
+	float x     = area.x + (float)column * metrics.char_width;
+	float y     = area.y + (float)line * metrics.line_height - scroll_y;
+	float width = metrics.char_width > 0.0f ? metrics.char_width : 1.0f;
+	return { .x = x, .y = y, .width = width, .height = metrics.line_height };
+}
+
+fn float scroll_to_reveal(PieceTable* table, EditorMetrics metrics, float area_height, usz cursor, float current_scroll)
+{
+	usz line     = table.line_of(cursor);
+	float top    = (float)line * metrics.line_height;
+	float bottom = top + metrics.line_height;
+	float scroll = current_scroll;
+	if (top < scroll) scroll = top;
+	if (bottom > scroll + area_height) scroll = bottom - area_height;
+	if (scroll < 0.0f) scroll = 0.0f;
+	return scroll;
+}
+
+fn void draw_caret(
+	PieceTable* table,
+	Rect area,
+	float scroll_y,
+	EditorMetrics metrics,
+	RLCamera2D camera,
+	usz cursor,
+	RLColor color
+)
+{
+	apply_scissor(area, camera);
+	rl::draw_rectangle_rec(caret_rect(table, area, scroll_y, metrics, cursor), color);
 	rl::end_scissor_mode();
 }

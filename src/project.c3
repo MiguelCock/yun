@@ -9,6 +9,7 @@ import std::math;
 import yun::canvas;
 import yun::card;
 import yun::editor;
+import yun::text;
 
 const int ROOT_FOLDER               = -1;
 const float CLUSTER_PADDING         =  24.0f;
@@ -49,6 +50,7 @@ struct Project
 	int drag_cluster_index;
 	bool cluster_moved;
 	RLVector2 drag_world;
+	double last_input_time;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -770,6 +772,17 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 		}
 		else if (card_hit >= 0)
 		{
+			FileCard* card = &self.cards[card_hit];
+			editor::ensure_buffer(card, self.allocator);
+			if (card.buffer)
+			{
+				Rect inner      = editor::inner_rect(card.rect, metrics);
+				RLVector2 local = { world[0] - inner.x, world[1] - inner.y };
+				card.cursor = editor::offset_for_point(card.buffer, local[0], local[1], card.scroll, metrics);
+				usz line = card.buffer.line_of(card.cursor);
+				card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
+				self.last_input_time = rl::get_time();
+			}
 			self.drag_index = self.focus(card_hit);
 			self.drag_card = true;
 			self.drag_world = world;
@@ -819,6 +832,106 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 			}
 		}
 	}
+
+	self.handle_keyboard(metrics);
+}
+
+fn bool ctrl_down()
+{
+	return rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
+}
+
+fn void Project.handle_keyboard(&self, EditorMetrics metrics)
+{
+	if (self.focused < 0 || self.focused >= (int)self.cards.len()) return;
+	FileCard* card = &self.cards[self.focused];
+	if (!card.open) return;
+	editor::ensure_buffer(card, self.allocator);
+	if (!card.buffer) return;
+
+	PieceTable* table = card.buffer;
+	bool changed      = false;
+	bool vertical     = false;
+
+	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.ENTER))
+	{
+		card.cursor = editor::insert_text(table, card.cursor, "\n");
+		changed = true;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.TAB) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.TAB))
+	{
+		card.cursor = editor::insert_text(table, card.cursor, "\t");
+		changed = true;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))
+	{
+		card.cursor = editor::backspace(table, card.cursor);
+		changed = true;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.DELETE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DELETE))
+	{
+		card.cursor = editor::delete_forward(table, card.cursor);
+		changed = true;
+	}
+
+	if (!ctrl_down())
+	{
+		char[4] encoded;
+		int codepoint = rl::get_char_pressed();
+		while (codepoint != 0)
+		{
+			if (codepoint >= 32 && codepoint != 127)
+			{
+				int count   = editor::utf8_encode(codepoint, &encoded[0]);
+				String text = (String)encoded[0:count];
+				card.cursor = editor::insert_text(table, card.cursor, text);
+				changed = true;
+			}
+			codepoint = rl::get_char_pressed();
+		}
+	}
+
+	if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT))
+	{
+		card.cursor = editor::cursor_prev(table, card.cursor);
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT))
+	{
+		card.cursor = editor::cursor_next(table, card.cursor);
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.HOME))
+	{
+		card.cursor = editor::cursor_home(table, card.cursor);
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.END))
+	{
+		card.cursor = editor::cursor_end(table, card.cursor);
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP))
+	{
+		card.cursor = editor::cursor_up(table, card.cursor, card.preferred_column, &card.preferred_column);
+		vertical = true;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN))
+	{
+		card.cursor = editor::cursor_down(table, card.cursor, card.preferred_column, &card.preferred_column);
+		vertical = true;
+	}
+
+	if (!vertical)
+	{
+		usz line = table.line_of(card.cursor);
+		card.preferred_column = editor::column_for_offset(table, line, card.cursor);
+	}
+
+	Rect inner = editor::inner_rect(card.rect, metrics);
+	card.scroll = editor::scroll_to_reveal(table, metrics, inner.height, card.cursor, card.scroll);
+
+	if (changed)
+	{
+		card.dirty = true;
+		self.last_input_time = rl::get_time();
+	}
 }
 
 fn void Project.draw_cluster(&self, int index)
@@ -847,6 +960,9 @@ fn void Project.draw_cluster(&self, int index)
 
 fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metrics)
 {
+	double elapsed = rl::get_time() - self.last_input_time;
+	bool caret_on  = (elapsed - math::floor(elapsed)) < 0.5;
+
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
 		if (self.cluster_visible((int)i)) self.draw_cluster((int)i);
@@ -871,6 +987,18 @@ fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metric
 				16.0f,
 				editor::EDITOR_TEXT
 			);
+			if ((int)i == self.focused && caret_on)
+			{
+				editor::draw_caret(
+					self.cards[i].buffer,
+					inner,
+					self.cards[i].scroll,
+					metrics,
+					camera,
+					self.cards[i].cursor,
+					editor::EDITOR_CARET
+				);
+			}
 		}
 		else
 		{
