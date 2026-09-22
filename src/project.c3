@@ -3,6 +3,7 @@ module yun::project;
 import libc;
 import raylib6::rl;
 import std::collections::list;
+import std::collections::map;
 import std::core::mem::alloc;
 import std::io::file;
 import std::io::path;
@@ -28,6 +29,7 @@ const float LAYOUT_CELL_W           =  280.0f;
 const float LAYOUT_CELL_H           =  60.0f;
 const int LAYOUT_COLUMNS            =  6;
 const String[] IGNORED_NAMES        =  { ".git", ".yun", "build", "out", "node_modules" };
+const float DRAW_CULL_MARGIN        =  64.0f;
 
 faultdef COPY_FAILED;
 faultdef RESOLVE_FAILED;
@@ -38,6 +40,7 @@ struct FolderCluster
 	Rect bounds;
 	bool collapsed;
 	int parent;
+	bool bounds_valid;
 }
 
 struct Project
@@ -45,6 +48,7 @@ struct Project
 	Path root;
 	List{FileCard} cards;
 	List{FolderCluster} folders;
+	HashMap{String, int} folder_index;
 	Allocator allocator;
 	int focused;
 	bool drag_card;
@@ -60,6 +64,7 @@ struct Project
 	bool resizing;
 	int resize_card;
 	int resize_handle;
+	int last_cursor;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -67,6 +72,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.allocator = allocator;
 	self.cards.init(allocator);
 	self.folders.init(allocator);
+	self.folder_index.init(allocator);
 	self.focused = -1;
 	self.drag_card = false;
 	self.drag_cluster = false;
@@ -74,6 +80,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.pending_reload = -1;
 	self.pending_close = -1;
 	self.resizing = false;
+	self.last_cursor = -1;
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
 	{
@@ -87,6 +94,7 @@ fn void Project.reset(&self)
 {
 	self.cards.clear();
 	self.folders.clear();
+	self.folder_index.clear();
 	self.focused = -1;
 	self.drag_card = false;
 	self.drag_cluster = false;
@@ -102,18 +110,17 @@ fn bool path_is_inside(String root, String abs)
 	return next == '/' || next == '\\';
 }
 
-fn bool path_is_ignored(String path)
+fn bool basename_is_ignored(String path)
 {
 	usz start = 0;
-	for (usz i = 0; i <= path.len; i++)
+	for (usz i = 0; i < path.len; i++)
 	{
-		if (i != path.len && path[i] != '/' && path[i] != '\\') continue;
-		String component = path[start:i - start];
-		foreach (String ignored : IGNORED_NAMES)
-		{
-			if (component.compare_to(ignored) == 0) return true;
-		}
-		start = i + 1;
+		if (path[i] == '/' || path[i] == '\\') start = i + 1;
+	}
+	String component = path[start:path.len - start];
+	foreach (String ignored : IGNORED_NAMES)
+	{
+		if (component.compare_to(ignored) == 0) return true;
 	}
 	return false;
 }
@@ -135,6 +142,31 @@ fn RLVector2 layout_position(int index)
 fn bool rect_contains(Rect r, RLVector2 point)
 {
 	return point[0] >= r.x && point[0] <= r.x + r.width && point[1] >= r.y && point[1] <= r.y + r.height;
+}
+
+fn bool rect_intersects(Rect a, Rect b)
+{
+	return a.x <= b.x + b.width && a.x + a.width >= b.x && a.y <= b.y + b.height && a.y + a.height >= b.y;
+}
+
+fn Rect expand_rect(Rect r, float margin)
+{
+	return {
+		.x = r.x - margin,
+		.y = r.y - margin,
+		.width = r.width + margin * 2.0f,
+		.height = r.height + margin * 2.0f
+	};
+}
+
+fn Rect visible_world_rect(RLCamera2D camera)
+{
+	RLVector2 min = canvas::screen_to_world_camera(camera, { 0.0f, 0.0f });
+	RLVector2 max = canvas::screen_to_world_camera(
+		camera,
+		{ (float)rl::get_screen_width(), (float)rl::get_screen_height() }
+	);
+	return { .x = min[0], .y = min[1], .width = max[0] - min[0], .height = max[1] - min[1] };
 }
 
 fn String collision_name(Allocator allocator, String stem, String ext, int index)
@@ -164,27 +196,39 @@ fn int Project.find_card(&self, String abs)
 
 fn int Project.folder_for(&self, String file)
 {
-	int best     = ROOT_FOLDER;
-	usz best_len = 0;
-	for (sz i = 0; i < self.folders.len(); i++)
+	usz cut = file.len;
+	while (cut > 0)
 	{
-		String fp = (String)self.folders[i].path;
-		if (path_is_inside(fp, file) && fp.len > best_len)
+		cut--;
+		if (file[cut] == '/' || file[cut] == '\\') break;
+	}
+	while (cut > 0)
+	{
+		int found = self.folder_by_path(file[0:cut]);
+		if (found >= 0) return found;
+		while (cut > 0)
 		{
-			best = (int)i;
-			best_len = fp.len;
+			cut--;
+			if (file[cut] == '/' || file[cut] == '\\') break;
 		}
 	}
-	return best;
+	return ROOT_FOLDER;
 }
 
 fn int Project.folder_by_path(&self, String path)
 {
+	int*? found = self.folder_index.get_ref(path);
+	if (catch excuse = found) return ROOT_FOLDER;
+	return *found;
+}
+
+fn void Project.rebuild_folder_index(&self)
+{
+	self.folder_index.clear();
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
-		if (((String)self.folders[i].path).compare_to(path) == 0) return (int)i;
+		self.folder_index.set((String)self.folders[i].path, (int)i);
 	}
-	return ROOT_FOLDER;
 }
 
 fn int Project.ensure_folder(&self, String dir)
@@ -220,6 +264,14 @@ fn bool Project.cluster_visible(&self, int index)
 	return !self.folder_collapsed(self.folders[index].parent);
 }
 
+fn void Project.invalidate_bounds(&self)
+{
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		self.folders[i].bounds_valid = false;
+	}
+}
+
 fn int Project.add_folder(&self, String folder_path, int parent)
 {
 	FolderCluster cluster = {
@@ -227,12 +279,24 @@ fn int Project.add_folder(&self, String folder_path, int parent)
 		.bounds = { .x = 0.0f, .y = 0.0f, .width = 320.0f, .height = 220.0f },
 		.collapsed = false,
 		.parent = parent,
+		.bounds_valid = false,
 	};
 	self.folders.push(cluster);
-	return (int)(self.folders.len() - 1);
+	int index = (int)(self.folders.len() - 1);
+	self.folder_index.set((String)self.folders[index].path, index);
+	return index;
 }
 
 fn Rect Project.cluster_bounds(&self, int index)
+{
+	if (self.folders[index].bounds_valid) return self.folders[index].bounds;
+	Rect bounds = self.compute_cluster_bounds(index);
+	self.folders[index].bounds = bounds;
+	self.folders[index].bounds_valid = true;
+	return bounds;
+}
+
+fn Rect Project.compute_cluster_bounds(&self, int index)
 {
 	bool found  = false;
 	float min_x = 0.0f;
@@ -242,7 +306,7 @@ fn Rect Project.cluster_bounds(&self, int index)
 
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
-		if (self.folder_for((String)self.cards[i].path) != index) continue;
+		if (self.cards[i].folder != index) continue;
 		Rect r = self.cards[i].rect;
 		if (!found)
 		{
@@ -432,7 +496,9 @@ fn int Project.append_card(&self, String abs, RLVector2 world_pos)
 			.height = card::CARD_HEIGHT,
 		}, .open = true, .dirty = false, .folder = self.folder_for(abs), };
 	self.cards.push(card);
-	return (int)(self.cards.len() - 1);
+	int index = (int)(self.cards.len() - 1);
+	self.invalidate_bounds();
+	return index;
 }
 
 fn int Project.add_card(&self, String abs, RLVector2 world_pos)
@@ -467,6 +533,7 @@ fn int Project.add_folder_from_disk(&self, String dir, RLVector2 world_pos)
 		.width = 320.0f,
 		.height = 220.0f,
 	};
+	self.invalidate_bounds();
 
 	PathList? entries = path::ls(self.allocator, (Path)dir, no_dirs: true, recursive: false, relative: false);
 	if (catch excuse = entries) return index;
@@ -525,9 +592,11 @@ fn void Project.layout(&self)
 			.width = CLUSTER_COLLAPSED_WIDTH,
 			.height = CLUSTER_TITLE_HEIGHT,
 		};
+		self.folders[f].bounds_valid = false;
 		self.place_cards((int)f, origin);
 	}
 	self.place_cards(ROOT_FOLDER, layout_position((int)self.folders.len()));
+	self.invalidate_bounds();
 }
 
 fn bool Project.open(&self, String new_root)
@@ -535,24 +604,23 @@ fn bool Project.open(&self, String new_root)
 	self.reset();
 	self.root = (Path)new_root.copy(self.allocator);
 
-	PathList? entries = path::ls(self.allocator, (Path)new_root, no_dirs: false, recursive: true, relative: false);
-	if (catch excuse = entries) return false;
+	PathList entries;
+	entries.init(self.allocator);
+	self.collect_entries((Path)new_root, &entries);
+	if (entries.len() == 0) return path::exists((Path)new_root);
 
 	libc::qsort(entries.entries, (usz)entries.size, Path::size, &path_compare);
 
 	foreach (Path entry : entries)
 	{
-		String p = (String)entry;
-		if (path_is_ignored(p)) continue;
-		if (path::is_dir(entry)) self.ensure_folder(p);
+		if (path::is_dir(entry)) self.ensure_folder((String)entry);
 	}
 	foreach (Path entry : entries)
 	{
-		String p = (String)entry;
-		if (path_is_ignored(p)) continue;
 		if (path::is_dir(entry)) continue;
-		self.append_card(p, { 0.0f, 0.0f });
+		self.append_card((String)entry, { 0.0f, 0.0f });
 	}
+	self.rebuild_folder_index();
 	self.layout();
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
@@ -560,6 +628,19 @@ fn bool Project.open(&self, String new_root)
 	}
 	self.focused = -1;
 	return true;
+}
+
+fn void Project.collect_entries(&self, Path dir, PathList* out)
+{
+	PathList? entries = path::ls(self.allocator, dir, no_dirs: false, recursive: false, relative: false);
+	if (catch excuse = entries) return;
+
+	foreach (Path entry : entries)
+	{
+		if (basename_is_ignored((String)entry)) continue;
+		out.push(entry);
+		if (path::is_dir(entry)) self.collect_entries(entry, out);
+	}
 }
 
 fn String? resolve_path(Allocator allocator, String arg)
@@ -694,6 +775,7 @@ fn bool Project.rename_card(&self, int index, String new_name)
 	card.name.free(self.allocator);
 	card.name = new_name.copy(self.allocator);
 	card.folder = self.folder_for((String)card.path);
+	self.invalidate_bounds();
 	editor::stamp_file(card);
 	return true;
 }
@@ -813,6 +895,7 @@ fn void Project.move_cluster(&self, int index, RLVector2 delta)
 			self.folders[i].bounds.y += delta[1];
 		}
 	}
+	self.invalidate_bounds();
 }
 
 fn bool Project.move_card_to_folder(&self, int card_index, int folder_index)
@@ -847,6 +930,7 @@ fn bool Project.move_card_to_folder(&self, int card_index, int folder_index)
 	self.cards[card_index].path = (Path)dest_str.copy(self.allocator);
 	self.cards[card_index].name = rl::get_file_name((ZString)dest_str.ptr).str_view().copy(self.allocator);
 	self.cards[card_index].folder = self.folder_for(dest_str);
+	self.invalidate_bounds();
 	return true;
 }
 
@@ -965,6 +1049,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 		{
 			RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
 			self.cards[self.drag_index].move_by(delta);
+			self.invalidate_bounds();
 			self.drag_world = world;
 		}
 	}
@@ -1000,6 +1085,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 			float min_w     = editor::min_card_width(metrics);
 			float min_h     = editor::min_card_height(metrics);
 			self.cards[self.resize_card].resize_from(self.resize_handle, delta, min_w, min_h);
+			self.invalidate_bounds();
 			self.drag_world = world;
 		}
 	}
@@ -1008,7 +1094,12 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 	{
 		int hover  = self.hit_test(world);
 		int handle = hover >= 0 ? self.cards[hover].resize_handle_at(world, canvas.camera) : -1;
-		rl::set_mouse_cursor(handle < 0 ? rl::RLMouseCursor.DEFAULT : cursor_for_handle(handle));
+		int cursor = (int)(handle < 0 ? rl::RLMouseCursor.DEFAULT : cursor_for_handle(handle));
+		if (cursor != self.last_cursor)
+		{
+			rl::set_mouse_cursor((RLMouseCursor)cursor);
+			self.last_cursor = cursor;
+		}
 	}
 
 	self.poll_external(rl::get_time());
@@ -1214,20 +1305,24 @@ fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metric
 {
 	double elapsed = rl::get_time() - self.last_input_time;
 	bool caret_on  = (elapsed - math::floor(elapsed)) < 0.5;
+	Rect visible   = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
 
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
-		if (self.cluster_visible((int)i)) self.draw_cluster((int)i);
+		if (!self.cluster_visible((int)i)) continue;
+		if (!rect_intersects(self.cluster_visual_bounds((int)i), visible)) continue;
+		self.draw_cluster((int)i);
 	}
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
 		if (!self.card_visible((int)i)) continue;
 		FileCard* card  = &self.cards[i];
 		bool is_focused = (int)i == self.focused;
+		if (is_focused) editor::ensure_buffer(card, self.allocator);
+		if (!rect_intersects(card.rect, visible)) continue;
 		card.draw(is_focused);
 		if (!card.open) continue;
 
-		if (is_focused) editor::ensure_buffer(card, self.allocator);
 		if (!card.buffer)
 		{
 			editor::draw_placeholder(

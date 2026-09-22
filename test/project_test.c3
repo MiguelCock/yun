@@ -158,16 +158,6 @@ fn void test_collapsed_cluster_hides_cards()
 	};
 }
 
-fn void test_path_is_ignored()
-{
-	assert(path_is_ignored("/home/x/proj/.git/config"));
-	assert(path_is_ignored("/home/x/proj/build/out.o"));
-	assert(path_is_ignored("/home/x/proj/node_modules/pkg/index.js"));
-	assert(path_is_ignored("C:\\proj\\.yun\\workspace.json"));
-	assert(!path_is_ignored("/home/x/proj/src/main.c3"));
-	assert(!path_is_ignored("/home/x/proj/builder/main.c3"));
-}
-
 fn void test_ensure_folder_chain()
 {
 	@pool()
@@ -459,6 +449,105 @@ fn void test_card_file_operations()
 		p.remove_card(0);
 		assert(p.cards.len() == 0);
 		assert(p.focused == -1);
+
+		(void)path::rmtree(dir);
+	};
+}
+
+fn void test_basename_is_ignored()
+{
+	assert(basename_is_ignored("/home/x/proj/.git"));
+	assert(basename_is_ignored("/home/x/proj/build"));
+	assert(basename_is_ignored("/home/x/proj/node_modules"));
+	assert(basename_is_ignored("C:\\proj\\out"));
+	assert(!basename_is_ignored("/home/x/proj/src"));
+	assert(!basename_is_ignored("/home/x/proj/builder"));
+	assert(!basename_is_ignored("/home/x/build/src"));
+}
+
+fn void test_rect_intersects_and_expand()
+{
+	assert(rect_intersects(
+		{ .x = 0.0f, .y = 0.0f, .width = 10.0f, .height = 10.0f },
+		{ .x = 5.0f, .y = 5.0f, .width = 10.0f, .height = 10.0f }
+	));
+	assert(!rect_intersects(
+		{ .x = 0.0f, .y = 0.0f, .width = 10.0f, .height = 10.0f },
+		{ .x = 20.0f, .y = 20.0f, .width = 5.0f, .height = 5.0f }
+	));
+	Rect e = expand_rect({ .x = 0.0f, .y = 0.0f, .width = 10.0f, .height = 10.0f }, 5.0f);
+	assert(e.x == -5.0f && e.y == -5.0f && e.width == 20.0f && e.height == 20.0f);
+}
+
+fn void test_bounds_cache_invalidated_on_move()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		int f = p.add_folder("/root/a", ROOT_FOLDER);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a/x.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				.folder = f,
+			}
+		);
+		Rect before = p.cluster_bounds(f);
+		p.move_cluster(f, { 1000.0f, 0.0f });
+		Rect after = p.cluster_bounds(f);
+		assert(after.x == before.x + 1000.0f);
+		assert(after.width == before.width);
+	};
+}
+
+fn void test_open_prunes_ignored_dirs()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_prune_test");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+
+		char[] content        = { 'x' };
+		String[] ignored_dirs = { "node_modules", "build", "out", ".git", "src" };
+		foreach (String name : ignored_dirs)
+		{
+			Path? child = dir.append(tmem, name);
+			if (catch excuse = child) return;
+			if (catch excuse = path::mkdir(child)) return;
+			Path? f = child.append(tmem, "file.txt");
+			if (catch excuse = f) return;
+			if (catch excuse = file::save(f, content)) return;
+		}
+		Path? root_file = dir.append(tmem, "root.txt");
+		if (catch excuse = root_file) return;
+		if (catch excuse = file::save(root_file, content)) return;
+
+		Project p;
+		p.init(tmem);
+		assert(p.open((String)dir));
+		assert(p.cards.len() == 2);
+		assert(p.folders.len() == 1);
+
+		Path? src = dir.append(tmem, "src");
+		if (catch excuse = src) return;
+		assert(p.folder_by_path((String)src) >= 0);
+
+		Path? ignored = dir.append(tmem, "node_modules");
+		if (catch excuse = ignored) return;
+		assert(p.folder_by_path((String)ignored) == ROOT_FOLDER);
+
+		for (sz i = 0; i < p.cards.len(); i++)
+		{
+			String path = (String)p.cards[i].path;
+			assert(path.contains("node_modules") == false);
+			assert(p.cards[i].folder == p.folder_for(path));
+		}
 
 		(void)path::rmtree(dir);
 	};
