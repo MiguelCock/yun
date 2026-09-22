@@ -9,6 +9,8 @@ import yun::commands;
 import yun::config;
 import yun::context;
 import yun::editor;
+import yun::find;
+import yun::findbar;
 import yun::keymap;
 import yun::menu;
 import yun::minimap;
@@ -86,6 +88,7 @@ struct App
 	notify::Notifier* notifier;
 	prompt::Prompt* name_prompt;
 	palette::Palette* palette;
+	findbar::FindBar* find_bar;
 	bool* project_open;
 	int* pending_kind;
 	int* pending_parent;
@@ -180,6 +183,25 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.FIND:
+		case commands::CommandId.REPLACE:
+
+			{
+				int index = project.focused;
+				if (!*app.project_open || index < 0 || index >= (int)project.cards.len()
+					|| !project.cards[index].buffer)
+				{
+					app.notifier.push("No file to search");
+					return;
+				}
+				find::FindField field = id == commands::CommandId.REPLACE ? find::FindField.REPLACE
+					: find::FindField.QUERY;
+				app.find_bar.open_for(field);
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+				return;
+			}
 	}
 }
 
@@ -233,6 +255,9 @@ fn int main(String[] args)
 	palette::Palette palette;
 	palette.init(mem);
 
+	findbar::FindBar find_bar;
+	find_bar.init(mem);
+
 	keymap::Keymap keymap;
 	keymap.init(mem);
 	defer keymap.destroy();
@@ -269,6 +294,7 @@ fn int main(String[] args)
 		.notifier = &notifier,
 		.name_prompt = &name_prompt,
 		.palette = &palette,
+		.find_bar = &find_bar,
 		.project_open = &project_open,
 		.pending_kind = &pending_kind,
 		.pending_parent = &pending_parent,
@@ -477,6 +503,39 @@ fn int main(String[] args)
 				}
 			}
 		}
+		else if (find_bar.open)
+		{
+			int focus = project.focused;
+			if (focus < 0 || focus >= (int)project.cards.len() || !project.cards[focus].buffer)
+			{
+				find_bar.close();
+			}
+			else
+			{
+				usz reveal    = 0;
+				bool replaced = false;
+				int result = find_bar.update(
+					project.cards[focus].buffer,
+					project.cards[focus].history,
+					false,
+					&reveal,
+					&replaced
+				);
+				if (result >= 0)
+				{
+					FileCard* card = &project.cards[focus];
+					Rect text      = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+					if (result > 0) card.scroll = editor::scroll_to_reveal(
+						card.buffer,
+						metrics,
+						text.height,
+						reveal,
+						card.scroll
+					);
+					if (replaced) card.dirty = true;
+				}
+			}
+		}
 		else
 		{
 			RLVector2 mouse = rl::get_mouse_position();
@@ -557,9 +616,11 @@ fn int main(String[] args)
 				rl::unload_dropped_files(files);
 			}
 
-			project.update(&canvas, metrics, over_top);
+			bool content_changed = false;
+			project.update(&canvas, metrics, over_top, &content_changed);
 			if (over_top) canvas.block_zoom = true;
 			canvas.update();
+			if (content_changed) find_bar.mark_dirty();
 
 			if (project.pending_reload >= 0 && !reload_menu.open)
 			{
@@ -588,7 +649,7 @@ fn int main(String[] args)
 			canvas.draw();
 			rl::@mode2d(canvas.camera)
 			{
-				project.draw(canvas.camera, font, metrics);
+				project.draw(canvas.camera, font, metrics, &find_bar);
 			};
 			minimap::draw(&project, &canvas);
 			String project_name = "";

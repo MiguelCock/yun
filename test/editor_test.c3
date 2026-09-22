@@ -515,3 +515,24 @@ fn void test_destroy_buffer()
 		(void)path::rmtree(dir);
 	};
 }
+fn void test_match_rect()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "hello\nworld");
+		EditorMetrics metrics = { .char_width = 8.0f, .line_height = 20.0f, .padding_x = 8.0f, .padding_y = 6.0f };
+		Rect area             = { .x = 100.0f, .y = 50.0f, .width = 400.0f, .height = 200.0f };
+
+		Rect r = match_rect(&t, area, 0.0f, metrics, 0, 5);
+		assert(r.x == 100.0f);
+		assert(r.y == 50.0f);
+		assert(r.width == 40.0f);
+
+		Rect second = match_rect(&t, area, 0.0f, metrics, 6, 11);
+		assert(second.x == 100.0f);
+		assert(second.y == 70.0f);
+		assert(second.width == 40.0f);
+		t.destroy();
+	};
+}

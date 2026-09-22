@@ -11,6 +11,7 @@ enum CommandKind
 	INSERT,
 	BACKSPACE,
 	DELETE,
+	REPLACE,
 }
 
 struct EditCommand
@@ -18,6 +19,7 @@ struct EditCommand
 	CommandKind kind;
 	usz offset;
 	String text;
+	String inserted;
 }
 
 struct History
@@ -45,6 +47,7 @@ fn void History.reset(&self)
 	for (sz i = 0; i < self.commands.len(); i++)
 	{
 		self.commands[i].text.free(self.allocator);
+		if (self.commands[i].inserted.len > 0) self.commands[i].inserted.free(self.allocator);
 	}
 	self.commands.clear();
 	self.index = 0;
@@ -70,6 +73,7 @@ fn void History.truncate_redo(&self)
 		sz last = self.commands.len() - 1;
 		self.memory -= self.commands[last].text.len;
 		self.commands[last].text.free(self.allocator);
+		if (self.commands[last].inserted.len > 0) self.commands[last].inserted.free(self.allocator);
 		self.commands.remove_at(last);
 	}
 }
@@ -84,12 +88,44 @@ fn void History.push(&self, CommandKind kind, usz offset, String text, double no
 	self.evict();
 }
 
+fn usz History.replace(&self, PieceTable* table, usz offset, usz del_len, String replacement, double now)
+{
+	if (del_len == 0) return self.insert(table, offset, replacement, now);
+	usz end = offset + del_len;
+	if (end > table.length()) end = table.length();
+	usz actual_len = end - offset;
+
+	String removed = table.slice(offset, actual_len, self.allocator);
+	(void)table.delete(offset, actual_len);
+	(void)table.insert(offset, replacement);
+
+	self.truncate_redo();
+	self.commands.push(
+		{
+			.kind = CommandKind.REPLACE,
+			.offset = offset,
+			.text = removed,
+			.inserted = replacement.copy(self.allocator),
+		}
+	);
+	self.index = self.commands.len();
+	self.memory += removed.len + replacement.len;
+	self.last_time = now;
+	self.evict();
+	return offset + replacement.len;
+}
+
 fn void History.evict(&self)
 {
 	while (self.memory > self.budget && self.commands.len() > 0)
 	{
 		self.memory -= self.commands[0].text.len;
 		self.commands[0].text.free(self.allocator);
+		if (self.commands[0].inserted.len > 0)
+		{
+			self.memory -= self.commands[0].inserted.len;
+			self.commands[0].inserted.free(self.allocator);
+		}
 		self.commands.remove_at(0);
 		if (self.index > 0) self.index--;
 	}
@@ -203,6 +239,12 @@ fn bool History.redo(&self, PieceTable* table, usz* cursor)
 		(void)table.insert(cmd.offset, cmd.text);
 		*cursor = cmd.offset + cmd.text.len;
 	}
+	else if (cmd.kind == CommandKind.REPLACE)
+	{
+		(void)table.delete(cmd.offset, cmd.inserted.len);
+		(void)table.insert(cmd.offset, cmd.text);
+		*cursor = cmd.offset + cmd.text.len;
+	}
 	else
 	{
 		(void)table.delete(cmd.offset, cmd.text.len);
@@ -223,6 +265,12 @@ fn bool History.undo(&self, PieceTable* table, usz* cursor)
 	{
 		(void)table.delete(cmd.offset, cmd.text.len);
 		*cursor = cmd.offset;
+	}
+	else if (cmd.kind == CommandKind.REPLACE)
+	{
+		(void)table.delete(cmd.offset, cmd.inserted.len);
+		(void)table.insert(cmd.offset, cmd.text);
+		*cursor = cmd.offset + cmd.text.len;
 	}
 	else
 	{
