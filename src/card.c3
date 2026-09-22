@@ -29,7 +29,9 @@ struct FileCard
 	History* history;
 	highlight::Highlighter* highlight;
 	float scroll;
+	float scroll_x;
 	usz cursor;
+	usz selection_anchor;
 	usz preferred_column;
 	long mtime;
 	long size;

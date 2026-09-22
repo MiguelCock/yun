@@ -31,6 +31,8 @@ const float LAYOUT_CELL_H           =  60.0f;
 const int LAYOUT_COLUMNS            =  6;
 const String[] IGNORED_NAMES        =  { ".git", ".yun", "build", "out", "node_modules" };
 const float DRAW_CULL_MARGIN        =  64.0f;
+const double DOUBLE_CLICK_SECONDS   =  0.35;
+const float DOUBLE_CLICK_DIST       =  6.0f;
 
 faultdef COPY_FAILED;
 faultdef RESOLVE_FAILED;
@@ -66,6 +68,9 @@ struct Project
 	int resize_card;
 	int resize_handle;
 	int last_cursor;
+	bool selecting;
+	double last_click_time;
+	RLVector2 last_click_pos;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -82,6 +87,9 @@ fn void Project.init(&self, Allocator allocator)
 	self.pending_close = -1;
 	self.resizing = false;
 	self.last_cursor = -1;
+	self.selecting = false;
+	self.last_click_time = -1000.0;
+	self.last_click_pos = { 0.0f, 0.0f };
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
 	{
@@ -100,6 +108,7 @@ fn void Project.reset(&self)
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.cluster_moved = false;
+	self.selecting = false;
 }
 
 fn bool path_is_inside(String root, String abs)
@@ -851,6 +860,7 @@ fn int Project.focus(&self, int index)
 	self.cards.remove_at(index);
 	self.cards.push(card);
 	self.focused = (int)(self.cards.len() - 1);
+	self.cards[self.focused].selection_anchor = self.cards[self.focused].cursor;
 	return self.focused;
 }
 
@@ -858,6 +868,95 @@ fn FileCard* Project.focused_card(&self)
 {
 	if (self.focused < 0 || self.focused >= (int)self.cards.len()) return null;
 	return &self.cards[self.focused];
+}
+
+fn bool is_double_click(double now, RLVector2 pos, double last_time, RLVector2 last_pos)
+{
+	double delta = now - last_time;
+	if (delta < 0.0 || delta > DOUBLE_CLICK_SECONDS) return false;
+	float dx = pos[0] - last_pos[0];
+	float dy = pos[1] - last_pos[1];
+	return dx * dx + dy * dy <= DOUBLE_CLICK_DIST * DOUBLE_CLICK_DIST;
+}
+
+fn bool Project.register_click(&self, double now, RLVector2 pos)
+{
+	bool double_click = is_double_click(now, pos, self.last_click_time, self.last_click_pos);
+	self.last_click_time = now;
+	self.last_click_pos = pos;
+	return double_click;
+}
+
+fn void Project.reveal_focused(&self, EditorMetrics metrics)
+{
+	FileCard* card = self.focused_card();
+	if (!card || !card.buffer) return;
+	Rect text = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+	card.scroll = editor::scroll_to_reveal(card.buffer, metrics, text.height, card.cursor, card.scroll);
+	card.scroll_x = editor::scroll_x_to_reveal(card.buffer, metrics, text.width, card.cursor, card.scroll_x);
+}
+
+fn bool Project.has_selection(&self)
+{
+	FileCard* card = self.focused_card();
+	if (!card || !card.buffer) return false;
+	return editor::has_selection(card.selection_anchor, card.cursor);
+}
+
+fn void Project.select_all(&self)
+{
+	FileCard* card = self.focused_card();
+	if (!card || !card.buffer) return;
+	card.selection_anchor = 0;
+	card.cursor = card.buffer.length();
+	usz line = card.buffer.line_of(card.cursor);
+	card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
+}
+
+fn bool Project.copy_selection(&self)
+{
+	FileCard* card = self.focused_card();
+	if (!card || !card.buffer) return false;
+	usz start = 0;
+	usz end   = 0;
+	editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+	if (start >= end) return false;
+	@pool()
+	{
+		String text = card.buffer.slice(start, end - start, tmem);
+		rl::set_clipboard_text(text.zstr_tcopy());
+	};
+	return true;
+}
+
+fn bool Project.cut_selection(&self, double now)
+{
+	FileCard* card = self.focused_card();
+	if (!card || !card.buffer || !card.history) return false;
+	usz start = 0;
+	usz end   = 0;
+	editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+	if (start >= end) return false;
+	if (!self.copy_selection()) return false;
+	card.cursor = card.history.replace(card.buffer, start, end - start, "", now);
+	card.selection_anchor = card.cursor;
+	return true;
+}
+
+fn bool Project.paste_clipboard(&self, double now)
+{
+	FileCard* card = self.focused_card();
+	if (!card || !card.buffer || !card.history) return false;
+	ZString clip = rl::get_clipboard_text();
+	if (!clip) return false;
+	String text = clip.str_view();
+	if (text.len == 0) return false;
+	usz start = 0;
+	usz end   = 0;
+	editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+	card.cursor = card.history.replace(card.buffer, start, end - start, text, now);
+	card.selection_anchor = card.cursor;
+	return true;
 }
 
 fn int Project.hit_test(&self, RLVector2 world)
@@ -982,50 +1081,83 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && canvas.pointer_over_ui && !pointer_blocked)
 	{
 		int card_hit = self.hit_test(world);
-		int handle   = card_hit >= 0 ? self.cards[card_hit].resize_handle_at(world, canvas.camera) : -1;
-		if (card_hit >= 0 && handle >= 0)
+		if (card_hit >= 0)
 		{
-			self.resizing = true;
-			self.resize_card = self.focus(card_hit);
-			self.resize_handle = handle;
-			self.drag_world = world;
-		}
-		else if (card_hit >= 0 && self.cards[card_hit].close_marker_hit(world))
-		{
-			FileCard* card = &self.cards[card_hit];
-			if (card.buffer)
+			bool double_click         = self.register_click(rl::get_time(), world);
+			editor::CardRegion region = editor::region_at(&self.cards[card_hit], world, metrics, canvas.camera);
+			if (region == editor::CardRegion.HANDLE)
 			{
-				if (card.dirty)
+				int handle = self.cards[card_hit].resize_handle_at(world, canvas.camera);
+				self.resizing = true;
+				self.resize_card = self.focus(card_hit);
+				self.resize_handle = handle;
+				self.drag_world = world;
+			}
+			else if (region == editor::CardRegion.CLOSE)
+			{
+				FileCard* card = &self.cards[card_hit];
+				if (card.buffer)
 				{
-					self.pending_close = self.focus(card_hit);
-				}
-				else
-				{
-					(void)editor::unload_buffer(card, self.allocator);
+					if (card.dirty)
+					{
+						self.pending_close = self.focus(card_hit);
+					}
+					else
+					{
+						(void)editor::unload_buffer(card, self.allocator);
+					}
 				}
 			}
-		}
-		else if (card_hit >= 0 && self.cards[card_hit].marker_hit(world))
-		{
-			self.cards[card_hit].open = !self.cards[card_hit].open;
-		}
-		else if (card_hit >= 0)
-		{
-			FileCard* card = &self.cards[card_hit];
-			editor::ensure_buffer(card, self.allocator);
-			if (card.buffer)
+			else if (region == editor::CardRegion.MARKER)
 			{
-				Rect text       = editor::text_rect(card.rect, metrics, card.buffer.line_count());
-				RLVector2 local = { world[0] - text.x, world[1] - text.y };
-				card.cursor = editor::offset_for_point(card.buffer, local[0], local[1], card.scroll, metrics);
-				usz line = card.buffer.line_of(card.cursor);
-				card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
-				if (card.history) card.history.break_coalescing();
-				self.last_input_time = rl::get_time();
+				self.cards[card_hit].open = !self.cards[card_hit].open;
 			}
-			self.drag_index = self.focus(card_hit);
-			self.drag_card = true;
-			self.drag_world = world;
+			else if (region == editor::CardRegion.BODY)
+			{
+				int index      = self.focus(card_hit);
+				FileCard* card = &self.cards[index];
+				editor::ensure_buffer(card, self.allocator);
+				if (card.buffer)
+				{
+					Rect text       = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+					RLVector2 local = { world[0] - text.x, world[1] - text.y };
+					usz offset = editor::offset_for_point(
+						card.buffer,
+						local[0],
+						local[1],
+						card.scroll,
+						card.scroll_x,
+						metrics
+					);
+					if (double_click)
+					{
+						usz start = 0;
+						usz end   = 0;
+						editor::word_range(card.buffer, offset, &start, &end);
+						card.selection_anchor = start;
+						card.cursor = end;
+					}
+					else
+					{
+						card.cursor = offset;
+						card.selection_anchor = offset;
+					}
+					usz line = card.buffer.line_of(card.cursor);
+					card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
+					if (card.history) card.history.break_coalescing();
+					self.last_input_time = rl::get_time();
+				}
+				self.selecting = true;
+			}
+			else
+			{
+				int index      = self.focus(card_hit);
+				FileCard* card = &self.cards[index];
+				if (double_click) card.open = !card.open;
+				self.drag_index = index;
+				self.drag_card = true;
+				self.drag_world = world;
+			}
 		}
 		else
 		{
@@ -1036,6 +1168,33 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 				self.drag_cluster_index = cluster_hit;
 				self.cluster_moved = false;
 				self.drag_world = world;
+			}
+		}
+	}
+
+	if (self.selecting)
+	{
+		if (!rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
+		{
+			self.selecting = false;
+		}
+		else
+		{
+			FileCard* card = self.focused_card();
+			if (card && card.buffer)
+			{
+				Rect text       = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+				RLVector2 local = { world[0] - text.x, world[1] - text.y };
+				card.cursor = editor::offset_for_point(
+					card.buffer,
+					local[0],
+					local[1],
+					card.scroll,
+					card.scroll_x,
+					metrics
+				);
+				usz line = card.buffer.line_of(card.cursor);
+				card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
 			}
 		}
 	}
@@ -1154,68 +1313,114 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 	PieceTable* table = card.buffer;
 	History* history  = card.history;
 	double now        = rl::get_time();
+	bool shift        = shift_down();
 	bool changed      = false;
 	bool moved        = false;
 	bool vertical     = false;
 
-	if (ctrl_down() && !shift_down() && rl::is_key_pressed(rl::RLKeyboardKey.Z))
+	if (ctrl_down() && !shift && rl::is_key_pressed(rl::RLKeyboardKey.Z))
 	{
 		usz cursor = card.cursor;
 		if (history.undo(table, &cursor))
 		{
 			card.cursor = cursor;
+			card.selection_anchor = cursor;
 			changed = true;
 		}
 	}
-	if (ctrl_down() && (rl::is_key_pressed(
-		rl::RLKeyboardKey.Y
-	) || (shift_down() && rl::is_key_pressed(rl::RLKeyboardKey.Z))))
+	if (ctrl_down() && (rl::is_key_pressed(rl::RLKeyboardKey.Y) || (shift && rl::is_key_pressed(rl::RLKeyboardKey.Z))))
 	{
 		usz cursor = card.cursor;
 		if (history.redo(table, &cursor))
 		{
 			card.cursor = cursor;
+			card.selection_anchor = cursor;
 			changed = true;
 		}
 	}
 
 	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.ENTER))
 	{
+		usz start = 0;
+		usz end   = 0;
+		editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
 		history.break_coalescing();
-		card.cursor = history.insert(table, card.cursor, "\n", now);
+		card.cursor = history.replace(table, start, end - start, "\n", now);
+		card.selection_anchor = card.cursor;
 		changed = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.TAB) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.TAB))
 	{
+		usz start = 0;
+		usz end   = 0;
+		editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
 		history.break_coalescing();
-		card.cursor = history.insert(table, card.cursor, "\t", now);
+		card.cursor = history.replace(table, start, end - start, "\t", now);
+		card.selection_anchor = card.cursor;
 		changed = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))
 	{
-		card.cursor = history.backspace(table, card.cursor, now);
+		usz start = 0;
+		usz end   = 0;
+		editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+		if (start < end)
+		{
+			card.cursor = history.replace(table, start, end - start, "", now);
+		}
+		else
+		{
+			card.cursor = history.backspace(table, card.cursor, now);
+		}
+		card.selection_anchor = card.cursor;
 		changed = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.DELETE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DELETE))
 	{
-		card.cursor = history.delete_forward(table, card.cursor, now);
+		usz start = 0;
+		usz end   = 0;
+		editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+		if (start < end)
+		{
+			card.cursor = history.replace(table, start, end - start, "", now);
+		}
+		else
+		{
+			card.cursor = history.delete_forward(table, card.cursor, now);
+		}
+		card.selection_anchor = card.cursor;
 		changed = true;
 	}
 
 	if (!ctrl_down())
 	{
-		char[4] encoded;
+		usz start = 0;
+		usz end   = 0;
+		editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+
+		char[64] typed;
+		usz typed_len = 0;
 		int codepoint = rl::get_char_pressed();
 		while (codepoint != 0)
 		{
 			if (codepoint >= 32 && codepoint != 127)
 			{
-				int count   = editor::utf8_encode(codepoint, &encoded[0]);
-				String text = (String)encoded[0:count];
-				card.cursor = history.insert(table, card.cursor, text, now);
-				changed = true;
+				char[4] encoded;
+				int count = editor::utf8_encode(codepoint, &encoded[0]);
+				if (typed_len + (usz)count <= typed.len)
+				{
+					for (int i = 0; i < count; i++) typed[typed_len + (usz)i] = encoded[i];
+					typed_len += (usz)count;
+				}
 			}
 			codepoint = rl::get_char_pressed();
+		}
+		if (typed_len > 0)
+		{
+			String text = (String)typed[0:typed_len];
+			card.cursor = history.replace(table, start, end - start, text, now);
+			card.selection_anchor = card.cursor;
+			changed = true;
 		}
 	}
 
@@ -1223,30 +1428,35 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_prev(table, card.cursor);
+		if (!shift) card.selection_anchor = card.cursor;
 		moved = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT))
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_next(table, card.cursor);
+		if (!shift) card.selection_anchor = card.cursor;
 		moved = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.HOME))
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_home(table, card.cursor);
+		if (!shift) card.selection_anchor = card.cursor;
 		moved = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.END))
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_end(table, card.cursor);
+		if (!shift) card.selection_anchor = card.cursor;
 		moved = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP))
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_up(table, card.cursor, card.preferred_column, &card.preferred_column);
+		if (!shift) card.selection_anchor = card.cursor;
 		moved = true;
 		vertical = true;
 	}
@@ -1254,6 +1464,29 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 	{
 		history.break_coalescing();
 		card.cursor = editor::cursor_down(table, card.cursor, card.preferred_column, &card.preferred_column);
+		if (!shift) card.selection_anchor = card.cursor;
+		moved = true;
+		vertical = true;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.PAGE_UP))
+	{
+		Rect page_text = editor::text_rect(card.rect, metrics, table.line_count());
+		sz rows        = (sz)(page_text.height / metrics.line_height);
+		if (rows < 1) rows = 1;
+		history.break_coalescing();
+		card.cursor = editor::cursor_page(table, card.cursor, -rows, card.preferred_column, &card.preferred_column);
+		if (!shift) card.selection_anchor = card.cursor;
+		moved = true;
+		vertical = true;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.PAGE_DOWN))
+	{
+		Rect page_text = editor::text_rect(card.rect, metrics, table.line_count());
+		sz rows        = (sz)(page_text.height / metrics.line_height);
+		if (rows < 1) rows = 1;
+		history.break_coalescing();
+		card.cursor = editor::cursor_page(table, card.cursor, rows, card.preferred_column, &card.preferred_column);
+		if (!shift) card.selection_anchor = card.cursor;
 		moved = true;
 		vertical = true;
 	}
@@ -1264,11 +1497,7 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 		card.preferred_column = editor::column_for_offset(table, line, card.cursor);
 	}
 
-	if (changed || moved)
-	{
-		Rect text = editor::text_rect(card.rect, metrics, table.line_count());
-		card.scroll = editor::scroll_to_reveal(table, metrics, text.height, card.cursor, card.scroll);
-	}
+	if (changed || moved) self.reveal_focused(metrics);
 
 	if (changed)
 	{
@@ -1349,7 +1578,31 @@ fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metric
 			card.cursor,
 			editor::EDITOR_CURRENT_LINE
 		);
-		if (is_focused && find_bar) find_bar.draw_matches(card.rect, card.buffer, card.scroll, metrics, camera);
+		if (is_focused && editor::has_selection(card.selection_anchor, card.cursor))
+		{
+			usz sel_start = 0;
+			usz sel_end   = 0;
+			editor::selection_range(card.selection_anchor, card.cursor, &sel_start, &sel_end);
+			editor::draw_selection(
+				card.buffer,
+				text,
+				card.scroll,
+				card.scroll_x,
+				metrics,
+				camera,
+				sel_start,
+				sel_end,
+				editor::EDITOR_SELECTION
+			);
+		}
+		if (is_focused && find_bar) find_bar.draw_matches(
+			card.rect,
+			card.buffer,
+			card.scroll,
+			card.scroll_x,
+			metrics,
+			camera
+		);
 		editor::draw_gutter(
 			card.buffer,
 			gutter,
@@ -1366,6 +1619,7 @@ fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metric
 			card.buffer,
 			text,
 			card.scroll,
+			card.scroll_x,
 			metrics,
 			camera,
 			font,
@@ -1374,7 +1628,16 @@ fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metric
 		);
 		if (is_focused && caret_on)
 		{
-			editor::draw_caret(card.buffer, text, card.scroll, metrics, camera, card.cursor, editor::EDITOR_CARET);
+			editor::draw_caret(
+				card.buffer,
+				text,
+				card.scroll,
+				card.scroll_x,
+				metrics,
+				camera,
+				card.cursor,
+				editor::EDITOR_CARET
+			);
 		}
 		float content_height = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
 		editor::draw_scrollbar(text, content_height, card.scroll, camera, editor::EDITOR_SCROLLBAR);

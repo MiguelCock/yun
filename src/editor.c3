@@ -21,6 +21,7 @@ const RLColor EDITOR_SCROLLBAR     = { 90, 100, 120, 200 };
 const RLColor EDITOR_HANDLE        = { 120, 160, 240, 220 };
 const RLColor EDITOR_MATCH         = { 90, 120, 70, 200 };
 const RLColor EDITOR_MATCH_CURRENT = { 170, 140, 40, 220 };
+const RLColor EDITOR_SELECTION     = { 70, 95, 150, 160 };
 const int SCROLL_MARGIN_LINES      = 1;
 
 fn float min_card_width(EditorMetrics metrics)
@@ -45,6 +46,16 @@ struct VisibleRange
 {
 	usz first;
 	usz last;
+}
+
+enum CardRegion
+{
+	NONE,
+	HANDLE,
+	MARKER,
+	CLOSE,
+	TITLE,
+	BODY,
 }
 
 fn VisibleRange visible_lines(usz line_count, float scroll_y, float viewport_height, float line_height)
@@ -104,7 +115,14 @@ fn usz column_for_offset(PieceTable* table, usz line, usz offset)
 	return column;
 }
 
-fn usz offset_for_point(PieceTable* table, float local_x, float local_y, float scroll_y, EditorMetrics metrics)
+fn usz offset_for_point(
+	PieceTable* table,
+	float local_x,
+	float local_y,
+	float scroll_y,
+	float scroll_x,
+	EditorMetrics metrics
+)
 {
 	if (metrics.line_height <= 0.0f || metrics.char_width <= 0.0f) return 0;
 	usz line_count = table.line_count();
@@ -115,7 +133,7 @@ fn usz offset_for_point(PieceTable* table, float local_x, float local_y, float s
 	if (line < 0) line = 0;
 	if ((usz)line >= line_count) line = (sz)(line_count - 1);
 
-	float content_x = local_x - metrics.padding_x;
+	float content_x = local_x + scroll_x - metrics.padding_x;
 	sz column       = (sz)math::round(content_x / metrics.char_width);
 	if (column < 0) column = 0;
 
@@ -131,6 +149,69 @@ fn usz offset_for_point(PieceTable* table, float local_x, float local_y, float s
 		remaining--;
 	}
 	return pos;
+}
+
+fn void selection_range(usz anchor, usz cursor, usz* start, usz* end)
+{
+	if (anchor < cursor)
+	{
+		*start = anchor;
+		*end = cursor;
+	}
+	else
+	{
+		*start = cursor;
+		*end = anchor;
+	}
+}
+
+fn bool has_selection(usz anchor, usz cursor)
+{
+	return anchor != cursor;
+}
+
+fn bool word_char(char c)
+{
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+}
+
+fn void word_range(PieceTable* table, usz offset, usz* start, usz* end)
+{
+	usz length = table.length();
+	if (length == 0)
+	{
+		*start = 0;
+		*end = 0;
+		return;
+	}
+	if (offset > length) offset = length;
+
+	usz s = offset;
+	while (s > 0)
+	{
+		usz prev = table.prev_boundary(s - 1);
+		if (!word_char(table.byte_at(prev))) break;
+		s = prev;
+	}
+	usz e = offset;
+	while (e < length)
+	{
+		if (!word_char(table.byte_at(e))) break;
+		e = table.next_boundary(e);
+	}
+	if (s == e)
+	{
+		if (offset < length)
+		{
+			e = table.next_boundary(offset);
+		}
+		else if (offset > 0)
+		{
+			s = table.prev_boundary(offset);
+		}
+	}
+	*start = s;
+	*end = e;
 }
 
 fn float gutter_width(usz line_count, EditorMetrics metrics)
@@ -180,6 +261,16 @@ fn Rect inner_rect(Rect card_rect, EditorMetrics metrics)
 		.width = card_rect.width - metrics.padding_x * 2.0f,
 		.height = card_rect.height - card::CARD_TITLE_HEIGHT - metrics.padding_y * 2.0f,
 	};
+}
+
+fn CardRegion region_at(FileCard* card, RLVector2 world, EditorMetrics metrics, RLCamera2D camera)
+{
+	if (!card.contains(world)) return CardRegion.NONE;
+	if (card.resize_handle_at(world, camera) >= 0) return CardRegion.HANDLE;
+	if (card.close_marker_hit(world)) return CardRegion.CLOSE;
+	if (card.marker_hit(world)) return CardRegion.MARKER;
+	if (card.open && world[1] >= card.rect.y + card::CARD_TITLE_HEIGHT) return CardRegion.BODY;
+	return CardRegion.TITLE;
 }
 
 fn void ensure_buffer(FileCard* card, Allocator allocator)
@@ -254,8 +345,10 @@ fn void destroy_buffer(FileCard* card, Allocator allocator)
 	}
 
 	card.cursor = 0;
+	card.selection_anchor = 0;
 	card.preferred_column = 0;
 	card.scroll = 0.0f;
+	card.scroll_x = 0.0f;
 	card.dirty = false;
 }
 
@@ -284,8 +377,10 @@ fn void reload_buffer(FileCard* card, Allocator allocator)
 	if (card.history) card.history.reset();
 	if (card.highlight) card.highlight.mark_dirty();
 	card.cursor = 0;
+	card.selection_anchor = 0;
 	card.preferred_column = 0;
 	card.scroll = 0.0f;
+	card.scroll_x = 0.0f;
 	card.dirty = false;
 	stamp_file(card);
 }
@@ -314,6 +409,7 @@ fn void draw_text(
 	PieceTable* table,
 	Rect area,
 	float scroll_y,
+	float scroll_x,
 	EditorMetrics metrics,
 	RLCamera2D camera,
 	RLFont font,
@@ -331,7 +427,7 @@ fn void draw_text(
 			String text = line_text(table, line, tmem);
 			if (text.len == 0) continue;
 			float y = area.y + (float)line * metrics.line_height - scroll_y;
-			rl::draw_text_ex(font, (ZString)text.ptr, { area.x, y }, font_size, 0.0f, color);
+			rl::draw_text_ex(font, (ZString)text.ptr, { area.x - scroll_x, y }, font_size, 0.0f, color);
 		}
 	};
 	rl::end_scissor_mode();
@@ -342,6 +438,7 @@ fn void draw_text_highlighted(
 	PieceTable* table,
 	Rect area,
 	float scroll_y,
+	float scroll_x,
 	EditorMetrics metrics,
 	RLCamera2D camera,
 	RLFont font,
@@ -351,7 +448,7 @@ fn void draw_text_highlighted(
 {
 	if (!highlighter || table.length() == 0 || metrics.line_height <= 0.0f)
 	{
-		draw_text(table, area, scroll_y, metrics, camera, font, font_size, base);
+		draw_text(table, area, scroll_y, scroll_x, metrics, camera, font, font_size, base);
 		return;
 	}
 
@@ -394,7 +491,7 @@ fn void draw_text_highlighted(
 				rl::draw_text_ex(
 					font,
 					(ZString)(raw + start),
-					{ area.x + (float)col * metrics.char_width, y },
+					{ area.x + (float)col * metrics.char_width - scroll_x, y },
 					font_size,
 					0.0f,
 					highlight::role_color(run.role)
@@ -523,6 +620,18 @@ fn usz cursor_down(PieceTable* table, usz cursor, usz desired_column, usz* out_c
 	return target;
 }
 
+fn usz cursor_page(PieceTable* table, usz cursor, sz delta_lines, usz desired_column, usz* out_column)
+{
+	usz line       = table.line_of(cursor);
+	usz line_count = table.line_count();
+	sz target      = (sz)line + delta_lines;
+	if (target < 0) target = 0;
+	if ((usz)target >= line_count) target = (sz)(line_count - 1);
+	usz offset = offset_for_column(table, (usz)target, desired_column);
+	*out_column = column_for_offset(table, (usz)target, offset);
+	return offset;
+}
+
 fn usz insert_text(PieceTable* table, usz cursor, String text)
 {
 	(void)table.insert(cursor, text);
@@ -545,24 +654,32 @@ fn usz delete_forward(PieceTable* table, usz cursor)
 	return cursor;
 }
 
-fn Rect caret_rect(PieceTable* table, Rect area, float scroll_y, EditorMetrics metrics, usz cursor)
+fn Rect caret_rect(PieceTable* table, Rect area, float scroll_y, float scroll_x, EditorMetrics metrics, usz cursor)
 {
 	usz line    = table.line_of(cursor);
 	usz column  = column_for_offset(table, line, cursor);
-	float x     = area.x + (float)column * metrics.char_width;
+	float x     = area.x + (float)column * metrics.char_width - scroll_x;
 	float y     = area.y + (float)line * metrics.line_height - scroll_y;
 	float width = metrics.char_width > 0.0f ? metrics.char_width : 1.0f;
 	return { .x = x, .y = y, .width = width, .height = metrics.line_height };
 }
 
-fn Rect match_rect(PieceTable* table, Rect area, float scroll_y, EditorMetrics metrics, usz start, usz end)
+fn Rect match_rect(
+	PieceTable* table,
+	Rect area,
+	float scroll_y,
+	float scroll_x,
+	EditorMetrics metrics,
+	usz start,
+	usz end
+)
 {
 	usz line        = table.line_of(start);
 	usz col         = column_for_offset(table, line, start);
 	usz line_end    = table.line_start(line) + line_length_bytes(table, line);
 	usz end_clamped = end > line_end ? line_end : end;
 	usz end_col     = end_clamped > start ? column_for_offset(table, line, end_clamped) : col;
-	float x         = area.x + (float)col * metrics.char_width;
+	float x         = area.x + (float)col * metrics.char_width - scroll_x;
 	float y         = area.y + (float)line * metrics.line_height - scroll_y;
 	float width     = (float)(end_col - col) * metrics.char_width;
 	if (width <= 0.0f) width = metrics.char_width;
@@ -573,6 +690,7 @@ fn void draw_matches(
 	PieceTable* table,
 	Rect area,
 	float scroll_y,
+	float scroll_x,
 	EditorMetrics metrics,
 	RLCamera2D camera,
 	usz[] starts,
@@ -591,8 +709,58 @@ fn void draw_matches(
 		usz start = starts[i];
 		usz line  = table.line_of(start);
 		if (line < range.first || line >= range.last) continue;
-		Rect r = match_rect(table, area, scroll_y, metrics, start, start + query_len);
+		Rect r = match_rect(table, area, scroll_y, scroll_x, metrics, start, start + query_len);
 		rl::draw_rectangle_rec(r, i == current ? selected : normal);
+	}
+	rl::end_scissor_mode();
+}
+
+fn Rect selection_rect_for_line(
+	usz start_col,
+	usz end_col,
+	usz line,
+	Rect area,
+	float scroll_y,
+	float scroll_x,
+	EditorMetrics metrics
+)
+{
+	float x = area.x + (float)start_col * metrics.char_width - scroll_x;
+	float w = (float)(end_col - start_col) * metrics.char_width;
+	float y = area.y + (float)line * metrics.line_height - scroll_y;
+	if (w < metrics.char_width) w = metrics.char_width;
+	return { .x = x, .y = y, .width = w, .height = metrics.line_height };
+}
+
+fn void draw_selection(
+	PieceTable* table,
+	Rect area,
+	float scroll_y,
+	float scroll_x,
+	EditorMetrics metrics,
+	RLCamera2D camera,
+	usz start,
+	usz end,
+	RLColor color
+)
+{
+	if (start >= end || metrics.line_height <= 0.0f) return;
+	apply_scissor(area, camera);
+	usz first_line     = table.line_of(start);
+	usz last_line      = table.line_of(end);
+	VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
+	for (usz line = first_line; line <= last_line; line++)
+	{
+		if (line < range.first || line >= range.last) continue;
+		usz line_start = table.line_start(line);
+		usz line_end   = line_start + line_length_bytes(table, line);
+		usz s          = start > line_start ? start : line_start;
+		usz e          = end < line_end ? end : line_end;
+		usz start_col  = column_for_offset(table, line, s);
+		usz end_col    = column_for_offset(table, line, e);
+		Rect r         = selection_rect_for_line(start_col, end_col, line, area, scroll_y, scroll_x, metrics);
+		if (end > line_end) r.width = area.x + area.width - r.x;
+		rl::draw_rectangle_rec(r, color);
 	}
 	rl::end_scissor_mode();
 }
@@ -612,10 +780,31 @@ fn float scroll_to_reveal(PieceTable* table, EditorMetrics metrics, float area_h
 	return scroll;
 }
 
+fn float scroll_x_to_reveal(
+	PieceTable* table,
+	EditorMetrics metrics,
+	float area_width,
+	usz cursor,
+	float current_scroll_x
+)
+{
+	usz line     = table.line_of(cursor);
+	usz column   = column_for_offset(table, line, cursor);
+	float left   = (float)column * metrics.char_width;
+	float right  = left + metrics.char_width;
+	float margin = metrics.char_width * 4.0f;
+	float scroll = current_scroll_x;
+	if (left < scroll + margin) scroll = left - margin;
+	if (right > scroll + area_width - margin) scroll = right - area_width + margin;
+	if (scroll < 0.0f) scroll = 0.0f;
+	return scroll;
+}
+
 fn void draw_caret(
 	PieceTable* table,
 	Rect area,
 	float scroll_y,
+	float scroll_x,
 	EditorMetrics metrics,
 	RLCamera2D camera,
 	usz cursor,
@@ -623,7 +812,7 @@ fn void draw_caret(
 )
 {
 	apply_scissor(area, camera);
-	rl::draw_rectangle_rec(caret_rect(table, area, scroll_y, metrics, cursor), color);
+	rl::draw_rectangle_rec(caret_rect(table, area, scroll_y, scroll_x, metrics, cursor), color);
 	rl::end_scissor_mode();
 }
 fn Rect gutter_rect(Rect card_rect, EditorMetrics metrics, usz line_count)

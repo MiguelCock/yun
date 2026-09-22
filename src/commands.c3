@@ -9,6 +9,10 @@ enum CommandId
 	SHOW_PALETTE,
 	FIND,
 	REPLACE,
+	COPY,
+	CUT,
+	PASTE,
+	SELECT_ALL,
 }
 
 struct CommandDef
@@ -27,6 +31,10 @@ const CommandDef[] COMMAND_DEFS = {
 	{ .id = CommandId.SHOW_PALETTE, .label = "Command Palette", .shortcut = "Ctrl+Shift+P", .in_top_bar = false },
 	{ .id = CommandId.FIND, .label = "Find", .shortcut = "Ctrl+F", .in_top_bar = false },
 	{ .id = CommandId.REPLACE, .label = "Replace", .shortcut = "Ctrl+H", .in_top_bar = false },
+	{ .id = CommandId.COPY, .label = "Copy", .shortcut = "Ctrl+C", .in_top_bar = false },
+	{ .id = CommandId.CUT, .label = "Cut", .shortcut = "Ctrl+X", .in_top_bar = false },
+	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false },
+	{ .id = CommandId.SELECT_ALL, .label = "Select All", .shortcut = "Ctrl+A", .in_top_bar = false },
 };
 
 fn usz command_count()
@@ -57,6 +65,14 @@ fn String command_name(CommandId id)
 			return "find";
 		case CommandId.REPLACE:
 			return "replace";
+		case CommandId.COPY:
+			return "copy";
+		case CommandId.CUT:
+			return "cut";
+		case CommandId.PASTE:
+			return "paste";
+		case CommandId.SELECT_ALL:
+			return "select_all";
 	}
 }
 
@@ -108,6 +124,14 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.FIND:
 			return has_buffer;
 		case CommandId.REPLACE:
+			return has_buffer;
+		case CommandId.COPY:
+			return has_buffer;
+		case CommandId.CUT:
+			return has_buffer;
+		case CommandId.PASTE:
+			return has_buffer;
+		case CommandId.SELECT_ALL:
 			return has_buffer;
 	}
 }

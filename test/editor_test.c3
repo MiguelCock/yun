@@ -52,10 +52,10 @@ fn void test_columns_and_points()
 		assert(column_for_offset(&t, 0, end0) == 2);
 		assert(x_for_column(2, metrics) == 25.0f);
 
-		usz off = offset_for_point(&t, x_for_column(1, metrics), line_y(1, 0.0f, metrics), 0.0f, metrics);
+		usz off = offset_for_point(&t, x_for_column(1, metrics), line_y(1, 0.0f, metrics), 0.0f, 0.0f, metrics);
 		assert(off == t.line_start(1) + 1);
 
-		usz clamped = offset_for_point(&t, x_for_column(50, metrics), line_y(1, 0.0f, metrics), 0.0f, metrics);
+		usz clamped = offset_for_point(&t, x_for_column(50, metrics), line_y(1, 0.0f, metrics), 0.0f, 0.0f, metrics);
 		assert(clamped == t.line_start(1) + line_length_bytes(&t, 1));
 		t.destroy();
 	};
@@ -156,7 +156,7 @@ fn void test_caret_rect_and_scroll()
 		Rect area             = { .x = 10.0f, .y = 20.0f, .width = 100.0f, .height = 50.0f };
 
 		usz cursor = 5;
-		Rect caret = caret_rect(&t, area, 0.0f, metrics, cursor);
+		Rect caret = caret_rect(&t, area, 0.0f, 0.0f, metrics, cursor);
 		assert(caret.x == 26.0f && caret.y == 36.0f);
 		assert(caret.height == 16.0f);
 		t.destroy();
@@ -524,15 +524,130 @@ fn void test_match_rect()
 		EditorMetrics metrics = { .char_width = 8.0f, .line_height = 20.0f, .padding_x = 8.0f, .padding_y = 6.0f };
 		Rect area             = { .x = 100.0f, .y = 50.0f, .width = 400.0f, .height = 200.0f };
 
-		Rect r = match_rect(&t, area, 0.0f, metrics, 0, 5);
+		Rect r = match_rect(&t, area, 0.0f, 0.0f, metrics, 0, 5);
 		assert(r.x == 100.0f);
 		assert(r.y == 50.0f);
 		assert(r.width == 40.0f);
 
-		Rect second = match_rect(&t, area, 0.0f, metrics, 6, 11);
+		Rect second = match_rect(&t, area, 0.0f, 0.0f, metrics, 6, 11);
 		assert(second.x == 100.0f);
 		assert(second.y == 70.0f);
 		assert(second.width == 40.0f);
 		t.destroy();
 	};
+}
+
+fn void test_selection_range()
+{
+	usz start = 9;
+	usz end   = 9;
+
+	selection_range(2, 5, &start, &end);
+	assert(start == 2 && end == 5);
+
+	selection_range(5, 2, &start, &end);
+	assert(start == 2 && end == 5);
+
+	selection_range(4, 4, &start, &end);
+	assert(start == 4 && end == 4);
+
+	assert(has_selection(1, 3));
+	assert(!has_selection(3, 3));
+}
+
+fn void test_cursor_page()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "a\nb\nc\nd\ne");
+
+		usz column = 0;
+		usz offset = cursor_page(&t, 0, 2, 0, &column);
+		assert(offset == 4);
+		assert(column == 0);
+
+		offset = cursor_page(&t, 4, -2, 0, &column);
+		assert(offset == 0);
+
+		offset = cursor_page(&t, 0, 50, 0, &column);
+		assert(offset == 8);
+
+		offset = cursor_page(&t, 8, -50, 0, &column);
+		assert(offset == 0);
+		t.destroy();
+	};
+}
+
+fn void test_word_range()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "hello world");
+
+		usz start = 0;
+		usz end   = 0;
+		word_range(&t, 2, &start, &end);
+		assert(start == 0 && end == 5);
+
+		word_range(&t, 7, &start, &end);
+		assert(start == 6 && end == 11);
+
+		word_range(&t, 11, &start, &end);
+		assert(start == 6 && end == 11);
+
+		PieceTable empty;
+		empty.init_from_buffer(tmem, "");
+		word_range(&empty, 0, &start, &end);
+		assert(start == 0 && end == 0);
+		empty.destroy();
+		t.destroy();
+	};
+}
+
+fn void test_scroll_x_to_reveal()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "abcdefghij");
+		EditorMetrics metrics = { .char_width = 8.0f, .line_height = 16.0f, .padding_x = 0.0f, .padding_y = 0.0f };
+
+		assert(scroll_x_to_reveal(&t, metrics, 40.0f, 0, 0.0f) == 0.0f);
+		assert(scroll_x_to_reveal(&t, metrics, 40.0f, 9, 0.0f) == 72.0f);
+		t.destroy();
+	};
+}
+
+fn void test_selection_rect_for_line()
+{
+	EditorMetrics metrics = { .char_width = 8.0f, .line_height = 20.0f, .padding_x = 0.0f, .padding_y = 0.0f };
+	Rect area             = { .x = 100.0f, .y = 50.0f, .width = 400.0f, .height = 200.0f };
+
+	Rect r = selection_rect_for_line(1, 4, 2, area, 0.0f, 0.0f, metrics);
+	assert(r.x == 108.0f && r.width == 24.0f);
+	assert(r.y == 90.0f && r.height == 20.0f);
+
+	Rect scrolled = selection_rect_for_line(0, 0, 0, area, 0.0f, 10.0f, metrics);
+	assert(scrolled.x == 90.0f);
+	assert(scrolled.width == metrics.char_width);
+}
+
+fn void test_region_at()
+{
+	EditorMetrics metrics = { .char_width = 8.0f, .line_height = 16.0f, .padding_x = 8.0f, .padding_y = 6.0f };
+	RLCamera2D camera     = { .offset = { 0.0f, 0.0f }, .target = { 0.0f, 0.0f }, .rotation = 0.0f, .zoom = 1.0f };
+	FileCard card         = { .rect = { .x = 0.0f, .y = 0.0f, .width = 240.0f, .height = 160.0f }, .open = true };
+
+	assert(region_at(&card, { 100.0f, 10.0f }, metrics, camera) == CardRegion.TITLE);
+	assert(region_at(&card, { 100.0f, 80.0f }, metrics, camera) == CardRegion.BODY);
+	assert(region_at(&card, { 230.0f, 10.0f }, metrics, camera) == CardRegion.MARKER);
+	assert(region_at(&card, { 205.0f, 10.0f }, metrics, camera) == CardRegion.CLOSE);
+	assert(region_at(&card, { 5.0f, 5.0f }, metrics, camera) == CardRegion.HANDLE);
+	assert(region_at(&card, { 400.0f, 400.0f }, metrics, camera) == CardRegion.NONE);
+
+	card.open = false;
+	assert(region_at(&card, { 100.0f, 80.0f }, metrics, camera) == CardRegion.NONE);
+	assert(region_at(&card, { 100.0f, 10.0f }, metrics, camera) == CardRegion.TITLE);
 }
