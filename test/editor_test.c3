@@ -413,3 +413,45 @@ fn void test_resize_from()
 	card.resize_from(7, { 10000.0f, 0.0f }, min_w, min_h);
 	assert(card.rect.width == min_w);
 }
+fn void test_close_marker_hit()
+{
+	FileCard card = { .rect = { .x = 0.0f, .y = 0.0f, .width = 240.0f, .height = 160.0f }, .open = true };
+	assert(card.close_marker_hit({ 210.0f, 10.0f }));
+	assert(!card.close_marker_hit({ 225.0f, 10.0f }));
+	assert(card.marker_hit({ 225.0f, 10.0f }));
+	assert(!card.close_marker_hit({ 100.0f, 10.0f }));
+}
+
+fn void test_unload_buffer()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_close_test");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? f = dir.append(tmem, "h.txt");
+		if (catch excuse = f) return;
+		if (catch excuse = file::save(f, "abc")) return;
+
+		FileCard card = { .path = (Path)((String)f).copy(tmem) };
+		ensure_buffer(&card, tmem);
+		card.dirty = true;
+		assert(!unload_buffer(&card, tmem));
+		assert(card.buffer != null);
+
+		card.dirty = false;
+		assert(unload_buffer(&card, tmem));
+		assert(card.buffer == null && card.history == null);
+		assert(card.cursor == 0 && card.scroll == 0.0f);
+
+		ensure_buffer(&card, tmem);
+		assert(card.buffer != null);
+		assert(line_text(card.buffer, 0, tmem).compare_to("abc") == 0);
+
+		(void)path::rmtree(dir);
+	};
+}

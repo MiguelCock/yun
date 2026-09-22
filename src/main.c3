@@ -84,6 +84,9 @@ fn int main(String[] args)
 	menu::Menu reload_menu;
 	reload_menu.init(mem);
 
+	menu::Menu close_menu;
+	close_menu.init(mem);
+
 	prompt::Prompt name_prompt;
 	name_prompt.init();
 
@@ -135,6 +138,19 @@ fn int main(String[] args)
 						name_prompt.close();
 					}
 				}
+			}
+		}
+		else if (close_menu.open)
+		{
+			int chosen = close_menu.update();
+			if (chosen >= 0)
+			{
+				int index = project.pending_close;
+				if (chosen == 0 && index >= 0 && index < (int)project.cards.len())
+				{
+					(void)editor::unload_buffer(&project.cards[index], project.allocator);
+				}
+				project.pending_close = -1;
 			}
 		}
 		else if (reload_menu.open)
@@ -236,6 +252,15 @@ fn int main(String[] args)
 				notifier.push("File changed on disk");
 				reload_menu.open_at(center, { "Reload", "Keep" });
 			}
+			if (project.pending_close >= 0 && !close_menu.open)
+			{
+				RLVector2 center = {
+					(float)rl::get_screen_width() / 2.0f,
+					(float)rl::get_screen_height() / 2.0f,
+				};
+				notifier.push("Unsaved changes");
+				close_menu.open_at(center, { "Discard", "Keep" });
+			}
 		}
 
 		notifier.update(dt);
@@ -249,6 +274,7 @@ fn int main(String[] args)
 			};
 			minimap::draw(&project, &canvas);
 			browser.draw();
+			close_menu.draw();
 			reload_menu.draw();
 			context_menu.draw();
 			name_prompt.draw();
