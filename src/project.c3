@@ -781,6 +781,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics)
 				card.cursor = editor::offset_for_point(card.buffer, local[0], local[1], card.scroll, metrics);
 				usz line = card.buffer.line_of(card.cursor);
 				card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
+				if (card.history) card.history.break_coalescing();
 				self.last_input_time = rl::get_time();
 			}
 			self.drag_index = self.focus(card_hit);
@@ -850,27 +851,41 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics)
 	if (!card.buffer) return;
 
 	PieceTable* table = card.buffer;
+	History* history  = card.history;
+	double now        = rl::get_time();
 	bool changed      = false;
 	bool vertical     = false;
 
+	if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.Z))
+	{
+		usz cursor = card.cursor;
+		if (history.undo(table, &cursor))
+		{
+			card.cursor = cursor;
+			changed = true;
+		}
+	}
+
 	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.ENTER))
 	{
-		card.cursor = editor::insert_text(table, card.cursor, "\n");
+		history.break_coalescing();
+		card.cursor = history.insert(table, card.cursor, "\n", now);
 		changed = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.TAB) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.TAB))
 	{
-		card.cursor = editor::insert_text(table, card.cursor, "\t");
+		history.break_coalescing();
+		card.cursor = history.insert(table, card.cursor, "\t", now);
 		changed = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))
 	{
-		card.cursor = editor::backspace(table, card.cursor);
+		card.cursor = history.backspace(table, card.cursor, now);
 		changed = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.DELETE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DELETE))
 	{
-		card.cursor = editor::delete_forward(table, card.cursor);
+		card.cursor = history.delete_forward(table, card.cursor, now);
 		changed = true;
 	}
 
@@ -884,7 +899,7 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics)
 			{
 				int count   = editor::utf8_encode(codepoint, &encoded[0]);
 				String text = (String)encoded[0:count];
-				card.cursor = editor::insert_text(table, card.cursor, text);
+				card.cursor = history.insert(table, card.cursor, text, now);
 				changed = true;
 			}
 			codepoint = rl::get_char_pressed();
@@ -893,27 +908,33 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics)
 
 	if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT))
 	{
+		history.break_coalescing();
 		card.cursor = editor::cursor_prev(table, card.cursor);
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT))
 	{
+		history.break_coalescing();
 		card.cursor = editor::cursor_next(table, card.cursor);
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.HOME))
 	{
+		history.break_coalescing();
 		card.cursor = editor::cursor_home(table, card.cursor);
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.END))
 	{
+		history.break_coalescing();
 		card.cursor = editor::cursor_end(table, card.cursor);
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP))
 	{
+		history.break_coalescing();
 		card.cursor = editor::cursor_up(table, card.cursor, card.preferred_column, &card.preferred_column);
 		vertical = true;
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN))
 	{
+		history.break_coalescing();
 		card.cursor = editor::cursor_down(table, card.cursor, card.preferred_column, &card.preferred_column);
 		vertical = true;
 	}
