@@ -168,10 +168,12 @@ fn void test_scroll_to_reveal()
 	@pool()
 	{
 		PieceTable t;
-		t.init_from_buffer(tmem, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10");
+		t.init_from_buffer(tmem, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19");
 		EditorMetrics metrics = { .char_width = 8.0f, .line_height = 16.0f, .padding_x = 0.0f, .padding_y = 0.0f };
 		usz cursor            = t.line_start(10);
-		assert(scroll_to_reveal(&t, metrics, 100.0f, cursor, 0.0f) == 76.0f);
+		// one line of scroll margin keeps context below the cursor (92 = 176 - 100 + 16)
+		assert(scroll_to_reveal(&t, metrics, 100.0f, cursor, 0.0f) == 92.0f);
+		assert(scroll_to_reveal(&t, metrics, 100.0f, cursor, 76.0f) == 92.0f);
 		assert(scroll_to_reveal(&t, metrics, 100.0f, 0, 100.0f) == 0.0f);
 		t.destroy();
 	};
