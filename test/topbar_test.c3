@@ -2,6 +2,7 @@ module yun::topbar @test;
 
 import raylib6::rl;
 import std::math;
+import yun::commands;
 
 fn void test_contains_screen()
 {
@@ -26,11 +27,11 @@ fn void test_hit_button()
 {
 	Rect save        = button_rect(2);
 	RLVector2 inside = { save.x + 1.0f, save.y + 1.0f };
-	assert(hit_button(inside, true, true) == 2);
+	assert(hit_button(inside, true, true) == (int)commands::CommandId.SAVE);
 	assert(hit_button(inside, true, false) == -1);
 
 	Rect open         = button_rect(1);
 	RLVector2 open_in = { open.x + 1.0f, open.y + 1.0f };
-	assert(hit_button(open_in, false, false) == 1);
+	assert(hit_button(open_in, false, false) == (int)commands::CommandId.OPEN);
 	assert(hit_button({ 0.0f, 0.0f }, true, true) == -1);
 }
