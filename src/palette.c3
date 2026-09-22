@@ -4,6 +4,7 @@ import raylib6::rl;
 import std::collections::list;
 import std::math;
 import yun::commands;
+import yun::keymap;
 import yun::topbar;
 
 const int QUERY_MAX            = 64;
@@ -344,7 +345,7 @@ fn float draw_label(RLFont font, String label, String query, float x, float y, R
 	return cursor - x;
 }
 
-fn void Palette.draw(&self, bool has_project, bool has_buffer, RLFont font)
+fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* keymap, RLFont font)
 {
 	if (!self.open) return;
 
@@ -386,11 +387,12 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, RLFont font)
 			row_y + 5.0f,
 			enabled ? PALETTE_TEXT : PALETTE_DISABLED
 		);
-		if (def.shortcut.len > 0)
+		String shortcut = keymap.shortcut(id);
+		if (shortcut.len > 0)
 		{
 			@pool()
 			{
-				ZString z      = def.shortcut.zstr_tcopy();
+				ZString z      = shortcut.zstr_tcopy();
 				RLVector2 size = rl::measure_text_ex(font, z, 14.0f, 0.0f);
 				rl::draw_text_ex(
 					font,

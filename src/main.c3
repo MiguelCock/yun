@@ -8,6 +8,7 @@ import yun::canvas;
 import yun::commands;
 import yun::config;
 import yun::editor;
+import yun::keymap;
 import yun::menu;
 import yun::minimap;
 import yun::notify;
@@ -68,14 +69,12 @@ fn void push_config_warnings(config::Config* config, notify::Notifier* notifier)
 	}
 }
 
-fn bool ctrl_down()
+fn void push_keymap_warnings(keymap::Keymap* keymap, notify::Notifier* notifier)
 {
-	return rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
-}
-
-fn bool shift_down()
-{
-	return rl::is_key_down(rl::RLKeyboardKey.LEFT_SHIFT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_SHIFT);
+	for (sz i = 0; i < keymap.warnings.len(); i++)
+	{
+		notifier.push(keymap.warnings[i]);
+	}
 }
 
 struct App
@@ -85,6 +84,7 @@ struct App
 	browser::Browser* browser;
 	notify::Notifier* notifier;
 	prompt::Prompt* name_prompt;
+	palette::Palette* palette;
 	bool* project_open;
 	int* pending_kind;
 	int* pending_parent;
@@ -170,6 +170,15 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.SHOW_PALETTE:
+
+			{
+				app.palette.show();
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+				return;
+			}
 	}
 }
 
@@ -220,6 +229,10 @@ fn int main(String[] args)
 	palette::Palette palette;
 	palette.init(mem);
 
+	keymap::Keymap keymap;
+	keymap.init(mem);
+	defer keymap.destroy();
+
 	int pending_kind        = 0;
 	int pending_parent      = project::ROOT_FOLDER;
 	RLVector2 pending_world = { 0.0f, 0.0f };
@@ -233,7 +246,9 @@ fn int main(String[] args)
 	{
 		config.load("");
 	}
+	keymap.build(&config);
 	push_config_warnings(&config, &notifier);
+	push_keymap_warnings(&keymap, &notifier);
 
 	App app = {
 		.project = &project,
@@ -241,6 +256,7 @@ fn int main(String[] args)
 		.browser = &browser,
 		.notifier = &notifier,
 		.name_prompt = &name_prompt,
+		.palette = &palette,
 		.project_open = &project_open,
 		.pending_kind = &pending_kind,
 		.pending_parent = &pending_parent,
@@ -259,7 +275,9 @@ fn int main(String[] args)
 				{
 					project_open = true;
 					set_project_title(&project);
+					keymap.build(&config);
 					push_config_warnings(&config, &notifier);
+					push_keymap_warnings(&keymap, &notifier);
 				}
 				else
 				{
@@ -349,25 +367,8 @@ fn int main(String[] args)
 			bool over_top   = topbar::contains_screen(mouse);
 			bool has_buffer = has_focused_buffer(&project);
 
-			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.N))
-			{
-				run_command(commands::CommandId.NEW_FILE, &app);
-			}
-			if (ctrl_down() && shift_down() && rl::is_key_pressed(rl::RLKeyboardKey.P))
-			{
-				palette.show();
-				while (rl::get_char_pressed() != 0)
-				{
-				}
-			}
-			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.O))
-			{
-				run_command(commands::CommandId.OPEN, &app);
-			}
-			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.S))
-			{
-				run_command(commands::CommandId.SAVE, &app);
-			}
+			int key_cmd = keymap.poll();
+			if (key_cmd >= 0) run_command((commands::CommandId)key_cmd, &app);
 
 			int bar_cmd = bar.update(mouse, project_open, has_buffer);
 			if (bar_cmd >= 0) run_command((commands::CommandId)bar_cmd, &app);
@@ -450,7 +451,7 @@ fn int main(String[] args)
 			reload_menu.draw();
 			context_menu.draw();
 			name_prompt.draw();
-			palette.draw(project_open, has_focused_buffer(&project), font);
+			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
 			notifier.draw();
 			rl::draw_fps(10, (int)topbar::TOP_BAR_HEIGHT + 10);
 		};

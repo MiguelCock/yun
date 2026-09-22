@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 4);
+	assert(command_count() == 5);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -21,6 +21,21 @@ fn void test_command_defs()
 	CommandDef save = command_def(CommandId.SAVE);
 	assert(save.label.compare_to("Save") == 0);
 	assert(save.shortcut.compare_to("Ctrl+S") == 0);
+
+	CommandDef palette = command_def(CommandId.SHOW_PALETTE);
+	assert(palette.label.compare_to("Command Palette") == 0);
+	assert(palette.shortcut.compare_to("Ctrl+Shift+P") == 0);
+	assert(!palette.in_top_bar);
+}
+
+fn void test_command_from_name()
+{
+	assert(command_from_name("new_file") == (int)CommandId.NEW_FILE);
+	assert(command_from_name("new_folder") == (int)CommandId.NEW_FOLDER);
+	assert(command_from_name("open") == (int)CommandId.OPEN);
+	assert(command_from_name("save") == (int)CommandId.SAVE);
+	assert(command_from_name("show_palette") == (int)CommandId.SHOW_PALETTE);
+	assert(command_from_name("nope") == -1);
 }
 
 fn void test_bar_commands()
@@ -44,6 +59,7 @@ fn void test_command_enabled()
 	assert(command_enabled(CommandId.SAVE, true, true));
 	assert(!command_enabled(CommandId.SAVE, true, false));
 	assert(command_enabled(CommandId.SAVE, false, true));
+	assert(command_enabled(CommandId.SHOW_PALETTE, false, false));
 }
 
 fn void test_fuzzy_exact_and_case()
