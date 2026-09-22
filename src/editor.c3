@@ -8,15 +8,17 @@ import std::math;
 import yun::card;
 import yun::text;
 
-const RLColor EDITOR_TEXT         = { 210, 214, 222, 255 };
-const RLColor EDITOR_PLACEHOLDER  = { 70, 76, 90, 255 };
-const RLColor EDITOR_CARET        = { 230, 230, 235, 255 };
-const RLColor EDITOR_GUTTER_BG    = { 24, 26, 32, 255 };
-const RLColor EDITOR_GUTTER_TEXT  = { 120, 132, 150, 255 };
-const RLColor EDITOR_CURRENT_LINE = { 255, 255, 255, 18 };
-const RLColor EDITOR_SCROLLBAR    = { 90, 100, 120, 200 };
-const RLColor EDITOR_HANDLE       = { 120, 160, 240, 220 };
-const int SCROLL_MARGIN_LINES     = 1;
+const RLColor EDITOR_TEXT          = { 210, 214, 222, 255 };
+const RLColor EDITOR_PLACEHOLDER   = { 70, 76, 90, 255 };
+const RLColor EDITOR_CARET         = { 230, 230, 235, 255 };
+const RLColor EDITOR_GUTTER_BG     = { 24, 26, 32, 255 };
+const RLColor EDITOR_GUTTER_TEXT   = { 120, 132, 150, 255 };
+const RLColor EDITOR_CURRENT_LINE  = { 255, 255, 255, 18 };
+const RLColor EDITOR_SCROLLBAR     = { 90, 100, 120, 200 };
+const RLColor EDITOR_HANDLE        = { 120, 160, 240, 220 };
+const RLColor EDITOR_MATCH         = { 90, 120, 70, 200 };
+const RLColor EDITOR_MATCH_CURRENT = { 170, 140, 40, 220 };
+const int SCROLL_MARGIN_LINES      = 1;
 
 fn float min_card_width(EditorMetrics metrics)
 {
@@ -466,6 +468,48 @@ fn Rect caret_rect(PieceTable* table, Rect area, float scroll_y, EditorMetrics m
 	float y     = area.y + (float)line * metrics.line_height - scroll_y;
 	float width = metrics.char_width > 0.0f ? metrics.char_width : 1.0f;
 	return { .x = x, .y = y, .width = width, .height = metrics.line_height };
+}
+
+fn Rect match_rect(PieceTable* table, Rect area, float scroll_y, EditorMetrics metrics, usz start, usz end)
+{
+	usz line        = table.line_of(start);
+	usz col         = column_for_offset(table, line, start);
+	usz line_end    = table.line_start(line) + line_length_bytes(table, line);
+	usz end_clamped = end > line_end ? line_end : end;
+	usz end_col     = end_clamped > start ? column_for_offset(table, line, end_clamped) : col;
+	float x         = area.x + (float)col * metrics.char_width;
+	float y         = area.y + (float)line * metrics.line_height - scroll_y;
+	float width     = (float)(end_col - col) * metrics.char_width;
+	if (width <= 0.0f) width = metrics.char_width;
+	return { .x = x, .y = y, .width = width, .height = metrics.line_height };
+}
+
+fn void draw_matches(
+	PieceTable* table,
+	Rect area,
+	float scroll_y,
+	EditorMetrics metrics,
+	RLCamera2D camera,
+	usz[] starts,
+	usz count,
+	usz query_len,
+	usz current,
+	RLColor normal,
+	RLColor selected
+)
+{
+	if (count == 0 || query_len == 0 || metrics.line_height <= 0.0f) return;
+	apply_scissor(area, camera);
+	VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
+	for (usz i = 0; i < count; i++)
+	{
+		usz start = starts[i];
+		usz line  = table.line_of(start);
+		if (line < range.first || line >= range.last) continue;
+		Rect r = match_rect(table, area, scroll_y, metrics, start, start + query_len);
+		rl::draw_rectangle_rec(r, i == current ? selected : normal);
+	}
+	rl::end_scissor_mode();
 }
 
 fn float scroll_to_reveal(PieceTable* table, EditorMetrics metrics, float area_height, usz cursor, float current_scroll)

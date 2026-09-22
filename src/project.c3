@@ -10,6 +10,7 @@ import std::math;
 import yun::canvas;
 import yun::card;
 import yun::editor;
+import yun::findbar;
 import yun::text;
 
 const int ROOT_FOLDER               = -1;
@@ -770,6 +771,12 @@ fn int Project.focus(&self, int index)
 	return self.focused;
 }
 
+fn FileCard* Project.focused_card(&self)
+{
+	if (self.focused < 0 || self.focused >= (int)self.cards.len()) return null;
+	return &self.cards[self.focused];
+}
+
 fn int Project.hit_test(&self, RLVector2 world)
 {
 	for (sz i = self.cards.len(); i > 0; i--)
@@ -859,7 +866,7 @@ fn bool Project.pointer_over_ui(&self, RLVector2 world)
 	return self.drag_card || self.drag_cluster || self.hit_test(world) >= 0 || self.cluster_hit(world) >= 0;
 }
 
-fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointer_blocked)
+fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointer_blocked, bool* out_changed)
 {
 	RLVector2 mouse = rl::get_mouse_position();
 	RLVector2 world = canvas.screen_to_world(mouse);
@@ -1005,7 +1012,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 	}
 
 	self.poll_external(rl::get_time());
-	self.handle_keyboard(metrics);
+	self.handle_keyboard(metrics, out_changed);
 }
 
 fn RLMouseCursor cursor_for_handle(int handle)
@@ -1044,7 +1051,7 @@ fn bool shift_down()
 	return rl::is_key_down(rl::RLKeyboardKey.LEFT_SHIFT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_SHIFT);
 }
 
-fn void Project.handle_keyboard(&self, EditorMetrics metrics)
+fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 {
 	if (self.focused < 0 || self.focused >= (int)self.cards.len()) return;
 	FileCard* card = &self.cards[self.focused];
@@ -1175,6 +1182,7 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics)
 	{
 		card.dirty = true;
 		self.last_input_time = rl::get_time();
+		if (out_changed) *out_changed = true;
 	}
 }
 
@@ -1202,7 +1210,7 @@ fn void Project.draw_cluster(&self, int index)
 	);
 }
 
-fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metrics)
+fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metrics, findbar::FindBar* find_bar)
 {
 	double elapsed = rl::get_time() - self.last_input_time;
 	bool caret_on  = (elapsed - math::floor(elapsed)) < 0.5;
@@ -1235,18 +1243,16 @@ fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metric
 		Rect gutter    = editor::gutter_rect(card.rect, metrics, line_count);
 		Rect text      = editor::text_rect(card.rect, metrics, line_count);
 
-		if (is_focused)
-		{
-			editor::draw_current_line(
-				card.buffer,
-				text,
-				card.scroll,
-				metrics,
-				camera,
-				card.cursor,
-				editor::EDITOR_CURRENT_LINE
-			);
-		}
+		if (is_focused) editor::draw_current_line(
+			card.buffer,
+			text,
+			card.scroll,
+			metrics,
+			camera,
+			card.cursor,
+			editor::EDITOR_CURRENT_LINE
+		);
+		if (is_focused && find_bar) find_bar.draw_matches(card.rect, card.buffer, card.scroll, metrics, camera);
 		editor::draw_gutter(
 			card.buffer,
 			gutter,
@@ -1265,6 +1271,7 @@ fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metric
 		}
 		float content_height = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
 		editor::draw_scrollbar(text, content_height, card.scroll, camera, editor::EDITOR_SCROLLBAR);
+		if (is_focused && find_bar) find_bar.draw(card.rect, metrics, font, null);
 		if (is_focused) card.draw_handles(camera, editor::EDITOR_HANDLE);
 	}
 }

@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 5);
+	assert(command_count() == 7);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -26,6 +26,11 @@ fn void test_command_defs()
 	assert(palette.label.compare_to("Command Palette") == 0);
 	assert(palette.shortcut.compare_to("Ctrl+Shift+P") == 0);
 	assert(!palette.in_top_bar);
+
+	CommandDef find = command_def(CommandId.FIND);
+	assert(find.shortcut.compare_to("Ctrl+F") == 0);
+	CommandDef replace = command_def(CommandId.REPLACE);
+	assert(replace.shortcut.compare_to("Ctrl+H") == 0);
 }
 
 fn void test_command_from_name()
