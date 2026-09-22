@@ -10,6 +10,7 @@ import yun::editor;
 import yun::menu;
 import yun::minimap;
 import yun::notify;
+import yun::palette;
 import yun::project;
 import yun::prompt;
 import yun::topbar;
@@ -56,6 +57,11 @@ fn bool ctrl_down()
 	return rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
 }
 
+fn bool shift_down()
+{
+	return rl::is_key_down(rl::RLKeyboardKey.LEFT_SHIFT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_SHIFT);
+}
+
 struct App
 {
 	project::Project* project;
@@ -97,6 +103,25 @@ fn void run_command(commands::CommandId id, App* app)
 				*app.pending_parent = project.folder_at(world);
 				*app.pending_world = world;
 				app.name_prompt.open_with("New file", "");
+				return;
+			}
+		case commands::CommandId.NEW_FOLDER:
+
+			{
+				if (!*app.project_open)
+				{
+					app.notifier.push("No project open");
+					return;
+				}
+				RLVector2 center = {
+					(float)rl::get_screen_width() / 2.0f,
+					(float)rl::get_screen_height() / 2.0f,
+				};
+				RLVector2 world = app.canvas.screen_to_world(center);
+				*app.pending_kind = 1;
+				*app.pending_parent = project.folder_at(world);
+				*app.pending_world = world;
+				app.name_prompt.open_with("New folder", "");
 				return;
 			}
 		case commands::CommandId.OPEN:
@@ -172,6 +197,9 @@ fn int main(String[] args)
 	topbar::TopBar bar;
 	bar.init();
 
+	palette::Palette palette;
+	palette.init(mem);
+
 	int pending_kind        = 0;
 	int pending_parent      = project::ROOT_FOLDER;
 	RLVector2 pending_world = { 0.0f, 0.0f };
@@ -208,6 +236,15 @@ fn int main(String[] args)
 				{
 					notifier.push("Could not open the folder");
 				}
+			}
+		}
+		else if (palette.open)
+		{
+			int chosen = palette.update(project_open, has_focused_buffer(&project));
+			if (chosen >= 0)
+			{
+				palette.record((commands::CommandId)chosen);
+				run_command((commands::CommandId)chosen, &app);
 			}
 		}
 		else if (name_prompt.open)
@@ -286,6 +323,13 @@ fn int main(String[] args)
 			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.N))
 			{
 				run_command(commands::CommandId.NEW_FILE, &app);
+			}
+			if (ctrl_down() && shift_down() && rl::is_key_pressed(rl::RLKeyboardKey.P))
+			{
+				palette.show();
+				while (rl::get_char_pressed() != 0)
+				{
+				}
 			}
 			if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.O))
 			{
@@ -377,6 +421,7 @@ fn int main(String[] args)
 			reload_menu.draw();
 			context_menu.draw();
 			name_prompt.draw();
+			palette.draw(project_open, has_focused_buffer(&project), font);
 			notifier.draw();
 			rl::draw_fps(10, (int)topbar::TOP_BAR_HEIGHT + 10);
 		};

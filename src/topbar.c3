@@ -45,13 +45,13 @@ fn Rect button_rect(usz index)
 
 fn int hit_button(RLVector2 screen, bool has_project, bool has_buffer)
 {
-	for (usz i = 0; i < commands::command_count(); i++)
+	for (usz i = 0; i < commands::bar_command_count(); i++)
 	{
-		CommandDef def = commands::command_def((commands::CommandId)i);
+		CommandDef def = commands::bar_command(i);
 		if (!commands::command_enabled(def.id, has_project, has_buffer)) continue;
 		Rect r = button_rect(i);
 		if (screen[0] >= r.x && screen[0] <= r.x + r.width && screen[1] >= r.y
-			&& screen[1] <= r.y + r.height) return (int)i;
+			&& screen[1] <= r.y + r.height) return (int)def.id;
 	}
 	return -1;
 }
@@ -96,9 +96,9 @@ fn void TopBar.draw(&self, bool has_project, bool has_buffer, String project_nam
 	rl::draw_line(0, (int)TOP_BAR_HEIGHT, rl::get_screen_width(), (int)TOP_BAR_HEIGHT, TOPBAR_BORDER);
 
 	RLVector2 mouse = rl::get_mouse_position();
-	for (usz i = 0; i < commands::command_count(); i++)
+	for (usz i = 0; i < commands::bar_command_count(); i++)
 	{
-		CommandDef def = commands::command_def((commands::CommandId)i);
+		CommandDef def = commands::bar_command(i);
 		bool enabled   = commands::command_enabled(def.id, has_project, has_buffer);
 		Rect r         = button_rect(i);
 		bool hovered   = mouse[0] >= r.x && mouse[0] <= r.x + r.width && mouse[1] >= r.y && mouse[1] <= r.y + r.height;
@@ -114,7 +114,7 @@ fn void TopBar.draw(&self, bool has_project, bool has_buffer, String project_nam
 		);
 	}
 
-	float name_x = PADDING_X + (float)commands::command_count() * (BUTTON_WIDTH + BUTTON_GAP) + 12.0f;
+	float name_x = PADDING_X + (float)commands::bar_command_count() * (BUTTON_WIDTH + BUTTON_GAP) + 12.0f;
 	if (has_project && project_name.len > 0)
 	{
 		rl::draw_text_ex(font, (ZString)project_name.ptr, { name_x, bar_text_y(16.0f) }, 16.0f, 0.0f, TOPBAR_NAME);
