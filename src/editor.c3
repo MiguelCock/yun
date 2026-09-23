@@ -9,6 +9,7 @@ import std::io::os;
 import std::math;
 import yun::card;
 import yun::highlight;
+import yun::lsp;
 import yun::text;
 
 const RLColor EDITOR_TEXT          = { 210, 214, 222, 255 };
@@ -275,11 +276,13 @@ fn CardRegion region_at(FileCard* card, RLVector2 world, EditorMetrics metrics, 
 
 fn void ensure_buffer(FileCard* card, Allocator allocator)
 {
+	bool created = false;
 	if (!card.buffer)
 	{
 		PieceTable* buffer = alloc::new(allocator, PieceTable);
 		(void)buffer.init_from_file(allocator, (String)card.path);
 		card.buffer = buffer;
+		created = true;
 	}
 	if (!card.history)
 	{
@@ -291,6 +294,7 @@ fn void ensure_buffer(FileCard* card, Allocator allocator)
 	{
 		card.highlight = highlight::create(allocator, card.buffer, (String)card.path);
 	}
+	if (created && card.buffer) lsp::lsp_did_open((String)card.path, card.buffer);
 	stamp_file(card);
 }
 
@@ -324,6 +328,7 @@ fn bool file_changed(FileCard* card)
 
 fn void destroy_buffer(FileCard* card, Allocator allocator)
 {
+	lsp::lsp_did_close((String)card.path);
 	if (card.buffer)
 	{
 		card.buffer.destroy();
@@ -376,6 +381,7 @@ fn void reload_buffer(FileCard* card, Allocator allocator)
 	(void)card.buffer.init_from_file(allocator, (String)card.path);
 	if (card.history) card.history.reset();
 	if (card.highlight) card.highlight.mark_dirty();
+	if (card.buffer) lsp::lsp_did_change((String)card.path, card.buffer);
 	card.cursor = 0;
 	card.selection_anchor = 0;
 	card.preferred_column = 0;

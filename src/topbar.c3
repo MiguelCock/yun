@@ -88,7 +88,15 @@ fn float bar_text_y(float text_height)
 	return (TOP_BAR_HEIGHT - text_height) / 2.0f;
 }
 
-fn void TopBar.draw(&self, bool has_project, bool has_buffer, String project_name, float zoom, RLFont font)
+fn void TopBar.draw(
+	&self,
+	bool has_project,
+	bool has_buffer,
+	String project_name,
+	float zoom,
+	String lsp_status,
+	RLFont font
+)
 {
 	(void)self;
 	Rect bar = topbar_rect();
@@ -124,13 +132,20 @@ fn void TopBar.draw(&self, bool has_project, bool has_buffer, String project_nam
 	{
 		String label   = string::format(tmem, "%d%%", (int)(zoom * 100.0f));
 		RLVector2 size = rl::measure_text_ex(font, (ZString)label.ptr, 16.0f, 0.0f);
-		rl::draw_text_ex(
-			font,
-			(ZString)label.ptr,
-			{ (float)rl::get_screen_width() - 12.0f - size[0], bar_text_y(16.0f) },
-			16.0f,
-			0.0f,
-			TOPBAR_NAME
-		);
+		float zoom_x   = (float)rl::get_screen_width() - 12.0f - size[0];
+		rl::draw_text_ex(font, (ZString)label.ptr, { zoom_x, bar_text_y(16.0f) }, 16.0f, 0.0f, TOPBAR_NAME);
+
+		if (lsp_status.len > 0)
+		{
+			RLVector2 lsp_size = rl::measure_text_ex(font, (ZString)lsp_status.ptr, 16.0f, 0.0f);
+			rl::draw_text_ex(
+				font,
+				(ZString)lsp_status.ptr,
+				{ zoom_x - 24.0f - lsp_size[0], bar_text_y(16.0f) },
+				16.0f,
+				0.0f,
+				TOPBAR_DISABLED
+			);
+		}
 	};
 }

@@ -14,6 +14,7 @@ import yun::editor;
 import yun::findbar;
 import yun::gitignore;
 import yun::highlight;
+import yun::lsp;
 import yun::text;
 
 const int ROOT_FOLDER               = -1;
@@ -1644,6 +1645,7 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 	{
 		card.dirty = true;
 		if (card.highlight) card.highlight.mark_dirty();
+		lsp::lsp_did_change((String)card.path, card.buffer);
 		self.last_input_time = rl::get_time();
 		if (out_changed) *out_changed = true;
 	}
