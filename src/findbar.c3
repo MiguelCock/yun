@@ -319,6 +319,7 @@ fn void FindBar.draw_matches(
 	Rect card_rect,
 	PieceTable* table,
 	float scroll_y,
+	float scroll_x,
 	EditorMetrics metrics,
 	RLCamera2D camera
 )
@@ -329,6 +330,7 @@ fn void FindBar.draw_matches(
 		table,
 		text,
 		scroll_y,
+		scroll_x,
 		metrics,
 		camera,
 		self.starts.entries[0:self.starts.len()],

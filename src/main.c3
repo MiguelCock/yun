@@ -89,6 +89,7 @@ struct App
 	prompt::Prompt* name_prompt;
 	palette::Palette* palette;
 	findbar::FindBar* find_bar;
+	editor::EditorMetrics metrics;
 	bool* project_open;
 	int* pending_kind;
 	int* pending_parent;
@@ -202,7 +203,51 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.COPY:
+
+			{
+				if (project.copy_selection())
+				{
+					app.notifier.push("Copied");
+				}
+				return;
+			}
+		case commands::CommandId.CUT:
+
+			{
+				if (project.cut_selection(rl::get_time()))
+				{
+					mark_buffer_changed(project, app.find_bar, app.metrics);
+				}
+				return;
+			}
+		case commands::CommandId.PASTE:
+
+			{
+				if (project.paste_clipboard(rl::get_time()))
+				{
+					mark_buffer_changed(project, app.find_bar, app.metrics);
+				}
+				return;
+			}
+		case commands::CommandId.SELECT_ALL:
+
+			{
+				project.select_all();
+				project.reveal_focused(app.metrics);
+				return;
+			}
 	}
+}
+
+fn void mark_buffer_changed(project::Project* project, findbar::FindBar* find_bar, editor::EditorMetrics metrics)
+{
+	FileCard* card = project.focused_card();
+	if (!card) return;
+	card.dirty = true;
+	if (card.highlight) card.highlight.mark_dirty();
+	project.reveal_focused(metrics);
+	find_bar.mark_dirty();
 }
 
 fn int main(String[] args)
@@ -295,6 +340,7 @@ fn int main(String[] args)
 		.name_prompt = &name_prompt,
 		.palette = &palette,
 		.find_bar = &find_bar,
+		.metrics = metrics,
 		.project_open = &project_open,
 		.pending_kind = &pending_kind,
 		.pending_parent = &pending_parent,
@@ -525,13 +571,17 @@ fn int main(String[] args)
 				{
 					FileCard* card = &project.cards[focus];
 					Rect text      = editor::text_rect(card.rect, metrics, card.buffer.line_count());
-					if (result > 0) card.scroll = editor::scroll_to_reveal(
-						card.buffer,
-						metrics,
-						text.height,
-						reveal,
-						card.scroll
-					);
+					if (result > 0)
+					{
+						card.scroll = editor::scroll_to_reveal(card.buffer, metrics, text.height, reveal, card.scroll);
+						card.scroll_x = editor::scroll_x_to_reveal(
+							card.buffer,
+							metrics,
+							text.width,
+							reveal,
+							card.scroll_x
+						);
+					}
 					if (replaced) card.dirty = true;
 				}
 			}

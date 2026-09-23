@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 7);
+	assert(command_count() == 11);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -31,6 +31,14 @@ fn void test_command_defs()
 	assert(find.shortcut.compare_to("Ctrl+F") == 0);
 	CommandDef replace = command_def(CommandId.REPLACE);
 	assert(replace.shortcut.compare_to("Ctrl+H") == 0);
+
+	CommandDef copy = command_def(CommandId.COPY);
+	assert(copy.label.compare_to("Copy") == 0);
+	assert(copy.shortcut.compare_to("Ctrl+C") == 0);
+	assert(!copy.in_top_bar);
+	assert(command_def(CommandId.CUT).shortcut.compare_to("Ctrl+X") == 0);
+	assert(command_def(CommandId.PASTE).shortcut.compare_to("Ctrl+V") == 0);
+	assert(command_def(CommandId.SELECT_ALL).shortcut.compare_to("Ctrl+A") == 0);
 }
 
 fn void test_command_from_name()
@@ -40,6 +48,10 @@ fn void test_command_from_name()
 	assert(command_from_name("open") == (int)CommandId.OPEN);
 	assert(command_from_name("save") == (int)CommandId.SAVE);
 	assert(command_from_name("show_palette") == (int)CommandId.SHOW_PALETTE);
+	assert(command_from_name("copy") == (int)CommandId.COPY);
+	assert(command_from_name("cut") == (int)CommandId.CUT);
+	assert(command_from_name("paste") == (int)CommandId.PASTE);
+	assert(command_from_name("select_all") == (int)CommandId.SELECT_ALL);
 	assert(command_from_name("nope") == -1);
 }
 
@@ -65,6 +77,9 @@ fn void test_command_enabled()
 	assert(!command_enabled(CommandId.SAVE, true, false));
 	assert(command_enabled(CommandId.SAVE, false, true));
 	assert(command_enabled(CommandId.SHOW_PALETTE, false, false));
+	assert(command_enabled(CommandId.COPY, true, true));
+	assert(!command_enabled(CommandId.COPY, true, false));
+	assert(command_enabled(CommandId.SELECT_ALL, true, true));
 }
 
 fn void test_fuzzy_exact_and_case()

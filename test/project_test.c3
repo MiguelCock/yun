@@ -552,3 +552,15 @@ fn void test_open_prunes_ignored_dirs()
 		(void)path::rmtree(dir);
 	};
 }
+fn void test_double_click_detection()
+{
+	RLVector2 a    = { 10.0f, 10.0f };
+	RLVector2 near = { 12.0f, 11.0f };
+	RLVector2 far  = { 40.0f, 10.0f };
+
+	assert(is_double_click(1.0, a, 0.9, a));
+	assert(is_double_click(1.0, near, 0.9, a));
+	assert(!is_double_click(1.0, far, 0.9, a));
+	assert(!is_double_click(1.0, a, 0.5, a));
+	assert(!is_double_click(0.8, a, 0.9, a));
+}
