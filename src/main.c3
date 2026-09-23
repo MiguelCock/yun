@@ -797,12 +797,19 @@ fn int main(String[] args)
 			minimap::draw(&project, &canvas);
 			String project_name = "";
 			if (project_open) project_name = rl::get_file_name((ZString)project.root.ptr).str_view();
+			int lsp_errors   = 0;
+			int lsp_warnings = 0;
+			int lsp_infos    = 0;
+			int lsp_hints    = 0;
+			lsp::lsp_diagnostic_counts(&lsp_errors, &lsp_warnings, &lsp_infos, &lsp_hints);
 			bar.draw(
 				project_open,
 				has_focused_buffer(&project),
 				project_name,
 				canvas.camera.zoom,
 				lsp.status_text(),
+				lsp_errors,
+				lsp_warnings,
 				font
 			);
 			browser.draw();

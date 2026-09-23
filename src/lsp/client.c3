@@ -37,6 +37,12 @@ struct LspPending
 	String method;
 }
 
+struct LspNotification
+{
+	String method;
+	Object* message;
+}
+
 struct LspClient
 {
 	Allocator allocator;
@@ -56,6 +62,7 @@ struct LspClient
 	bool initialized_sent;
 	List{LspPending} pending;
 	List{String} argv;
+	List{LspNotification} notifications;
 	LspCapabilities caps;
 	String last_error;
 	double backoff;
@@ -79,20 +86,33 @@ fn void LspClient.init(&self, Allocator allocator, String language, String root_
 	self.initialized_sent = false;
 	self.pending.init(allocator);
 	self.argv.init(allocator);
+	self.notifications.init(allocator);
 	lsp_capabilities_init(&self.caps, allocator);
 	self.last_error = "";
 	self.backoff = 0.0;
 	self.restart_at = 0.0;
 }
 
+fn void LspClient.clear_notifications(&self)
+{
+	for (sz i = 0; i < self.notifications.len(); i++)
+	{
+		self.notifications[i].method.free(self.allocator);
+		self.notifications[i].message.free();
+	}
+	self.notifications.clear();
+}
+
 fn void LspClient.destroy(&self)
 {
 	self.stop();
+	self.clear_notifications();
 	for (sz i = 0; i < self.pending.len(); i++)
 	{
 		self.pending[i].method.free(self.allocator);
 	}
 	self.pending.free();
+	self.notifications.free();
 	lsp_capabilities_free(&self.caps, self.allocator);
 	self.language.free(self.allocator);
 	self.root_uri.free(self.allocator);
@@ -429,6 +449,15 @@ fn void LspClient.handle_message(&self, String json)
 	{
 		int? id = id_obj.to_value(int);
 		if (try value = id) self.resolve_pending(value, message);
+		message.free();
+		return;
+	}
+
+	Object*? method_opt = message.get("method");
+	if (try method = method_opt)
+	{
+		self.notifications.push({ .method = method.s.copy(self.allocator), .message = message });
+		return;
 	}
 	message.free();
 }

@@ -1769,6 +1769,14 @@ fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metric
 			16.0f,
 			editor::EDITOR_TEXT
 		);
+		if (is_focused)
+		{
+			lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
+			if (diags.len > 0)
+			{
+				editor::draw_diagnostics(card.buffer, text, card.scroll, card.scroll_x, metrics, camera, diags);
+			}
+		}
 		if (is_focused && caret_on)
 		{
 			editor::draw_caret(

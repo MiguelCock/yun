@@ -1,6 +1,7 @@
 module yun::lsp;
 
 import std::collections::list;
+import std::collections::map;
 import std::collections::object;
 import std::core::mem::alloc;
 import std::math;
@@ -17,6 +18,12 @@ struct LspDoc
 	bool opened;
 }
 
+struct FileDiagnostics
+{
+	String path;
+	List{LspDiagnostic} diags;
+}
+
 struct Lsp
 {
 	Allocator allocator;
@@ -25,9 +32,13 @@ struct Lsp
 	bool has_root;
 	List{LspClient*} clients;
 	List{LspDoc} docs;
+	List{FileDiagnostics} diag_files;
+	HashMap{String, int} diag_index;
 }
 
 Lsp* active_lsp;
+
+const LspDiagnostic[] NO_DIAGNOSTICS = { };
 
 fn void Lsp.init(&self, Allocator allocator, config::Config* config)
 {
@@ -37,10 +48,31 @@ fn void Lsp.init(&self, Allocator allocator, config::Config* config)
 	self.has_root = false;
 	self.clients.init(allocator);
 	self.docs.init(allocator);
+	self.diag_files.init(allocator);
+	self.diag_index.init(allocator);
+}
+
+fn void Lsp.free_diagnostics(&self)
+{
+	for (sz i = 0; i < self.diag_files.len(); i++)
+	{
+		for (sz d = 0; d < self.diag_files[i].diags.len(); d++)
+		{
+			if (self.diag_files[i].diags[d].message.len)
+			{
+				self.diag_files[i].diags[d].message.free(self.allocator);
+			}
+		}
+		self.diag_files[i].diags.free();
+		self.diag_files[i].path.free(self.allocator);
+	}
+	self.diag_files.clear();
+	self.diag_index.clear();
 }
 
 fn void Lsp.shutdown_all(&self)
 {
+	self.free_diagnostics();
 	for (sz i = 0; i < self.clients.len(); i++)
 	{
 		LspClient* client = self.clients[i];
@@ -67,6 +99,102 @@ fn void Lsp.set_root(&self, String root)
 	self.shutdown_all();
 	self.root_uri = path_to_uri(self.allocator, root);
 	self.has_root = true;
+}
+
+fn void Lsp.clear_diagnostics(&self, String path)
+{
+	int*? entry = self.diag_index.get_ref(path);
+	if (catch excuse = entry) return;
+	sz index = *entry;
+	for (sz d = 0; d < self.diag_files[index].diags.len(); d++)
+	{
+		if (self.diag_files[index].diags[d].message.len)
+		{
+			self.diag_files[index].diags[d].message.free(self.allocator);
+		}
+	}
+	self.diag_files[index].diags.free();
+	self.diag_files[index].path.free(self.allocator);
+	self.diag_files.remove_at(index);
+	self.diag_index.clear();
+	for (sz i = 0; i < self.diag_files.len(); i++)
+	{
+		self.diag_index.set(self.diag_files[i].path, (int)i);
+	}
+}
+
+fn void Lsp.replace_diagnostics(&self, String path, List{LspDiagnostic}* parsed)
+{
+	int*? entry = self.diag_index.get_ref(path);
+	if (catch excuse = entry)
+	{
+		FileDiagnostics file;
+		file.path = path.copy(self.allocator);
+		file.diags = *parsed;
+		self.diag_files.push(file);
+		self.diag_index.set(file.path, (int)(self.diag_files.len() - 1));
+		return;
+	}
+	sz index = *entry;
+	for (sz d = 0; d < self.diag_files[index].diags.len(); d++)
+	{
+		if (self.diag_files[index].diags[d].message.len)
+		{
+			self.diag_files[index].diags[d].message.free(self.allocator);
+		}
+	}
+	self.diag_files[index].diags.free();
+	self.diag_files[index].diags = *parsed;
+}
+
+fn LspDiagnostic[] Lsp.diagnostics_for(&self, String path)
+{
+	int*? entry = self.diag_index.get_ref(path);
+	if (catch excuse = entry) return NO_DIAGNOSTICS;
+	FileDiagnostics* file = &self.diag_files[*entry];
+	return file.diags.entries[0:file.diags.len()];
+}
+
+fn void Lsp.counts(&self, int* errors, int* warnings, int* infos, int* hints)
+{
+	*errors = 0;
+	*warnings = 0;
+	*infos = 0;
+	*hints = 0;
+	for (sz f = 0; f < self.diag_files.len(); f++)
+	{
+		for (sz d = 0; d < self.diag_files[f].diags.len(); d++)
+		{
+			switch (self.diag_files[f].diags[d].severity)
+			{
+				case DIAGNOSTIC_ERROR:
+					(*errors)++;
+				case DIAGNOSTIC_WARNING:
+					(*warnings)++;
+				case DIAGNOSTIC_INFO:
+					(*infos)++;
+				default:
+					(*hints)++;
+			}
+		}
+	}
+}
+
+fn void Lsp.handle_notification(&self, String method, Object* params)
+{
+	if (method.compare_to("textDocument/publishDiagnostics") != 0) return;
+
+	String? uri = params.get_string("uri");
+	if (catch excuse = uri) return;
+
+	@pool()
+	{
+		String path = uri_to_path(tmem, uri);
+		List{LspDiagnostic} diags;
+		diags.init(self.allocator);
+		lsp_parse_diagnostics(self.allocator, params, &diags);
+		self.replace_diagnostics(path, &diags);
+	};
 }
 
 fn String lsp_extension(String path)
@@ -250,6 +378,7 @@ fn void Lsp.handle_close(&self, String path)
 			};
 		}
 	}
+	self.clear_diagnostics(doc.path);
 	doc.path.free(self.allocator);
 	doc.uri.free(self.allocator);
 	doc.language.free(self.allocator);
@@ -275,6 +404,15 @@ fn void Lsp.update(&self, double now)
 	{
 		LspClient* client = self.clients[i];
 		client.pump();
+		for (sz n = 0; n < client.notifications.len(); n++)
+		{
+			LspNotification note = client.notifications[n];
+			Object*? params_opt  = note.message.get("params");
+			if (try params = params_opt) self.handle_notification(note.method, params);
+			note.method.free(client.allocator);
+			note.message.free();
+		}
+		client.notifications.clear();
 
 		if (client.status == LspStatus.STARTING && client.handshake_done && !client.initialized_sent)
 		{
@@ -358,4 +496,23 @@ fn void lsp_did_change(String path, PieceTable* table)
 fn void lsp_did_close(String path)
 {
 	if (active_lsp) active_lsp.handle_close(path);
+}
+
+fn LspDiagnostic[] lsp_diagnostics_for(String path)
+{
+	if (!active_lsp) return NO_DIAGNOSTICS;
+	return active_lsp.diagnostics_for(path);
+}
+
+fn void lsp_diagnostic_counts(int* errors, int* warnings, int* infos, int* hints)
+{
+	if (!active_lsp)
+	{
+		*errors = 0;
+		*warnings = 0;
+		*infos = 0;
+		*hints = 0;
+		return;
+	}
+	active_lsp.counts(errors, warnings, infos, hints);
 }

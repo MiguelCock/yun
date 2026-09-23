@@ -17,6 +17,8 @@ const RLColor TOPBAR_HOVER    = { 64, 72, 92, 255 };
 const RLColor TOPBAR_TEXT     = { 220, 224, 232, 255 };
 const RLColor TOPBAR_DISABLED = { 110, 116, 128, 255 };
 const RLColor TOPBAR_NAME     = { 180, 200, 230, 255 };
+const RLColor TOPBAR_ERROR    = { 240, 110, 110, 255 };
+const RLColor TOPBAR_WARNING  = { 230, 190, 80, 255 };
 
 struct TopBar
 {
@@ -95,6 +97,8 @@ fn void TopBar.draw(
 	String project_name,
 	float zoom,
 	String lsp_status,
+	int errors,
+	int warnings,
 	RLFont font
 )
 {
@@ -135,16 +139,32 @@ fn void TopBar.draw(
 		float zoom_x   = (float)rl::get_screen_width() - 12.0f - size[0];
 		rl::draw_text_ex(font, (ZString)label.ptr, { zoom_x, bar_text_y(16.0f) }, 16.0f, 0.0f, TOPBAR_NAME);
 
+		float cursor_x = zoom_x;
 		if (lsp_status.len > 0)
 		{
 			RLVector2 lsp_size = rl::measure_text_ex(font, (ZString)lsp_status.ptr, 16.0f, 0.0f);
+			cursor_x -= 24.0f + lsp_size[0];
 			rl::draw_text_ex(
 				font,
 				(ZString)lsp_status.ptr,
-				{ zoom_x - 24.0f - lsp_size[0], bar_text_y(16.0f) },
+				{ cursor_x, bar_text_y(16.0f) },
 				16.0f,
 				0.0f,
 				TOPBAR_DISABLED
+			);
+		}
+		if (errors > 0 || warnings > 0)
+		{
+			String counts        = string::format(tmem, "E%d W%d", errors, warnings);
+			RLVector2 count_size = rl::measure_text_ex(font, (ZString)counts.ptr, 16.0f, 0.0f);
+			cursor_x -= 24.0f + count_size[0];
+			rl::draw_text_ex(
+				font,
+				(ZString)counts.ptr,
+				{ cursor_x, bar_text_y(16.0f) },
+				16.0f,
+				0.0f,
+				errors > 0 ? TOPBAR_ERROR : TOPBAR_WARNING
 			);
 		}
 	};
