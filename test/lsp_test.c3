@@ -220,3 +220,57 @@ fn void test_client_correlation()
 		fake::fake_free(&fake_transport_ctx);
 	};
 }
+fn void test_client_captures_notifications()
+{
+	@pool()
+	{
+		LspClient client;
+		client.init(tmem, "c", "file:///root");
+		client.handle_message("{\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"file:///a.c\"}}");
+		assert(client.notifications.len() == 1);
+		assert(client.notifications[0].method.compare_to("textDocument/publishDiagnostics") == 0);
+		assert(client.notifications[0].message.has_key("params"));
+		client.clear_notifications();
+		assert(client.notifications.len() == 0);
+		client.destroy();
+	};
+}
+
+fn void test_diagnostics_store()
+{
+	@pool()
+	{
+		Lsp lsp;
+		lsp.init(tmem, null);
+
+		Object*? params = json::parse(
+			tmem,
+			"{\"uri\":\"file:///proj/a.c\",\"diagnostics\":[{\"range\":{\"start\":{\"line\":0,\"character\":1},\"end\":{\"line\":0,\"character\":3}},\"severity\":1,\"message\":\"boom\"}]}"
+		);
+		if (catch excuse = params)
+		{
+			assert(false);
+		}
+		else
+		{
+			lsp.handle_notification("textDocument/publishDiagnostics", params);
+		}
+
+		assert(lsp.diagnostics_for("/proj/a.c").len == 1);
+		assert(lsp.diagnostics_for("/proj/a.c")[0].message.compare_to("boom") == 0);
+
+		int errors   = 0;
+		int warnings = 0;
+		int infos    = 0;
+		int hints    = 0;
+		lsp.counts(&errors, &warnings, &infos, &hints);
+		assert(errors == 1 && warnings == 0);
+
+		lsp.clear_diagnostics("/proj/a.c");
+		assert(lsp.diagnostics_for("/proj/a.c").len == 0);
+		lsp.counts(&errors, &warnings, &infos, &hints);
+		assert(errors == 0);
+
+		lsp.shutdown_all();
+	};
+}

@@ -23,6 +23,11 @@ const RLColor EDITOR_HANDLE        = { 120, 160, 240, 220 };
 const RLColor EDITOR_MATCH         = { 90, 120, 70, 200 };
 const RLColor EDITOR_MATCH_CURRENT = { 170, 140, 40, 220 };
 const RLColor EDITOR_SELECTION     = { 70, 95, 150, 160 };
+const RLColor DIAGNOSTIC_ERROR     = { 240, 90, 90, 255 };
+const RLColor DIAGNOSTIC_WARNING   = { 230, 190, 80, 255 };
+const RLColor DIAGNOSTIC_INFO      = { 90, 160, 230, 255 };
+const RLColor DIAGNOSTIC_HINT      = { 140, 150, 170, 255 };
+const int MAX_DIAGNOSTIC_SEGMENTS  = 512;
 const int SCROLL_MARGIN_LINES      = 1;
 
 fn float min_card_width(EditorMetrics metrics)
@@ -767,6 +772,92 @@ fn void draw_selection(
 		Rect r         = selection_rect_for_line(start_col, end_col, line, area, scroll_y, scroll_x, metrics);
 		if (end > line_end) r.width = area.x + area.width - r.x;
 		rl::draw_rectangle_rec(r, color);
+	}
+	rl::end_scissor_mode();
+}
+
+fn void diagnostic_offsets(PieceTable* table, lsp::LspDiagnostic diag, usz* start, usz* end)
+{
+	*start = lsp::offset_from_position(table, diag.start_line, diag.start_character);
+	*end = lsp::offset_from_position(table, diag.end_line, diag.end_character);
+	if (*end < *start) *end = *start;
+}
+
+fn RLColor diagnostic_color(int severity)
+{
+	switch (severity)
+	{
+		case lsp::DIAGNOSTIC_ERROR:
+			return DIAGNOSTIC_ERROR;
+		case lsp::DIAGNOSTIC_WARNING:
+			return DIAGNOSTIC_WARNING;
+		case lsp::DIAGNOSTIC_INFO:
+			return DIAGNOSTIC_INFO;
+		default:
+			return DIAGNOSTIC_HINT;
+	}
+}
+
+fn void draw_squiggle(float x0, float x1, float y, float zoom, RLColor color)
+{
+	if (x1 <= x0) return;
+	float amplitude = 2.0f / zoom;
+	float step      = 4.0f / zoom;
+	float thickness = 1.0f / zoom;
+	float x         = x0;
+	bool up         = true;
+	while (x < x1)
+	{
+		float next = x + step;
+		if (next > x1) next = x1;
+		float ay = y + (up ? -amplitude : amplitude);
+		float by = y + (up ? amplitude : -amplitude);
+		rl::draw_line_ex({ x, ay }, { next, by }, thickness, color);
+		x = next;
+		up = !up;
+	}
+}
+
+fn void draw_diagnostics(
+	PieceTable* table,
+	Rect area,
+	float scroll_y,
+	float scroll_x,
+	EditorMetrics metrics,
+	RLCamera2D camera,
+	lsp::LspDiagnostic[] diags
+)
+{
+	if (diags.len == 0 || metrics.line_height <= 0.0f || metrics.char_width <= 0.0f) return;
+	apply_scissor(area, camera);
+	VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
+	int segments       = 0;
+	for (usz i = 0; i < diags.len && segments < MAX_DIAGNOSTIC_SEGMENTS; i++)
+	{
+		usz start = 0;
+		usz end   = 0;
+		diagnostic_offsets(table, diags[i], &start, &end);
+		usz first_line = table.line_of(start);
+		usz last_line  = table.line_of(end);
+		for (usz line = first_line; line <= last_line && segments < MAX_DIAGNOSTIC_SEGMENTS; line++)
+		{
+			if (line < range.first || line >= range.last) continue;
+			usz line_start = table.line_start(line);
+			usz line_end   = line_start + line_length_bytes(table, line);
+			usz s          = start > line_start ? start : line_start;
+			usz e          = end < line_end ? end : line_end;
+			usz start_col  = column_for_offset(table, line, s);
+			usz end_col    = column_for_offset(table, line, e);
+			float x0       = area.x + (float)start_col * metrics.char_width - scroll_x;
+			float x1       = area.x + (float)end_col * metrics.char_width - scroll_x;
+			if (e >= line_end || end_col <= start_col) x1 = x0 + metrics.char_width;
+			if (x1 < area.x || x0 > area.x + area.width) continue;
+			if (x0 < area.x) x0 = area.x;
+			if (x1 > area.x + area.width) x1 = area.x + area.width;
+			float y = area.y + (float)line * metrics.line_height - scroll_y + metrics.line_height - 2.0f;
+			draw_squiggle(x0, x1, y, camera.zoom, diagnostic_color(diags[i].severity));
+			segments++;
+		}
 	}
 	rl::end_scissor_mode();
 }

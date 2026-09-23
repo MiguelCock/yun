@@ -5,6 +5,7 @@ import std::io::file;
 import std::io::path;
 import std::math;
 import yun::card;
+import yun::lsp;
 import yun::text;
 
 fn void test_visible_lines()
@@ -650,4 +651,44 @@ fn void test_region_at()
 	card.open = false;
 	assert(region_at(&card, { 100.0f, 80.0f }, metrics, camera) == CardRegion.NONE);
 	assert(region_at(&card, { 100.0f, 10.0f }, metrics, camera) == CardRegion.TITLE);
+}
+fn void test_diagnostic_offsets()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "abc\ndef");
+
+		usz start = 0;
+		usz end   = 0;
+
+		lsp::LspDiagnostic single = {
+			.start_line = 0,
+			.start_character = 1,
+			.end_line = 0,
+			.end_character = 3,
+		};
+		diagnostic_offsets(&t, single, &start, &end);
+		assert(start == 1 && end == 3);
+
+		lsp::LspDiagnostic multiline = {
+			.start_line = 0,
+			.start_character = 2,
+			.end_line = 1,
+			.end_character = 1,
+		};
+		diagnostic_offsets(&t, multiline, &start, &end);
+		assert(start == 2 && end == 5);
+
+		lsp::LspDiagnostic reversed = {
+			.start_line = 1,
+			.start_character = 2,
+			.end_line = 0,
+			.end_character = 1,
+		};
+		diagnostic_offsets(&t, reversed, &start, &end);
+		assert(start == end);
+
+		t.destroy();
+	};
 }
