@@ -12,6 +12,7 @@ import yun::editor;
 import yun::find;
 import yun::findbar;
 import yun::keymap;
+import yun::lsp;
 import yun::menu;
 import yun::minimap;
 import yun::notify;
@@ -333,6 +334,10 @@ fn int main(String[] args)
 	config.init(mem);
 	defer config.destroy();
 
+	lsp::Lsp lsp;
+	lsp.init(mem, &config);
+	lsp::lsp_set_active(&lsp);
+
 	browser::Browser browser;
 	browser.init(mem);
 
@@ -438,6 +443,7 @@ fn int main(String[] args)
 				{
 					project_open = true;
 					finish_open(&project, &canvas, &config, &keymap, &notifier);
+					lsp.set_root((String)project.root);
 				}
 				else if (!open_job.cancelled)
 				{
@@ -778,6 +784,7 @@ fn int main(String[] args)
 			}
 		}
 
+		lsp.update(rl::get_time());
 		notifier.update(dt);
 
 		rl::@drawing()
@@ -790,7 +797,14 @@ fn int main(String[] args)
 			minimap::draw(&project, &canvas);
 			String project_name = "";
 			if (project_open) project_name = rl::get_file_name((ZString)project.root.ptr).str_view();
-			bar.draw(project_open, has_focused_buffer(&project), project_name, canvas.camera.zoom, font);
+			bar.draw(
+				project_open,
+				has_focused_buffer(&project),
+				project_name,
+				canvas.camera.zoom,
+				lsp.status_text(),
+				font
+			);
 			browser.draw();
 			close_menu.draw();
 			delete_menu.draw();
@@ -805,5 +819,6 @@ fn int main(String[] args)
 	}
 
 	if (project_open) workspace::save(&project, &canvas);
+	lsp.shutdown_all();
 	return 0;
 }
