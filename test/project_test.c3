@@ -248,6 +248,16 @@ fn void test_open_job_completes_and_cancels()
 		if (catch excuse = nested) return;
 		if (catch excuse = file::save(nested, content)) return;
 
+		Path? env = dir.append(tmem, "env");
+		if (catch excuse = env) return;
+		if (catch excuse = path::mkdir(env)) return;
+		Path? env_file = env.append(tmem, "site.py");
+		if (catch excuse = env_file) return;
+		if (catch excuse = file::save(env_file, content)) return;
+		Path? gitignore = dir.append(tmem, ".gitignore");
+		if (catch excuse = gitignore) return;
+		if (catch excuse = file::save(gitignore, "env/\n")) return;
+
 		Project p;
 		p.init(tmem);
 		OpenJob* job = open_job_create(tmem, &p, (String)dir);
@@ -255,9 +265,13 @@ fn void test_open_job_completes_and_cancels()
 		{
 		}
 		assert(job.phase == OpenPhase.DONE);
-		assert(p.cards.len() == 2);
+		assert(p.cards.len() == 3);
 		assert(p.folders.len() == 1);
 		assert(job.scanned_dirs >= 2);
+		for (sz i = 0; i < p.folders.len(); i++)
+		{
+			assert(!((String)p.folders[i].path).contains("env"));
+		}
 		open_job_destroy(job);
 
 		Project cancelled;

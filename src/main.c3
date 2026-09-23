@@ -44,6 +44,27 @@ fn void finish_open(
 	push_keymap_warnings(keymap, notifier);
 }
 
+fn String open_phase_label(project::OpenPhase phase)
+{
+	switch (phase)
+	{
+		case project::OpenPhase.SCAN:
+			return "Scanning folders";
+		case project::OpenPhase.SORT:
+			return "Sorting entries";
+		case project::OpenPhase.BUILD_FOLDERS:
+			return "Building folders";
+		case project::OpenPhase.BUILD_CARDS:
+			return "Building files";
+		case project::OpenPhase.LAYOUT:
+			return "Laying out";
+		case project::OpenPhase.DONE:
+			return "Done";
+		case project::OpenPhase.FAILED:
+			return "Failed";
+	}
+}
+
 fn void draw_loading(project::OpenJob* job, RLFont font)
 {
 	int width  = rl::get_screen_width();
@@ -65,7 +86,8 @@ fn void draw_loading(project::OpenJob* job, RLFont font)
 		String title = string::format(tmem, "Opening %s", name);
 		String status = string::format(
 			tmem,
-			"Scanned %d folders, %d entries",
+			"%s - %d folders, %d entries",
+			open_phase_label(job.phase),
 			(long)job.scanned_dirs,
 			(long)job.entries.len()
 		);
@@ -85,14 +107,17 @@ fn void draw_loading(project::OpenJob* job, RLFont font)
 			0.0f,
 			(RLColor) { 150, 160, 180, 255 }
 		);
-		rl::draw_text_ex(
-			font,
-			"Esc to cancel",
-			{ panel.x + 20.0f, panel.y + 70.0f },
-			14.0f,
-			0.0f,
-			(RLColor) { 110, 120, 140, 255 }
-		);
+		if (job.phase == project::OpenPhase.SCAN)
+		{
+			rl::draw_text_ex(
+				font,
+				"Esc to cancel",
+				{ panel.x + 20.0f, panel.y + 70.0f },
+				14.0f,
+				0.0f,
+				(RLColor) { 110, 120, 140, 255 }
+			);
+		}
 	};
 }
 
@@ -400,8 +425,13 @@ fn int main(String[] args)
 
 		if (opening)
 		{
-			if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE)) open_job.cancel();
-			if (open_job.step(project::OPEN_SCAN_BUDGET))
+			if (open_job.phase == project::OpenPhase.SCAN && rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+			{
+				open_job.cancel();
+			}
+			usz budget = open_job.phase == project::OpenPhase.SCAN ? project::OPEN_SCAN_BUDGET
+				: project::OPEN_BUILD_BUDGET;
+			if (open_job.step(budget))
 			{
 				opening = false;
 				if (open_job.phase == project::OpenPhase.DONE)

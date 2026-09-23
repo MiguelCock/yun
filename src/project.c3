@@ -12,6 +12,7 @@ import yun::canvas;
 import yun::card;
 import yun::editor;
 import yun::findbar;
+import yun::gitignore;
 import yun::highlight;
 import yun::text;
 
@@ -32,11 +33,15 @@ const float DRAW_CULL_MARGIN        =  64.0f;
 const double DOUBLE_CLICK_SECONDS   =  0.35;
 const float DOUBLE_CLICK_DIST       =  6.0f;
 const usz OPEN_SCAN_BUDGET          =  64;
+const usz OPEN_BUILD_BUDGET         =  4096;
 
 enum OpenPhase : int
 {
 	SCAN,
-	FINALIZE,
+	SORT,
+	BUILD_FOLDERS,
+	BUILD_CARDS,
+	LAYOUT,
 	DONE,
 	FAILED,
 }
@@ -48,9 +53,11 @@ struct OpenJob
 	Path root;
 	PathList entries;
 	List{Path} pending;
+	gitignore::Gitignore ignore;
 	OpenPhase phase;
 	bool cancelled;
 	usz scanned_dirs;
+	usz build_cursor;
 }
 
 faultdef COPY_FAILED;
@@ -649,9 +656,11 @@ fn OpenJob* open_job_create(Allocator allocator, Project* project, String root)
 	job.root = (Path)root;
 	job.entries.init(allocator);
 	job.pending.init(allocator);
+	job.ignore.init(allocator);
 	job.phase = OpenPhase.SCAN;
 	job.cancelled = false;
 	job.scanned_dirs = 0;
+	job.build_cursor = 0;
 	job.pending.push((Path)root);
 	return job;
 }
@@ -661,41 +670,37 @@ fn void open_job_destroy(OpenJob* job)
 	if (!job) return;
 	job.entries.free();
 	job.pending.free();
+	job.ignore.free();
 	alloc::free(job.allocator, job);
 }
 
 fn void OpenJob.cancel(&self)
 {
+	if (self.phase != OpenPhase.SCAN) return;
 	self.cancelled = true;
 	self.phase = OpenPhase.FAILED;
 }
 
-fn void OpenJob.finalize(&self)
+fn bool OpenJob.scan_dir(&self, Path dir)
 {
-	Project* project = self.project;
-	project.reset();
-	project.root = (Path)self.root.copy(self.allocator);
+	@pool()
+	{
+		Path? gitignore_file = dir.append(tmem, ".gitignore");
+		if (catch excuse = gitignore_file) return true;
+		self.ignore.load_file(gitignore_file, (String)dir);
+	};
 
-	if (self.entries.len() > 0)
+	PathList? listing = path::ls(self.allocator, dir, no_dirs: false, recursive: false, relative: false);
+	if (catch excuse = listing) return true;
+	foreach (Path entry : listing)
 	{
-		libc::qsort(self.entries.entries, (usz)self.entries.size, Path::size, &path_compare);
-		foreach (Path entry : self.entries)
-		{
-			if (path::is_dir(entry)) project.ensure_folder((String)entry);
-		}
-		foreach (Path entry : self.entries)
-		{
-			if (path::is_dir(entry)) continue;
-			project.append_card((String)entry, { 0.0f, 0.0f });
-		}
+		bool is_dir = path::is_dir(entry);
+		if (basename_is_ignored((String)entry)) continue;
+		if (self.ignore.is_ignored((String)entry, is_dir)) continue;
+		self.entries.push(entry);
+		if (is_dir) self.pending.push(entry);
 	}
-	project.rebuild_folder_index();
-	project.layout();
-	for (sz i = 0; i < project.folders.len(); i++)
-	{
-		project.folders[i].collapsed = true;
-	}
-	project.focused = -1;
+	return true;
 }
 
 fn bool OpenJob.step(&self, usz budget)
@@ -710,15 +715,7 @@ fn bool OpenJob.step(&self, usz budget)
 				self.pending.remove_at(self.pending.len() - 1);
 				scanned++;
 				self.scanned_dirs++;
-
-				PathList? listing = path::ls(self.allocator, dir, no_dirs: false, recursive: false, relative: false);
-				if (catch excuse = listing) continue;
-				foreach (Path entry : listing)
-				{
-					if (basename_is_ignored((String)entry)) continue;
-					self.entries.push(entry);
-					if (path::is_dir(entry)) self.pending.push(entry);
-				}
+				self.scan_dir(dir);
 			}
 			if (self.pending.len() > 0) return false;
 			if (self.entries.len() == 0 && !path::exists(self.root))
@@ -726,10 +723,58 @@ fn bool OpenJob.step(&self, usz budget)
 				self.phase = OpenPhase.FAILED;
 				return true;
 			}
-			self.phase = OpenPhase.FINALIZE;
+			self.phase = OpenPhase.SORT;
 			return false;
-		case OpenPhase.FINALIZE:
-			self.finalize();
+		case OpenPhase.SORT:
+			self.project.reset();
+			self.project.root = (Path)self.root.copy(self.allocator);
+			if (self.entries.len() > 1)
+			{
+				libc::qsort(self.entries.entries, (usz)self.entries.size, Path::size, &path_compare);
+			}
+			self.build_cursor = 0;
+			self.phase = OpenPhase.BUILD_FOLDERS;
+			return false;
+		case OpenPhase.BUILD_FOLDERS:
+			usz processed = 0;
+			while (self.build_cursor < (usz)self.entries.len() && processed < budget)
+			{
+				Path entry = self.entries[(sz)self.build_cursor];
+				self.build_cursor++;
+				processed++;
+				if (!path::is_dir(entry)) continue;
+				self.project.ensure_folder((String)entry);
+			}
+			if (self.build_cursor >= (usz)self.entries.len())
+			{
+				self.build_cursor = 0;
+				self.phase = OpenPhase.BUILD_CARDS;
+			}
+			return false;
+		case OpenPhase.BUILD_CARDS:
+			usz processed = 0;
+			while (self.build_cursor < (usz)self.entries.len() && processed < budget)
+			{
+				Path entry = self.entries[(sz)self.build_cursor];
+				self.build_cursor++;
+				processed++;
+				if (path::is_dir(entry)) continue;
+				self.project.append_card((String)entry, { 0.0f, 0.0f });
+			}
+			if (self.build_cursor >= (usz)self.entries.len())
+			{
+				self.build_cursor = 0;
+				self.phase = OpenPhase.LAYOUT;
+			}
+			return false;
+		case OpenPhase.LAYOUT:
+			self.project.rebuild_folder_index();
+			self.project.layout();
+			for (sz i = 0; i < self.project.folders.len(); i++)
+			{
+				self.project.folders[i].collapsed = true;
+			}
+			self.project.focused = -1;
 			self.phase = OpenPhase.DONE;
 			return true;
 		case OpenPhase.DONE:
@@ -741,7 +786,7 @@ fn bool OpenJob.step(&self, usz budget)
 fn bool Project.open(&self, String new_root)
 {
 	OpenJob* job = open_job_create(self.allocator, self, new_root);
-	while (!job.step(OPEN_SCAN_BUDGET))
+	while (!job.step(OPEN_BUILD_BUDGET))
 	{
 	}
 	bool ok = job.phase == OpenPhase.DONE;
