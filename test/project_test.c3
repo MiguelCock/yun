@@ -175,12 +175,116 @@ fn void test_ensure_folder_chain()
 	};
 }
 
-fn void test_layout_position_grid()
+fn void test_layout_columns()
 {
-	assert(layout_position(0)[0] == 0.0f && layout_position(0)[1] == 0.0f);
-	assert(layout_position(1)[0] == LAYOUT_CELL_W);
-	assert(layout_position(LAYOUT_COLUMNS)[0] == 0.0f);
-	assert(layout_position(LAYOUT_COLUMNS)[1] == LAYOUT_CELL_H);
+	assert(layout_columns(0) == 1);
+	assert(layout_columns(1) == 1);
+	assert(layout_columns(4) >= 1);
+	assert(layout_columns(100) >= 1);
+	assert(layout_columns(100) <= 100);
+	assert(layout_columns(1000) <= 1000);
+}
+
+fn void test_layout_slot()
+{
+	RLVector2 first = layout_slot(0, 4);
+	assert(first[0] == 0.0f && first[1] == 0.0f);
+
+	RLVector2 next_col = layout_slot(1, 4);
+	assert(next_col[0] == CLUSTER_COLLAPSED_WIDTH + CLUSTER_GAP);
+	assert(next_col[1] == 0.0f);
+
+	RLVector2 next_row = layout_slot(4, 4);
+	assert(next_row[0] == 0.0f);
+	assert(next_row[1] == CLUSTER_TITLE_HEIGHT + CLUSTER_GAP);
+}
+
+fn void test_layout_packs_clusters()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int b = p.add_folder("/root/b", ROOT_FOLDER);
+		int c = p.add_folder("/root/c", ROOT_FOLDER);
+		p.cards.push({ .path = (Path)"/root/a/x.c3".copy(tmem), .folder = a });
+
+		p.layout();
+
+		int columns  = layout_columns((int)p.folders.len() + 1);
+		RLVector2 pa = layout_slot(a, columns);
+		RLVector2 pb = layout_slot(b, columns);
+		RLVector2 pc = layout_slot(c, columns);
+		assert(p.folders[a].bounds.x == pa[0] && p.folders[a].bounds.y == pa[1]);
+		assert(p.folders[b].bounds.x == pb[0] && p.folders[b].bounds.y == pb[1]);
+		assert(p.folders[c].bounds.x == pc[0] && p.folders[c].bounds.y == pc[1]);
+
+		assert(p.cards[0].rect.x == pa[0] + CLUSTER_PADDING);
+		assert(p.cards[0].rect.y == pa[1] + CLUSTER_TITLE_HEIGHT + CLUSTER_PADDING);
+	};
+}
+
+fn void test_open_job_completes_and_cancels()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_open_job");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+
+		char[] content = { 'x' };
+		Path? sub      = dir.append(tmem, "src");
+		if (catch excuse = sub) return;
+		if (catch excuse = path::mkdir(sub)) return;
+		Path? root_file = dir.append(tmem, "README.md");
+		if (catch excuse = root_file) return;
+		if (catch excuse = file::save(root_file, content)) return;
+		Path? nested = sub.append(tmem, "main.c3");
+		if (catch excuse = nested) return;
+		if (catch excuse = file::save(nested, content)) return;
+
+		Path? env = dir.append(tmem, "env");
+		if (catch excuse = env) return;
+		if (catch excuse = path::mkdir(env)) return;
+		Path? env_file = env.append(tmem, "site.py");
+		if (catch excuse = env_file) return;
+		if (catch excuse = file::save(env_file, content)) return;
+		Path? gitignore = dir.append(tmem, ".gitignore");
+		if (catch excuse = gitignore) return;
+		if (catch excuse = file::save(gitignore, "env/\n")) return;
+
+		Project p;
+		p.init(tmem);
+		OpenJob* job = open_job_create(tmem, &p, (String)dir);
+		while (!job.step(1))
+		{
+		}
+		assert(job.phase == OpenPhase.DONE);
+		assert(p.cards.len() == 3);
+		assert(p.folders.len() == 1);
+		assert(job.scanned_dirs >= 2);
+		for (sz i = 0; i < p.folders.len(); i++)
+		{
+			assert(!((String)p.folders[i].path).contains("env"));
+		}
+		open_job_destroy(job);
+
+		Project cancelled;
+		cancelled.init(tmem);
+		OpenJob* cancel_job = open_job_create(tmem, &cancelled, (String)dir);
+		cancel_job.cancel();
+		assert(cancel_job.cancelled);
+		assert(cancel_job.phase == OpenPhase.FAILED);
+		assert(cancel_job.step(1));
+		open_job_destroy(cancel_job);
+
+		(void)path::rmtree(dir);
+	};
 }
 
 fn void test_resolve_path_absolute()

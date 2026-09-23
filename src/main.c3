@@ -28,40 +28,97 @@ fn void set_project_title(project::Project* project)
 	rl::set_window_title((ZString)title.ptr);
 }
 
-fn bool open_project(project::Project* project, canvas::Canvas* canvas, config::Config* config, String root)
-{
-	if (!project.open(root)) return false;
-	workspace::load(project, canvas);
-	config.load((String)project.root);
-	return true;
-}
-
-fn bool open_from_cli(
+fn void finish_open(
 	project::Project* project,
 	canvas::Canvas* canvas,
 	config::Config* config,
-	notify::Notifier* notifier,
-	String arg
+	keymap::Keymap* keymap,
+	notify::Notifier* notifier
 )
 {
-	String? resolved = project::resolve_path(project.allocator, arg);
-	if (catch excuse = resolved)
-	{
-		notifier.push("Could not resolve the given path");
-		return false;
-	}
-	if (!path::is_dir((Path)resolved))
-	{
-		notifier.push("Not a directory");
-		return false;
-	}
-	if (!open_project(project, canvas, config, resolved))
-	{
-		notifier.push("Could not open the folder");
-		return false;
-	}
+	workspace::load(project, canvas);
+	config.load((String)project.root);
 	set_project_title(project);
-	return true;
+	keymap.build(config);
+	push_config_warnings(config, notifier);
+	push_keymap_warnings(keymap, notifier);
+}
+
+fn String open_phase_label(project::OpenPhase phase)
+{
+	switch (phase)
+	{
+		case project::OpenPhase.SCAN:
+			return "Scanning folders";
+		case project::OpenPhase.SORT:
+			return "Sorting entries";
+		case project::OpenPhase.BUILD_FOLDERS:
+			return "Building folders";
+		case project::OpenPhase.BUILD_CARDS:
+			return "Building files";
+		case project::OpenPhase.LAYOUT:
+			return "Laying out";
+		case project::OpenPhase.DONE:
+			return "Done";
+		case project::OpenPhase.FAILED:
+			return "Failed";
+	}
+}
+
+fn void draw_loading(project::OpenJob* job, RLFont font)
+{
+	int width  = rl::get_screen_width();
+	int height = rl::get_screen_height();
+	rl::draw_rectangle(0, 0, width, height, (RLColor) { 0, 0, 0, 120 });
+
+	Rect panel = {
+		.x = (float)width / 2.0f - 180.0f,
+		.y = (float)height / 2.0f - 50.0f,
+		.width = 360.0f,
+		.height = 100.0f,
+	};
+	rl::draw_rectangle_rec(panel, (RLColor) { 30, 32, 40, 245 });
+	rl::draw_rectangle_lines_ex(panel, 1.0f, (RLColor) { 70, 80, 100, 255 });
+
+	@pool()
+	{
+		String name  = rl::get_file_name((ZString)job.root.ptr).str_view();
+		String title = string::format(tmem, "Opening %s", name);
+		String status = string::format(
+			tmem,
+			"%s - %d folders, %d entries",
+			open_phase_label(job.phase),
+			(long)job.scanned_dirs,
+			(long)job.entries.len()
+		);
+		rl::draw_text_ex(
+			font,
+			title.zstr_tcopy(),
+			{ panel.x + 20.0f, panel.y + 20.0f },
+			18.0f,
+			0.0f,
+			(RLColor) { 220, 226, 236, 255 }
+		);
+		rl::draw_text_ex(
+			font,
+			status.zstr_tcopy(),
+			{ panel.x + 20.0f, panel.y + 48.0f },
+			14.0f,
+			0.0f,
+			(RLColor) { 150, 160, 180, 255 }
+		);
+		if (job.phase == project::OpenPhase.SCAN)
+		{
+			rl::draw_text_ex(
+				font,
+				"Esc to cancel",
+				{ panel.x + 20.0f, panel.y + 70.0f },
+				14.0f,
+				0.0f,
+				(RLColor) { 110, 120, 140, 255 }
+			);
+		}
+	};
 }
 
 fn void push_config_warnings(config::Config* config, notify::Notifier* notifier)
@@ -319,10 +376,25 @@ fn int main(String[] args)
 	int pending_rename_card = -1;
 	int pending_delete_card = -1;
 
-	bool project_open = false;
+	bool project_open          = false;
+	project::OpenJob* open_job = null;
+	bool opening               = false;
 	if (args.len > 1)
 	{
-		project_open = open_from_cli(&project, &canvas, &config, &notifier, args[1]);
+		String? resolved = project::resolve_path(project.allocator, args[1]);
+		if (catch excuse = resolved)
+		{
+			notifier.push("Could not resolve the given path");
+		}
+		else if (!path::is_dir((Path)resolved))
+		{
+			notifier.push("Not a directory");
+		}
+		else
+		{
+			open_job = project::open_job_create(project.allocator, &project, resolved);
+			opening = true;
+		}
 	}
 	else
 	{
@@ -351,22 +423,36 @@ fn int main(String[] args)
 	{
 		float dt = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
 
-		if (browser.open)
+		if (opening)
 		{
-			if (browser.update())
+			if (open_job.phase == project::OpenPhase.SCAN && rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
 			{
-				if (open_project(&project, &canvas, &config, (String)browser.dir))
+				open_job.cancel();
+			}
+			usz budget = open_job.phase == project::OpenPhase.SCAN ? project::OPEN_SCAN_BUDGET
+				: project::OPEN_BUILD_BUDGET;
+			if (open_job.step(budget))
+			{
+				opening = false;
+				if (open_job.phase == project::OpenPhase.DONE)
 				{
 					project_open = true;
-					set_project_title(&project);
-					keymap.build(&config);
-					push_config_warnings(&config, &notifier);
-					push_keymap_warnings(&keymap, &notifier);
+					finish_open(&project, &canvas, &config, &keymap, &notifier);
 				}
-				else
+				else if (!open_job.cancelled)
 				{
 					notifier.push("Could not open the folder");
 				}
+				project::open_job_destroy(open_job);
+				open_job = null;
+			}
+		}
+		else if (browser.open)
+		{
+			if (browser.update())
+			{
+				open_job = project::open_job_create(project.allocator, &project, (String)browser.dir);
+				opening = true;
 			}
 		}
 		else if (palette.open)
@@ -713,6 +799,7 @@ fn int main(String[] args)
 			name_prompt.draw();
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
 			notifier.draw();
+			if (opening) draw_loading(open_job, font);
 			rl::draw_fps(10, (int)topbar::TOP_BAR_HEIGHT + 10);
 		};
 	}
