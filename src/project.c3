@@ -20,19 +20,38 @@ const double POLL_SECONDS           =  1.0;
 const float CLUSTER_PADDING         =  24.0f;
 const float CLUSTER_TITLE_HEIGHT    =  26.0f;
 const float CLUSTER_COLLAPSED_WIDTH =  240.0f;
+const float CLUSTER_GAP             =  16.0f;
 const float CARD_GAP                =  16.0f;
 const int CLUSTER_COLUMNS           =  3;
 const RLColor CLUSTER_BODY          =  { 26, 28, 36, 200 };
 const RLColor CLUSTER_BORDER        =  { 60, 70, 90, 255 };
 const RLColor CLUSTER_TITLE         =  { 40, 46, 60, 255 };
 const RLColor CLUSTER_TEXT          =  { 180, 200, 230, 255 };
-const float LAYOUT_CELL_W           =  280.0f;
-const float LAYOUT_CELL_H           =  60.0f;
-const int LAYOUT_COLUMNS            =  6;
 const String[] IGNORED_NAMES        =  { ".git", ".yun", "build", "out", "node_modules" };
 const float DRAW_CULL_MARGIN        =  64.0f;
 const double DOUBLE_CLICK_SECONDS   =  0.35;
 const float DOUBLE_CLICK_DIST       =  6.0f;
+const usz OPEN_SCAN_BUDGET          =  64;
+
+enum OpenPhase : int
+{
+	SCAN,
+	FINALIZE,
+	DONE,
+	FAILED,
+}
+
+struct OpenJob
+{
+	Allocator allocator;
+	Project* project;
+	Path root;
+	PathList entries;
+	List{Path} pending;
+	OpenPhase phase;
+	bool cancelled;
+	usz scanned_dirs;
+}
 
 faultdef COPY_FAILED;
 faultdef RESOLVE_FAILED;
@@ -142,11 +161,25 @@ fn int path_compare(void* a, void* b)
 	return ((String)pa).compare_to((String)pb);
 }
 
-fn RLVector2 layout_position(int index)
+fn int layout_columns(int count)
 {
-	int col = index % LAYOUT_COLUMNS;
-	int row = index / LAYOUT_COLUMNS;
-	return { (float)col * LAYOUT_CELL_W, (float)row * LAYOUT_CELL_H };
+	if (count <= 1) return 1;
+	float cell_w = CLUSTER_COLLAPSED_WIDTH + CLUSTER_GAP;
+	float cell_h = CLUSTER_TITLE_HEIGHT + CLUSTER_GAP;
+	int columns  = (int)math::ceil(math::sqrt((float)count * cell_h / cell_w));
+	if (columns < 1) columns = 1;
+	if (columns > count) columns = count;
+	return columns;
+}
+
+fn RLVector2 layout_slot(int index, int columns)
+{
+	int col = index % columns;
+	int row = index / columns;
+	return {
+		(float)col * (CLUSTER_COLLAPSED_WIDTH + CLUSTER_GAP),
+		(float)row * (CLUSTER_TITLE_HEIGHT + CLUSTER_GAP),
+	};
 }
 
 fn bool rect_contains(Rect r, RLVector2 point)
@@ -566,36 +599,13 @@ fn int Project.add_folder_from_disk(&self, String dir, RLVector2 world_pos)
 	return index;
 }
 
-fn void Project.place_cards(&self, int folder_index, RLVector2 origin)
-{
-	int col = 0;
-	float x = origin[0] + CLUSTER_PADDING;
-	float y = origin[1] + CLUSTER_TITLE_HEIGHT + CLUSTER_PADDING;
-	for (sz i = 0; i < self.cards.len(); i++)
-	{
-		if (self.cards[i].folder != folder_index) continue;
-		self.cards[i].rect = {
-			.x = x,
-			.y = y,
-			.width = card::CARD_WIDTH,
-			.height = card::CARD_HEIGHT,
-		};
-		x += card::CARD_WIDTH + CARD_GAP;
-		col++;
-		if (col >= CLUSTER_COLUMNS)
-		{
-			col = 0;
-			x = origin[0] + CLUSTER_PADDING;
-			y += card::CARD_HEIGHT + CARD_GAP;
-		}
-	}
-}
-
 fn void Project.layout(&self)
 {
+	int folder_count = (int)self.folders.len();
+	int columns      = layout_columns(folder_count + 1);
 	for (sz f = 0; f < self.folders.len(); f++)
 	{
-		RLVector2 origin = layout_position((int)f);
+		RLVector2 origin = layout_slot((int)f, columns);
 		self.folders[f].bounds = {
 			.x = origin[0],
 			.y = origin[1],
@@ -603,54 +613,140 @@ fn void Project.layout(&self)
 			.height = CLUSTER_TITLE_HEIGHT,
 		};
 		self.folders[f].bounds_valid = false;
-		self.place_cards((int)f, origin);
 	}
-	self.place_cards(ROOT_FOLDER, layout_position((int)self.folders.len()));
+	RLVector2 root_origin = layout_slot(folder_count, columns);
+
+	@pool()
+	{
+		usz[] cursor = alloc::new_array(tmem, usz, self.folders.len() + 1);
+		for (sz i = 0; i < self.cards.len(); i++)
+		{
+			int folder = self.cards[i].folder;
+			usz slot   = cursor[(sz)(folder + 1)];
+			cursor[(sz)(folder + 1)] = slot + 1;
+
+			RLVector2 origin = root_origin;
+			if (folder != ROOT_FOLDER) origin = { self.folders[folder].bounds.x, self.folders[folder].bounds.y };
+
+			int col = (int)(slot % (usz)CLUSTER_COLUMNS);
+			int row = (int)(slot / (usz)CLUSTER_COLUMNS);
+			self.cards[i].rect = {
+				.x = origin[0] + CLUSTER_PADDING + (float)col * (card::CARD_WIDTH + CARD_GAP),
+				.y = origin[1] + CLUSTER_TITLE_HEIGHT + CLUSTER_PADDING + (float)row * (card::CARD_HEIGHT + CARD_GAP),
+				.width = card::CARD_WIDTH,
+				.height = card::CARD_HEIGHT,
+			};
+		}
+	};
 	self.invalidate_bounds();
+}
+
+fn OpenJob* open_job_create(Allocator allocator, Project* project, String root)
+{
+	OpenJob* job = alloc::new(allocator, OpenJob);
+	job.allocator = allocator;
+	job.project = project;
+	job.root = (Path)root;
+	job.entries.init(allocator);
+	job.pending.init(allocator);
+	job.phase = OpenPhase.SCAN;
+	job.cancelled = false;
+	job.scanned_dirs = 0;
+	job.pending.push((Path)root);
+	return job;
+}
+
+fn void open_job_destroy(OpenJob* job)
+{
+	if (!job) return;
+	job.entries.free();
+	job.pending.free();
+	alloc::free(job.allocator, job);
+}
+
+fn void OpenJob.cancel(&self)
+{
+	self.cancelled = true;
+	self.phase = OpenPhase.FAILED;
+}
+
+fn void OpenJob.finalize(&self)
+{
+	Project* project = self.project;
+	project.reset();
+	project.root = (Path)self.root.copy(self.allocator);
+
+	if (self.entries.len() > 0)
+	{
+		libc::qsort(self.entries.entries, (usz)self.entries.size, Path::size, &path_compare);
+		foreach (Path entry : self.entries)
+		{
+			if (path::is_dir(entry)) project.ensure_folder((String)entry);
+		}
+		foreach (Path entry : self.entries)
+		{
+			if (path::is_dir(entry)) continue;
+			project.append_card((String)entry, { 0.0f, 0.0f });
+		}
+	}
+	project.rebuild_folder_index();
+	project.layout();
+	for (sz i = 0; i < project.folders.len(); i++)
+	{
+		project.folders[i].collapsed = true;
+	}
+	project.focused = -1;
+}
+
+fn bool OpenJob.step(&self, usz budget)
+{
+	switch (self.phase)
+	{
+		case OpenPhase.SCAN:
+			usz scanned = 0;
+			while (self.pending.len() > 0 && scanned < budget)
+			{
+				Path dir = self.pending[self.pending.len() - 1];
+				self.pending.remove_at(self.pending.len() - 1);
+				scanned++;
+				self.scanned_dirs++;
+
+				PathList? listing = path::ls(self.allocator, dir, no_dirs: false, recursive: false, relative: false);
+				if (catch excuse = listing) continue;
+				foreach (Path entry : listing)
+				{
+					if (basename_is_ignored((String)entry)) continue;
+					self.entries.push(entry);
+					if (path::is_dir(entry)) self.pending.push(entry);
+				}
+			}
+			if (self.pending.len() > 0) return false;
+			if (self.entries.len() == 0 && !path::exists(self.root))
+			{
+				self.phase = OpenPhase.FAILED;
+				return true;
+			}
+			self.phase = OpenPhase.FINALIZE;
+			return false;
+		case OpenPhase.FINALIZE:
+			self.finalize();
+			self.phase = OpenPhase.DONE;
+			return true;
+		case OpenPhase.DONE:
+		case OpenPhase.FAILED:
+			return true;
+	}
 }
 
 fn bool Project.open(&self, String new_root)
 {
-	self.reset();
-	self.root = (Path)new_root.copy(self.allocator);
-
-	PathList entries;
-	entries.init(self.allocator);
-	self.collect_entries((Path)new_root, &entries);
-	if (entries.len() == 0) return path::exists((Path)new_root);
-
-	libc::qsort(entries.entries, (usz)entries.size, Path::size, &path_compare);
-
-	foreach (Path entry : entries)
+	OpenJob* job = open_job_create(self.allocator, self, new_root);
+	while (!job.step(OPEN_SCAN_BUDGET))
 	{
-		if (path::is_dir(entry)) self.ensure_folder((String)entry);
 	}
-	foreach (Path entry : entries)
-	{
-		if (path::is_dir(entry)) continue;
-		self.append_card((String)entry, { 0.0f, 0.0f });
-	}
-	self.rebuild_folder_index();
-	self.layout();
-	for (sz i = 0; i < self.folders.len(); i++)
-	{
-		self.folders[i].collapsed = true;
-	}
-	self.focused = -1;
-	return true;
-}
-
-fn void Project.collect_entries(&self, Path dir, PathList* out)
-{
-	PathList? entries = path::ls(self.allocator, dir, no_dirs: false, recursive: false, relative: false);
-	if (catch excuse = entries) return;
-
-	foreach (Path entry : entries)
-	{
-		if (basename_is_ignored((String)entry)) continue;
-		out.push(entry);
-		if (path::is_dir(entry)) self.collect_entries(entry, out);
-	}
+	bool ok = job.phase == OpenPhase.DONE;
+	open_job_destroy(job);
+	return ok;
 }
 
 fn String? resolve_path(Allocator allocator, String arg)
