@@ -720,3 +720,27 @@ fn void test_cluster_title_hit_only_top_bar()
 		assert(p.cluster_title_hit(f, { 50.0f, 10.0f }));
 	};
 }
+fn void test_jump_fade()
+{
+	assert(jump_fade(10.0, 11.0, 1.0) == 1.0f);
+	assert(jump_fade(10.5, 11.0, 1.0) == 0.5f);
+	assert(jump_fade(11.0, 11.0, 1.0) == 0.0f);
+	assert(jump_fade(11.5, 11.0, 1.0) == 0.0f);
+	assert(jump_fade(10.0, 11.0, 0.0) == 0.0f);
+}
+
+fn void test_mark_and_clear_jump()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push({ .path = (Path)"/root/a.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.mark_jump("/root/a.c3", 3, 100.0);
+		assert(p.jump_path.compare_to("/root/a.c3") == 0);
+		assert(p.jump_line == 3);
+		p.clear_jump();
+		assert(p.jump_path.len == 0);
+		assert(p.jump_line == 0);
+	};
+}

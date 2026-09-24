@@ -33,6 +33,8 @@ const double DOUBLE_CLICK_SECONDS   =  0.35;
 const float DOUBLE_CLICK_DIST       =  6.0f;
 const usz OPEN_SCAN_BUDGET          =  64;
 const usz OPEN_BUILD_BUDGET         =  4096;
+const double JUMP_HIGHLIGHT_SECONDS =  1.0;
+const int JUMP_HIGHLIGHT_ALPHA      =  80;
 
 enum OpenPhase : int
 {
@@ -97,6 +99,9 @@ struct Project
 	bool selecting;
 	double last_click_time;
 	RLVector2 last_click_pos;
+	String jump_path;
+	usz jump_line;
+	double jump_until;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -117,6 +122,9 @@ fn void Project.init(&self, Allocator allocator)
 	self.selecting = false;
 	self.last_click_time = -1000.0;
 	self.last_click_pos = { 0.0f, 0.0f };
+	self.jump_path = "";
+	self.jump_line = 0;
+	self.jump_until = 0.0;
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
 	{
@@ -138,6 +146,32 @@ fn void Project.reset(&self)
 	self.drag_cluster_title = false;
 	self.cluster_moved = false;
 	self.selecting = false;
+	self.clear_jump();
+}
+
+fn float jump_fade(double now, double until, double duration)
+{
+	if (duration <= 0.0) return 0.0f;
+	float t = (float)((until - now) / duration);
+	if (t < 0.0f) t = 0.0f;
+	if (t > 1.0f) t = 1.0f;
+	return t;
+}
+
+fn void Project.mark_jump(&self, String path, usz line, double now)
+{
+	if (self.jump_path.len) self.jump_path.free(self.allocator);
+	self.jump_path = path.copy(self.allocator);
+	self.jump_line = line;
+	self.jump_until = now + JUMP_HIGHLIGHT_SECONDS;
+}
+
+fn void Project.clear_jump(&self)
+{
+	if (self.jump_path.len) self.jump_path.free(self.allocator);
+	self.jump_path = "";
+	self.jump_line = 0;
+	self.jump_until = 0.0;
 }
 
 fn void Project.discard_ephemeral(&self, int keep)
@@ -1859,6 +1893,28 @@ fn void Project.draw_cards(
 		usz line_count = card.buffer.line_count();
 		Rect gutter    = editor::gutter_rect(card.rect, metrics, line_count);
 		Rect text      = editor::text_rect(card.rect, metrics, line_count);
+
+		if (self.jump_path.len > 0 && self.jump_path.compare_to((String)card.path) == 0)
+		{
+			double now = rl::get_time();
+			if (now < self.jump_until)
+			{
+				float fade    = jump_fade(now, self.jump_until, JUMP_HIGHLIGHT_SECONDS);
+				RLColor base  = theme::current().card_focus;
+				RLColor color = { base[0], base[1], base[2], (char)(fade * (float)JUMP_HIGHLIGHT_ALPHA) };
+				Rect line_rect = {
+					.x = text.x,
+					.y = text.y + editor::line_y(self.jump_line, card.scroll, metrics),
+					.width = text.width,
+					.height = metrics.line_height,
+				};
+				rl::draw_rectangle_rec(line_rect, color);
+			}
+			else
+			{
+				self.clear_jump();
+			}
+		}
 
 		if (is_focused) editor::draw_current_line(
 			card.buffer,
