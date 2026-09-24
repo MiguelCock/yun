@@ -18,17 +18,18 @@ import yun::hover;
 import yun::project;
 import yun::text;
 
-const int MAX_SCAN_WORKERS        = 8;
-const float ARROW_HIT_PX          = 6.0f;
-const int BEZIER_HIT_STEPS        = 20;
-const RLColor IMPORT_SOLID        = { 110, 170, 240, 220 };
-const RLColor IMPORT_EXTERNAL     = { 150, 150, 160, 200 };
-const RLColor IMPORT_LABEL        = { 150, 160, 180, 255 };
-const RLColor IMPORT_SOLID_DIM    = { 110, 170, 240, 45 };
-const RLColor IMPORT_EXTERNAL_DIM = { 150, 150, 160, 40 };
-const RLColor IMPORT_LABEL_DIM    = { 150, 160, 180, 80 };
-const RLColor IMPORT_SOLID_HOVER  = { 150, 205, 255, 255 };
-const RLColor IMPORT_EXT_HOVER    = { 200, 200, 210, 255 };
+const int MAX_SCAN_WORKERS         = 8;
+const float ARROW_HIT_PX           = 6.0f;
+const int BEZIER_HIT_STEPS         = 20;
+const double EDIT_DEBOUNCE_SECONDS = 0.15;
+const RLColor IMPORT_SOLID         = { 110, 170, 240, 220 };
+const RLColor IMPORT_EXTERNAL      = { 150, 150, 160, 200 };
+const RLColor IMPORT_LABEL         = { 150, 160, 180, 255 };
+const RLColor IMPORT_SOLID_DIM     = { 110, 170, 240, 45 };
+const RLColor IMPORT_EXTERNAL_DIM  = { 150, 150, 160, 40 };
+const RLColor IMPORT_LABEL_DIM     = { 150, 160, 180, 80 };
+const RLColor IMPORT_SOLID_HOVER   = { 150, 205, 255, 255 };
+const RLColor IMPORT_EXT_HOVER     = { 200, 200, 210, 255 };
 
 struct ImportRef
 {
@@ -90,6 +91,9 @@ struct ImportIndex
 	usz scan_cursor;
 	usz known_cards;
 	ImportHit hover;
+	bool pending_edit;
+	String pending_path;
+	double pending_since;
 }
 
 TSQuery*[5] import_query_cache;
@@ -115,6 +119,9 @@ fn void ImportIndex.init(&self, Allocator allocator)
 	self.pool_ready = false;
 	self.results = null;
 	self.hover.valid = false;
+	self.pending_edit = false;
+	self.pending_path = "";
+	self.pending_since = 0.0;
 	self.init_pool();
 }
 
@@ -156,6 +163,7 @@ fn void ImportIndex.destroy(&self)
 	self.files.free();
 	self.file_index.free();
 	self.card_paths.free();
+	self.clear_pending_edit();
 }
 
 fn String import_query_text(highlight::Language language)
@@ -690,6 +698,7 @@ fn void ImportIndex.resolve_one(&self, project::Project* project, String path)
 fn void ImportIndex.start_scan(&self, project::Project* project)
 {
 	self.free_files();
+	self.clear_pending_edit();
 	self.refresh_card_paths(project);
 	self.known_cards = (usz)project.cards.len();
 	self.generation++;
@@ -897,6 +906,42 @@ fn ImportRef[] ImportIndex.imports_for(&self, String path)
 	if (catch excuse = entry) return NO_IMPORTS;
 	CardImports* file = &self.files[*entry];
 	return file.imports.entries[0:file.imports.len()];
+}
+
+fn void ImportIndex.clear_pending_edit(&self)
+{
+	if (self.pending_path.len) self.pending_path.free(self.allocator);
+	self.pending_path = "";
+	self.pending_edit = false;
+}
+
+fn void ImportIndex.note_edit(&self, String path, double now)
+{
+	if (self.pending_path.compare_to(path) != 0)
+	{
+		if (self.pending_path.len) self.pending_path.free(self.allocator);
+		self.pending_path = path.copy(self.allocator);
+	}
+	self.pending_edit = true;
+	self.pending_since = now;
+}
+
+fn bool edit_debounce_elapsed(double since, double now)
+{
+	return now - since >= EDIT_DEBOUNCE_SECONDS;
+}
+
+fn void ImportIndex.flush_edits(&self, project::Project* project, double now)
+{
+	if (!self.pending_edit) return;
+	if (!edit_debounce_elapsed(self.pending_since, now)) return;
+
+	String path = self.pending_path;
+	self.pending_path = "";
+	self.pending_edit = false;
+	int index = project.find_card(path);
+	if (index >= 0) self.rescan(project, index);
+	path.free(self.allocator);
 }
 
 fn void import_extract_file(
