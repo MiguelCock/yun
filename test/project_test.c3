@@ -744,3 +744,50 @@ fn void test_mark_and_clear_jump()
 		assert(p.jump_line == 0);
 	};
 }
+fn void test_refresh_sleep()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		int folder = p.add_folder("/root/sub", ROOT_FOLDER);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+		p.cards.push(
+			{
+				.path = (Path)"/root/b.c3".copy(tmem),
+				.rect = { .x = 1000.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+		p.cards.push(
+			{
+				.path = (Path)"/root/sub/c.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = folder,
+				.open = true,
+			}
+		);
+		p.toggle_collapse(folder);
+
+		Rect visible = { .x = 0.0f, .y = 0.0f, .width = 200.0f, .height = 200.0f };
+		p.refresh_sleep(visible);
+		assert(!p.cards[0].sleeping);
+		assert(p.cards[1].sleeping);
+		assert(p.cards[2].sleeping);
+		assert(p.awake_count == 1);
+		assert(p.asleep_count == 2);
+
+		p.focused = 1;
+		p.refresh_sleep(visible);
+		assert(!p.cards[1].sleeping);
+		assert(p.awake_count == 2);
+	};
+}

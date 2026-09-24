@@ -1415,6 +1415,26 @@ fn int main(String[] args)
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
 			rl::draw_fps(10, (int)topbar::TOP_BAR_HEIGHT + 10);
+			if (project_open && rl::is_key_down(rl::RLKeyboardKey.F3))
+			{
+				@pool()
+				{
+					String counter = string::format(
+						tmem,
+						"editors: %d awake / %d asleep",
+						(long)project.awake_count,
+						(long)project.asleep_count
+					);
+					rl::draw_text_ex(
+						font,
+						counter.zstr_tcopy(),
+						{ 10.0f, (float)topbar::TOP_BAR_HEIGHT + 34.0f },
+						14.0f,
+						0.0f,
+						theme::current()
+						.panel_dim);
+				};
+			}
 		};
 	}
 
