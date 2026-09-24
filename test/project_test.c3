@@ -831,3 +831,51 @@ fn void test_next_visible_card()
 		assert(p.next_visible_card(2, -1) == 0);
 	};
 }
+fn void test_card_in_direction()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+		p.cards.push(
+			{
+				.path = (Path)"/root/b.c3".copy(tmem),
+				.rect = { .x = 500.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+		p.cards.push(
+			{
+				.path = (Path)"/root/c.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 500.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+		p.cards.push(
+			{
+				.path = (Path)"/root/d.c3".copy(tmem),
+				.rect = { .x = 500.0f, .y = 500.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+
+		assert(p.card_in_direction(0, Dir.RIGHT) == 1);
+		assert(p.card_in_direction(0, Dir.DOWN) == 2);
+		assert(p.card_in_direction(0, Dir.LEFT) == -1);
+		assert(p.card_in_direction(0, Dir.UP) == -1);
+		assert(p.card_in_direction(1, Dir.LEFT) == 0);
+		assert(p.card_in_direction(3, Dir.UP) == 1);
+		assert(p.card_in_direction(3, Dir.LEFT) == 2);
+	};
+}

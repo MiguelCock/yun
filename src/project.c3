@@ -47,6 +47,14 @@ enum OpenPhase : int
 	FAILED,
 }
 
+enum Dir : int
+{
+	LEFT,
+	RIGHT,
+	UP,
+	DOWN,
+}
+
 struct OpenJob
 {
 	Allocator allocator;
@@ -81,6 +89,7 @@ struct Project
 	HashMap{String, int} folder_index;
 	Allocator allocator;
 	int focused;
+	int selected;
 	bool drag_card;
 	int drag_index;
 	bool drag_cluster;
@@ -113,6 +122,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.folders.init(allocator);
 	self.folder_index.init(allocator);
 	self.focused = -1;
+	self.selected = -1;
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
@@ -145,6 +155,7 @@ fn void Project.reset(&self)
 	self.folders.clear();
 	self.folder_index.clear();
 	self.focused = -1;
+	self.selected = -1;
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
@@ -199,6 +210,14 @@ fn void Project.discard_ephemeral(&self, int keep)
 		else if (self.focused == (int)index)
 		{
 			self.focused = -1;
+		}
+		if (self.selected > (int)index)
+		{
+			self.selected--;
+		}
+		else if (self.selected == (int)index)
+		{
+			self.selected = -1;
 		}
 	}
 	self.invalidate_bounds();
@@ -1009,6 +1028,14 @@ fn void Project.remove_card(&self, int index)
 	{
 		self.focused--;
 	}
+	if (self.selected == index)
+	{
+		self.selected = -1;
+	}
+	else if (self.selected > index)
+	{
+		self.selected--;
+	}
 }
 
 fn bool Project.rename_card(&self, int index, String new_name)
@@ -1137,6 +1164,72 @@ fn int Project.next_visible_card(&self, int from, int dir)
 		if (self.card_visible(current)) return current;
 	}
 	return -1;
+}
+
+fn FileCard* Project.selected_card(&self)
+{
+	if (self.selected < 0 || self.selected >= (int)self.cards.len()) return null;
+	return &self.cards[self.selected];
+}
+
+fn void Project.ensure_selection(&self)
+{
+	if (self.selected >= 0 && self.selected < (int)self.cards.len() && self.card_visible(self.selected)) return;
+	if (self.focused >= 0 && self.focused < (int)self.cards.len() && self.card_visible(self.focused))
+	{
+		self.selected = self.focused;
+		return;
+	}
+	self.selected = self.next_visible_card(-1, 1);
+}
+
+fn int Project.card_in_direction(&self, int from, Dir dir)
+{
+	if (from < 0 || from >= (int)self.cards.len()) return -1;
+	RLVector2 origin =  self.cards[from].center();
+	int best         = -1;
+	float best_score =  0.0f;
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		if ((int)i == from) continue;
+		if (!self.card_visible((int)i)) continue;
+		RLVector2 c = self.cards[i].center();
+		float dx    = c[0] - origin[0];
+		float dy    = c[1] - origin[1];
+		float primary;
+		float secondary;
+		if (dir == Dir.LEFT)
+		{
+			if (dx >= -0.5f) continue;
+			primary = -dx;
+			secondary = math::abs(dy);
+		}
+		else if (dir == Dir.RIGHT)
+		{
+			if (dx <= 0.5f) continue;
+			primary = dx;
+			secondary = math::abs(dy);
+		}
+		else if (dir == Dir.UP)
+		{
+			if (dy >= -0.5f) continue;
+			primary = -dy;
+			secondary = math::abs(dx);
+		}
+		else
+		{
+			if (dy <= 0.5f) continue;
+			primary = dy;
+			secondary = math::abs(dx);
+		}
+		float score = primary + secondary * 2.0f;
+		if (best < 0 || score < best_score)
+		{
+			best = (int)i;
+			best_score = score;
+		}
+	}
+	return best;
 }
 
 fn bool is_double_click(double now, RLVector2 pos, double last_time, RLVector2 last_pos)
@@ -1933,6 +2026,10 @@ fn void Project.draw_cards(
 		if (is_focused) editor::ensure_buffer(card, self.allocator);
 		if (!rect_intersects(card.rect, visible)) continue;
 		card.draw(is_focused);
+		if (!is_focused && (int)i == self.selected)
+		{
+			rl::draw_rectangle_lines_ex(card.effective_rect(), 2.0f, theme::current().card_focus);
+		}
 		if (!card.open) continue;
 
 		if (!card.buffer)

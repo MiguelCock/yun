@@ -31,16 +31,11 @@ import yun::theme;
 import yun::topbar;
 import yun::workspace;
 
-enum FocusArea : int
+enum UiMode : int
 {
-	CANVAS,
+	MOVE,
+	EDIT,
 	TOP_BAR,
-}
-
-fn int restore_editor_focus(project::Project* project, int saved)
-{
-	if (saved >= 0 && saved < (int)project.cards.len() && project.card_visible(saved)) return saved;
-	return -1;
 }
 
 fn void set_project_title(project::Project* project)
@@ -658,14 +653,13 @@ fn int main(String[] args)
 	List{lsp::DefinitionTarget} pending_definitions;
 	pending_definitions.init(mem);
 
-	bool project_open           =  false;
-	project::OpenJob* open_job  =  null;
-	bool opening                =  false;
-	int pending_font_size       =  0;
-	double font_indicator_until =  0.0;
-	bool font_save_pending      =  false;
-	FocusArea focus_area        =  FocusArea.CANVAS;
-	int saved_editor_focus      = -1;
+	bool project_open           = false;
+	project::OpenJob* open_job  = null;
+	bool opening                = false;
+	int pending_font_size       = 0;
+	double font_indicator_until = 0.0;
+	bool font_save_pending      = false;
+	UiMode ui_mode              = UiMode.MOVE;
 	if (args.len > 1)
 	{
 		String? resolved = project::resolve_path(project.allocator, args[1]);
@@ -752,8 +746,8 @@ fn int main(String[] args)
 					search.close();
 					symbols.close();
 					symbols.start_scan(&project);
-					focus_area = FocusArea.CANVAS;
-					saved_editor_focus = -1;
+					ui_mode = UiMode.MOVE;
+					project.selected = -1;
 					pending_font_size = editor::clamp_font_size(config.font_size);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
@@ -773,8 +767,8 @@ fn int main(String[] args)
 			{
 				search.close();
 				symbols.close();
-				focus_area = FocusArea.CANVAS;
-				saved_editor_focus = -1;
+				ui_mode = UiMode.MOVE;
+				project.selected = -1;
 				open_job = project::open_job_create(project.allocator, &project, (String)browser.dir);
 				opening = true;
 			}
@@ -1126,20 +1120,18 @@ fn int main(String[] args)
 
 			if (rl::is_key_pressed(rl::RLKeyboardKey.TAB))
 			{
-				if (focus_area == FocusArea.TOP_BAR)
+				if (ui_mode == UiMode.TOP_BAR)
 				{
-					focus_area = FocusArea.CANVAS;
-					project.focused = restore_editor_focus(&project, saved_editor_focus);
+					ui_mode = UiMode.MOVE;
 				}
-				else if (project.focused < 0)
+				else if (ui_mode == UiMode.MOVE)
 				{
-					saved_editor_focus = project.focused;
 					bar.clamp_selection(project_open, has_buffer);
-					focus_area = FocusArea.TOP_BAR;
+					ui_mode = UiMode.TOP_BAR;
 				}
 			}
 
-			if (focus_area == FocusArea.TOP_BAR)
+			if (ui_mode == UiMode.TOP_BAR)
 			{
 				if (rl::is_key_pressed(
 					rl::RLKeyboardKey.RIGHT
@@ -1156,53 +1148,83 @@ fn int main(String[] args)
 					int id = bar.activate(project_open, has_buffer);
 					if (id >= 0) run_command((commands::CommandId)id, &app);
 				}
-				if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
-				{
-					focus_area = FocusArea.CANVAS;
-					project.focused = restore_editor_focus(&project, saved_editor_focus);
-				}
+				if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE)) ui_mode = UiMode.MOVE;
 			}
-			else if (project.focused < 0)
+			else if (ui_mode == UiMode.MOVE)
 			{
-				float step = 48.0f;
+				project.ensure_selection();
+
+				if (project::ctrl_down())
+				{
+					float step = 48.0f;
+					if (rl::is_key_pressed(
+						rl::RLKeyboardKey.RIGHT
+					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT)) canvas.key_pan({ step, 0.0f });
+					if (rl::is_key_pressed(
+						rl::RLKeyboardKey.LEFT
+					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT)) canvas.key_pan({ -step, 0.0f });
+					if (rl::is_key_pressed(
+						rl::RLKeyboardKey.DOWN
+					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) canvas.key_pan({ 0.0f, step });
+					if (rl::is_key_pressed(
+						rl::RLKeyboardKey.UP
+					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) canvas.key_pan({ 0.0f, -step });
+				}
+				else
+				{
+					int direction = -1;
+					if (rl::is_key_pressed(
+						rl::RLKeyboardKey.H
+					) || rl::is_key_pressed(rl::RLKeyboardKey.LEFT)) direction = (int)project::Dir.LEFT;
+					if (rl::is_key_pressed(
+						rl::RLKeyboardKey.J
+					) || rl::is_key_pressed(rl::RLKeyboardKey.DOWN)) direction = (int)project::Dir.DOWN;
+					if (rl::is_key_pressed(
+						rl::RLKeyboardKey.K
+					) || rl::is_key_pressed(rl::RLKeyboardKey.UP)) direction = (int)project::Dir.UP;
+					if (rl::is_key_pressed(
+						rl::RLKeyboardKey.L
+					) || rl::is_key_pressed(rl::RLKeyboardKey.RIGHT)) direction = (int)project::Dir.RIGHT;
+
+					if (direction >= 0)
+					{
+						int idx = project.card_in_direction(project.selected, (project::Dir)direction);
+						if (idx >= 0) project.selected = idx;
+					}
+					else
+					{
+						int cycle = 0;
+						if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT_BRACKET)) cycle = 1;
+						if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT_BRACKET)) cycle = -1;
+						if (cycle != 0)
+						{
+							int idx = project.next_visible_card(project.selected, cycle);
+							if (idx >= 0) project.selected = idx;
+						}
+					}
+				}
+
 				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.RIGHT
-				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT)) canvas.key_pan({ step, 0.0f });
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.LEFT
-				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT)) canvas.key_pan({ -step, 0.0f });
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.DOWN
-				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) canvas.key_pan({ 0.0f, step });
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.UP
-				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) canvas.key_pan({ 0.0f, -step });
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.EQUAL
-				) || rl::is_key_pressed_repeat(
 					rl::RLKeyboardKey.EQUAL
 				) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ADD)) canvas.key_zoom(1.0f);
 				if (rl::is_key_pressed(
 					rl::RLKeyboardKey.MINUS
-				) || rl::is_key_pressed_repeat(
-					rl::RLKeyboardKey.MINUS
 				) || rl::is_key_pressed(rl::RLKeyboardKey.KP_SUBTRACT)) canvas.key_zoom(-1.0f);
 
-				int cycle = 0;
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.RIGHT_BRACKET
-				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT_BRACKET)) cycle = 1;
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.LEFT_BRACKET
-				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT_BRACKET)) cycle = -1;
-				if (cycle != 0)
+				FileCard* selected_card = project.selected_card();
+				if (selected_card) canvas.target.target = selected_card.center();
+
+				if ((rl::is_key_pressed(
+					rl::RLKeyboardKey.ENTER
+				) || rl::is_key_pressed(rl::RLKeyboardKey.I)) && project.selected >= 0)
 				{
-					int idx = project.next_visible_card(project.focused, cycle);
-					if (idx >= 0)
+					int idx = project.focus(project.selected);
+					project.selected = idx;
+					if (idx >= 0 && idx < (int)project.cards.len())
 					{
-						project.focus(idx);
-						FileCard* focused_card = project.focused_card();
-						if (focused_card) canvas.target.target = focused_card.center();
+						editor::ensure_buffer(&project.cards[idx], project.allocator);
+						project.reveal_focused(metrics);
+						ui_mode = UiMode.EDIT;
 					}
 				}
 			}
@@ -1303,6 +1325,15 @@ fn int main(String[] args)
 
 			bool content_changed = false;
 			project.update(&canvas, metrics, over_top || font_wheel, &content_changed);
+			if (ui_mode == UiMode.EDIT && project.focused < 0)
+			{
+				ui_mode = UiMode.MOVE;
+			}
+			else if (ui_mode == UiMode.MOVE && project.focused >= 0)
+			{
+				project.selected = project.focused;
+				ui_mode = UiMode.EDIT;
+			}
 			project.discard_ephemeral(project.focused);
 			if (content_changed)
 			{
@@ -1500,7 +1531,7 @@ fn int main(String[] args)
 				lsp_errors,
 				lsp_warnings,
 				font,
-				focus_area == FocusArea.TOP_BAR
+				ui_mode == UiMode.TOP_BAR
 			);
 			browser.draw();
 			close_menu.draw();
@@ -1517,6 +1548,26 @@ fn int main(String[] args)
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
 			rl::draw_fps(10, (int)topbar::TOP_BAR_HEIGHT + 10);
+			if (project_open)
+			{
+				String mode_label = "-- MOVE --";
+				if (ui_mode == UiMode.EDIT)
+				{
+					mode_label = "-- EDIT --";
+				}
+				else if (ui_mode == UiMode.TOP_BAR)
+				{
+					mode_label = "-- TOP BAR --";
+				}
+				rl::draw_text_ex(
+					font,
+					(ZString)mode_label.ptr,
+					{ 10.0f, (float)topbar::TOP_BAR_HEIGHT + 34.0f },
+					15.0f,
+					0.0f,
+					theme::current()
+					.topbar_name);
+			}
 			if (project_open && rl::is_key_down(rl::RLKeyboardKey.F3))
 			{
 				@pool()
@@ -1530,7 +1581,7 @@ fn int main(String[] args)
 					rl::draw_text_ex(
 						font,
 						counter.zstr_tcopy(),
-						{ 10.0f, (float)topbar::TOP_BAR_HEIGHT + 34.0f },
+						{ 10.0f, (float)topbar::TOP_BAR_HEIGHT + 54.0f },
 						14.0f,
 						0.0f,
 						theme::current()
