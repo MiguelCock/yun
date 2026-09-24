@@ -492,6 +492,7 @@ fn void reload_editor_font(RLFont* font, int size, editor::EditorMetrics* metric
 	rl::unload_font(*font);
 	*font = rl::load_font_ex(FONT_PATH, size, null, 0);
 	*metrics = editor::metrics_for_font(*font, (float)size);
+	editor::set_font_size((float)size);
 }
 
 fn int main(String[] args)
@@ -508,6 +509,7 @@ fn int main(String[] args)
 	int font_size                 = editor::FONT_SIZE_DEFAULT;
 	RLFont editor_font            = rl::load_font_ex(FONT_PATH, font_size, null, 0);
 	editor::EditorMetrics metrics = editor::metrics_for_font(editor_font, (float)font_size);
+	editor::set_font_size((float)font_size);
 
 	canvas::Canvas canvas;
 	canvas.init();
@@ -1228,7 +1230,7 @@ fn int main(String[] args)
 			rl::@mode2d(canvas.camera)
 			{
 				project.draw_folders(canvas.camera);
-				import_index.draw(&project, canvas.camera, font);
+				import_index.draw(&project, canvas.camera, editor_font);
 				project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar);
 			};
 			minimap::draw(&project, &canvas);
@@ -1260,15 +1262,15 @@ fn int main(String[] args)
 			{
 				if (import_index.hover.valid)
 				{
-					import_index.draw_tooltip(&project, font);
+					import_index.draw_tooltip(&project, editor_font);
 				}
 				else if (hover.diagnostic.len > 0)
 				{
-					problems::draw_tooltip(hover.diagnostic, hover.anchor, font);
+					problems::draw_tooltip(hover.diagnostic, hover.anchor, editor_font);
 				}
 				else if (hover.over && lsp.hover_is_valid())
 				{
-					hover::draw_hover(lsp.hover_message(), hover.anchor, font);
+					hover::draw_hover(lsp.hover_message(), hover.anchor, editor_font);
 				}
 			}
 			if (completion::completion_is_open() && !problems.open && !palette.open && !definition_menu.open)
@@ -1313,7 +1315,7 @@ fn int main(String[] args)
 			context_menu.draw();
 			name_prompt.draw();
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
-			problems.draw(font);
+			problems.draw(editor_font);
 			definition_menu.draw();
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);

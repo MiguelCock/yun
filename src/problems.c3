@@ -5,6 +5,7 @@ import std::collections::list;
 import std::core::dstring;
 import std::core::mem::alloc;
 import std::math;
+import yun::editor;
 import yun::lsp;
 import yun::theme;
 
@@ -172,25 +173,41 @@ fn void Problems.move_selection(&self, int delta)
 
 fn Rect Problems.panel_rect(&self)
 {
+	float s     = editor::text_scale();
+	int pad     = (int)((float)PADDING * s);
+	int title_h = (int)(TITLE_HEIGHT * s);
+	int row_h   = (int)((float)ROW_HEIGHT * s);
+	if (row_h < 1) row_h = 1;
+
+	int screen_w = rl::get_screen_width();
+	int width    = (int)((float)PANEL_WIDTH * s);
+	if (width > screen_w - pad * 2) width = screen_w - pad * 2;
+
 	int rows = (int)self.rows.len();
 	if (rows > MAX_VISIBLE_ROWS) rows = MAX_VISIBLE_ROWS;
+	int avail    = rl::get_screen_height() - (int)TOP_MARGIN - pad * 2 - title_h;
+	int max_rows = avail / row_h;
+	if (max_rows < 1) max_rows = 1;
+	if (rows > max_rows) rows = max_rows;
 	if (rows < 1) rows = 1;
-	int height = PADDING * 2 + (int)TITLE_HEIGHT + rows * ROW_HEIGHT;
-	int x      = (rl::get_screen_width() - PANEL_WIDTH) / 2;
+
+	int height = pad * 2 + title_h + rows * row_h;
+	int x      = (screen_w - width) / 2;
 	int y      = (int)TOP_MARGIN;
-	return { .x = (float)x, .y = (float)y, .width = (float)PANEL_WIDTH, .height = (float)height };
+	return { .x = (float)x, .y = (float)y, .width = (float)width, .height = (float)height };
 }
 
 fn float Problems.list_y(&self)
 {
-	return self.panel_rect().y + (float)PADDING + TITLE_HEIGHT;
+	float s = editor::text_scale();
+	return self.panel_rect().y + (float)PADDING * s + TITLE_HEIGHT * s;
 }
 
 fn int Problems.row_at(&self, RLVector2 mouse)
 {
 	float list_y = self.list_y();
 	if (mouse[1] < list_y) return -1;
-	int row = (int)((mouse[1] - list_y) / (float)ROW_HEIGHT) + self.scroll;
+	int row = (int)((mouse[1] - list_y) / ((float)ROW_HEIGHT * editor::text_scale())) + self.scroll;
 	if (row < 0 || row >= (int)self.rows.len()) return -1;
 	return row;
 }
@@ -288,6 +305,7 @@ fn void Problems.draw(&self, RLFont font)
 {
 	if (!self.open) return;
 
+	float s    = editor::text_scale();
 	Rect panel = self.panel_rect();
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
@@ -295,35 +313,41 @@ fn void Problems.draw(&self, RLFont font)
 	@pool()
 	{
 		String title = string::format(tmem, "Problems (%d)", (long)self.entries.len());
-		draw_text(font, title, panel.x + (float)PADDING, panel.y + (float)PADDING, 18.0f, theme::current().panel_text);
+		draw_text(font, title, panel.x + (float)PADDING * s, panel.y + (float)PADDING * s, 18.0f * s, theme::current()
+			.panel_text);
 	};
 
 	float list_y = self.list_y();
 	if (self.rows.len() == 0)
 	{
-		draw_text(font, "No problems", panel.x + (float)PADDING, list_y + 4.0f, 16.0f, theme::current().panel_dim);
+		draw_text(font, "No problems", panel.x + (float)PADDING * s, list_y + 4.0f * s, 16.0f * s, theme::current()
+			.panel_dim);
 		return;
 	}
 
+	float row_h  = (float)ROW_HEIGHT * s;
+	int max_rows = (int)((panel.y + panel.height - list_y) / row_h) + 1;
+	if (max_rows < 1) max_rows = 1;
 	int shown = (int)self.rows.len() - self.scroll;
-	if (shown > MAX_VISIBLE_ROWS) shown = MAX_VISIBLE_ROWS;
-	rl::begin_scissor_mode((int)panel.x + 2, (int)list_y, (int)panel.width - 4, shown * ROW_HEIGHT);
-	for (int slot = 0; slot < MAX_VISIBLE_ROWS; slot++)
+	if (shown > max_rows) shown = max_rows;
+	rl::begin_scissor_mode((int)panel.x + 2, (int)list_y, (int)panel.width - 4, (int)((float)shown * row_h));
+	for (int slot = 0; slot < max_rows; slot++)
 	{
 		int index = self.scroll + slot;
 		if (index >= (int)self.rows.len()) break;
 		ProblemRow row = self.rows[index];
-		float row_y    = list_y + (float)slot * (float)ROW_HEIGHT;
+		float row_y    = list_y + (float)slot * row_h;
 
 		if (row.header)
 		{
-			draw_text(font, row.label, panel.x + (float)PADDING, row_y + 3.0f, 15.0f, theme::current().panel_header);
+			draw_text(font, row.label, panel.x + (float)PADDING * s, row_y + 3.0f * s, 15.0f * s, theme::current()
+				.panel_header);
 			continue;
 		}
 
 		if (index == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ROW_HEIGHT, theme::current()
+			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, (int)row_h, theme::current()
 				.panel_selected);
 		}
 		ProblemEntry* entry = self.entry_at(row.entry);
@@ -338,7 +362,14 @@ fn void Problems.draw(&self, RLFont font)
 				(long)(entry.character + 1),
 				entry.message
 			);
-			draw_text(font, label, panel.x + (float)PADDING + 16.0f, row_y + 3.0f, 16.0f, theme::current().panel_text);
+			draw_text(
+				font,
+				label,
+				panel.x + (float)PADDING * s + 16.0f * s,
+				row_y + 3.0f * s,
+				16.0f * s,
+				theme::current()
+				.panel_text);
 		};
 	}
 	rl::end_scissor_mode();
@@ -350,7 +381,7 @@ fn float text_width(RLFont font, String text)
 	float width = 0.0f;
 	@pool()
 	{
-		width = rl::measure_text_ex(font, text.zstr_tcopy(), 14.0f, 0.0f)[0];
+		width = rl::measure_text_ex(font, text.zstr_tcopy(), 14.0f * editor::text_scale(), 0.0f)[0];
 	};
 	return width;
 }
@@ -411,9 +442,11 @@ fn void draw_tooltip(String message, RLVector2 screen_pos, RLFont font)
 	if (message.len == 0) return;
 	@pool()
 	{
+		float s      = editor::text_scale();
+		float line_h = 18.0f * s;
 		List{String} lines;
 		lines.init(tmem);
-		wrap_text(tmem, font, 420.0f, message, &lines);
+		wrap_text(tmem, font, 420.0f * s, message, &lines);
 
 		int count = (int)lines.len();
 		if (count > 12) count = 12;
@@ -423,15 +456,15 @@ fn void draw_tooltip(String message, RLVector2 screen_pos, RLFont font)
 			float w = text_width(font, lines[(sz)i]);
 			if (w > width) width = w;
 		}
-		float height = (float)count * 18.0f + 12.0f;
+		float height = (float)count * line_h + 12.0f * s;
 		Rect panel = {
-			.x = screen_pos[0] + 14.0f,
-			.y = screen_pos[1] + 14.0f,
-			.width = width + 16.0f,
+			.x = screen_pos[0] + 14.0f * s,
+			.y = screen_pos[1] + 14.0f * s,
+			.width = width + 16.0f * s,
 			.height = height,
 		};
-		if (panel.x + panel.width > (float)rl::get_screen_width()) panel.x = screen_pos[0] - panel.width - 8.0f;
-		if (panel.y + panel.height > (float)rl::get_screen_height()) panel.y = screen_pos[1] - panel.height - 8.0f;
+		if (panel.x + panel.width > (float)rl::get_screen_width()) panel.x = screen_pos[0] - panel.width - 8.0f * s;
+		if (panel.y + panel.height > (float)rl::get_screen_height()) panel.y = screen_pos[1] - panel.height - 8.0f * s;
 		if (panel.x < 4.0f) panel.x = 4.0f;
 		if (panel.y < 4.0f) panel.y = 4.0f;
 
@@ -439,7 +472,13 @@ fn void draw_tooltip(String message, RLVector2 screen_pos, RLFont font)
 		rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 		for (int i = 0; i < count; i++)
 		{
-			draw_text(font, lines[(sz)i], panel.x + 8.0f, panel.y + 6.0f + (float)i * 18.0f, 14.0f, theme::current()
+			draw_text(
+				font,
+				lines[(sz)i],
+				panel.x + 8.0f * s,
+				panel.y + 6.0f * s + (float)i * line_h,
+				14.0f * s,
+				theme::current()
 				.panel_text);
 		}
 	};

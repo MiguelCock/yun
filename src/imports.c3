@@ -13,6 +13,7 @@ import std::thread;
 import std::thread::channel;
 import tree_sitter;
 import yun::card;
+import yun::editor;
 import yun::highlight;
 import yun::hover;
 import yun::project;
@@ -1105,9 +1106,10 @@ fn bool arrow_geometry(
 		return true;
 	}
 
+	float label_scale = editor::text_scale();
 	*out_p2 = {
-		card.rect.x + card.rect.width + 40.0f,
-		card.rect.y - 18.0f - (float)slot * 16.0f,
+		card.rect.x + card.rect.width + 40.0f * label_scale,
+		card.rect.y - (18.0f + (float)slot * 16.0f) * label_scale,
 	};
 	*out_p1 = rect_edge_point(card.rect, *out_p2);
 	bezier_controls(*out_p1, *out_p2, out_c2, out_c3);
@@ -1191,8 +1193,9 @@ fn void draw_one(
 	RLColor label_color = hovered ? theme::current()
 		.import_external_hover : (related ? theme::current().import_label : theme::current().import_label_dim);
 	draw_dashed_bezier(p1, p2, thick, zoom, line_color);
-	rl::draw_circle_v(p2, 3.0f / zoom, line_color);
-	draw_label(font, ref.specifier, p2[0] + 8.0f / zoom, p2[1] - 6.0f / zoom, 14.0f, label_color);
+	float s = editor::text_scale();
+	rl::draw_circle_v(p2, 3.0f * s / zoom, line_color);
+	draw_label(font, ref.specifier, p2[0] + 8.0f * s / zoom, p2[1] - 6.0f * s / zoom, 14.0f * s, label_color);
 }
 
 fn void ImportIndex.clear_hover(&self)

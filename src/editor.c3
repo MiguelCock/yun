@@ -257,6 +257,18 @@ fn int clamp_font_size(int size)
 	return size;
 }
 
+float g_font_size = (float)FONT_SIZE_DEFAULT;
+
+fn void set_font_size(float size)
+{
+	g_font_size = size;
+}
+
+fn float text_scale()
+{
+	return g_font_size / (float)FONT_SIZE_DEFAULT;
+}
+
 fn Rect inner_rect(Rect card_rect, EditorMetrics metrics)
 {
 	return {
