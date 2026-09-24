@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 13);
+	assert(command_count() == 14);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -41,6 +41,7 @@ fn void test_command_defs()
 	assert(command_def(CommandId.SELECT_ALL).shortcut.compare_to("Ctrl+A") == 0);
 	assert(command_def(CommandId.PROBLEMS).shortcut.compare_to("Ctrl+Shift+M") == 0);
 	assert(command_def(CommandId.GO_TO_DEFINITION).shortcut.compare_to("F12") == 0);
+	assert(command_def(CommandId.COMPLETE).shortcut.compare_to("Ctrl+Space") == 0);
 }
 
 fn void test_command_from_name()
@@ -56,6 +57,7 @@ fn void test_command_from_name()
 	assert(command_from_name("select_all") == (int)CommandId.SELECT_ALL);
 	assert(command_from_name("problems") == (int)CommandId.PROBLEMS);
 	assert(command_from_name("go_to_definition") == (int)CommandId.GO_TO_DEFINITION);
+	assert(command_from_name("complete") == (int)CommandId.COMPLETE);
 	assert(command_from_name("nope") == -1);
 }
 
@@ -87,6 +89,7 @@ fn void test_command_enabled()
 	assert(command_enabled(CommandId.PROBLEMS, false, false));
 	assert(command_enabled(CommandId.GO_TO_DEFINITION, true, true));
 	assert(!command_enabled(CommandId.GO_TO_DEFINITION, true, false));
+	assert(command_enabled(CommandId.COMPLETE, true, true));
 }
 
 fn void test_fuzzy_exact_and_case()
