@@ -25,6 +25,7 @@ import yun::palette;
 import yun::problems;
 import yun::project;
 import yun::prompt;
+import yun::search;
 import yun::theme;
 import yun::topbar;
 import yun::workspace;
@@ -147,6 +148,7 @@ struct App
 	findbar::FindBar* find_bar;
 	problems::Problems* problems;
 	menu::Menu* theme_menu;
+	search::Search* search;
 	editor::EditorMetrics metrics;
 	bool* project_open;
 	int* pending_kind;
@@ -339,6 +341,20 @@ fn void run_command(commands::CommandId id, App* app)
 					for (int i = 0; i < n; i++) labels[i] = theme::label(i);
 					app.theme_menu.open_at(center, labels[0:n]);
 				};
+				return;
+			}
+		case commands::CommandId.SEARCH_PROJECT:
+
+			{
+				if (!*app.project_open)
+				{
+					app.notifier.push("No project open");
+					return;
+				}
+				app.search.show();
+				while (rl::get_char_pressed() != 0)
+				{
+				}
 				return;
 			}
 	}
@@ -566,6 +582,10 @@ fn int main(String[] args)
 	problems::Problems problems;
 	problems.init(mem);
 
+	search::Search search;
+	search.init(mem);
+	defer search.destroy();
+
 	keymap::Keymap keymap;
 	keymap.init(mem);
 	defer keymap.destroy();
@@ -631,6 +651,7 @@ fn int main(String[] args)
 		.find_bar = &find_bar,
 		.problems = &problems,
 		.theme_menu = &theme_menu,
+		.search = &search,
 		.metrics = metrics,
 		.project_open = &project_open,
 		.pending_kind = &pending_kind,
@@ -644,6 +665,7 @@ fn int main(String[] args)
 		HoverInfo hover    = { };
 		bool arrow_hovered = false;
 		import_index.clear_hover();
+		search.pump(&project, rl::get_time());
 
 		if (pending_font_size > 0)
 		{
@@ -673,6 +695,7 @@ fn int main(String[] args)
 				{
 					project_open = true;
 					finish_open(&project, &canvas, &config, &keymap, &notifier);
+					search.close();
 					pending_font_size = editor::clamp_font_size(config.font_size);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
@@ -690,6 +713,7 @@ fn int main(String[] args)
 		{
 			if (browser.update())
 			{
+				search.close();
 				open_job = project::open_job_create(project.allocator, &project, (String)browser.dir);
 				opening = true;
 			}
@@ -933,6 +957,15 @@ fn int main(String[] args)
 							break;
 						}
 				}
+			}
+		}
+		else if (search.open)
+		{
+			search::SearchTarget target = search.update(&project, rl::get_time());
+			if (target.valid)
+			{
+				search.close();
+				navigate_to_location(&project, &canvas, metrics, target.path, (uint)target.line, (uint)target.column);
 			}
 		}
 		else if (find_bar.open)
@@ -1316,6 +1349,7 @@ fn int main(String[] args)
 			name_prompt.draw();
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
 			problems.draw(editor_font);
+			search.draw(editor_font);
 			definition_menu.draw();
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
