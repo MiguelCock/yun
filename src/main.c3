@@ -485,6 +485,15 @@ fn void mark_buffer_changed(project::Project* project, findbar::FindBar* find_ba
 	find_bar.mark_dirty();
 }
 
+const String FONT_PATH = "assets/fonts/JetBrainsMono-Regular.ttf";
+
+fn void reload_editor_font(RLFont* font, int size, editor::EditorMetrics* metrics)
+{
+	rl::unload_font(*font);
+	*font = rl::load_font_ex(FONT_PATH, size, null, 0);
+	*metrics = editor::metrics_for_font(*font, (float)size);
+}
+
 fn int main(String[] args)
 {
 	rl::set_config_flags((RLConfigFlag)(rl::RLConfigFlag.WINDOW_RESIZABLE | rl::RLConfigFlag.VSYNC_HINT));
@@ -493,9 +502,12 @@ fn int main(String[] args)
 	rl::set_target_fps(60);
 	rl::set_exit_key(rl::RLKeyboardKey.NONE);
 
-	RLFont font = rl::load_font_ex("assets/fonts/JetBrainsMono-Regular.ttf", 16, null, 0);
+	RLFont font = rl::load_font_ex(FONT_PATH, 16, null, 0);
 	defer rl::unload_font(font);
-	editor::EditorMetrics metrics = editor::metrics_for_font(font, 16.0f);
+
+	int font_size                 = editor::FONT_SIZE_DEFAULT;
+	RLFont editor_font            = rl::load_font_ex(FONT_PATH, font_size, null, 0);
+	editor::EditorMetrics metrics = editor::metrics_for_font(editor_font, (float)font_size);
 
 	canvas::Canvas canvas;
 	canvas.init();
@@ -574,9 +586,12 @@ fn int main(String[] args)
 	List{lsp::DefinitionTarget} pending_definitions;
 	pending_definitions.init(mem);
 
-	bool project_open          = false;
-	project::OpenJob* open_job = null;
-	bool opening               = false;
+	bool project_open           = false;
+	project::OpenJob* open_job  = null;
+	bool opening                = false;
+	int pending_font_size       = 0;
+	double font_indicator_until = 0.0;
+	bool font_save_pending      = false;
 	if (args.len > 1)
 	{
 		String? resolved = project::resolve_path(project.allocator, args[1]);
@@ -598,6 +613,7 @@ fn int main(String[] args)
 	{
 		config.load("");
 		apply_config_theme(&config, &notifier);
+		pending_font_size = editor::clamp_font_size(config.font_size);
 	}
 	keymap.build(&config);
 	push_config_warnings(&config, &notifier);
@@ -627,6 +643,19 @@ fn int main(String[] args)
 		bool arrow_hovered = false;
 		import_index.clear_hover();
 
+		if (pending_font_size > 0)
+		{
+			font_size = editor::clamp_font_size(pending_font_size);
+			reload_editor_font(&editor_font, font_size, &metrics);
+			pending_font_size = 0;
+		}
+		if (font_save_pending && !project::ctrl_down())
+		{
+			config.font_size = font_size;
+			config.save_global();
+			font_save_pending = false;
+		}
+
 		if (opening)
 		{
 			if (open_job.phase == project::OpenPhase.SCAN && rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
@@ -642,6 +671,7 @@ fn int main(String[] args)
 				{
 					project_open = true;
 					finish_open(&project, &canvas, &config, &keymap, &notifier);
+					pending_font_size = editor::clamp_font_size(config.font_size);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
 					import_index.start_scan(&project);
@@ -947,6 +977,35 @@ fn int main(String[] args)
 			bool over_top   = topbar::contains_screen(mouse);
 			bool has_buffer = has_focused_buffer(&project);
 
+			bool font_wheel = false;
+			if (!over_top && project::ctrl_down())
+			{
+				float wheel = rl::get_mouse_wheel_move();
+				if (wheel != 0.0f)
+				{
+					int step = wheel > 0.0f ? 1 : -1;
+					int next = editor::clamp_font_size(font_size + step);
+					if (next != font_size)
+					{
+						float old_lh = metrics.line_height;
+						float old_cw = metrics.char_width;
+						font_size = next;
+						reload_editor_font(&editor_font, font_size, &metrics);
+						float lh_ratio = old_lh > 0.0f ? metrics.line_height / old_lh : 1.0f;
+						float cw_ratio = old_cw > 0.0f ? metrics.char_width / old_cw : 1.0f;
+						for (sz i = 0; i < project.cards.len(); i++)
+						{
+							project.cards[i].scroll *= lh_ratio;
+							project.cards[i].scroll_x *= cw_ratio;
+						}
+						project.reveal_focused(metrics);
+						font_indicator_until = rl::get_time() + 1.2;
+						font_save_pending = true;
+					}
+					font_wheel = true;
+				}
+			}
+
 			int key_cmd = keymap.poll();
 			if (key_cmd >= 0) run_command((commands::CommandId)key_cmd, &app);
 
@@ -1048,7 +1107,7 @@ fn int main(String[] args)
 			}
 
 			bool content_changed = false;
-			project.update(&canvas, metrics, over_top, &content_changed);
+			project.update(&canvas, metrics, over_top || font_wheel, &content_changed);
 			project.discard_ephemeral(project.focused);
 			if (content_changed)
 			{
@@ -1061,7 +1120,7 @@ fn int main(String[] args)
 			import_index.flush_edits(&project, rl::get_time());
 			import_index.sync(&project);
 			imports::ImportIndex.pump(&import_index, &project);
-			if (over_top) canvas.block_zoom = true;
+			if (over_top || font_wheel) canvas.block_zoom = true;
 			canvas.update();
 			hover = compute_hover(&project, &canvas, metrics);
 
@@ -1170,9 +1229,33 @@ fn int main(String[] args)
 			{
 				project.draw_folders(canvas.camera);
 				import_index.draw(&project, canvas.camera, font);
-				project.draw_cards(canvas.camera, font, metrics, &find_bar);
+				project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar);
 			};
 			minimap::draw(&project, &canvas);
+			if (rl::get_time() < font_indicator_until)
+			{
+				@pool()
+				{
+					String label = string::format(tmem, "Font %d", (long)font_size);
+					float width  = rl::measure_text_ex(font, label.zstr_tcopy(), 16.0f, 0.0f)[0];
+					Rect panel = {
+						.x = (float)rl::get_screen_width() / 2.0f - (width + 24.0f) / 2.0f,
+						.y = topbar::TOP_BAR_HEIGHT + 16.0f,
+						.width = width + 24.0f,
+						.height = 30.0f,
+					};
+					rl::draw_rectangle_rec(panel, theme::current().panel_bg_alt);
+					rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+					rl::draw_text_ex(
+						font,
+						label.zstr_tcopy(),
+						{ panel.x + 12.0f, panel.y + 7.0f },
+						16.0f,
+						0.0f,
+						theme::current()
+						.panel_text);
+				};
+			}
 			if (!problems.open && !palette.open && !opening)
 			{
 				if (import_index.hover.valid)
@@ -1240,5 +1323,6 @@ fn int main(String[] args)
 
 	if (project_open) workspace::save(&project, &canvas);
 	lsp.shutdown_all();
+	rl::unload_font(editor_font);
 	return 0;
 }
