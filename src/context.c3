@@ -19,6 +19,7 @@ enum ContextAction
 	NEW_FILE,
 	NEW_FOLDER,
 	OPEN_PROJECT,
+	GO_TO_DEFINITION,
 }
 
 struct ContextItem
@@ -30,7 +31,14 @@ struct ContextItem
 
 const int CONTEXT_MAX_ITEMS = 8;
 
-fn usz build(ContextTarget target, bool card_open, bool card_missing, bool has_project, ContextItem[] out)
+fn usz build(
+	ContextTarget target,
+	bool card_open,
+	bool card_missing,
+	bool has_project,
+	bool can_define,
+	ContextItem[] out
+)
 {
 	usz count = 0;
 	switch (target)
@@ -49,6 +57,12 @@ fn usz build(ContextTarget target, bool card_open, bool card_missing, bool has_p
 			out[count] = { .label = "Copy Path", .action = ContextAction.COPY_PATH, .enabled = true };
 			count++;
 			out[count] = { .label = "Delete", .action = ContextAction.DELETE_CARD, .enabled = !card_missing };
+			count++;
+			out[count] = {
+				.label = "Go to Definition",
+				.action = ContextAction.GO_TO_DEFINITION,
+				.enabled = can_define,
+			};
 			count++;
 			break;
 		case ContextTarget.CLUSTER:
@@ -79,6 +93,8 @@ fn int command_for(ContextAction action)
 			return (int)commands::CommandId.NEW_FOLDER;
 		case ContextAction.OPEN_PROJECT:
 			return (int)commands::CommandId.OPEN;
+		case ContextAction.GO_TO_DEFINITION:
+			return (int)commands::CommandId.GO_TO_DEFINITION;
 		default:
 			return -1;
 	}

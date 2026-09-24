@@ -36,6 +36,7 @@ struct FileCard
 	long mtime;
 	long size;
 	bool missing;
+	bool ephemeral;
 }
 
 fn Rect FileCard.effective_rect(&self)

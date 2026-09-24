@@ -47,6 +47,9 @@ struct Lsp
 	int hover_request_id;
 	String hover_text;
 	bool hover_valid;
+	int definition_request_id;
+	List{DefinitionTarget} definition_results;
+	bool definition_ready;
 }
 
 Lsp* active_lsp;
@@ -70,6 +73,9 @@ fn void Lsp.init(&self, Allocator allocator, config::Config* config)
 	self.hover_request_id = -1;
 	self.hover_text = "";
 	self.hover_valid = false;
+	self.definition_request_id = -1;
+	self.definition_results.init(allocator);
+	self.definition_ready = false;
 }
 
 fn void Lsp.free_diagnostics(&self)
@@ -94,6 +100,7 @@ fn void Lsp.shutdown_all(&self)
 {
 	self.free_diagnostics();
 	self.clear_hover();
+	self.clear_definition_results();
 	for (sz i = 0; i < self.clients.len(); i++)
 	{
 		LspClient* client = self.clients[i];
@@ -222,6 +229,47 @@ fn void Lsp.clear_hover(&self)
 	self.hover_offset = 0;
 	self.hover_request_id = -1;
 	self.hover_valid = false;
+}
+
+fn void Lsp.clear_definition_results(&self)
+{
+	for (sz i = 0; i < self.definition_results.len(); i++)
+	{
+		if (self.definition_results[i].path.len) self.definition_results[i].path.free(self.allocator);
+	}
+	self.definition_results.clear();
+	self.definition_ready = false;
+}
+
+fn bool Lsp.request_definition(&self, String path, PieceTable* table, usz offset)
+{
+	self.clear_definition_results();
+	self.definition_request_id = -1;
+
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY || !client.caps.definition) return false;
+
+	uint line      = 0;
+	uint character = 0;
+	position_from_offset(table, offset, &line, &character);
+	@pool()
+	{
+		String uri     = path_to_uri(tmem, path);
+		Object* params = lsp_document_position_params(tmem, uri, line, character);
+		self.definition_request_id = client.send_request("textDocument/definition", params);
+	};
+	return true;
+}
+
+fn bool Lsp.take_definition(&self, List{DefinitionTarget}* out)
+{
+	if (!self.definition_ready) return false;
+	self.definition_ready = false;
+	self.definition_request_id = -1;
+	*out = self.definition_results;
+	self.definition_results.init(self.allocator);
+	return true;
 }
 
 fn void Lsp.update_hover(&self, double now, bool over, String path, PieceTable* table, usz offset)
@@ -532,6 +580,20 @@ fn void Lsp.update(&self, double now)
 				}
 				self.hover_request_id = -1;
 			}
+			else if (self.definition_request_id >= 0 && response.id == self.definition_request_id
+				&& response.method.compare_to(
+				"textDocument/definition"
+			) == 0)
+			{
+				self.clear_definition_results();
+				Object*? result_opt = response.message.get("result");
+				if (try result = result_opt)
+				{
+					lsp_normalize_definition(self.allocator, result, &self.definition_results);
+				}
+				self.definition_ready = true;
+				self.definition_request_id = -1;
+			}
 			response.method.free(client.allocator);
 			response.message.free();
 		}
@@ -643,4 +705,15 @@ fn void lsp_diagnostic_counts(int* errors, int* warnings, int* infos, int* hints
 fn void lsp_collect_all(List{LspDiagnosticRef}* out)
 {
 	if (active_lsp) active_lsp.collect_all(out);
+}
+fn bool lsp_request_definition(String path, PieceTable* table, usz offset)
+{
+	if (!active_lsp) return false;
+	return active_lsp.request_definition(path, table, offset);
+}
+
+fn bool lsp_take_definition(List{DefinitionTarget}* out)
+{
+	if (!active_lsp) return false;
+	return active_lsp.take_definition(out);
 }

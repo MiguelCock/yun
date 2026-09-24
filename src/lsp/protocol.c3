@@ -26,6 +26,13 @@ struct LspDiagnostic
 	String message;
 }
 
+struct DefinitionTarget
+{
+	String path;
+	uint line;
+	uint character;
+}
+
 const int DIAGNOSTIC_ERROR   = 1;
 const int DIAGNOSTIC_WARNING = 2;
 const int DIAGNOSTIC_INFO    = 3;
@@ -216,8 +223,69 @@ fn String? lsp_normalize_hover(Allocator allocator, Object* result)
 	return LSP_NO_HOVER~;
 }
 
+fn void lsp_add_definition(Allocator allocator, Object* item, List{DefinitionTarget}* out)
+{
+	if (!item.is_map()) return;
+
+	Object* uri_obj         = null;
+	Object*? uri_opt        = item.get("uri");
+	Object*? target_uri_opt = item.get("targetUri");
+	if (try uri = uri_opt)
+	{
+		uri_obj = uri;
+	}
+	else if (try target_uri = target_uri_opt)
+	{
+		uri_obj = target_uri;
+	}
+	if (!uri_obj || !uri_obj.is_string()) return;
+
+	Object* range_obj         = null;
+	Object*? range_opt        = item.get("range");
+	Object*? selection_opt    = item.get("targetSelectionRange");
+	Object*? target_range_opt = item.get("targetRange");
+	if (try range = range_opt)
+	{
+		range_obj = range;
+	}
+	else if (try selection = selection_opt)
+	{
+		range_obj = selection;
+	}
+	else if (try target_range = target_range_opt)
+	{
+		range_obj = target_range;
+	}
+	if (!range_obj || !range_obj.is_map()) return;
+
+	Object*? start_opt = range_obj.get("start");
+	if (catch excuse = start_opt) return;
+
+	out.push(
+		{
+			.path = uri_to_path(allocator, uri_obj.s),
+			.line = lsp_object_uint(start_opt, "line"),
+			.character = lsp_object_uint(start_opt, "character"),
+		}
+	);
+}
+
+fn void lsp_normalize_definition(Allocator allocator, Object* result, List{DefinitionTarget}* out)
+{
+	if (result.is_array())
+	{
+		for (sz i = 0; i < result.get_len(); i++)
+		{
+			lsp_add_definition(allocator, result.get_at(i), out);
+		}
+		return;
+	}
+	if (result.is_map()) lsp_add_definition(allocator, result, out);
+}
+
 fn void lsp_parse_capabilities(Allocator allocator, Object* result, LspCapabilities* out)
 {
+	if (!result.is_map()) return;
 	Object*? caps_opt = result.get("capabilities");
 	if (catch excuse = caps_opt) return;
 	Object* caps = caps_opt;

@@ -14,6 +14,7 @@ enum CommandId
 	PASTE,
 	SELECT_ALL,
 	PROBLEMS,
+	GO_TO_DEFINITION,
 }
 
 struct CommandDef
@@ -37,6 +38,7 @@ const CommandDef[] COMMAND_DEFS = {
 	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false },
 	{ .id = CommandId.SELECT_ALL, .label = "Select All", .shortcut = "Ctrl+A", .in_top_bar = false },
 	{ .id = CommandId.PROBLEMS, .label = "Problems", .shortcut = "Ctrl+Shift+M", .in_top_bar = false },
+	{ .id = CommandId.GO_TO_DEFINITION, .label = "Go to Definition", .shortcut = "F12", .in_top_bar = false },
 };
 
 fn usz command_count()
@@ -77,6 +79,8 @@ fn String command_name(CommandId id)
 			return "select_all";
 		case CommandId.PROBLEMS:
 			return "problems";
+		case CommandId.GO_TO_DEFINITION:
+			return "go_to_definition";
 	}
 }
 
@@ -139,6 +143,8 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 			return has_buffer;
 		case CommandId.PROBLEMS:
 			return true;
+		case CommandId.GO_TO_DEFINITION:
+			return has_buffer;
 	}
 }
 

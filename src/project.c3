@@ -128,6 +128,7 @@ fn void Project.init(&self, Allocator allocator)
 
 fn void Project.reset(&self)
 {
+	self.discard_ephemeral(-1);
 	self.cards.clear();
 	self.folders.clear();
 	self.folder_index.clear();
@@ -136,6 +137,32 @@ fn void Project.reset(&self)
 	self.drag_cluster = false;
 	self.cluster_moved = false;
 	self.selecting = false;
+}
+
+fn void Project.discard_ephemeral(&self, int keep)
+{
+	for (sz i = self.cards.len(); i > 0; i--)
+	{
+		sz index = i - 1;
+		if (!self.cards[index].ephemeral) continue;
+		if ((int)index == keep) continue;
+		FileCard card = self.cards[index];
+		editor::destroy_buffer(&self.cards[index], self.allocator);
+		@pool()
+		{
+			(void)libc::remove(((String)card.path).zstr_tcopy());
+		};
+		self.cards.remove_at(index);
+		if (self.focused > (int)index)
+		{
+			self.focused--;
+		}
+		else if (self.focused == (int)index)
+		{
+			self.focused = -1;
+		}
+	}
+	self.invalidate_bounds();
 }
 
 fn bool path_is_inside(String root, String abs)
@@ -529,6 +556,35 @@ fn String? Project.copy_into_root(&self, String abs)
 	char[]? data = file::load(self.allocator, abs);
 	if (catch excuse = data) return COPY_FAILED~;
 	if (catch excuse = file::save(dest, data)) return COPY_FAILED~;
+	return (String)dest;
+}
+
+fn String? Project.external_copy(&self, String abs)
+{
+	Path? base = self.root.append(self.allocator, ".yun");
+	if (catch excuse = base) return COPY_FAILED~;
+	Path? dir = base.append(self.allocator, "external");
+	if (catch excuse = dir) return COPY_FAILED~;
+	if (catch excuse = path::mkdir(dir, recursive: true)) return COPY_FAILED~;
+
+	String name    = rl::get_file_name((ZString)abs.ptr).str_view();
+	Path? appended = dir.append(self.allocator, name);
+	if (catch excuse = appended) return COPY_FAILED~;
+	Path dest = appended;
+
+	int index = 1;
+	while (path::exists(dest))
+	{
+		String alt = string::format(self.allocator, "%d_%s", index, name);
+		Path? next = dir.append(self.allocator, alt);
+		if (catch excuse = next) return COPY_FAILED~;
+		dest = next;
+		index++;
+	}
+
+	char[]? data = file::load(self.allocator, abs);
+	if (catch excuse = data) return COPY_FAILED~;
+	if (catch excuse = file::save((String)dest, data)) return COPY_FAILED~;
 	return (String)dest;
 }
 
@@ -1238,7 +1294,11 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 			else if (region == editor::CardRegion.CLOSE)
 			{
 				FileCard* card = &self.cards[card_hit];
-				if (card.buffer)
+				if (card.ephemeral)
+				{
+					self.discard_ephemeral(-1);
+				}
+				else if (card.buffer)
 				{
 					if (card.dirty)
 					{
@@ -1288,8 +1348,12 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 					card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
 					if (card.history) card.history.break_coalescing();
 					self.last_input_time = rl::get_time();
+					if (ctrl_down())
+					{
+						lsp::lsp_request_definition((String)card.path, card.buffer, offset);
+					}
 				}
-				self.selecting = true;
+				if (!ctrl_down()) self.selecting = true;
 			}
 			else
 			{

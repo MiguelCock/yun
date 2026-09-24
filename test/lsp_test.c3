@@ -366,3 +366,48 @@ fn void test_normalize_hover()
 		}
 	};
 }
+fn void test_normalize_definition()
+{
+	@pool()
+	{
+		List{DefinitionTarget} out;
+		out.init(tmem);
+
+		Object*? loc = json::parse(
+			tmem,
+			"{\"uri\":\"file:///a.c\",\"range\":{\"start\":{\"line\":1,\"character\":2},\"end\":{\"line\":1,\"character\":5}}}"
+		);
+		if (try obj = loc) lsp_normalize_definition(tmem, obj, &out);
+		assert(out.len() == 1);
+		assert(out[0].path.compare_to("/a.c") == 0);
+		assert(out[0].line == 1 && out[0].character == 2);
+		out.clear();
+
+		Object*? arr = json::parse(
+			tmem,
+			"[{\"uri\":\"file:///a.c\",\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":1}}},{\"targetUri\":\"file:///b.c\",\"targetSelectionRange\":{\"start\":{\"line\":3,\"character\":4},\"end\":{\"line\":3,\"character\":5}}}]"
+		);
+		if (try obj = arr) lsp_normalize_definition(tmem, obj, &out);
+		assert(out.len() == 2);
+		assert(out[1].path.compare_to("/b.c") == 0);
+		assert(out[1].line == 3 && out[1].character == 4);
+		out.clear();
+
+		Object*? msg = json::parse(tmem, "{\"result\":null}");
+		if (try obj = msg)
+		{
+			Object*? result_opt = obj.get("result");
+			if (catch def_excuse = result_opt)
+			{
+				assert(false);
+			}
+			else
+			{
+				lsp_normalize_definition(tmem, result_opt, &out);
+			}
+		}
+		assert(out.len() == 0);
+
+		out.free();
+	};
+}

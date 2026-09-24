@@ -1,6 +1,7 @@
 module yun;
 
 import raylib6::rl;
+import std::collections::list;
 import std::io::path;
 import std::math;
 import yun::browser;
@@ -305,10 +306,25 @@ fn void run_command(commands::CommandId id, App* app)
 				app.problems.show();
 				return;
 			}
+		case commands::CommandId.GO_TO_DEFINITION:
+
+			{
+				FileCard* card = project.focused_card();
+				if (!card || !card.buffer)
+				{
+					app.notifier.push("No file to navigate");
+					return;
+				}
+				if (!lsp::lsp_request_definition((String)card.path, card.buffer, card.cursor))
+				{
+					app.notifier.push("No definition provider");
+				}
+				return;
+			}
 	}
 }
 
-fn void navigate_to_problem(
+fn void navigate_to_location(
 	project::Project* project,
 	canvas::Canvas* canvas,
 	editor::EditorMetrics metrics,
@@ -320,12 +336,28 @@ fn void navigate_to_problem(
 	int index = project.find_card(path);
 	if (index < 0)
 	{
+		bool ephemeral = false;
+		String target  = path;
+		if (!project::path_is_inside((String)project.root, path))
+		{
+			String? copied = project.external_copy(path);
+			if (catch excuse = copied)
+			{
+				return;
+			}
+			target = copied;
+			ephemeral = true;
+		}
 		RLVector2 center = {
 			(float)rl::get_screen_width() / 2.0f,
 			(float)rl::get_screen_height() / 2.0f,
 		};
 		RLVector2 world = canvas.screen_to_world(center);
-		index = project.add_card(path, world);
+		index = project.add_card(target, world);
+		if (index >= 0 && ephemeral && project.focused >= 0)
+		{
+			project.cards[project.focused].ephemeral = true;
+		}
 	}
 	if (index < 0) return;
 
@@ -343,6 +375,15 @@ fn void navigate_to_problem(
 	card.scroll = editor::scroll_to_reveal(card.buffer, metrics, text.height, card.cursor, card.scroll);
 	card.scroll_x = editor::scroll_x_to_reveal(card.buffer, metrics, text.width, card.cursor, card.scroll_x);
 	canvas.target.target = card.center();
+}
+
+fn void clear_definitions(List{lsp::DefinitionTarget}* list)
+{
+	for (sz i = 0; i < list.len(); i++)
+	{
+		if ((*list)[i].path.len) (*list)[i].path.free(list.allocator);
+	}
+	list.clear();
 }
 
 struct HoverInfo
@@ -497,8 +538,14 @@ fn int main(String[] args)
 	int context_card        = -1;
 	int context_parent      =  project::ROOT_FOLDER;
 	RLVector2 context_world =  { 0.0f, 0.0f };
+	int context_offset      = -1;
 	int pending_rename_card = -1;
 	int pending_delete_card = -1;
+
+	menu::Menu definition_menu;
+	definition_menu.init(mem);
+	List{lsp::DefinitionTarget} pending_definitions;
+	pending_definitions.init(mem);
 
 	bool project_open          = false;
 	project::OpenJob* open_job = null;
@@ -599,8 +646,21 @@ fn int main(String[] args)
 				problems::ProblemEntry* entry = problems.entry_at(chosen);
 				if (entry)
 				{
-					navigate_to_problem(&project, &canvas, metrics, entry.path, entry.line, entry.character);
+					navigate_to_location(&project, &canvas, metrics, entry.path, entry.line, entry.character);
 				}
+			}
+		}
+		else if (definition_menu.open)
+		{
+			int chosen = definition_menu.update();
+			if (chosen >= 0 && chosen < (int)pending_definitions.len())
+			{
+				lsp::DefinitionTarget target = pending_definitions[(sz)chosen];
+				navigate_to_location(&project, &canvas, metrics, target.path, target.line, target.character);
+			}
+			if (!definition_menu.open)
+			{
+				clear_definitions(&pending_definitions);
 			}
 		}
 		else if (name_prompt.open)
@@ -771,6 +831,27 @@ fn int main(String[] args)
 							}
 							break;
 						}
+					case context::ContextAction.GO_TO_DEFINITION:
+
+						{
+							if (context_card >= 0 && context_card < (int)project.cards.len() && context_offset >= 0)
+							{
+								int index    = project.focus(context_card);
+								FileCard* cc = &project.cards[index];
+								editor::ensure_buffer(cc, project.allocator);
+								if (cc.buffer)
+								{
+									cc.cursor = (usz)context_offset;
+									cc.selection_anchor = cc.cursor;
+									if (!lsp::lsp_request_definition(
+										(String)cc.path,
+										cc.buffer,
+										cc.cursor
+									)) notifier.push("No definition provider");
+								}
+							}
+							break;
+						}
 				}
 			}
 		}
@@ -851,11 +932,31 @@ fn int main(String[] args)
 
 				bool card_open    = card >= 0 && project.cards[card].open;
 				bool card_missing = card >= 0 && project.cards[card].missing;
+				context_offset = -1;
+				if (card >= 0 && project.cards[card].open && project.cards[card].buffer)
+				{
+					FileCard* cc = &project.cards[card];
+					Rect text    = editor::text_rect(cc.rect, metrics, cc.buffer.line_count());
+					if (world[0] >= text.x && world[0] <= text.x + text.width && world[1] >= text.y
+						&& world[1] <= text.y + text.height)
+					{
+						context_offset = (int)editor::offset_for_point(
+							cc.buffer,
+							world[0] - text.x,
+							world[1] - text.y,
+							cc.scroll,
+							cc.scroll_x,
+							metrics
+						);
+					}
+				}
+				bool can_define = context_offset >= 0;
 				context_item_count = context::build(
 					target,
 					card_open,
 					card_missing,
 					project_open,
+					can_define,
 					context_items[0:context::CONTEXT_MAX_ITEMS]
 				);
 
@@ -893,6 +994,7 @@ fn int main(String[] args)
 
 			bool content_changed = false;
 			project.update(&canvas, metrics, over_top, &content_changed);
+			project.discard_ephemeral(project.focused);
 			if (over_top) canvas.block_zoom = true;
 			canvas.update();
 			if (content_changed) find_bar.mark_dirty();
@@ -920,6 +1022,49 @@ fn int main(String[] args)
 
 		lsp.update(rl::get_time());
 		lsp.update_hover(rl::get_time(), hover.over, hover.path, hover.table, hover.offset);
+
+		List{lsp::DefinitionTarget} definitions = { };
+		if (lsp::lsp_take_definition(&definitions))
+		{
+			if (definitions.len() == 0)
+			{
+				notifier.push("No definition found");
+				definitions.free();
+			}
+			else if (definitions.len() == 1)
+			{
+				lsp::DefinitionTarget target = definitions[0];
+				navigate_to_location(&project, &canvas, metrics, target.path, target.line, target.character);
+				clear_definitions(&definitions);
+				definitions.free();
+			}
+			else
+			{
+				pending_definitions.free();
+				pending_definitions = definitions;
+				@pool()
+				{
+					String[32] labels;
+					bool[32] enabled;
+					int shown = (int)pending_definitions.len();
+					if (shown > 32) shown = 32;
+					for (int i = 0; i < shown; i++)
+					{
+						lsp::DefinitionTarget target = pending_definitions[(sz)i];
+						String base                  = rl::get_file_name((ZString)target.path.ptr).str_view();
+						labels[i] = string::format(
+							tmem,
+							"%s:%d:%d",
+							base,
+							(long)(target.line + 1),
+							(long)(target.character + 1)
+						);
+						enabled[i] = true;
+					}
+					definition_menu.open_with(rl::get_mouse_position(), labels[0:shown], enabled[0:shown]);
+				};
+			}
+		}
 		notifier.update(dt);
 
 		rl::@drawing()
@@ -966,6 +1111,7 @@ fn int main(String[] args)
 			name_prompt.draw();
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
 			problems.draw(font);
+			definition_menu.draw();
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
 			rl::draw_fps(10, (int)topbar::TOP_BAR_HEIGHT + 10);
