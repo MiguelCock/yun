@@ -360,6 +360,22 @@ fn void run_command(commands::CommandId id, App* app)
 	}
 }
 
+fn void focus_camera_on_line(
+	project::Project* project,
+	canvas::Canvas* canvas,
+	editor::EditorMetrics metrics,
+	FileCard* card,
+	usz line
+)
+{
+	Rect text        = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+	float world_y    = text.y + editor::line_y(line, card.scroll, metrics) + metrics.line_height * 0.5f;
+	RLVector2 center = card.center();
+	canvas.target.target = { center[0], world_y };
+	if (canvas.target.zoom < JUMP_ZOOM_MIN) canvas.target.zoom = JUMP_ZOOM_TARGET;
+	project.mark_jump((String)card.path, line, rl::get_time());
+}
+
 fn void navigate_to_location(
 	project::Project* project,
 	canvas::Canvas* canvas,
@@ -410,7 +426,7 @@ fn void navigate_to_location(
 	Rect text = editor::text_rect(card.rect, metrics, card.buffer.line_count());
 	card.scroll = editor::scroll_to_reveal(card.buffer, metrics, text.height, card.cursor, card.scroll);
 	card.scroll_x = editor::scroll_x_to_reveal(card.buffer, metrics, text.width, card.cursor, card.scroll_x);
-	canvas.target.target = card.center();
+	focus_camera_on_line(project, canvas, metrics, card, card_line);
 }
 
 fn void clear_definitions(List{lsp::DefinitionTarget}* list)
@@ -501,7 +517,9 @@ fn void mark_buffer_changed(project::Project* project, findbar::FindBar* find_ba
 	find_bar.mark_dirty();
 }
 
-const String FONT_PATH = "assets/fonts/JetBrainsMono-Regular.ttf";
+const String FONT_PATH       = "assets/fonts/JetBrainsMono-Regular.ttf";
+const float JUMP_ZOOM_MIN    = 0.6f;
+const float JUMP_ZOOM_TARGET = 1.0f;
 
 fn void reload_editor_font(RLFont* font, int size, editor::EditorMetrics* metrics)
 {
@@ -979,12 +997,14 @@ fn int main(String[] args)
 			{
 				usz reveal    = 0;
 				bool replaced = false;
+				bool jumped   = false;
 				int result = find_bar.update(
 					project.cards[focus].buffer,
 					project.cards[focus].history,
 					false,
 					&reveal,
-					&replaced
+					&replaced,
+					&jumped
 				);
 				if (result >= 0)
 				{
@@ -1002,6 +1022,11 @@ fn int main(String[] args)
 						);
 					}
 					if (replaced) card.dirty = true;
+					if (jumped)
+					{
+						usz line = card.buffer.line_of(reveal);
+						focus_camera_on_line(&project, &canvas, metrics, card, line);
+					}
 				}
 			}
 		}

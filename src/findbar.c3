@@ -206,11 +206,13 @@ fn int FindBar.update(
 	History* history,
 	bool content_changed,
 	usz* out_reveal,
-	bool* out_replaced
+	bool* out_replaced,
+	bool* out_jumped
 )
 {
 	*out_reveal = 0;
 	*out_replaced = false;
+	*out_jumped = false;
 	if (!self.open) return 0;
 	if (content_changed) self.needs_search = true;
 
@@ -244,11 +246,19 @@ fn int FindBar.update(
 		}
 		else if (shift)
 		{
-			if (self.move_prev()) *out_reveal = self.current_start();
+			if (self.move_prev())
+			{
+				*out_reveal = self.current_start();
+				*out_jumped = true;
+			}
 		}
 		else
 		{
-			if (self.move_next()) *out_reveal = self.current_start();
+			if (self.move_next())
+			{
+				*out_reveal = self.current_start();
+				*out_jumped = true;
+			}
 		}
 	}
 
