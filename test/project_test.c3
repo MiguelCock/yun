@@ -701,3 +701,22 @@ fn void test_discard_ephemeral()
 		(void)path::rmtree(dir);
 	};
 }
+
+fn void test_cluster_title_hit_only_top_bar()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		int f = p.add_folder("/root/a", ROOT_FOLDER);
+		p.folders[f].bounds = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f };
+		p.folders[f].bounds_valid = false;
+
+		assert(p.cluster_title_hit(f, { 50.0f, 10.0f }));
+		assert(!p.cluster_title_hit(f, { 50.0f, 50.0f }));
+		assert(!p.cluster_title_hit(f, { 50.0f, 200.0f }));
+
+		p.toggle_collapse(f);
+		assert(p.cluster_title_hit(f, { 50.0f, 10.0f }));
+	};
+}
