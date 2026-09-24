@@ -274,3 +274,59 @@ fn void test_diagnostics_store()
 		lsp.shutdown_all();
 	};
 }
+fn void test_normalize_hover()
+{
+	@pool()
+	{
+		Object*? markup = json::parse(tmem, "{\"contents\":{\"kind\":\"markdown\",\"value\":\"**hi**\"}}");
+		if (try obj = markup)
+		{
+			String? text = lsp_normalize_hover(tmem, obj);
+			if (catch excuse = text)
+			{
+				assert(false);
+			}
+			else
+			{
+				assert(text.compare_to("**hi**") == 0);
+			}
+		}
+
+		Object*? marked = json::parse(tmem, "{\"contents\":{\"language\":\"c\",\"value\":\"int x;\"}}");
+		if (try obj = marked)
+		{
+			String? text = lsp_normalize_hover(tmem, obj);
+			if (catch excuse = text)
+			{
+				assert(false);
+			}
+			else
+			{
+				assert(text.compare_to("```c\nint x;\n```") == 0);
+			}
+		}
+
+		Object*? array = json::parse(tmem, "{\"contents\":[\"plain\",\"two\"]}");
+		if (try obj = array)
+		{
+			String? text = lsp_normalize_hover(tmem, obj);
+			if (catch excuse = text)
+			{
+				assert(false);
+			}
+			else
+			{
+				assert(text.compare_to("plain\n\ntwo") == 0);
+			}
+		}
+
+		Object*? empty = json::parse(tmem, "{\"contents\":null}");
+		if (try obj = empty)
+		{
+			String? text = lsp_normalize_hover(tmem, obj);
+			bool faulted = false;
+			if (catch excuse = text) faulted = true;
+			assert(faulted);
+		}
+	};
+}
