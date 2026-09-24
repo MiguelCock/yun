@@ -26,6 +26,7 @@ import yun::problems;
 import yun::project;
 import yun::prompt;
 import yun::search;
+import yun::symbols;
 import yun::theme;
 import yun::topbar;
 import yun::workspace;
@@ -149,6 +150,7 @@ struct App
 	problems::Problems* problems;
 	menu::Menu* theme_menu;
 	search::Search* search;
+	symbols::Symbols* symbols;
 	editor::EditorMetrics metrics;
 	bool* project_open;
 	int* pending_kind;
@@ -352,6 +354,20 @@ fn void run_command(commands::CommandId id, App* app)
 					return;
 				}
 				app.search.show();
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+				return;
+			}
+		case commands::CommandId.SYMBOLS_PROJECT:
+
+			{
+				if (!*app.project_open)
+				{
+					app.notifier.push("No project open");
+					return;
+				}
+				app.symbols.show();
 				while (rl::get_char_pressed() != 0)
 				{
 				}
@@ -604,6 +620,10 @@ fn int main(String[] args)
 	search.init(mem);
 	defer search.destroy();
 
+	symbols::Symbols symbols;
+	symbols.init(mem);
+	defer symbols.destroy();
+
 	keymap::Keymap keymap;
 	keymap.init(mem);
 	defer keymap.destroy();
@@ -670,6 +690,7 @@ fn int main(String[] args)
 		.problems = &problems,
 		.theme_menu = &theme_menu,
 		.search = &search,
+		.symbols = &symbols,
 		.metrics = metrics,
 		.project_open = &project_open,
 		.pending_kind = &pending_kind,
@@ -684,6 +705,7 @@ fn int main(String[] args)
 		bool arrow_hovered = false;
 		import_index.clear_hover();
 		search.pump(&project, rl::get_time());
+		symbols.pump(&project, rl::get_time());
 
 		if (pending_font_size > 0)
 		{
@@ -714,6 +736,8 @@ fn int main(String[] args)
 					project_open = true;
 					finish_open(&project, &canvas, &config, &keymap, &notifier);
 					search.close();
+					symbols.close();
+					symbols.start_scan(&project);
 					pending_font_size = editor::clamp_font_size(config.font_size);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
@@ -732,6 +756,7 @@ fn int main(String[] args)
 			if (browser.update())
 			{
 				search.close();
+				symbols.close();
 				open_job = project::open_job_create(project.allocator, &project, (String)browser.dir);
 				opening = true;
 			}
@@ -986,6 +1011,15 @@ fn int main(String[] args)
 				navigate_to_location(&project, &canvas, metrics, target.path, (uint)target.line, (uint)target.column);
 			}
 		}
+		else if (symbols.open)
+		{
+			symbols::SymbolTarget target = symbols.update(&project, rl::get_time());
+			if (target.valid)
+			{
+				symbols.close();
+				navigate_to_location(&project, &canvas, metrics, target.path, (uint)target.line, (uint)target.column);
+			}
+		}
 		else if (find_bar.open)
 		{
 			int focus = project.focused;
@@ -1175,6 +1209,7 @@ fn int main(String[] args)
 				if (project.focused >= 0 && project.focused < (int)project.cards.len())
 				{
 					import_index.note_edit((String)project.cards[project.focused].path, rl::get_time());
+					symbols.note_edit((String)project.cards[project.focused].path, rl::get_time());
 				}
 			}
 			import_index.flush_edits(&project, rl::get_time());
@@ -1375,6 +1410,7 @@ fn int main(String[] args)
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
 			problems.draw(editor_font);
 			search.draw(editor_font);
+			symbols.draw(editor_font);
 			definition_menu.draw();
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
