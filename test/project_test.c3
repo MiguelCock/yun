@@ -668,3 +668,36 @@ fn void test_double_click_detection()
 	assert(!is_double_click(1.0, a, 0.5, a));
 	assert(!is_double_click(0.8, a, 0.9, a));
 }
+fn void test_discard_ephemeral()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_ephemeral");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? f = dir.append(tmem, "tmp.c");
+		if (catch excuse = f) return;
+		if (catch excuse = file::save(f, "x")) return;
+
+		Project p;
+		p.init(tmem);
+		p.root = dir.copy(tmem);
+		int index = p.add_card((String)f, { 0.0f, 0.0f });
+		assert(index >= 0);
+		assert(p.focused == index);
+		p.cards[index].ephemeral = true;
+
+		p.discard_ephemeral(p.focused);
+		assert(p.cards.len() == 1);
+
+		p.discard_ephemeral(-1);
+		assert(p.cards.len() == 0);
+		assert(!path::exists(f));
+
+		(void)path::rmtree(dir);
+	};
+}
