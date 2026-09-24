@@ -759,6 +759,7 @@ fn int main(String[] args)
 					if (chosen == 0)
 					{
 						editor::reload_buffer(&project.cards[index], project.allocator);
+						import_index.rescan(&project, index);
 					}
 					else
 					{
@@ -1023,8 +1024,12 @@ fn int main(String[] args)
 			if (content_changed)
 			{
 				find_bar.mark_dirty();
-				import_index.rescan(&project, project.focused);
+				if (project.focused >= 0 && project.focused < (int)project.cards.len())
+				{
+					import_index.note_edit((String)project.cards[project.focused].path, rl::get_time());
+				}
 			}
+			import_index.flush_edits(&project, rl::get_time());
 			import_index.sync(&project);
 			imports::ImportIndex.pump(&import_index, &project);
 			if (over_top) canvas.block_zoom = true;

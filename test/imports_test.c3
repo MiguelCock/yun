@@ -212,3 +212,11 @@ fn void test_bezier_min_distance()
 	assert(bezier_min_distance(mid, p1, c2, c3, p2, 20) < 1.0f);
 	assert(bezier_min_distance({ 50.0f, 500.0f }, p1, c2, c3, p2, 20) > 100.0f);
 }
+
+fn void test_edit_debounce_elapsed()
+{
+	assert(!edit_debounce_elapsed(10.0, 10.0));
+	assert(!edit_debounce_elapsed(10.0, 10.1));
+	assert(edit_debounce_elapsed(10.0, 10.0 + EDIT_DEBOUNCE_SECONDS));
+	assert(edit_debounce_elapsed(10.0, 11.0));
+}
