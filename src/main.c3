@@ -5,6 +5,7 @@ import std::io::path;
 import std::math;
 import yun::browser;
 import yun::canvas;
+import yun::card;
 import yun::commands;
 import yun::config;
 import yun::context;
@@ -17,6 +18,7 @@ import yun::menu;
 import yun::minimap;
 import yun::notify;
 import yun::palette;
+import yun::problems;
 import yun::project;
 import yun::prompt;
 import yun::topbar;
@@ -147,6 +149,7 @@ struct App
 	prompt::Prompt* name_prompt;
 	palette::Palette* palette;
 	findbar::FindBar* find_bar;
+	problems::Problems* problems;
 	editor::EditorMetrics metrics;
 	bool* project_open;
 	int* pending_kind;
@@ -295,6 +298,81 @@ fn void run_command(commands::CommandId id, App* app)
 				project.reveal_focused(app.metrics);
 				return;
 			}
+		case commands::CommandId.PROBLEMS:
+
+			{
+				app.problems.show();
+				return;
+			}
+	}
+}
+
+fn void navigate_to_problem(
+	project::Project* project,
+	canvas::Canvas* canvas,
+	editor::EditorMetrics metrics,
+	String path,
+	uint line,
+	uint character
+)
+{
+	int index = project.find_card(path);
+	if (index < 0)
+	{
+		RLVector2 center = {
+			(float)rl::get_screen_width() / 2.0f,
+			(float)rl::get_screen_height() / 2.0f,
+		};
+		RLVector2 world = canvas.screen_to_world(center);
+		index = project.add_card(path, world);
+	}
+	if (index < 0) return;
+
+	project.focus(index);
+	FileCard* card = project.focused_card();
+	if (!card) return;
+	editor::ensure_buffer(card, project.allocator);
+	if (!card.buffer) return;
+
+	card.cursor = lsp::offset_from_position(card.buffer, line, character);
+	card.selection_anchor = card.cursor;
+	usz card_line = card.buffer.line_of(card.cursor);
+	card.preferred_column = editor::column_for_offset(card.buffer, card_line, card.cursor);
+	Rect text = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+	card.scroll = editor::scroll_to_reveal(card.buffer, metrics, text.height, card.cursor, card.scroll);
+	card.scroll_x = editor::scroll_x_to_reveal(card.buffer, metrics, text.width, card.cursor, card.scroll_x);
+	canvas.target.target = card.center();
+}
+
+fn void draw_hover_tooltip(
+	project::Project* project,
+	canvas::Canvas* canvas,
+	editor::EditorMetrics metrics,
+	RLFont font
+)
+{
+	if (project.drag_card || project.selecting || project.resizing) return;
+	FileCard* card = project.focused_card();
+	if (!card || !card.buffer) return;
+
+	RLVector2 mouse = rl::get_mouse_position();
+	RLVector2 world = canvas.screen_to_world(mouse);
+	Rect text       = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+	if (world[0] < text.x || world[0] > text.x + text.width || world[1] < text.y || world[1] > text.y + text.height)
+	{
+		return;
+	}
+
+	RLVector2 local = { world[0] - text.x, world[1] - text.y };
+	usz offset = editor::offset_for_point(card.buffer, local[0], local[1], card.scroll, card.scroll_x, metrics);
+	lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
+	for (usz i = 0; i < diags.len; i++)
+	{
+		if (editor::diagnostic_contains(card.buffer, diags[i], offset))
+		{
+			problems::draw_tooltip(diags[i].message, mouse, font);
+			return;
+		}
 	}
 }
 
@@ -365,6 +443,9 @@ fn int main(String[] args)
 	findbar::FindBar find_bar;
 	find_bar.init(mem);
 
+	problems::Problems problems;
+	problems.init(mem);
+
 	keymap::Keymap keymap;
 	keymap.init(mem);
 	defer keymap.destroy();
@@ -417,6 +498,7 @@ fn int main(String[] args)
 		.name_prompt = &name_prompt,
 		.palette = &palette,
 		.find_bar = &find_bar,
+		.problems = &problems,
 		.metrics = metrics,
 		.project_open = &project_open,
 		.pending_kind = &pending_kind,
@@ -468,6 +550,18 @@ fn int main(String[] args)
 			{
 				palette.record((commands::CommandId)chosen);
 				run_command((commands::CommandId)chosen, &app);
+			}
+		}
+		else if (problems.open)
+		{
+			int chosen = problems.update();
+			if (chosen >= 0)
+			{
+				problems::ProblemEntry* entry = problems.entry_at(chosen);
+				if (entry)
+				{
+					navigate_to_problem(&project, &canvas, metrics, entry.path, entry.line, entry.character);
+				}
 			}
 		}
 		else if (name_prompt.open)
@@ -795,6 +889,10 @@ fn int main(String[] args)
 				project.draw(canvas.camera, font, metrics, &find_bar);
 			};
 			minimap::draw(&project, &canvas);
+			if (!problems.open && !palette.open && !opening)
+			{
+				draw_hover_tooltip(&project, &canvas, metrics, font);
+			}
 			String project_name = "";
 			if (project_open) project_name = rl::get_file_name((ZString)project.root.ptr).str_view();
 			int lsp_errors   = 0;
@@ -819,6 +917,7 @@ fn int main(String[] args)
 			context_menu.draw();
 			name_prompt.draw();
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
+			problems.draw(font);
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
 			rl::draw_fps(10, (int)topbar::TOP_BAR_HEIGHT + 10);

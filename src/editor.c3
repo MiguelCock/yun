@@ -783,6 +783,15 @@ fn void diagnostic_offsets(PieceTable* table, lsp::LspDiagnostic diag, usz* star
 	if (*end < *start) *end = *start;
 }
 
+fn bool diagnostic_contains(PieceTable* table, lsp::LspDiagnostic diag, usz offset)
+{
+	usz start = 0;
+	usz end   = 0;
+	diagnostic_offsets(table, diag, &start, &end);
+	if (end == start) end = start + 1;
+	return offset >= start && offset < end;
+}
+
 fn RLColor diagnostic_color(int severity)
 {
 	switch (severity)
