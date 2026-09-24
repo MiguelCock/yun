@@ -40,6 +40,13 @@ struct Lsp
 	List{LspDoc} docs;
 	List{FileDiagnostics} diag_files;
 	HashMap{String, int} diag_index;
+	bool hover_over;
+	String hover_path;
+	usz hover_offset;
+	double hover_send_at;
+	int hover_request_id;
+	String hover_text;
+	bool hover_valid;
 }
 
 Lsp* active_lsp;
@@ -56,6 +63,13 @@ fn void Lsp.init(&self, Allocator allocator, config::Config* config)
 	self.docs.init(allocator);
 	self.diag_files.init(allocator);
 	self.diag_index.init(allocator);
+	self.hover_over = false;
+	self.hover_path = "";
+	self.hover_offset = 0;
+	self.hover_send_at = 0.0;
+	self.hover_request_id = -1;
+	self.hover_text = "";
+	self.hover_valid = false;
 }
 
 fn void Lsp.free_diagnostics(&self)
@@ -79,6 +93,7 @@ fn void Lsp.free_diagnostics(&self)
 fn void Lsp.shutdown_all(&self)
 {
 	self.free_diagnostics();
+	self.clear_hover();
 	for (sz i = 0; i < self.clients.len(); i++)
 	{
 		LspClient* client = self.clients[i];
@@ -195,6 +210,68 @@ fn void Lsp.counts(&self, int* errors, int* warnings, int* infos, int* hints)
 			}
 		}
 	}
+}
+
+fn void Lsp.clear_hover(&self)
+{
+	if (self.hover_path.len) self.hover_path.free(self.allocator);
+	if (self.hover_text.len) self.hover_text.free(self.allocator);
+	self.hover_path = "";
+	self.hover_text = "";
+	self.hover_over = false;
+	self.hover_offset = 0;
+	self.hover_request_id = -1;
+	self.hover_valid = false;
+}
+
+fn void Lsp.update_hover(&self, double now, bool over, String path, PieceTable* table, usz offset)
+{
+	if (!over)
+	{
+		if (self.hover_over) self.clear_hover();
+		return;
+	}
+	bool changed = !self.hover_over || self.hover_offset != offset || self.hover_path.compare_to(path) != 0;
+	if (changed)
+	{
+		if (self.hover_path.len) self.hover_path.free(self.allocator);
+		if (self.hover_text.len) self.hover_text.free(self.allocator);
+		self.hover_path = path.copy(self.allocator);
+		self.hover_text = "";
+		self.hover_offset = offset;
+		self.hover_over = true;
+		self.hover_request_id = -1;
+		self.hover_send_at = now + 0.3;
+		self.hover_valid = false;
+		return;
+	}
+	if (self.hover_valid || self.hover_request_id >= 0) return;
+	if (now < self.hover_send_at) return;
+
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY || !client.caps.hover) return;
+
+	uint line      = 0;
+	uint character = 0;
+	position_from_offset(table, offset, &line, &character);
+	@pool()
+	{
+		String uri     = path_to_uri(tmem, path);
+		Object* params = lsp_document_position_params(tmem, uri, line, character);
+		self.hover_request_id = client.send_request("textDocument/hover", params);
+	};
+	self.hover_send_at = now + 100000.0;
+}
+
+fn bool Lsp.hover_is_valid(&self)
+{
+	return self.hover_valid;
+}
+
+fn String Lsp.hover_message(&self)
+{
+	return self.hover_text;
 }
 
 fn void Lsp.handle_notification(&self, String method, Object* params)
@@ -430,6 +507,35 @@ fn void Lsp.update(&self, double now)
 			note.message.free();
 		}
 		client.notifications.clear();
+
+		for (sz r = 0; r < client.responses.len(); r++)
+		{
+			LspResponse response = client.responses[r];
+			if (self.hover_request_id >= 0 && response.id == self.hover_request_id && response.method.compare_to(
+				"textDocument/hover"
+			) == 0)
+			{
+				Object*? result_opt = response.message.get("result");
+				if (try result = result_opt)
+				{
+					String? text = lsp_normalize_hover(self.allocator, result);
+					if (catch excuse = text)
+					{
+						(void)excuse;
+					}
+					else
+					{
+						if (self.hover_text.len) self.hover_text.free(self.allocator);
+						self.hover_text = text;
+						self.hover_valid = true;
+					}
+				}
+				self.hover_request_id = -1;
+			}
+			response.method.free(client.allocator);
+			response.message.free();
+		}
+		client.responses.clear();
 
 		if (client.status == LspStatus.STARTING && client.handshake_done && !client.initialized_sent)
 		{

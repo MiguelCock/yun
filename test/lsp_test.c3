@@ -274,3 +274,95 @@ fn void test_diagnostics_store()
 		lsp.shutdown_all();
 	};
 }
+fn void test_normalize_hover()
+{
+	@pool()
+	{
+		Object*? markup = json::parse(tmem, "{\"contents\":{\"kind\":\"markdown\",\"value\":\"**hi**\"}}");
+		if (try obj = markup)
+		{
+			String? text = lsp_normalize_hover(tmem, obj);
+			if (catch excuse = text)
+			{
+				assert(false);
+			}
+			else
+			{
+				assert(text.compare_to("**hi**") == 0);
+			}
+		}
+
+		Object*? marked = json::parse(tmem, "{\"contents\":{\"language\":\"c\",\"value\":\"int x;\"}}");
+		if (try obj = marked)
+		{
+			String? text = lsp_normalize_hover(tmem, obj);
+			if (catch excuse = text)
+			{
+				assert(false);
+			}
+			else
+			{
+				assert(text.compare_to("```c\nint x;\n```") == 0);
+			}
+		}
+
+		Object*? array = json::parse(tmem, "{\"contents\":[\"plain\",\"two\"]}");
+		if (try obj = array)
+		{
+			String? text = lsp_normalize_hover(tmem, obj);
+			if (catch excuse = text)
+			{
+				assert(false);
+			}
+			else
+			{
+				assert(text.compare_to("plain\n\ntwo") == 0);
+			}
+		}
+
+		Object*? empty = json::parse(tmem, "{\"contents\":null}");
+		if (try obj = empty)
+		{
+			String? text = lsp_normalize_hover(tmem, obj);
+			bool faulted = false;
+			if (catch excuse = text) faulted = true;
+			assert(faulted);
+		}
+
+		// A null hover result (e.g. clangd hovering whitespace) must not crash.
+		Object*? null_result = json::parse(tmem, "{\"result\":null}");
+		if (try message = null_result)
+		{
+			Object*? null_result_opt = message.get("result");
+			if (catch null_excuse = null_result_opt)
+			{
+				assert(false);
+			}
+			else
+			{
+				String? text = lsp_normalize_hover(tmem, null_result_opt);
+				bool faulted = false;
+				if (catch null_text_excuse = text) faulted = true;
+				assert(faulted);
+			}
+		}
+
+		// A non-map result (array) must also be treated as no hover.
+		Object*? array_result = json::parse(tmem, "{\"result\":[\"x\"]}");
+		if (try message = array_result)
+		{
+			Object*? array_result_opt = message.get("result");
+			if (catch array_excuse = array_result_opt)
+			{
+				assert(false);
+			}
+			else
+			{
+				String? text = lsp_normalize_hover(tmem, array_result_opt);
+				bool faulted = false;
+				if (catch array_text_excuse = text) faulted = true;
+				assert(faulted);
+			}
+		}
+	};
+}

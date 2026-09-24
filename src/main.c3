@@ -12,6 +12,7 @@ import yun::context;
 import yun::editor;
 import yun::find;
 import yun::findbar;
+import yun::hover;
 import yun::keymap;
 import yun::lsp;
 import yun::menu;
@@ -344,36 +345,73 @@ fn void navigate_to_problem(
 	canvas.target.target = card.center();
 }
 
-fn void draw_hover_tooltip(
-	project::Project* project,
-	canvas::Canvas* canvas,
-	editor::EditorMetrics metrics,
-	RLFont font
-)
+struct HoverInfo
 {
-	if (project.drag_card || project.selecting || project.resizing) return;
-	FileCard* card = project.focused_card();
-	if (!card || !card.buffer) return;
+	bool over;
+	String path;
+	PieceTable* table;
+	usz offset;
+	RLVector2 anchor;
+	String diagnostic;
+}
 
+fn HoverInfo compute_hover(project::Project* project, canvas::Canvas* canvas, editor::EditorMetrics metrics)
+{
+	HoverInfo info = {
+		.over = false,
+		.path = "",
+		.table = null,
+		.offset = 0,
+		.anchor = { 0.0f, 0.0f },
+		.diagnostic = ""
+	};
+	if (project.drag_card || project.selecting || project.resizing) return info;
+
+	FileCard* card = project.focused_card();
+	if (!card || !card.buffer) return info;
+
+	Rect text       = editor::text_rect(card.rect, metrics, card.buffer.line_count());
 	RLVector2 mouse = rl::get_mouse_position();
 	RLVector2 world = canvas.screen_to_world(mouse);
-	Rect text       = editor::text_rect(card.rect, metrics, card.buffer.line_count());
-	if (world[0] < text.x || world[0] > text.x + text.width || world[1] < text.y || world[1] > text.y + text.height)
+	bool over_text  = world[0] >= text.x && world[0] <= text.x + text.width && world[1] >= text.y
+		&& world[1] <= text.y + text.height;
+
+	if (over_text)
 	{
-		return;
+		usz offset = editor::offset_for_point(
+			card.buffer,
+			world[0] - text.x,
+			world[1] - text.y,
+			card.scroll,
+			card.scroll_x,
+			metrics
+		);
+		lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
+		for (usz i = 0; i < diags.len; i++)
+		{
+			if (editor::diagnostic_contains(card.buffer, diags[i], offset))
+			{
+				info.diagnostic = diags[i].message;
+				info.anchor = mouse;
+				return info;
+			}
+		}
+		info.over = true;
+		info.path = (String)card.path;
+		info.table = card.buffer;
+		info.offset = offset;
+		info.anchor = mouse;
+		return info;
 	}
 
-	RLVector2 local = { world[0] - text.x, world[1] - text.y };
-	usz offset = editor::offset_for_point(card.buffer, local[0], local[1], card.scroll, card.scroll_x, metrics);
-	lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
-	for (usz i = 0; i < diags.len; i++)
-	{
-		if (editor::diagnostic_contains(card.buffer, diags[i], offset))
-		{
-			problems::draw_tooltip(diags[i].message, mouse, font);
-			return;
-		}
-	}
+	info.over = true;
+	info.path = (String)card.path;
+	info.table = card.buffer;
+	info.offset = card.cursor;
+	Rect caret  = editor::caret_rect(card.buffer, text, card.scroll, card.scroll_x, metrics, card.cursor);
+	Rect screen = editor::world_rect_to_screen(caret, canvas.camera);
+	info.anchor = { screen.x, screen.y + screen.height };
+	return info;
 }
 
 fn void mark_buffer_changed(project::Project* project, findbar::FindBar* find_bar, editor::EditorMetrics metrics)
@@ -508,7 +546,8 @@ fn int main(String[] args)
 
 	while (!rl::window_should_close())
 	{
-		float dt = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
+		float dt        = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
+		HoverInfo hover = { };
 
 		if (opening)
 		{
@@ -857,6 +896,7 @@ fn int main(String[] args)
 			if (over_top) canvas.block_zoom = true;
 			canvas.update();
 			if (content_changed) find_bar.mark_dirty();
+			hover = compute_hover(&project, &canvas, metrics);
 
 			if (project.pending_reload >= 0 && !reload_menu.open)
 			{
@@ -879,6 +919,7 @@ fn int main(String[] args)
 		}
 
 		lsp.update(rl::get_time());
+		lsp.update_hover(rl::get_time(), hover.over, hover.path, hover.table, hover.offset);
 		notifier.update(dt);
 
 		rl::@drawing()
@@ -891,7 +932,14 @@ fn int main(String[] args)
 			minimap::draw(&project, &canvas);
 			if (!problems.open && !palette.open && !opening)
 			{
-				draw_hover_tooltip(&project, &canvas, metrics, font);
+				if (hover.diagnostic.len > 0)
+				{
+					problems::draw_tooltip(hover.diagnostic, hover.anchor, font);
+				}
+				else if (hover.over && lsp.hover_is_valid())
+				{
+					hover::draw_hover(lsp.hover_message(), hover.anchor, font);
+				}
 			}
 			String project_name = "";
 			if (project_open) project_name = rl::get_file_name((ZString)project.root.ptr).str_view();
