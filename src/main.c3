@@ -607,8 +607,10 @@ fn int main(String[] args)
 
 	while (!rl::window_should_close())
 	{
-		float dt        = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
-		HoverInfo hover = { };
+		float dt           = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
+		HoverInfo hover    = { };
+		bool arrow_hovered = false;
+		import_index.clear_hover();
 
 		if (opening)
 		{
@@ -921,9 +923,16 @@ fn int main(String[] args)
 			int bar_cmd = bar.update(mouse, project_open, has_buffer);
 			if (bar_cmd >= 0) run_command((commands::CommandId)bar_cmd, &app);
 
-			canvas.pointer_over_ui = over_top || project.pointer_over_ui(
-				world
-			) || minimap::contains_screen(&project, &canvas, mouse);
+			bool over_minimap = minimap::contains_screen(&project, &canvas, mouse);
+			if (!over_top && !over_minimap && project.hit_test(world) < 0)
+			{
+				arrow_hovered = import_index.hit_test(&project, canvas.camera, world, imports::ARROW_HIT_PX);
+			}
+			else
+			{
+				import_index.clear_hover();
+			}
+			canvas.pointer_over_ui = over_top || project.pointer_over_ui(world) || over_minimap || arrow_hovered;
 			minimap::update(&project, &canvas);
 
 			if (!over_top && rl::is_mouse_button_pressed(
@@ -1022,6 +1031,30 @@ fn int main(String[] args)
 			canvas.update();
 			hover = compute_hover(&project, &canvas, metrics);
 
+			if (arrow_hovered && rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
+			{
+				imports::ImportHit hit = import_index.hover;
+				if (hit.valid && hit.source >= 0 && hit.source < (int)project.cards.len())
+				{
+					FileCard* src             = &project.cards[hit.source];
+					imports::ImportRef[] refs = import_index.imports_for((String)src.path);
+					if (hit.ref_index < refs.len)
+					{
+						imports::ImportRef ref = refs[hit.ref_index];
+						navigate_to_location(
+							&project,
+							&canvas,
+							metrics,
+							(String)src.path,
+							(uint)ref.line,
+							(uint)ref.column
+						);
+						FileCard* focused = project.focused_card();
+						if (focused) focused.open = true;
+					}
+				}
+			}
+
 			if (project.pending_reload >= 0 && !reload_menu.open)
 			{
 				RLVector2 center = {
@@ -1050,7 +1083,7 @@ fn int main(String[] args)
 			completion::completion_poll(completion_card.buffer, completion_card.cursor);
 		}
 
-		lsp.update_hover(rl::get_time(), hover.over, hover.path, hover.table, hover.offset);
+		lsp.update_hover(rl::get_time(), hover.over && !arrow_hovered, hover.path, hover.table, hover.offset);
 
 		List{lsp::DefinitionTarget} definitions = { };
 		if (lsp::lsp_take_definition(&definitions))
@@ -1108,7 +1141,11 @@ fn int main(String[] args)
 			minimap::draw(&project, &canvas);
 			if (!problems.open && !palette.open && !opening)
 			{
-				if (hover.diagnostic.len > 0)
+				if (import_index.hover.valid)
+				{
+					import_index.draw_tooltip(&project, font);
+				}
+				else if (hover.diagnostic.len > 0)
 				{
 					problems::draw_tooltip(hover.diagnostic, hover.anchor, font);
 				}
