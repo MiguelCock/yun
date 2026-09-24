@@ -192,3 +192,26 @@ fn void test_inertia_decays_to_stop()
 	assert(c.velocity[0] == 0.0f && c.velocity[1] == 0.0f);
 	assert(c.target.target[0] < 0.0f);
 }
+fn void test_key_pan()
+{
+	Canvas c;
+	c.target.zoom = 2.0f;
+	c.target.target = { 0.0f, 0.0f };
+	c.key_pan({ 20.0f, -10.0f });
+	assert(math::is_approx(c.target.target[0], 10.0f, 0.001f));
+	assert(math::is_approx(c.target.target[1], -5.0f, 0.001f));
+}
+
+fn void test_key_zoom_clamps()
+{
+	Canvas c;
+	c.target.zoom = MAX_ZOOM;
+	c.key_zoom(1.0f);
+	assert(c.target.zoom <= MAX_ZOOM);
+	c.target.zoom = MIN_ZOOM;
+	c.key_zoom(-1.0f);
+	assert(c.target.zoom >= MIN_ZOOM);
+	c.target.zoom = 1.0f;
+	c.key_zoom(1.0f);
+	assert(c.target.zoom > 1.0f);
+}

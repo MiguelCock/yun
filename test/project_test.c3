@@ -791,3 +791,43 @@ fn void test_refresh_sleep()
 		assert(p.awake_count == 2);
 	};
 }
+fn void test_next_visible_card()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		int folder = p.add_folder("/root/sub", ROOT_FOLDER);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+		p.cards.push(
+			{
+				.path = (Path)"/root/sub/b.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = folder,
+				.open = true,
+			}
+		);
+		p.cards.push(
+			{
+				.path = (Path)"/root/c.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+		p.toggle_collapse(folder);
+
+		assert(p.next_visible_card(-1, 1) == 0);
+		assert(p.next_visible_card(0, 1) == 2);
+		assert(p.next_visible_card(2, 1) == 0);
+		assert(p.next_visible_card(0, -1) == 2);
+		assert(p.next_visible_card(2, -1) == 0);
+	};
+}

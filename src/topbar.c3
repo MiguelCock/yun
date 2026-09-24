@@ -15,6 +15,7 @@ const float PADDING_Y      = 5.0f;
 struct TopBar
 {
 	int active;
+	int selected;
 	Rect counter_hit;
 }
 
@@ -54,7 +55,67 @@ fn int hit_button(RLVector2 screen, bool has_project, bool has_buffer)
 fn void TopBar.init(&self)
 {
 	self.active = -1;
+	self.selected = 0;
 	self.counter_hit = { };
+}
+
+fn bool button_enabled(usz index, bool has_project, bool has_buffer)
+{
+	CommandDef def = commands::bar_command(index);
+	return commands::command_enabled(def.id, has_project, has_buffer);
+}
+
+fn void TopBar.clamp_selection(&self, bool has_project, bool has_buffer)
+{
+	usz count = commands::bar_command_count();
+	if (count == 0)
+	{
+		self.selected = 0;
+		return;
+	}
+	if (self.selected < 0) self.selected = 0;
+	if (self.selected >= (int)count) self.selected = (int)count - 1;
+	if (button_enabled((usz)self.selected, has_project, has_buffer)) return;
+	for (usz i = 0; i < count; i++)
+	{
+		if (button_enabled(i, has_project, has_buffer))
+		{
+			self.selected = (int)i;
+			return;
+		}
+	}
+}
+
+fn void TopBar.move_selection(&self, int delta, bool has_project, bool has_buffer)
+{
+	usz count = commands::bar_command_count();
+	if (count == 0) return;
+	int step      = delta > 0 ? 1 : -1;
+	int remaining = delta > 0 ? delta : -delta;
+	int current   = self.selected;
+	for (int i = 0; i < remaining; i++)
+	{
+		int next = current;
+		for (usz j = 0; j < count; j++)
+		{
+			next += step;
+			if (next < 0) next = (int)count - 1;
+			if (next >= (int)count) next = 0;
+			if (button_enabled((usz)next, has_project, has_buffer)) break;
+		}
+		current = next;
+	}
+	self.selected = current;
+}
+
+fn int TopBar.activate(&self, bool has_project, bool has_buffer)
+{
+	usz count = commands::bar_command_count();
+	if (count == 0) return -1;
+	if (self.selected < 0 || self.selected >= (int)count) return -1;
+	CommandDef def = commands::bar_command((usz)self.selected);
+	if (!commands::command_enabled(def.id, has_project, has_buffer)) return -1;
+	return (int)def.id;
 }
 
 fn int TopBar.update(&self, RLVector2 screen, bool has_project, bool has_buffer)
@@ -102,10 +163,10 @@ fn void TopBar.draw(
 	String lsp_status,
 	int errors,
 	int warnings,
-	RLFont font
+	RLFont font,
+	bool focused
 )
 {
-	(void)self;
 	Rect bar = topbar_rect();
 	rl::draw_rectangle_rec(bar, theme::current().topbar_bg);
 	rl::draw_line(0, (int)TOP_BAR_HEIGHT, rl::get_screen_width(), (int)TOP_BAR_HEIGHT, theme::current().topbar_border);
@@ -130,6 +191,14 @@ fn void TopBar.draw(
 	}
 
 	float name_x = PADDING_X + (float)commands::bar_command_count() * (BUTTON_WIDTH + BUTTON_GAP) + 12.0f;
+	if (focused && self.selected >= 0 && self.selected < (int)commands::bar_command_count() && button_enabled(
+		(usz)self.selected,
+		has_project,
+		has_buffer
+	))
+	{
+		rl::draw_rectangle_lines_ex(button_rect((usz)self.selected), 2.0f, theme::current().card_focus);
+	}
 	if (has_project && project_name.len > 0)
 	{
 		rl::draw_text_ex(font, (ZString)project_name.ptr, { name_x, bar_text_y(16.0f) }, 16.0f, 0.0f, theme::current()

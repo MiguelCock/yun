@@ -31,6 +31,18 @@ import yun::theme;
 import yun::topbar;
 import yun::workspace;
 
+enum FocusArea : int
+{
+	CANVAS,
+	TOP_BAR,
+}
+
+fn int restore_editor_focus(project::Project* project, int saved)
+{
+	if (saved >= 0 && saved < (int)project.cards.len() && project.card_visible(saved)) return saved;
+	return -1;
+}
+
 fn void set_project_title(project::Project* project)
 {
 	String name  = rl::get_file_name((ZString)project.root.ptr).str_view();
@@ -646,12 +658,14 @@ fn int main(String[] args)
 	List{lsp::DefinitionTarget} pending_definitions;
 	pending_definitions.init(mem);
 
-	bool project_open           = false;
-	project::OpenJob* open_job  = null;
-	bool opening                = false;
-	int pending_font_size       = 0;
-	double font_indicator_until = 0.0;
-	bool font_save_pending      = false;
+	bool project_open           =  false;
+	project::OpenJob* open_job  =  null;
+	bool opening                =  false;
+	int pending_font_size       =  0;
+	double font_indicator_until =  0.0;
+	bool font_save_pending      =  false;
+	FocusArea focus_area        =  FocusArea.CANVAS;
+	int saved_editor_focus      = -1;
 	if (args.len > 1)
 	{
 		String? resolved = project::resolve_path(project.allocator, args[1]);
@@ -738,6 +752,8 @@ fn int main(String[] args)
 					search.close();
 					symbols.close();
 					symbols.start_scan(&project);
+					focus_area = FocusArea.CANVAS;
+					saved_editor_focus = -1;
 					pending_font_size = editor::clamp_font_size(config.font_size);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
@@ -757,6 +773,8 @@ fn int main(String[] args)
 			{
 				search.close();
 				symbols.close();
+				focus_area = FocusArea.CANVAS;
+				saved_editor_focus = -1;
 				open_job = project::open_job_create(project.allocator, &project, (String)browser.dir);
 				opening = true;
 			}
@@ -1106,6 +1124,89 @@ fn int main(String[] args)
 			int bar_cmd = bar.update(mouse, project_open, has_buffer);
 			if (bar_cmd >= 0) run_command((commands::CommandId)bar_cmd, &app);
 
+			if (rl::is_key_pressed(rl::RLKeyboardKey.TAB))
+			{
+				if (focus_area == FocusArea.TOP_BAR)
+				{
+					focus_area = FocusArea.CANVAS;
+					project.focused = restore_editor_focus(&project, saved_editor_focus);
+				}
+				else if (project.focused < 0)
+				{
+					saved_editor_focus = project.focused;
+					bar.clamp_selection(project_open, has_buffer);
+					focus_area = FocusArea.TOP_BAR;
+				}
+			}
+
+			if (focus_area == FocusArea.TOP_BAR)
+			{
+				if (rl::is_key_pressed(
+					rl::RLKeyboardKey.RIGHT
+				) || rl::is_key_pressed_repeat(
+					rl::RLKeyboardKey.RIGHT
+				)) bar.move_selection(1, project_open, has_buffer);
+				if (rl::is_key_pressed(
+					rl::RLKeyboardKey.LEFT
+				) || rl::is_key_pressed_repeat(
+					rl::RLKeyboardKey.LEFT
+				)) bar.move_selection(-1, project_open, has_buffer);
+				if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.SPACE))
+				{
+					int id = bar.activate(project_open, has_buffer);
+					if (id >= 0) run_command((commands::CommandId)id, &app);
+				}
+				if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+				{
+					focus_area = FocusArea.CANVAS;
+					project.focused = restore_editor_focus(&project, saved_editor_focus);
+				}
+			}
+			else if (project.focused < 0)
+			{
+				float step = 48.0f;
+				if (rl::is_key_pressed(
+					rl::RLKeyboardKey.RIGHT
+				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT)) canvas.key_pan({ step, 0.0f });
+				if (rl::is_key_pressed(
+					rl::RLKeyboardKey.LEFT
+				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT)) canvas.key_pan({ -step, 0.0f });
+				if (rl::is_key_pressed(
+					rl::RLKeyboardKey.DOWN
+				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) canvas.key_pan({ 0.0f, step });
+				if (rl::is_key_pressed(
+					rl::RLKeyboardKey.UP
+				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) canvas.key_pan({ 0.0f, -step });
+				if (rl::is_key_pressed(
+					rl::RLKeyboardKey.EQUAL
+				) || rl::is_key_pressed_repeat(
+					rl::RLKeyboardKey.EQUAL
+				) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ADD)) canvas.key_zoom(1.0f);
+				if (rl::is_key_pressed(
+					rl::RLKeyboardKey.MINUS
+				) || rl::is_key_pressed_repeat(
+					rl::RLKeyboardKey.MINUS
+				) || rl::is_key_pressed(rl::RLKeyboardKey.KP_SUBTRACT)) canvas.key_zoom(-1.0f);
+
+				int cycle = 0;
+				if (rl::is_key_pressed(
+					rl::RLKeyboardKey.RIGHT_BRACKET
+				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT_BRACKET)) cycle = 1;
+				if (rl::is_key_pressed(
+					rl::RLKeyboardKey.LEFT_BRACKET
+				) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT_BRACKET)) cycle = -1;
+				if (cycle != 0)
+				{
+					int idx = project.next_visible_card(project.focused, cycle);
+					if (idx >= 0)
+					{
+						project.focus(idx);
+						FileCard* focused_card = project.focused_card();
+						if (focused_card) canvas.target.target = focused_card.center();
+					}
+				}
+			}
+
 			bool over_minimap = minimap::contains_screen(&project, &canvas, mouse);
 			if (!over_top && !over_minimap && project.hit_test(world) < 0)
 			{
@@ -1398,7 +1499,8 @@ fn int main(String[] args)
 				lsp.status_text(),
 				lsp_errors,
 				lsp_warnings,
-				font
+				font,
+				focus_area == FocusArea.TOP_BAR
 			);
 			browser.draw();
 			close_menu.draw();

@@ -1123,6 +1123,22 @@ fn FileCard* Project.focused_card(&self)
 	return &self.cards[self.focused];
 }
 
+fn int Project.next_visible_card(&self, int from, int dir)
+{
+	int count = (int)self.cards.len();
+	if (count == 0) return -1;
+	int step    = dir >= 0 ? 1 : -1;
+	int current = from;
+	for (int i = 0; i < count; i++)
+	{
+		current += step;
+		if (current < 0) current = count - 1;
+		if (current >= count) current = 0;
+		if (self.card_visible(current)) return current;
+	}
+	return -1;
+}
+
 fn bool is_double_click(double now, RLVector2 pos, double last_time, RLVector2 last_pos)
 {
 	double delta = now - last_time;
@@ -1652,6 +1668,12 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 			self.reveal_focused(metrics);
 			return;
 		}
+	}
+
+	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	{
+		self.focused = -1;
+		return;
 	}
 
 	if (ctrl_down() && !shift && rl::is_key_pressed(rl::RLKeyboardKey.Z))
