@@ -2,10 +2,8 @@ module yun::canvas;
 
 import raylib6::rl;
 import std::math;
+import yun::theme;
 
-const RLColor BACKGROUND               = { 24, 24, 28, 255 };
-const RLColor GRID_MINOR               = { 40, 40, 47, 255 };
-const RLColor GRID_MAJOR               = { 64, 64, 74, 255 };
 const float BASE_CELL                  = 64.0f;
 const float MIN_GRID_PX                = 16.0f;
 const float MAX_GRID_PX                = 64.0f;
@@ -257,29 +255,29 @@ fn void Canvas.draw_grid(&self)
 	float x0 = math::floor(world.x / step) * step;
 	for (float x = x0; x <= world.x + world.width; x += step)
 	{
-		rl::draw_line_ex({ x, world.y }, { x, world.y + world.height }, thick, GRID_MINOR);
+		rl::draw_line_ex({ x, world.y }, { x, world.y + world.height }, thick, theme::current().grid_minor);
 	}
 	float y0 = math::floor(world.y / step) * step;
 	for (float y = y0; y <= world.y + world.height; y += step)
 	{
-		rl::draw_line_ex({ world.x, y }, { world.x + world.width, y }, thick, GRID_MINOR);
+		rl::draw_line_ex({ world.x, y }, { world.x + world.width, y }, thick, theme::current().grid_minor);
 	}
 
 	float major_x0 = math::floor(world.x / major) * major;
 	for (float x = major_x0; x <= world.x + world.width; x += major)
 	{
-		rl::draw_line_ex({ x, world.y }, { x, world.y + world.height }, thick, GRID_MAJOR);
+		rl::draw_line_ex({ x, world.y }, { x, world.y + world.height }, thick, theme::current().grid_major);
 	}
 	float major_y0 = math::floor(world.y / major) * major;
 	for (float y = major_y0; y <= world.y + world.height; y += major)
 	{
-		rl::draw_line_ex({ world.x, y }, { world.x + world.width, y }, thick, GRID_MAJOR);
+		rl::draw_line_ex({ world.x, y }, { world.x + world.width, y }, thick, theme::current().grid_major);
 	}
 }
 
 fn void Canvas.draw(&self)
 {
-	rl::clear_background(BACKGROUND);
+	rl::clear_background(theme::current().window_bg);
 	rl::@mode2d(self.camera)
 	{
 		self.draw_grid();

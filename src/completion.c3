@@ -8,19 +8,14 @@ import yun::commands;
 import yun::editor;
 import yun::lsp;
 import yun::text;
+import yun::theme;
 
-const int VISIBLE_ROWS            = 12;
-const int ROW_HEIGHT              = 20;
-const int MAX_CANDIDATES          = 512;
-const int MAX_FILTERED            = 200;
-const int KIND_WIDTH              = 44;
-const float PANEL_WIDTH           = 360.0f;
-const RLColor COMPLETION_BG       = { 26, 28, 36, 250 };
-const RLColor COMPLETION_BORDER   = { 90, 110, 150, 255 };
-const RLColor COMPLETION_TEXT     = { 220, 224, 232, 255 };
-const RLColor COMPLETION_KIND     = { 150, 170, 210, 255 };
-const RLColor COMPLETION_DETAIL   = { 140, 150, 170, 255 };
-const RLColor COMPLETION_SELECTED = { 60, 90, 150, 255 };
+const int VISIBLE_ROWS   = 12;
+const int ROW_HEIGHT     = 20;
+const int MAX_CANDIDATES = 512;
+const int MAX_FILTERED   = 200;
+const int KIND_WIDTH     = 44;
+const float PANEL_WIDTH  = 360.0f;
 
 struct Completion
 {
@@ -330,8 +325,8 @@ fn void Completion.draw(
 	if (panel.x < 4.0f) panel.x = 4.0f;
 	if (panel.y < 4.0f) panel.y = 4.0f;
 
-	rl::draw_rectangle_rec(panel, COMPLETION_BG);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, COMPLETION_BORDER);
+	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
+	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 
 	rl::begin_scissor_mode((int)panel.x + 2, (int)panel.y + 2, (int)panel.width - 4, (int)panel.height - 4);
 	for (int slot = 0; slot < VISIBLE_ROWS; slot++)
@@ -342,16 +337,18 @@ fn void Completion.draw(
 		float row_y              = panel.y + 3.0f + (float)slot * (float)ROW_HEIGHT;
 		if (index == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ROW_HEIGHT, COMPLETION_SELECTED);
+			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ROW_HEIGHT, theme::current()
+				.panel_selected);
 		}
-		draw_text(font, kind_label(item.kind), panel.x + 6.0f, row_y + 2.0f, 13.0f, COMPLETION_KIND);
-		draw_text(font, item.label, panel.x + (float)KIND_WIDTH, row_y + 1.0f, 15.0f, COMPLETION_TEXT);
+		draw_text(font, kind_label(item.kind), panel.x + 6.0f, row_y + 2.0f, 13.0f, theme::current().panel_header);
+		draw_text(font, item.label, panel.x + (float)KIND_WIDTH, row_y + 1.0f, 15.0f, theme::current().panel_text);
 		if (item.detail.len > 0)
 		{
 			@pool()
 			{
 				String detail = string::format(tmem, "  %s", item.detail);
-				draw_text(font, detail, panel.x + (float)KIND_WIDTH + 120.0f, row_y + 3.0f, 13.0f, COMPLETION_DETAIL);
+				draw_text(font, detail, panel.x + (float)KIND_WIDTH + 120.0f, row_y + 3.0f, 13.0f, theme::current()
+					.panel_dim);
 			};
 		}
 	}

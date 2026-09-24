@@ -5,23 +5,15 @@ import std::collections::list;
 import std::math;
 import yun::commands;
 import yun::keymap;
+import yun::theme;
 import yun::topbar;
 
-const int QUERY_MAX            = 64;
-const int ROW_HEIGHT           = 26;
-const int PADDING              = 10;
-const int PANEL_WIDTH          = 560;
-const int MAX_VISIBLE_ROWS     = 10;
-const int TOP_MARGIN           = 24;
-const RLColor PALETTE_BG       = { 24, 26, 34, 250 };
-const RLColor PALETTE_BORDER   = { 90, 110, 150, 255 };
-const RLColor PALETTE_FIELD    = { 16, 18, 24, 255 };
-const RLColor PALETTE_TEXT     = { 230, 232, 238, 255 };
-const RLColor PALETTE_DIM      = { 140, 150, 170, 255 };
-const RLColor PALETTE_DISABLED = { 100, 106, 118, 255 };
-const RLColor PALETTE_SELECTED = { 60, 90, 150, 255 };
-const RLColor PALETTE_MATCH    = { 240, 200, 120, 255 };
-const RLColor PALETTE_CARET    = { 240, 240, 240, 255 };
+const int QUERY_MAX        = 64;
+const int ROW_HEIGHT       = 26;
+const int PADDING          = 10;
+const int PANEL_WIDTH      = 560;
+const int MAX_VISIBLE_ROWS = 10;
+const int TOP_MARGIN       = 24;
 
 struct Palette
 {
@@ -339,7 +331,7 @@ fn float draw_label(RLFont font, String label, String query, float x, float y, R
 		usz start    = i;
 		while (i < label.len && position_matched(positions[0:QUERY_MAX], query.len, i) == matched) i++;
 		String run = label[start:i - start];
-		draw_run(font, run, cursor, y, matched ? PALETTE_MATCH : color);
+		draw_run(font, run, cursor, y, matched ? theme::current().panel_match : color);
 		cursor += measure_width(font, run);
 	}
 	return cursor - x;
@@ -350,20 +342,22 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 	if (!self.open) return;
 
 	Rect panel = self.panel_rect();
-	rl::draw_rectangle_rec(panel, PALETTE_BG);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, PALETTE_BORDER);
+	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
+	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 
 	Rect field = self.field_rect();
-	rl::draw_rectangle_rec(field, PALETTE_FIELD);
+	rl::draw_rectangle_rec(field, theme::current().panel_field);
 	String query = self.query_view();
-	draw_run(font, query, field.x + 8.0f, field.y + 5.0f, PALETTE_TEXT);
+	draw_run(font, query, field.x + 8.0f, field.y + 5.0f, theme::current().panel_text);
 	float query_width = measure_width(font, query);
-	rl::draw_rectangle((int)(field.x + 8.0f + query_width + 1.0f), (int)(field.y + 5.0f), 2, 16, PALETTE_CARET);
+	rl::draw_rectangle((int)(field.x + 8.0f + query_width + 1.0f), (int)(field.y + 5.0f), 2, 16, theme::current()
+		.panel_caret);
 
 	float list_y = self.list_y();
 	if (self.results.len() == 0)
 	{
-		draw_run(font, "No matching commands", panel.x + (float)PADDING + 4.0f, list_y + 5.0f, PALETTE_DIM);
+		draw_run(font, "No matching commands", panel.x + (float)PADDING + 4.0f, list_y + 5.0f, theme::current()
+			.panel_dim);
 		return;
 	}
 
@@ -377,16 +371,11 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 		float row_y              = list_y + (float)slot * (float)ROW_HEIGHT;
 		if (index == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ROW_HEIGHT, PALETTE_SELECTED);
+			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ROW_HEIGHT, theme::current()
+				.panel_selected);
 		}
-		draw_label(
-			font,
-			def.label,
-			query,
-			panel.x + (float)PADDING + 4.0f,
-			row_y + 5.0f,
-			enabled ? PALETTE_TEXT : PALETTE_DISABLED
-		);
+		draw_label(font, def.label, query, panel.x + (float)PADDING + 4.0f, row_y + 5.0f, enabled ? theme::current()
+			.panel_text : theme::current().panel_disabled);
 		String shortcut = keymap.shortcut(id);
 		if (shortcut.len > 0)
 		{
@@ -400,8 +389,8 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 					{ panel.x + panel.width - (float)PADDING - size[0], row_y + 6.0f },
 					14.0f,
 					0.0f,
-					PALETTE_DIM
-				);
+					theme::current()
+					.panel_dim);
 			};
 		}
 	}

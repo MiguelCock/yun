@@ -5,17 +5,12 @@ import std::io::path;
 import std::math;
 import yun::highlight;
 import yun::text;
+import yun::theme;
 
 const float CARD_WIDTH        = 240.0f;
 const float CARD_HEIGHT       = 160.0f;
 const float CARD_TITLE_HEIGHT = 28.0f;
 const float HANDLE_PX         = 10.0f;
-const RLColor CARD_BODY       = { 32, 32, 38, 255 };
-const RLColor CARD_TITLE      = { 44, 44, 54, 255 };
-const RLColor CARD_BORDER     = { 70, 70, 84, 255 };
-const RLColor CARD_FOCUS      = { 120, 160, 240, 255 };
-const RLColor CARD_TEXT       = { 220, 220, 228, 255 };
-const RLColor CARD_DIRTY      = { 240, 180, 90, 255 };
 
 struct FileCard
 {
@@ -80,26 +75,29 @@ fn void FileCard.move_by(&self, RLVector2 world_delta)
 fn void FileCard.draw(&self, bool focused)
 {
 	Rect r = self.effective_rect();
-	rl::draw_rectangle_rec(r, CARD_BODY);
+	rl::draw_rectangle_rec(r, theme::current().card_body);
 	Rect title = {
 		.x = r.x,
 		.y = r.y,
 		.width = r.width,
 		.height = CARD_TITLE_HEIGHT,
 	};
-	rl::draw_rectangle_rec(title, CARD_TITLE);
+	rl::draw_rectangle_rec(title, theme::current().card_title);
 	if (focused)
 	{
-		rl::draw_rectangle_lines_ex(r, 1.0f, CARD_FOCUS);
+		rl::draw_rectangle_lines_ex(r, 1.0f, theme::current().card_focus);
 	}
 	else
 	{
-		rl::draw_rectangle_lines_ex(r, 1.0f, CARD_BORDER);
+		rl::draw_rectangle_lines_ex(r, 1.0f, theme::current().card_border);
 	}
-	rl::draw_text((ZString)self.name.ptr, (int)(r.x + 10.0f), (int)(r.y + 7.0f), 16, CARD_TEXT);
-	if (self.dirty) rl::draw_circle((int)(r.x + r.width - 52.0f), (int)(r.y + 14.0f), 3.0f, CARD_DIRTY);
-	if (self.buffer) rl::draw_text("x", (int)(r.x + r.width - 40.0f), (int)(r.y + 7.0f), 16, CARD_TEXT);
-	rl::draw_text(self.open ? "-" : "+", (int)(r.x + r.width - 18.0f), (int)(r.y + 7.0f), 16, CARD_TEXT);
+	rl::draw_text((ZString)self.name.ptr, (int)(r.x + 10.0f), (int)(r.y + 7.0f), 16, theme::current().card_text);
+	if (self.dirty) rl::draw_circle((int)(r.x + r.width - 52.0f), (int)(r.y + 14.0f), 3.0f, theme::current()
+		.card_dirty);
+	if (self.buffer) rl::draw_text("x", (int)(r.x + r.width - 40.0f), (int)(r.y + 7.0f), 16, theme::current()
+		.card_text);
+	rl::draw_text(self.open ? "-" : "+", (int)(r.x + r.width - 18.0f), (int)(r.y + 7.0f), 16, theme::current()
+		.card_text);
 }
 fn void FileCard.handle_points(&self, RLVector2[8]* points)
 {

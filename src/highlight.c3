@@ -7,6 +7,7 @@ import std::core::mem::alloc;
 import std::io::file;
 import std::io::path;
 import yun::text;
+import yun::theme;
 import tree_sitter;
 import tree_sitter_c;
 import tree_sitter_c3;
@@ -46,8 +47,6 @@ enum SyntaxRole : int
 	BUILTIN,
 	NONE,
 }
-
-const RLColor SYNTAX_BASE = { 210, 214, 222, 255 };
 
 struct Span
 {
@@ -247,50 +246,51 @@ fn SyntaxRole role_for_capture(TSQuery* query, uint index)
 
 fn RLColor role_color(SyntaxRole role)
 {
+	Theme* t = theme::current();
 	switch (role)
 	{
 		case SyntaxRole.KEYWORD:
-			return { 197, 134, 192, 255 };
+			return t.syn_keyword;
 		case SyntaxRole.STRING:
-			return { 152, 195, 121, 255 };
+			return t.syn_string;
 		case SyntaxRole.COMMENT:
-			return { 108, 112, 134, 255 };
+			return t.syn_comment;
 		case SyntaxRole.NUMBER:
-			return { 209, 154, 102, 255 };
+			return t.syn_number;
 		case SyntaxRole.TYPE:
-			return { 229, 192, 123, 255 };
+			return t.syn_type;
 		case SyntaxRole.FUNCTION:
-			return { 97, 175, 239, 255 };
+			return t.syn_function;
 		case SyntaxRole.CONSTANT:
-			return { 209, 154, 102, 255 };
+			return t.syn_constant;
 		case SyntaxRole.OPERATOR:
-			return { 86, 182, 194, 255 };
+			return t.syn_operator;
 		case SyntaxRole.PUNCTUATION:
-			return { 150, 155, 170, 255 };
+			return t.syn_punctuation;
 		case SyntaxRole.ATTRIBUTE:
-			return { 229, 192, 123, 255 };
+			return t.syn_attribute;
 		case SyntaxRole.MODULE:
-			return { 229, 192, 123, 255 };
+			return t.syn_module;
 		case SyntaxRole.LABEL:
-			return { 97, 175, 239, 255 };
+			return t.syn_label;
 		case SyntaxRole.BOOLEAN:
-			return { 209, 154, 102, 255 };
+			return t.syn_boolean;
 		case SyntaxRole.CHARACTER:
-			return { 152, 195, 121, 255 };
+			return t.syn_character;
 		case SyntaxRole.ESCAPE:
-			return { 86, 182, 194, 255 };
+			return t.syn_escape;
 		case SyntaxRole.PARAMETER:
-			return { 220, 190, 160, 255 };
+			return t.syn_parameter;
 		case SyntaxRole.PROPERTY:
-			return { 224, 108, 117, 255 };
+			return t.syn_property;
 		case SyntaxRole.BUILTIN:
-			return { 86, 182, 194, 255 };
+			return t.syn_builtin;
 		case SyntaxRole.VARIABLE:
-			return SYNTAX_BASE;
+			return t.editor_text;
 		case SyntaxRole.TEXT:
-			return SYNTAX_BASE;
+			return t.editor_text;
 		case SyntaxRole.NONE:
-			return SYNTAX_BASE;
+			return t.editor_text;
 	}
 }
 

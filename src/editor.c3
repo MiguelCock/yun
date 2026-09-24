@@ -11,24 +11,10 @@ import yun::card;
 import yun::highlight;
 import yun::lsp;
 import yun::text;
+import yun::theme;
 
-const RLColor EDITOR_TEXT          = { 210, 214, 222, 255 };
-const RLColor EDITOR_PLACEHOLDER   = { 70, 76, 90, 255 };
-const RLColor EDITOR_CARET         = { 230, 230, 235, 255 };
-const RLColor EDITOR_GUTTER_BG     = { 24, 26, 32, 255 };
-const RLColor EDITOR_GUTTER_TEXT   = { 120, 132, 150, 255 };
-const RLColor EDITOR_CURRENT_LINE  = { 255, 255, 255, 18 };
-const RLColor EDITOR_SCROLLBAR     = { 90, 100, 120, 200 };
-const RLColor EDITOR_HANDLE        = { 120, 160, 240, 220 };
-const RLColor EDITOR_MATCH         = { 90, 120, 70, 200 };
-const RLColor EDITOR_MATCH_CURRENT = { 170, 140, 40, 220 };
-const RLColor EDITOR_SELECTION     = { 70, 95, 150, 160 };
-const RLColor DIAGNOSTIC_ERROR     = { 240, 90, 90, 255 };
-const RLColor DIAGNOSTIC_WARNING   = { 230, 190, 80, 255 };
-const RLColor DIAGNOSTIC_INFO      = { 90, 160, 230, 255 };
-const RLColor DIAGNOSTIC_HINT      = { 140, 150, 170, 255 };
-const int MAX_DIAGNOSTIC_SEGMENTS  = 512;
-const int SCROLL_MARGIN_LINES      = 1;
+const int MAX_DIAGNOSTIC_SEGMENTS = 512;
+const int SCROLL_MARGIN_LINES     = 1;
 
 fn float min_card_width(EditorMetrics metrics)
 {
@@ -797,13 +783,13 @@ fn RLColor diagnostic_color(int severity)
 	switch (severity)
 	{
 		case lsp::DIAGNOSTIC_ERROR:
-			return DIAGNOSTIC_ERROR;
+			return theme::current().diag_error;
 		case lsp::DIAGNOSTIC_WARNING:
-			return DIAGNOSTIC_WARNING;
+			return theme::current().diag_warning;
 		case lsp::DIAGNOSTIC_INFO:
-			return DIAGNOSTIC_INFO;
+			return theme::current().diag_info;
 		default:
-			return DIAGNOSTIC_HINT;
+			return theme::current().diag_hint;
 	}
 }
 

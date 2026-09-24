@@ -2,17 +2,11 @@ module yun::prompt;
 
 import raylib6::rl;
 import std::math;
+import yun::theme;
 
-const int PROMPT_WIDTH      = 440;
-const int PROMPT_HEIGHT     = 100;
-const int PROMPT_MAX        = 120;
-const RLColor PROMPT_BG     = { 24, 26, 34, 245 };
-const RLColor PROMPT_BORDER = { 90, 110, 150, 255 };
-const RLColor PROMPT_TITLE  = { 180, 200, 230, 255 };
-const RLColor PROMPT_TEXT   = { 240, 240, 245, 255 };
-const RLColor PROMPT_FIELD  = { 16, 18, 24, 255 };
-const RLColor PROMPT_CURSOR = { 240, 240, 240, 255 };
-const RLColor PROMPT_HINT   = { 140, 150, 170, 255 };
+const int PROMPT_WIDTH  = 440;
+const int PROMPT_HEIGHT = 100;
+const int PROMPT_MAX    = 120;
 
 struct Prompt
 {
@@ -152,9 +146,9 @@ fn void Prompt.draw(&self)
 	Rect panel = self.panel_rect();
 	int x      = (int)panel.x;
 	int y      = (int)panel.y;
-	rl::draw_rectangle(x, y, PROMPT_WIDTH, PROMPT_HEIGHT, PROMPT_BG);
-	rl::draw_rectangle_lines(x, y, PROMPT_WIDTH, PROMPT_HEIGHT, PROMPT_BORDER);
-	rl::draw_text((ZString)self.title.ptr, x + 12, y + 8, 16, PROMPT_TITLE);
+	rl::draw_rectangle(x, y, PROMPT_WIDTH, PROMPT_HEIGHT, theme::current().panel_bg);
+	rl::draw_rectangle_lines(x, y, PROMPT_WIDTH, PROMPT_HEIGHT, theme::current().panel_border);
+	rl::draw_text((ZString)self.title.ptr, x + 12, y + 8, 16, theme::current().panel_header);
 
 	Rect field = {
 		.x = (float)(x + 12),
@@ -162,11 +156,11 @@ fn void Prompt.draw(&self)
 		.width = (float)(PROMPT_WIDTH - 24),
 		.height = 28.0f,
 	};
-	rl::draw_rectangle_rec(field, PROMPT_FIELD);
+	rl::draw_rectangle_rec(field, theme::current().panel_field);
 
 	String text = self.text_view();
-	rl::draw_text((ZString)text.ptr, x + 18, y + 42, 16, PROMPT_TEXT);
+	rl::draw_text((ZString)text.ptr, x + 18, y + 42, 16, theme::current().panel_text);
 	int width = rl::measure_text((ZString)text.ptr, 16);
-	rl::draw_rectangle(x + 18 + width + 1, y + 42, 2, 16, PROMPT_CURSOR);
-	rl::draw_text("Enter: create    Esc: cancel", x + 12, y + PROMPT_HEIGHT - 22, 14, PROMPT_HINT);
+	rl::draw_rectangle(x + 18 + width + 1, y + 42, 2, 16, theme::current().panel_caret);
+	rl::draw_text("Enter: create    Esc: cancel", x + 12, y + PROMPT_HEIGHT - 22, 14, theme::current().panel_dim);
 }

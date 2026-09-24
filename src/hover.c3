@@ -5,17 +5,11 @@ import std::collections::list;
 import std::core::dstring;
 import std::core::mem::alloc;
 import std::math;
+import yun::theme;
 
 const float HOVER_MAX_WIDTH = 560.0f;
 const int HOVER_MAX_LINES   = 24;
 const float HOVER_LINE_H    = 18.0f;
-const RLColor HOVER_BG      = { 20, 22, 30, 250 };
-const RLColor HOVER_BORDER  = { 90, 110, 150, 255 };
-const RLColor HOVER_TEXT    = { 210, 214, 222, 255 };
-const RLColor HOVER_CODE    = { 152, 195, 121, 255 };
-const RLColor HOVER_CODE_BG = { 30, 33, 42, 255 };
-const RLColor HOVER_HEADING = { 229, 192, 123, 255 };
-const RLColor HOVER_DIM     = { 140, 150, 170, 255 };
 
 struct HoverRun
 {
@@ -170,8 +164,8 @@ fn void draw_hover(String markdown, RLVector2 anchor, RLFont font)
 		if (panel.x < 4.0f) panel.x = 4.0f;
 		if (panel.y < 4.0f) panel.y = 4.0f;
 
-		rl::draw_rectangle_rec(panel, HOVER_BG);
-		rl::draw_rectangle_lines_ex(panel, 1.0f, HOVER_BORDER);
+		rl::draw_rectangle_rec(panel, theme::current().panel_bg);
+		rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 
 		rl::begin_scissor_mode((int)panel.x + 2, (int)panel.y + 2, (int)panel.width - 4, (int)panel.height - 4);
 		for (int i = 0; i < count; i++)
@@ -182,21 +176,23 @@ fn void draw_hover(String markdown, RLVector2 anchor, RLFont font)
 			{
 				rl::draw_rectangle_rec(
 					{ .x = panel.x + 4.0f, .y = row_y - 1.0f, .width = panel.width - 8.0f, .height = HOVER_LINE_H },
-					HOVER_CODE_BG
-				);
+					theme::current()
+					.hover_code_bg);
 			}
 			float size = line.heading ? 16.0f : 14.0f;
 			float x    = panel.x + 8.0f;
 			for (sz r = 0; r < line.runs.len(); r++)
 			{
-				RLColor color = line.runs[r].code ? HOVER_CODE : (line.heading ? HOVER_HEADING : HOVER_TEXT);
+				RLColor color = line.runs[r].code ? theme::current()
+					.hover_code : (line.heading ? theme::current().hover_heading : theme::current().panel_text);
 				draw_run(font, line.runs[r].text, x, row_y, size, color);
 				x += text_width(font, line.runs[r].text, size);
 			}
 		}
 		if ((int)lines.len() > count)
 		{
-			draw_run(font, "...", panel.x + 8.0f, panel.y + 6.0f + (float)count * HOVER_LINE_H, 14.0f, HOVER_DIM);
+			draw_run(font, "...", panel.x + 8.0f, panel.y + 6.0f + (float)count * HOVER_LINE_H, 14.0f, theme::current()
+				.panel_dim);
 		}
 		rl::end_scissor_mode();
 	};
