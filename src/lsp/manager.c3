@@ -24,6 +24,12 @@ struct FileDiagnostics
 	List{LspDiagnostic} diags;
 }
 
+struct LspDiagnosticRef
+{
+	String path;
+	LspDiagnostic diag;
+}
+
 struct Lsp
 {
 	Allocator allocator;
@@ -153,6 +159,17 @@ fn LspDiagnostic[] Lsp.diagnostics_for(&self, String path)
 	if (catch excuse = entry) return NO_DIAGNOSTICS;
 	FileDiagnostics* file = &self.diag_files[*entry];
 	return file.diags.entries[0:file.diags.len()];
+}
+
+fn void Lsp.collect_all(&self, List{LspDiagnosticRef}* out)
+{
+	for (sz f = 0; f < self.diag_files.len(); f++)
+	{
+		for (sz d = 0; d < self.diag_files[f].diags.len(); d++)
+		{
+			out.push({ .path = self.diag_files[f].path, .diag = self.diag_files[f].diags[d] });
+		}
+	}
 }
 
 fn void Lsp.counts(&self, int* errors, int* warnings, int* infos, int* hints)
@@ -515,4 +532,9 @@ fn void lsp_diagnostic_counts(int* errors, int* warnings, int* infos, int* hints
 		return;
 	}
 	active_lsp.counts(errors, warnings, infos, hints);
+}
+
+fn void lsp_collect_all(List{LspDiagnosticRef}* out)
+{
+	if (active_lsp) active_lsp.collect_all(out);
 }

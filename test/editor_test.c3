@@ -692,3 +692,32 @@ fn void test_diagnostic_offsets()
 		t.destroy();
 	};
 }
+fn void test_diagnostic_contains()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "hello world");
+
+		lsp::LspDiagnostic span = {
+			.start_line = 0,
+			.start_character = 0,
+			.end_line = 0,
+			.end_character = 5,
+		};
+		assert(diagnostic_contains(&t, span, 0));
+		assert(diagnostic_contains(&t, span, 4));
+		assert(!diagnostic_contains(&t, span, 5));
+
+		lsp::LspDiagnostic zero = {
+			.start_line = 0,
+			.start_character = 2,
+			.end_line = 0,
+			.end_character = 2,
+		};
+		assert(diagnostic_contains(&t, zero, 2));
+		assert(!diagnostic_contains(&t, zero, 3));
+
+		t.destroy();
+	};
+}

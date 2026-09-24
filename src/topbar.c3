@@ -23,6 +23,7 @@ const RLColor TOPBAR_WARNING  = { 230, 190, 80, 255 };
 struct TopBar
 {
 	int active;
+	Rect counter_hit;
 }
 
 fn Rect topbar_rect()
@@ -61,6 +62,7 @@ fn int hit_button(RLVector2 screen, bool has_project, bool has_buffer)
 fn void TopBar.init(&self)
 {
 	self.active = -1;
+	self.counter_hit = { };
 }
 
 fn int TopBar.update(&self, RLVector2 screen, bool has_project, bool has_buffer)
@@ -69,6 +71,15 @@ fn int TopBar.update(&self, RLVector2 screen, bool has_project, bool has_buffer)
 	{
 		self.active = -1;
 		return -1;
+	}
+
+	if (self.counter_hit.width > 0.0f && rl::is_mouse_button_pressed(
+		rl::RLMouseButton.LEFT
+	) && screen[0] >= self.counter_hit.x && screen[0] <= self.counter_hit.x
+		+ self.counter_hit.width && screen[1] >= self.counter_hit.y && screen[1] <= self.counter_hit.y
+			+ self.counter_hit.height)
+	{
+		return (int)commands::CommandId.PROBLEMS;
 	}
 
 	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
@@ -140,6 +151,7 @@ fn void TopBar.draw(
 		rl::draw_text_ex(font, (ZString)label.ptr, { zoom_x, bar_text_y(16.0f) }, 16.0f, 0.0f, TOPBAR_NAME);
 
 		float cursor_x = zoom_x;
+		self.counter_hit = { };
 		if (lsp_status.len > 0)
 		{
 			RLVector2 lsp_size = rl::measure_text_ex(font, (ZString)lsp_status.ptr, 16.0f, 0.0f);
@@ -166,6 +178,12 @@ fn void TopBar.draw(
 				0.0f,
 				errors > 0 ? TOPBAR_ERROR : TOPBAR_WARNING
 			);
+			self.counter_hit = {
+				.x = cursor_x,
+				.y = bar_text_y(16.0f),
+				.width = count_size[0],
+				.height = 16.0f,
+			};
 		}
 	};
 }
