@@ -8,19 +8,12 @@ import yun::editor;
 import yun::find;
 import yun::keymap;
 import yun::text;
+import yun::theme;
 
-const int FIELD_MAX           = 64;
-const int BAR_HEIGHT          = 34;
-const int ROW_HEIGHT          = 24;
-const int PADDING             = 6;
-const RLColor FINDBAR_BG      = { 30, 32, 42, 250 };
-const RLColor FINDBAR_BORDER  = { 90, 110, 150, 255 };
-const RLColor FINDBAR_FIELD   = { 16, 18, 24, 255 };
-const RLColor FINDBAR_TEXT    = { 232, 234, 240, 255 };
-const RLColor FINDBAR_DIM     = { 140, 150, 170, 255 };
-const RLColor FINDBAR_CHIP    = { 44, 48, 60, 255 };
-const RLColor FINDBAR_CHIP_ON = { 60, 90, 150, 255 };
-const RLColor FINDBAR_CARET   = { 240, 240, 240, 255 };
+const int FIELD_MAX  = 64;
+const int BAR_HEIGHT = 34;
+const int ROW_HEIGHT = 24;
+const int PADDING    = 6;
 
 struct FindBar
 {
@@ -280,25 +273,27 @@ fn int FindBar.update(
 
 fn void draw_field(RLFont font, Rect field, String text, bool active)
 {
-	rl::draw_rectangle_rec(field, FINDBAR_FIELD);
-	rl::draw_rectangle_lines_ex(field, 1.0f, active ? FINDBAR_BORDER : FINDBAR_CHIP);
+	rl::draw_rectangle_rec(field, theme::current().panel_field);
+	rl::draw_rectangle_lines_ex(field, 1.0f, active ? theme::current().panel_border : theme::current().findbar_chip);
 	if (text.len > 0)
 	{
-		rl::draw_text_ex(font, (ZString)text.ptr, { field.x + 4.0f, field.y + 3.0f }, 15.0f, 0.0f, FINDBAR_TEXT);
+		rl::draw_text_ex(font, (ZString)text.ptr, { field.x + 4.0f, field.y + 3.0f }, 15.0f, 0.0f, theme::current()
+			.panel_text);
 	}
 	if (active)
 	{
 		@pool()
 		{
 			float width = text.len > 0 ? rl::measure_text_ex(font, text.zstr_tcopy(), 15.0f, 0.0f)[0] : 0.0f;
-			rl::draw_rectangle((int)(field.x + 5.0f + width), (int)(field.y + 3.0f), 2, 16, FINDBAR_CARET);
+			rl::draw_rectangle((int)(field.x + 5.0f + width), (int)(field.y + 3.0f), 2, 16, theme::current()
+				.panel_caret);
 		};
 	}
 }
 
 fn void draw_chip(RLFont font, Rect chip, String label, bool toggled)
 {
-	rl::draw_rectangle_rec(chip, toggled ? FINDBAR_CHIP_ON : FINDBAR_CHIP);
+	rl::draw_rectangle_rec(chip, toggled ? theme::current().panel_selected : theme::current().findbar_chip);
 	@pool()
 	{
 		ZString z      = label.zstr_tcopy();
@@ -309,8 +304,8 @@ fn void draw_chip(RLFont font, Rect chip, String label, bool toggled)
 			{ chip.x + (chip.width - size[0]) / 2.0f, chip.y + (chip.height - size[1]) / 2.0f },
 			13.0f,
 			0.0f,
-			FINDBAR_TEXT
-		);
+			theme::current()
+			.panel_text);
 	};
 }
 
@@ -336,7 +331,7 @@ fn void FindBar.draw_matches(
 		self.starts.entries[0:self.starts.len()],
 		(usz)self.total,
 		self.query_view()
-		.len, (usz)self.current, editor::EDITOR_MATCH, editor::EDITOR_MATCH_CURRENT);
+		.len, (usz)self.current, theme::current().editor_match, theme::current().editor_match_current);
 }
 
 fn void FindBar.draw(&self, Rect card_rect, EditorMetrics metrics, RLFont font, keymap::Keymap* keymap)
@@ -344,8 +339,9 @@ fn void FindBar.draw(&self, Rect card_rect, EditorMetrics metrics, RLFont font, 
 	if (!self.open) return;
 
 	Rect bar = self.bar_rect(card_rect, metrics);
-	rl::draw_rectangle_rec(bar, FINDBAR_BG);
-	rl::draw_line_ex({ bar.x, bar.y + bar.height }, { bar.x + bar.width, bar.y + bar.height }, 1.0f, FINDBAR_BORDER);
+	rl::draw_rectangle_rec(bar, theme::current().panel_bg_alt);
+	rl::draw_line_ex({ bar.x, bar.y + bar.height }, { bar.x + bar.width, bar.y + bar.height }, 1.0f, theme::current()
+		.panel_border);
 
 	float x      = bar.x + (float)PADDING;
 	float y      = bar.y + (float)PADDING - 2.0f;
@@ -377,7 +373,7 @@ fn void FindBar.draw(&self, Rect card_rect, EditorMetrics metrics, RLFont font, 
 			self.capped ? "+" : ""
 		)
 			: "0/0";
-		rl::draw_text_ex(font, (ZString)count.ptr, { x, y + 4.0f }, 14.0f, 0.0f, FINDBAR_DIM);
+		rl::draw_text_ex(font, (ZString)count.ptr, { x, y + 4.0f }, 14.0f, 0.0f, theme::current().panel_dim);
 	};
 
 	(void)keymap;

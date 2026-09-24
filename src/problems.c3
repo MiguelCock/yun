@@ -6,24 +6,14 @@ import std::core::dstring;
 import std::core::mem::alloc;
 import std::math;
 import yun::lsp;
+import yun::theme;
 
-const int ROW_HEIGHT            = 24;
-const int PADDING               = 10;
-const int PANEL_WIDTH           = 720;
-const int MAX_VISIBLE_ROWS      = 14;
-const int TOP_MARGIN            = 24;
-const float TITLE_HEIGHT        = 28.0f;
-const RLColor PROBLEMS_BG       = { 24, 26, 34, 250 };
-const RLColor PROBLEMS_BORDER   = { 90, 110, 150, 255 };
-const RLColor PROBLEMS_TITLE    = { 230, 232, 238, 255 };
-const RLColor PROBLEMS_HEADER   = { 150, 170, 210, 255 };
-const RLColor PROBLEMS_TEXT     = { 210, 214, 222, 255 };
-const RLColor PROBLEMS_DIM      = { 140, 150, 170, 255 };
-const RLColor PROBLEMS_SELECTED = { 60, 90, 150, 255 };
-const RLColor PROBLEMS_ERROR    = { 240, 90, 90, 255 };
-const RLColor PROBLEMS_WARNING  = { 230, 190, 80, 255 };
-const RLColor PROBLEMS_INFO     = { 90, 160, 230, 255 };
-const RLColor PROBLEMS_HINT     = { 140, 150, 170, 255 };
+const int ROW_HEIGHT       = 24;
+const int PADDING          = 10;
+const int PANEL_WIDTH      = 720;
+const int MAX_VISIBLE_ROWS = 14;
+const int TOP_MARGIN       = 24;
+const float TITLE_HEIGHT   = 28.0f;
 
 struct ProblemEntry
 {
@@ -260,13 +250,13 @@ fn RLColor severity_color(int severity)
 	switch (severity)
 	{
 		case lsp::DIAGNOSTIC_ERROR:
-			return PROBLEMS_ERROR;
+			return theme::current().diag_error;
 		case lsp::DIAGNOSTIC_WARNING:
-			return PROBLEMS_WARNING;
+			return theme::current().diag_warning;
 		case lsp::DIAGNOSTIC_INFO:
-			return PROBLEMS_INFO;
+			return theme::current().diag_info;
 		default:
-			return PROBLEMS_HINT;
+			return theme::current().diag_hint;
 	}
 }
 
@@ -299,19 +289,19 @@ fn void Problems.draw(&self, RLFont font)
 	if (!self.open) return;
 
 	Rect panel = self.panel_rect();
-	rl::draw_rectangle_rec(panel, PROBLEMS_BG);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, PROBLEMS_BORDER);
+	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
+	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 
 	@pool()
 	{
 		String title = string::format(tmem, "Problems (%d)", (long)self.entries.len());
-		draw_text(font, title, panel.x + (float)PADDING, panel.y + (float)PADDING, 18.0f, PROBLEMS_TITLE);
+		draw_text(font, title, panel.x + (float)PADDING, panel.y + (float)PADDING, 18.0f, theme::current().panel_text);
 	};
 
 	float list_y = self.list_y();
 	if (self.rows.len() == 0)
 	{
-		draw_text(font, "No problems", panel.x + (float)PADDING, list_y + 4.0f, 16.0f, PROBLEMS_DIM);
+		draw_text(font, "No problems", panel.x + (float)PADDING, list_y + 4.0f, 16.0f, theme::current().panel_dim);
 		return;
 	}
 
@@ -327,13 +317,14 @@ fn void Problems.draw(&self, RLFont font)
 
 		if (row.header)
 		{
-			draw_text(font, row.label, panel.x + (float)PADDING, row_y + 3.0f, 15.0f, PROBLEMS_HEADER);
+			draw_text(font, row.label, panel.x + (float)PADDING, row_y + 3.0f, 15.0f, theme::current().panel_header);
 			continue;
 		}
 
 		if (index == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ROW_HEIGHT, PROBLEMS_SELECTED);
+			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ROW_HEIGHT, theme::current()
+				.panel_selected);
 		}
 		ProblemEntry* entry = self.entry_at(row.entry);
 		if (!entry) continue;
@@ -347,7 +338,7 @@ fn void Problems.draw(&self, RLFont font)
 				(long)(entry.character + 1),
 				entry.message
 			);
-			draw_text(font, label, panel.x + (float)PADDING + 16.0f, row_y + 3.0f, 16.0f, PROBLEMS_TEXT);
+			draw_text(font, label, panel.x + (float)PADDING + 16.0f, row_y + 3.0f, 16.0f, theme::current().panel_text);
 		};
 	}
 	rl::end_scissor_mode();
@@ -444,11 +435,12 @@ fn void draw_tooltip(String message, RLVector2 screen_pos, RLFont font)
 		if (panel.x < 4.0f) panel.x = 4.0f;
 		if (panel.y < 4.0f) panel.y = 4.0f;
 
-		rl::draw_rectangle_rec(panel, (RLColor) { 20, 22, 30, 250 });
-		rl::draw_rectangle_lines_ex(panel, 1.0f, PROBLEMS_BORDER);
+		rl::draw_rectangle_rec(panel, theme::current().panel_bg_alt);
+		rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 		for (int i = 0; i < count; i++)
 		{
-			draw_text(font, lines[(sz)i], panel.x + 8.0f, panel.y + 6.0f + (float)i * 18.0f, 14.0f, PROBLEMS_TEXT);
+			draw_text(font, lines[(sz)i], panel.x + 8.0f, panel.y + 6.0f + (float)i * 18.0f, 14.0f, theme::current()
+				.panel_text);
 		}
 	};
 }

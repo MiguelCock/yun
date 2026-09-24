@@ -167,3 +167,40 @@ fn void test_ensure_defaults_creates_valid_file()
 		(void)path::rmtree(dir);
 	};
 }
+
+fn void test_save_load_roundtrip()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_config_save");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? f = dir.append(tmem, "config.json");
+		if (catch excuse = f) return;
+		Path file = f;
+
+		Config c;
+		c.init(tmem);
+		c.set_theme("dracula");
+		c.font_size = 20;
+		c.set_key_binding("find", "Ctrl+Shift+F");
+		c.set_lsp_command("c3", "c3-lsp");
+		c.save_path(file);
+
+		Config loaded;
+		loaded.init(tmem);
+		assert(loaded.load_path(file));
+		assert(loaded.theme.compare_to("dracula") == 0);
+		assert(loaded.font_size == 20);
+		assert(loaded.key_binding(commands::CommandId.FIND).compare_to("Ctrl+Shift+F") == 0);
+		assert(loaded.lsp_command("c3").compare_to("c3-lsp") == 0);
+
+		c.destroy();
+		loaded.destroy();
+		(void)path::rmtree(dir);
+	};
+}

@@ -25,6 +25,7 @@ import yun::palette;
 import yun::problems;
 import yun::project;
 import yun::prompt;
+import yun::theme;
 import yun::topbar;
 import yun::workspace;
 
@@ -45,10 +46,19 @@ fn void finish_open(
 {
 	workspace::load(project, canvas);
 	config.load((String)project.root);
+	apply_config_theme(config, notifier);
 	set_project_title(project);
 	keymap.build(config);
 	push_config_warnings(config, notifier);
 	push_keymap_warnings(keymap, notifier);
+}
+
+fn void apply_config_theme(config::Config* config, notify::Notifier* notifier)
+{
+	if (!theme::set_by_name(config.theme))
+	{
+		notifier.push("Unknown theme in config; using default");
+	}
 }
 
 fn String open_phase_label(project::OpenPhase phase)
@@ -76,7 +86,7 @@ fn void draw_loading(project::OpenJob* job, RLFont font)
 {
 	int width  = rl::get_screen_width();
 	int height = rl::get_screen_height();
-	rl::draw_rectangle(0, 0, width, height, (RLColor) { 0, 0, 0, 120 });
+	rl::draw_rectangle(0, 0, width, height, theme::current().loading_scrim);
 
 	Rect panel = {
 		.x = (float)width / 2.0f - 180.0f,
@@ -84,8 +94,8 @@ fn void draw_loading(project::OpenJob* job, RLFont font)
 		.width = 360.0f,
 		.height = 100.0f,
 	};
-	rl::draw_rectangle_rec(panel, (RLColor) { 30, 32, 40, 245 });
-	rl::draw_rectangle_lines_ex(panel, 1.0f, (RLColor) { 70, 80, 100, 255 });
+	rl::draw_rectangle_rec(panel, theme::current().loading_panel);
+	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().loading_border);
 
 	@pool()
 	{
@@ -98,32 +108,14 @@ fn void draw_loading(project::OpenJob* job, RLFont font)
 			(long)job.scanned_dirs,
 			(long)job.entries.len()
 		);
-		rl::draw_text_ex(
-			font,
-			title.zstr_tcopy(),
-			{ panel.x + 20.0f, panel.y + 20.0f },
-			18.0f,
-			0.0f,
-			(RLColor) { 220, 226, 236, 255 }
-		);
-		rl::draw_text_ex(
-			font,
-			status.zstr_tcopy(),
-			{ panel.x + 20.0f, panel.y + 48.0f },
-			14.0f,
-			0.0f,
-			(RLColor) { 150, 160, 180, 255 }
-		);
+		rl::draw_text_ex(font, title.zstr_tcopy(), { panel.x + 20.0f, panel.y + 20.0f }, 18.0f, 0.0f, theme::current()
+			.loading_title);
+		rl::draw_text_ex(font, status.zstr_tcopy(), { panel.x + 20.0f, panel.y + 48.0f }, 14.0f, 0.0f, theme::current()
+			.loading_status);
 		if (job.phase == project::OpenPhase.SCAN)
 		{
-			rl::draw_text_ex(
-				font,
-				"Esc to cancel",
-				{ panel.x + 20.0f, panel.y + 70.0f },
-				14.0f,
-				0.0f,
-				(RLColor) { 110, 120, 140, 255 }
-			);
+			rl::draw_text_ex(font, "Esc to cancel", { panel.x + 20.0f, panel.y + 70.0f }, 14.0f, 0.0f, theme::current()
+				.loading_hint);
 		}
 	};
 }
@@ -154,6 +146,7 @@ struct App
 	palette::Palette* palette;
 	findbar::FindBar* find_bar;
 	problems::Problems* problems;
+	menu::Menu* theme_menu;
 	editor::EditorMetrics metrics;
 	bool* project_open;
 	int* pending_kind;
@@ -329,6 +322,23 @@ fn void run_command(commands::CommandId id, App* app)
 				FileCard* card = project.focused_card();
 				if (!card || !card.buffer) return;
 				completion::completion_request((String)card.path, card.buffer, card.cursor, 1, "");
+				return;
+			}
+		case commands::CommandId.SELECT_THEME:
+
+			{
+				RLVector2 center = {
+					(float)rl::get_screen_width() / 2.0f,
+					(float)rl::get_screen_height() / 2.0f,
+				};
+				@pool()
+				{
+					String[32] labels;
+					int n = theme::count();
+					if (n > 32) n = 32;
+					for (int i = 0; i < n; i++) labels[i] = theme::label(i);
+					app.theme_menu.open_at(center, labels[0:n]);
+				};
 				return;
 			}
 	}
@@ -518,6 +528,9 @@ fn int main(String[] args)
 	menu::Menu reload_menu;
 	reload_menu.init(mem);
 
+	menu::Menu theme_menu;
+	theme_menu.init(mem);
+
 	menu::Menu close_menu;
 	close_menu.init(mem);
 
@@ -584,6 +597,7 @@ fn int main(String[] args)
 	else
 	{
 		config.load("");
+		apply_config_theme(&config, &notifier);
 	}
 	keymap.build(&config);
 	push_config_warnings(&config, &notifier);
@@ -598,6 +612,7 @@ fn int main(String[] args)
 		.palette = &palette,
 		.find_bar = &find_bar,
 		.problems = &problems,
+		.theme_menu = &theme_menu,
 		.metrics = metrics,
 		.project_open = &project_open,
 		.pending_kind = &pending_kind,
@@ -767,6 +782,20 @@ fn int main(String[] args)
 					}
 				}
 				project.pending_reload = -1;
+			}
+		}
+		else if (theme_menu.open)
+		{
+			int chosen = theme_menu.update();
+			if (chosen >= 0)
+			{
+				theme::set_index(chosen);
+				config.set_theme(theme::name(chosen));
+				config.save_global();
+				@pool()
+				{
+					notifier.push(string::format(tmem, "Theme: %s", theme::label(chosen)));
+				};
 			}
 		}
 		else if (context_menu.open)
@@ -1197,6 +1226,7 @@ fn int main(String[] args)
 			close_menu.draw();
 			delete_menu.draw();
 			reload_menu.draw();
+			theme_menu.draw();
 			context_menu.draw();
 			name_prompt.draw();
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);

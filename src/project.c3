@@ -17,6 +17,7 @@ import yun::gitignore;
 import yun::highlight;
 import yun::lsp;
 import yun::text;
+import yun::theme;
 
 const int ROOT_FOLDER               = -1;
 const double POLL_SECONDS           =  1.0;
@@ -26,10 +27,6 @@ const float CLUSTER_COLLAPSED_WIDTH =  240.0f;
 const float CLUSTER_GAP             =  16.0f;
 const float CARD_GAP                =  16.0f;
 const int CLUSTER_COLUMNS           =  3;
-const RLColor CLUSTER_BODY          =  { 26, 28, 36, 200 };
-const RLColor CLUSTER_BORDER        =  { 60, 70, 90, 255 };
-const RLColor CLUSTER_TITLE         =  { 40, 46, 60, 255 };
-const RLColor CLUSTER_TEXT          =  { 180, 200, 230, 255 };
 const String[] IGNORED_NAMES        =  { ".git", ".yun", "build", "out", "node_modules" };
 const float DRAW_CULL_MARGIN        =  64.0f;
 const double DOUBLE_CLICK_SECONDS   =  0.35;
@@ -1802,19 +1799,20 @@ fn void Project.draw_cluster(&self, int index)
 {
 	FolderCluster cluster = self.folders[index];
 	Rect bounds           = self.cluster_visual_bounds(index);
-	rl::draw_rectangle_rec(bounds, CLUSTER_BODY);
+	rl::draw_rectangle_rec(bounds, theme::current().cluster_body);
 	Rect title = self.cluster_title_rect(index);
-	rl::draw_rectangle_rec(title, CLUSTER_TITLE);
-	rl::draw_rectangle_lines_ex(bounds, 1.0f, CLUSTER_BORDER);
+	rl::draw_rectangle_rec(title, theme::current().cluster_title);
+	rl::draw_rectangle_lines_ex(bounds, 1.0f, theme::current().cluster_border);
 	String name = rl::get_file_name((ZString)cluster.path.ptr).str_view();
-	rl::draw_text((ZString)name.ptr, (int)(bounds.x + 10.0f), (int)(bounds.y + 5.0f), 16, CLUSTER_TEXT);
+	rl::draw_text((ZString)name.ptr, (int)(bounds.x + 10.0f), (int)(bounds.y + 5.0f), 16, theme::current()
+		.cluster_text);
 	rl::draw_text(
 		cluster.collapsed ? "+" : "-",
 		(int)(bounds.x + bounds.width - 20.0f),
 		(int)(bounds.y + 5.0f),
 		16,
-		CLUSTER_TEXT
-	);
+		theme::current()
+		.cluster_text);
 }
 
 fn void Project.draw_folders(&self, RLCamera2D camera)
@@ -1846,12 +1844,8 @@ fn void Project.draw_cards(&self, RLCamera2D camera, RLFont font, EditorMetrics 
 
 		if (!card.buffer)
 		{
-			editor::draw_placeholder(
-				editor::inner_rect(card.rect, metrics),
-				metrics,
-				camera,
-				editor::EDITOR_PLACEHOLDER
-			);
+			editor::draw_placeholder(editor::inner_rect(card.rect, metrics), metrics, camera, theme::current()
+				.editor_placeholder);
 			continue;
 		}
 
@@ -1866,8 +1860,8 @@ fn void Project.draw_cards(&self, RLCamera2D camera, RLFont font, EditorMetrics 
 			metrics,
 			camera,
 			card.cursor,
-			editor::EDITOR_CURRENT_LINE
-		);
+			theme::current()
+			.editor_current_line);
 		if (is_focused && editor::has_selection(card.selection_anchor, card.cursor))
 		{
 			usz sel_start = 0;
@@ -1882,8 +1876,8 @@ fn void Project.draw_cards(&self, RLCamera2D camera, RLFont font, EditorMetrics 
 				camera,
 				sel_start,
 				sel_end,
-				editor::EDITOR_SELECTION
-			);
+				theme::current()
+				.editor_selection);
 		}
 		if (is_focused && find_bar) find_bar.draw_matches(
 			card.rect,
@@ -1893,17 +1887,8 @@ fn void Project.draw_cards(&self, RLCamera2D camera, RLFont font, EditorMetrics 
 			metrics,
 			camera
 		);
-		editor::draw_gutter(
-			card.buffer,
-			gutter,
-			card.scroll,
-			metrics,
-			camera,
-			font,
-			16.0f,
-			editor::EDITOR_GUTTER_TEXT,
-			editor::EDITOR_GUTTER_BG
-		);
+		editor::draw_gutter(card.buffer, gutter, card.scroll, metrics, camera, font, 16.0f, theme::current()
+			.editor_gutter_text, theme::current().editor_gutter_bg);
 		editor::draw_text_highlighted(
 			card.highlight,
 			card.buffer,
@@ -1914,8 +1899,8 @@ fn void Project.draw_cards(&self, RLCamera2D camera, RLFont font, EditorMetrics 
 			camera,
 			font,
 			16.0f,
-			editor::EDITOR_TEXT
-		);
+			theme::current()
+			.editor_text);
 		if (is_focused)
 		{
 			lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
@@ -1934,12 +1919,12 @@ fn void Project.draw_cards(&self, RLCamera2D camera, RLFont font, EditorMetrics 
 				metrics,
 				camera,
 				card.cursor,
-				editor::EDITOR_CARET
-			);
+				theme::current()
+				.editor_caret);
 		}
 		float content_height = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
-		editor::draw_scrollbar(text, content_height, card.scroll, camera, editor::EDITOR_SCROLLBAR);
+		editor::draw_scrollbar(text, content_height, card.scroll, camera, theme::current().editor_scrollbar);
 		if (is_focused && find_bar) find_bar.draw(card.rect, metrics, font, null);
-		if (is_focused) card.draw_handles(camera, editor::EDITOR_HANDLE);
+		if (is_focused) card.draw_handles(camera, theme::current().editor_handle);
 	}
 }

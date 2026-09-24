@@ -3,16 +3,12 @@ module yun::menu;
 import raylib6::rl;
 import std::collections::list;
 import std::math;
+import yun::theme;
 
-const int MENU_ROW_HEIGHT   = 26;
-const int MENU_PADDING_X    = 12;
-const int MENU_PADDING_Y    = 6;
-const int MENU_MIN_WIDTH    = 140;
-const RLColor MENU_BG       = { 28, 30, 40, 245 };
-const RLColor MENU_BORDER   = { 90, 110, 150, 255 };
-const RLColor MENU_TEXT     = { 220, 220, 230, 255 };
-const RLColor MENU_DISABLED = { 110, 116, 128, 255 };
-const RLColor MENU_SELECTED = { 60, 90, 150, 255 };
+const int MENU_ROW_HEIGHT = 26;
+const int MENU_PADDING_X  = 12;
+const int MENU_PADDING_Y  = 6;
+const int MENU_MIN_WIDTH  = 140;
 
 struct Menu
 {
@@ -182,8 +178,8 @@ fn void Menu.draw(&self)
 	if (!self.open) return;
 
 	Rect panel = self.panel_rect();
-	rl::draw_rectangle_rec(panel, MENU_BG);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, MENU_BORDER);
+	rl::draw_rectangle_rec(panel, theme::current().panel_bg_alt);
+	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 	for (int i = 0; i < self.rows(); i++)
 	{
 		float row_y = panel.y + (float)MENU_PADDING_Y + (float)(i * MENU_ROW_HEIGHT);
@@ -194,15 +190,15 @@ fn void Menu.draw(&self)
 				(int)row_y,
 				(int)(panel.width - 4.0f),
 				MENU_ROW_HEIGHT,
-				MENU_SELECTED
-			);
+				theme::current()
+				.panel_selected);
 		}
 		rl::draw_text(
 			(ZString)self.items[(sz)i].ptr,
 			(int)(panel.x + (float)MENU_PADDING_X),
 			(int)(row_y + 4.0f),
 			16,
-			self.enabled[(sz)i] ? MENU_TEXT : MENU_DISABLED
-		);
+			self.enabled[(sz)i] ? theme::current()
+			.panel_text : theme::current().panel_disabled);
 	}
 }

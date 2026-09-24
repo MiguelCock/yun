@@ -4,16 +4,12 @@ import raylib6::rl;
 import std::collections::list;
 import std::io::path;
 import std::math;
+import yun::theme;
 
-const int BROWSER_WIDTH        = 680;
-const int BROWSER_HEIGHT       = 460;
-const int ROW_HEIGHT           = 24;
-const int VISIBLE_ROWS         = 15;
-const RLColor BROWSER_BG       = { 22, 24, 32, 245 };
-const RLColor BROWSER_BORDER   = { 90, 110, 150, 255 };
-const RLColor BROWSER_TITLE    = { 40, 46, 60, 255 };
-const RLColor BROWSER_TEXT     = { 220, 220, 230, 255 };
-const RLColor BROWSER_SELECTED = { 60, 90, 150, 255 };
+const int BROWSER_WIDTH  = 680;
+const int BROWSER_HEIGHT = 460;
+const int ROW_HEIGHT     = 24;
+const int VISIBLE_ROWS   = 15;
 
 struct Browser
 {
@@ -139,18 +135,19 @@ fn void Browser.draw(&self)
 
 	int x = (rl::get_screen_width() - BROWSER_WIDTH) / 2;
 	int y = (rl::get_screen_height() - BROWSER_HEIGHT) / 2;
-	rl::draw_rectangle(x, y, BROWSER_WIDTH, BROWSER_HEIGHT, BROWSER_BG);
-	rl::draw_rectangle(x, y, BROWSER_WIDTH, 28, BROWSER_TITLE);
-	rl::draw_rectangle_lines(x, y, BROWSER_WIDTH, BROWSER_HEIGHT, BROWSER_BORDER);
-	rl::draw_text((ZString)self.dir.ptr, x + 10, y + 6, 16, BROWSER_TEXT);
+	rl::draw_rectangle(x, y, BROWSER_WIDTH, BROWSER_HEIGHT, theme::current().panel_bg);
+	rl::draw_rectangle(x, y, BROWSER_WIDTH, 28, theme::current().panel_bg_alt);
+	rl::draw_rectangle_lines(x, y, BROWSER_WIDTH, BROWSER_HEIGHT, theme::current().panel_border);
+	rl::draw_text((ZString)self.dir.ptr, x + 10, y + 6, 16, theme::current().panel_text);
 
 	int last = math::min(self.scroll + VISIBLE_ROWS, self.rows());
 	for (int i = self.scroll; i < last; i++)
 	{
 		int row_y = y + 36 + (i - self.scroll) * ROW_HEIGHT;
-		if (i == self.selected) rl::draw_rectangle(x + 4, row_y - 2, BROWSER_WIDTH - 8, ROW_HEIGHT, BROWSER_SELECTED);
+		if (i == self.selected) rl::draw_rectangle(x + 4, row_y - 2, BROWSER_WIDTH - 8, ROW_HEIGHT, theme::current()
+			.panel_selected);
 		String label = self.row_label(i);
-		rl::draw_text((ZString)label.ptr, x + 12, row_y, 16, BROWSER_TEXT);
+		rl::draw_text((ZString)label.ptr, x + 12, row_y, 16, theme::current().panel_text);
 	}
 
 	rl::draw_text(
@@ -158,6 +155,6 @@ fn void Browser.draw(&self)
 		x + 10,
 		y + BROWSER_HEIGHT - 24,
 		14,
-		BROWSER_TEXT
-	);
+		theme::current()
+		.panel_text);
 }

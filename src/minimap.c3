@@ -4,16 +4,12 @@ import raylib6::rl;
 import std::math;
 import yun::canvas;
 import yun::project;
+import yun::theme;
 
 const int MINIMAP_WIDTH            = 220;
 const int MINIMAP_HEIGHT           = 160;
 const int MINIMAP_MARGIN           = 16;
 const float MINIMAP_ZOOM_THRESHOLD = 0.4f;
-const RLColor MINIMAP_BG           = { 18, 20, 26, 230 };
-const RLColor MINIMAP_BORDER       = { 80, 96, 130, 255 };
-const RLColor MINIMAP_CLUSTER      = { 60, 80, 120, 200 };
-const RLColor MINIMAP_CARD         = { 150, 170, 210, 255 };
-const RLColor MINIMAP_VIEWPORT     = { 240, 240, 240, 255 };
 
 fn Rect minimap_panel(int screen_w, int screen_h)
 {
@@ -100,13 +96,14 @@ fn void draw(project::Project* project, canvas::Canvas* canvas)
 	if (!project.content_bounds(&content)) return;
 
 	Rect panel = minimap_panel(rl::get_screen_width(), rl::get_screen_height());
-	rl::draw_rectangle_rec(panel, MINIMAP_BG);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, MINIMAP_BORDER);
+	rl::draw_rectangle_rec(panel, theme::current().minimap_bg);
+	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().minimap_border);
 
 	for (sz i = 0; i < project.folders.len(); i++)
 	{
 		if (!project.cluster_visible((int)i)) continue;
-		rl::draw_rectangle_rec(to_minimap_rect(project.cluster_visual_bounds((int)i), content, panel), MINIMAP_CLUSTER);
+		rl::draw_rectangle_rec(to_minimap_rect(project.cluster_visual_bounds((int)i), content, panel), theme::current()
+			.minimap_cluster);
 	}
 
 	for (sz i = 0; i < project.cards.len(); i++)
@@ -115,8 +112,9 @@ fn void draw(project::Project* project, canvas::Canvas* canvas)
 		Rect block = to_minimap_rect(project.cards[i].rect, content, panel);
 		block.width = math::max(block.width, 1.0f);
 		block.height = math::max(block.height, 1.0f);
-		rl::draw_rectangle_rec(block, MINIMAP_CARD);
+		rl::draw_rectangle_rec(block, theme::current().minimap_card);
 	}
 
-	rl::draw_rectangle_lines_ex(to_minimap_rect(canvas.visible_world_rect(), content, panel), 1.0f, MINIMAP_VIEWPORT);
+	rl::draw_rectangle_lines_ex(to_minimap_rect(canvas.visible_world_rect(), content, panel), 1.0f, theme::current()
+		.minimap_viewport);
 }

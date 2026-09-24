@@ -2,6 +2,7 @@ module yun::config;
 
 import std::collections::list;
 import std::collections::object;
+import std::core::dstring;
 import std::core::mem::alloc;
 import std::encoding::json;
 import std::io::file;
@@ -355,4 +356,62 @@ fn String Config.lsp_command(&self, String language)
 		if (self.lsp[i].language.compare_to(language) == 0) return self.lsp[i].command;
 	}
 	return "";
+}
+
+fn void append_json_string(DString* out, String s)
+{
+	out.append_char('"');
+	for (usz i = 0; i < s.len; i++)
+	{
+		char c = s[i];
+		if (c == '"' || c == '\\') out.append_char('\\');
+		out.append_char(c);
+	}
+	out.append_char('"');
+}
+
+fn void Config.save_path(&self, Path path)
+{
+	@pool()
+	{
+		DString out;
+		out.init(tmem, 256);
+		out.append_string("{\n");
+		out.append_string("  \"theme\": ");
+		append_json_string(&out, self.theme);
+		out.append_string(",\n");
+		(void)out.appendf("  \"font_size\": %d,\n", (long)self.font_size);
+		out.append_string("  \"keymap\": {");
+		for (sz i = 0; i < self.keymap.len(); i++)
+		{
+			if (i > 0) out.append_string(", ");
+			append_json_string(&out, self.keymap[i].command);
+			out.append_string(": ");
+			append_json_string(&out, self.keymap[i].chord);
+		}
+		out.append_string("},\n");
+		out.append_string("  \"lsp\": {");
+		for (sz i = 0; i < self.lsp.len(); i++)
+		{
+			if (i > 0) out.append_string(", ");
+			append_json_string(&out, self.lsp[i].language);
+			out.append_string(": ");
+			append_json_string(&out, self.lsp[i].command);
+		}
+		out.append_string("}\n}\n");
+		(void)file::save(path, out.str_view());
+		out.free();
+	};
+}
+
+fn void Config.save_global(&self)
+{
+	Path? config_dir = env::get_config_dir(self.allocator);
+	if (catch excuse = config_dir) return;
+	Path? dir = config_dir.append(self.allocator, CONFIG_DIR);
+	if (catch excuse = dir) return;
+	if (catch excuse = path::mkdir(dir, recursive: true)) return;
+	Path? file = dir.append(self.allocator, CONFIG_FILE);
+	if (catch excuse = file) return;
+	self.save_path(file);
 }

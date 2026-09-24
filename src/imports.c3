@@ -17,19 +17,12 @@ import yun::highlight;
 import yun::hover;
 import yun::project;
 import yun::text;
+import yun::theme;
 
 const int MAX_SCAN_WORKERS         = 8;
 const float ARROW_HIT_PX           = 6.0f;
 const int BEZIER_HIT_STEPS         = 20;
 const double EDIT_DEBOUNCE_SECONDS = 0.15;
-const RLColor IMPORT_SOLID         = { 110, 170, 240, 220 };
-const RLColor IMPORT_EXTERNAL      = { 150, 150, 160, 200 };
-const RLColor IMPORT_LABEL         = { 150, 160, 180, 255 };
-const RLColor IMPORT_SOLID_DIM     = { 110, 170, 240, 45 };
-const RLColor IMPORT_EXTERNAL_DIM  = { 150, 150, 160, 40 };
-const RLColor IMPORT_LABEL_DIM     = { 150, 160, 180, 80 };
-const RLColor IMPORT_SOLID_HOVER   = { 150, 205, 255, 255 };
-const RLColor IMPORT_EXT_HOVER     = { 200, 200, 210, 255 };
 
 struct ImportRef
 {
@@ -1186,14 +1179,17 @@ fn void draw_one(
 
 	if (ref.resolved)
 	{
-		RLColor color = hovered ? IMPORT_SOLID_HOVER : (related ? IMPORT_SOLID : IMPORT_SOLID_DIM);
+		RLColor color = hovered ? theme::current()
+			.import_solid_hover : (related ? theme::current().import_solid : theme::current().import_solid_dim);
 		draw_bezier(p1, p2, thick, color);
 		draw_arrowhead(p1, c2, c3, p2, zoom, color);
 		return;
 	}
 
-	RLColor line_color  = hovered ? IMPORT_EXT_HOVER : (related ? IMPORT_EXTERNAL : IMPORT_EXTERNAL_DIM);
-	RLColor label_color = hovered ? IMPORT_EXT_HOVER : (related ? IMPORT_LABEL : IMPORT_LABEL_DIM);
+	RLColor line_color  = hovered ? theme::current()
+		.import_external_hover : (related ? theme::current().import_external : theme::current().import_external_dim);
+	RLColor label_color = hovered ? theme::current()
+		.import_external_hover : (related ? theme::current().import_label : theme::current().import_label_dim);
 	draw_dashed_bezier(p1, p2, thick, zoom, line_color);
 	rl::draw_circle_v(p2, 3.0f / zoom, line_color);
 	draw_label(font, ref.specifier, p2[0] + 8.0f / zoom, p2[1] - 6.0f / zoom, 14.0f, label_color);

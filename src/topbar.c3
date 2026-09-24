@@ -3,22 +3,14 @@ module yun::topbar;
 import raylib6::rl;
 import std::math;
 import yun::commands;
+import yun::theme;
 
-const float TOP_BAR_HEIGHT    = 34.0f;
-const float BUTTON_WIDTH      = 72.0f;
-const float BUTTON_HEIGHT     = 24.0f;
-const float BUTTON_GAP        = 8.0f;
-const float PADDING_X         = 8.0f;
-const float PADDING_Y         = 5.0f;
-const RLColor TOPBAR_BG       = { 30, 32, 40, 255 };
-const RLColor TOPBAR_BORDER   = { 60, 66, 80, 255 };
-const RLColor TOPBAR_BUTTON   = { 48, 52, 64, 255 };
-const RLColor TOPBAR_HOVER    = { 64, 72, 92, 255 };
-const RLColor TOPBAR_TEXT     = { 220, 224, 232, 255 };
-const RLColor TOPBAR_DISABLED = { 110, 116, 128, 255 };
-const RLColor TOPBAR_NAME     = { 180, 200, 230, 255 };
-const RLColor TOPBAR_ERROR    = { 240, 110, 110, 255 };
-const RLColor TOPBAR_WARNING  = { 230, 190, 80, 255 };
+const float TOP_BAR_HEIGHT = 34.0f;
+const float BUTTON_WIDTH   = 72.0f;
+const float BUTTON_HEIGHT  = 24.0f;
+const float BUTTON_GAP     = 8.0f;
+const float PADDING_X      = 8.0f;
+const float PADDING_Y      = 5.0f;
 
 struct TopBar
 {
@@ -115,8 +107,8 @@ fn void TopBar.draw(
 {
 	(void)self;
 	Rect bar = topbar_rect();
-	rl::draw_rectangle_rec(bar, TOPBAR_BG);
-	rl::draw_line(0, (int)TOP_BAR_HEIGHT, rl::get_screen_width(), (int)TOP_BAR_HEIGHT, TOPBAR_BORDER);
+	rl::draw_rectangle_rec(bar, theme::current().topbar_bg);
+	rl::draw_line(0, (int)TOP_BAR_HEIGHT, rl::get_screen_width(), (int)TOP_BAR_HEIGHT, theme::current().topbar_border);
 
 	RLVector2 mouse = rl::get_mouse_position();
 	for (usz i = 0; i < commands::bar_command_count(); i++)
@@ -125,7 +117,7 @@ fn void TopBar.draw(
 		bool enabled   = commands::command_enabled(def.id, has_project, has_buffer);
 		Rect r         = button_rect(i);
 		bool hovered   = mouse[0] >= r.x && mouse[0] <= r.x + r.width && mouse[1] >= r.y && mouse[1] <= r.y + r.height;
-		rl::draw_rectangle_rec(r, hovered && enabled ? TOPBAR_HOVER : TOPBAR_BUTTON);
+		rl::draw_rectangle_rec(r, hovered && enabled ? theme::current().topbar_hover : theme::current().topbar_button);
 		RLVector2 size = rl::measure_text_ex(font, (ZString)def.label.ptr, 16.0f, 0.0f);
 		rl::draw_text_ex(
 			font,
@@ -133,14 +125,15 @@ fn void TopBar.draw(
 			{ r.x + (r.width - size[0]) / 2.0f, r.y + (r.height - size[1]) / 2.0f },
 			16.0f,
 			0.0f,
-			enabled ? TOPBAR_TEXT : TOPBAR_DISABLED
-		);
+			enabled ? theme::current()
+			.topbar_text : theme::current().topbar_disabled);
 	}
 
 	float name_x = PADDING_X + (float)commands::bar_command_count() * (BUTTON_WIDTH + BUTTON_GAP) + 12.0f;
 	if (has_project && project_name.len > 0)
 	{
-		rl::draw_text_ex(font, (ZString)project_name.ptr, { name_x, bar_text_y(16.0f) }, 16.0f, 0.0f, TOPBAR_NAME);
+		rl::draw_text_ex(font, (ZString)project_name.ptr, { name_x, bar_text_y(16.0f) }, 16.0f, 0.0f, theme::current()
+			.topbar_name);
 	}
 
 	@pool()
@@ -148,7 +141,8 @@ fn void TopBar.draw(
 		String label   = string::format(tmem, "%d%%", (int)(zoom * 100.0f));
 		RLVector2 size = rl::measure_text_ex(font, (ZString)label.ptr, 16.0f, 0.0f);
 		float zoom_x   = (float)rl::get_screen_width() - 12.0f - size[0];
-		rl::draw_text_ex(font, (ZString)label.ptr, { zoom_x, bar_text_y(16.0f) }, 16.0f, 0.0f, TOPBAR_NAME);
+		rl::draw_text_ex(font, (ZString)label.ptr, { zoom_x, bar_text_y(16.0f) }, 16.0f, 0.0f, theme::current()
+			.topbar_name);
 
 		float cursor_x = zoom_x;
 		self.counter_hit = { };
@@ -162,8 +156,8 @@ fn void TopBar.draw(
 				{ cursor_x, bar_text_y(16.0f) },
 				16.0f,
 				0.0f,
-				TOPBAR_DISABLED
-			);
+				theme::current()
+				.topbar_disabled);
 		}
 		if (errors > 0 || warnings > 0)
 		{
@@ -176,8 +170,8 @@ fn void TopBar.draw(
 				{ cursor_x, bar_text_y(16.0f) },
 				16.0f,
 				0.0f,
-				errors > 0 ? TOPBAR_ERROR : TOPBAR_WARNING
-			);
+				errors > 0 ? theme::current()
+				.topbar_error : theme::current().topbar_warning);
 			self.counter_hit = {
 				.x = cursor_x,
 				.y = bar_text_y(16.0f),
