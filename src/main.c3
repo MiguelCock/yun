@@ -15,6 +15,7 @@ import yun::editor;
 import yun::find;
 import yun::findbar;
 import yun::hover;
+import yun::imports;
 import yun::keymap;
 import yun::lsp;
 import yun::menu;
@@ -504,6 +505,9 @@ fn int main(String[] args)
 	lsp.init(mem, &config);
 	lsp::lsp_set_active(&lsp);
 	completion::completion_init(mem);
+	imports::ImportIndex import_index;
+	import_index.init(mem);
+	defer import_index.destroy();
 
 	browser::Browser browser;
 	browser.init(mem);
@@ -623,6 +627,7 @@ fn int main(String[] args)
 					finish_open(&project, &canvas, &config, &keymap, &notifier);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
+					import_index.start_scan(&project);
 				}
 				else if (!open_job.cancelled)
 				{
@@ -1006,9 +1011,15 @@ fn int main(String[] args)
 			bool content_changed = false;
 			project.update(&canvas, metrics, over_top, &content_changed);
 			project.discard_ephemeral(project.focused);
+			if (content_changed)
+			{
+				find_bar.mark_dirty();
+				import_index.rescan(&project, project.focused);
+			}
+			import_index.sync(&project);
+			imports::ImportIndex.pump(&import_index, &project);
 			if (over_top) canvas.block_zoom = true;
 			canvas.update();
-			if (content_changed) find_bar.mark_dirty();
 			hover = compute_hover(&project, &canvas, metrics);
 
 			if (project.pending_reload >= 0 && !reload_menu.open)
@@ -1090,7 +1101,9 @@ fn int main(String[] args)
 			canvas.draw();
 			rl::@mode2d(canvas.camera)
 			{
-				project.draw(canvas.camera, font, metrics, &find_bar);
+				project.draw_folders(canvas.camera);
+				import_index.draw(&project, canvas.camera, font);
+				project.draw_cards(canvas.camera, font, metrics, &find_bar);
 			};
 			minimap::draw(&project, &canvas);
 			if (!problems.open && !palette.open && !opening)
