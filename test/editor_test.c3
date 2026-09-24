@@ -721,3 +721,11 @@ fn void test_diagnostic_contains()
 		t.destroy();
 	};
 }
+fn void test_clamp_font_size()
+{
+	assert(clamp_font_size(FONT_SIZE_MIN - 10) == FONT_SIZE_MIN);
+	assert(clamp_font_size(FONT_SIZE_MIN) == FONT_SIZE_MIN);
+	assert(clamp_font_size(20) == 20);
+	assert(clamp_font_size(FONT_SIZE_MAX + 100) == FONT_SIZE_MAX);
+	assert(clamp_font_size(FONT_SIZE_MAX) == FONT_SIZE_MAX);
+}

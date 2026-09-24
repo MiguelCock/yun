@@ -1826,7 +1826,14 @@ fn void Project.draw_folders(&self, RLCamera2D camera)
 	}
 }
 
-fn void Project.draw_cards(&self, RLCamera2D camera, RLFont font, EditorMetrics metrics, findbar::FindBar* find_bar)
+fn void Project.draw_cards(
+	&self,
+	RLCamera2D camera,
+	RLFont font,
+	RLFont editor_font,
+	EditorMetrics metrics,
+	findbar::FindBar* find_bar
+)
 {
 	double elapsed = rl::get_time() - self.last_input_time;
 	bool caret_on  = (elapsed - math::floor(elapsed)) < 0.5;
@@ -1887,7 +1894,15 @@ fn void Project.draw_cards(&self, RLCamera2D camera, RLFont font, EditorMetrics 
 			metrics,
 			camera
 		);
-		editor::draw_gutter(card.buffer, gutter, card.scroll, metrics, camera, font, 16.0f, theme::current()
+		editor::draw_gutter(
+			card.buffer,
+			gutter,
+			card.scroll,
+			metrics,
+			camera,
+			editor_font,
+			metrics.font_size,
+			theme::current()
 			.editor_gutter_text, theme::current().editor_gutter_bg);
 		editor::draw_text_highlighted(
 			card.highlight,
@@ -1897,8 +1912,8 @@ fn void Project.draw_cards(&self, RLCamera2D camera, RLFont font, EditorMetrics 
 			card.scroll_x,
 			metrics,
 			camera,
-			font,
-			16.0f,
+			editor_font,
+			metrics.font_size,
 			theme::current()
 			.editor_text);
 		if (is_focused)

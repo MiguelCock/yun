@@ -5,6 +5,7 @@ import std::collections::list;
 import std::core::dstring;
 import std::core::mem::alloc;
 import std::math;
+import yun::editor;
 import yun::theme;
 
 const float HOVER_MAX_WIDTH = 560.0f;
@@ -123,7 +124,7 @@ fn void draw_run(RLFont font, String text, float x, float y, float size, RLColor
 
 fn float line_width(RLFont font, HoverLine* line)
 {
-	float size  = line.heading ? 16.0f : 14.0f;
+	float size  = (line.heading ? 16.0f : 14.0f) * editor::text_scale();
 	float width = 0.0f;
 	for (sz i = 0; i < line.runs.len(); i++)
 	{
@@ -142,6 +143,9 @@ fn void draw_hover(String markdown, RLVector2 anchor, RLFont font)
 		parse_markdown(tmem, markdown, &lines);
 		if (lines.len() == 0) return;
 
+		float s      = editor::text_scale();
+		float line_h = HOVER_LINE_H * s;
+
 		int count = (int)lines.len();
 		if (count > HOVER_MAX_LINES) count = HOVER_MAX_LINES;
 
@@ -151,16 +155,16 @@ fn void draw_hover(String markdown, RLVector2 anchor, RLFont font)
 			float w = line_width(font, &lines[(sz)i]);
 			if (w > width) width = w;
 		}
-		if (width > HOVER_MAX_WIDTH) width = HOVER_MAX_WIDTH;
+		if (width > HOVER_MAX_WIDTH * s) width = HOVER_MAX_WIDTH * s;
 
 		Rect panel = {
-			.x = anchor[0] + 14.0f,
-			.y = anchor[1] + 14.0f,
-			.width = width + 16.0f,
-			.height = (float)count * HOVER_LINE_H + 12.0f,
+			.x = anchor[0] + 14.0f * s,
+			.y = anchor[1] + 14.0f * s,
+			.width = width + 16.0f * s,
+			.height = (float)count * line_h + 12.0f * s,
 		};
-		if (panel.x + panel.width > (float)rl::get_screen_width()) panel.x = anchor[0] - panel.width - 8.0f;
-		if (panel.y + panel.height > (float)rl::get_screen_height()) panel.y = anchor[1] - panel.height - 8.0f;
+		if (panel.x + panel.width > (float)rl::get_screen_width()) panel.x = anchor[0] - panel.width - 8.0f * s;
+		if (panel.y + panel.height > (float)rl::get_screen_height()) panel.y = anchor[1] - panel.height - 8.0f * s;
 		if (panel.x < 4.0f) panel.x = 4.0f;
 		if (panel.y < 4.0f) panel.y = 4.0f;
 
@@ -171,16 +175,16 @@ fn void draw_hover(String markdown, RLVector2 anchor, RLFont font)
 		for (int i = 0; i < count; i++)
 		{
 			HoverLine* line = &lines[(sz)i];
-			float row_y     = panel.y + 6.0f + (float)i * HOVER_LINE_H;
+			float row_y     = panel.y + 6.0f * s + (float)i * line_h;
 			if (line.code)
 			{
 				rl::draw_rectangle_rec(
-					{ .x = panel.x + 4.0f, .y = row_y - 1.0f, .width = panel.width - 8.0f, .height = HOVER_LINE_H },
+					{ .x = panel.x + 4.0f * s, .y = row_y - 1.0f, .width = panel.width - 8.0f * s, .height = line_h },
 					theme::current()
 					.hover_code_bg);
 			}
-			float size = line.heading ? 16.0f : 14.0f;
-			float x    = panel.x + 8.0f;
+			float size = (line.heading ? 16.0f : 14.0f) * s;
+			float x    = panel.x + 8.0f * s;
 			for (sz r = 0; r < line.runs.len(); r++)
 			{
 				RLColor color = line.runs[r].code ? theme::current()
@@ -191,7 +195,13 @@ fn void draw_hover(String markdown, RLVector2 anchor, RLFont font)
 		}
 		if ((int)lines.len() > count)
 		{
-			draw_run(font, "...", panel.x + 8.0f, panel.y + 6.0f + (float)count * HOVER_LINE_H, 14.0f, theme::current()
+			draw_run(
+				font,
+				"...",
+				panel.x + 8.0f * s,
+				panel.y + 6.0f * s + (float)count * line_h,
+				14.0f * s,
+				theme::current()
 				.panel_dim);
 		}
 		rl::end_scissor_mode();

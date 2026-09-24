@@ -15,6 +15,9 @@ import yun::theme;
 
 const int MAX_DIAGNOSTIC_SEGMENTS = 512;
 const int SCROLL_MARGIN_LINES     = 1;
+const int FONT_SIZE_MIN           = 8;
+const int FONT_SIZE_MAX           = 48;
+const int FONT_SIZE_DEFAULT       = 16;
 
 fn float min_card_width(EditorMetrics metrics)
 {
@@ -32,6 +35,7 @@ struct EditorMetrics
 	float line_height;
 	float padding_x;
 	float padding_y;
+	float font_size;
 }
 
 struct VisibleRange
@@ -242,7 +246,27 @@ fn EditorMetrics metrics_for_font(RLFont font, float font_size)
 	metrics.line_height = font_size * 1.25f;
 	metrics.padding_x = 8.0f;
 	metrics.padding_y = 6.0f;
+	metrics.font_size = font_size;
 	return metrics;
+}
+
+fn int clamp_font_size(int size)
+{
+	if (size < FONT_SIZE_MIN) return FONT_SIZE_MIN;
+	if (size > FONT_SIZE_MAX) return FONT_SIZE_MAX;
+	return size;
+}
+
+float g_font_size = (float)FONT_SIZE_DEFAULT;
+
+fn void set_font_size(float size)
+{
+	g_font_size = size;
+}
+
+fn float text_scale()
+{
+	return g_font_size / (float)FONT_SIZE_DEFAULT;
 }
 
 fn Rect inner_rect(Rect card_rect, EditorMetrics metrics)
