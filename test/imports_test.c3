@@ -3,6 +3,8 @@ module yun::imports @test;
 import std::collections::list;
 import std::collections::map;
 import std::io::path;
+import std::math;
+import raylib6::rl;
 import tree_sitter;
 import tree_sitter_c3;
 import yun::highlight;
@@ -186,4 +188,27 @@ fn void test_resolve_c_include_external_is_angled()
 		assert(targets.len() == 0);
 		paths.free();
 	};
+}
+
+fn void test_point_segment_distance()
+{
+	RLVector2 a = { 0.0f, 0.0f };
+	RLVector2 b = { 10.0f, 0.0f };
+	assert(math::is_approx(point_segment_distance({ 5.0f, 3.0f }, a, b), 3.0f, 0.001f));
+	assert(math::is_approx(point_segment_distance({ -4.0f, 0.0f }, a, b), 4.0f, 0.001f));
+	assert(math::is_approx(point_segment_distance({ 14.0f, 0.0f }, a, b), 4.0f, 0.001f));
+	assert(math::is_approx(point_segment_distance({ 3.0f, 4.0f }, a, a), 5.0f, 0.001f));
+}
+
+fn void test_bezier_min_distance()
+{
+	RLVector2 p1 = { 0.0f, 0.0f };
+	RLVector2 p2 = { 100.0f, 0.0f };
+	RLVector2 c2;
+	RLVector2 c3;
+	bezier_controls(p1, p2, &c2, &c3);
+
+	RLVector2 mid = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, 0.5f);
+	assert(bezier_min_distance(mid, p1, c2, c3, p2, 20) < 1.0f);
+	assert(bezier_min_distance({ 50.0f, 500.0f }, p1, c2, c3, p2, 20) > 100.0f);
 }

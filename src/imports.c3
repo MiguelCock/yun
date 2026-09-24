@@ -14,16 +14,21 @@ import std::thread::channel;
 import tree_sitter;
 import yun::card;
 import yun::highlight;
+import yun::hover;
 import yun::project;
 import yun::text;
 
 const int MAX_SCAN_WORKERS        = 8;
+const float ARROW_HIT_PX          = 6.0f;
+const int BEZIER_HIT_STEPS        = 20;
 const RLColor IMPORT_SOLID        = { 110, 170, 240, 220 };
 const RLColor IMPORT_EXTERNAL     = { 150, 150, 160, 200 };
 const RLColor IMPORT_LABEL        = { 150, 160, 180, 255 };
 const RLColor IMPORT_SOLID_DIM    = { 110, 170, 240, 45 };
 const RLColor IMPORT_EXTERNAL_DIM = { 150, 150, 160, 40 };
 const RLColor IMPORT_LABEL_DIM    = { 150, 160, 180, 80 };
+const RLColor IMPORT_SOLID_HOVER  = { 150, 205, 255, 255 };
+const RLColor IMPORT_EXT_HOVER    = { 200, 200, 210, 255 };
 
 struct ImportRef
 {
@@ -33,6 +38,15 @@ struct ImportRef
 	bool angled;
 	usz line;
 	usz column;
+}
+
+struct ImportHit
+{
+	bool valid;
+	int source;
+	usz ref_index;
+	int target;
+	RLVector2 world;
 }
 
 struct CardImports
@@ -75,6 +89,7 @@ struct ImportIndex
 	bool scanning;
 	usz scan_cursor;
 	usz known_cards;
+	ImportHit hover;
 }
 
 TSQuery*[5] import_query_cache;
@@ -99,6 +114,7 @@ fn void ImportIndex.init(&self, Allocator allocator)
 	self.received = 0;
 	self.pool_ready = false;
 	self.results = null;
+	self.hover.valid = false;
 	self.init_pool();
 }
 
@@ -1020,6 +1036,80 @@ fn void draw_label(RLFont font, String text, float x, float y, float size, RLCol
 	};
 }
 
+fn bool arrow_geometry(
+	ImportIndex* index,
+	project::Project* project,
+	FileCard* card,
+	ImportRef ref,
+	int slot,
+	int* out_target,
+	RLVector2* out_p1,
+	RLVector2* out_c2,
+	RLVector2* out_c3,
+	RLVector2* out_p2
+)
+{
+	*out_target = -1;
+	if (ref.resolved)
+	{
+		if (ref.target_path.compare_to((String)card.path) == 0) return false;
+		int*? target = index.card_paths.get_ref(ref.target_path);
+		if (catch excuse = target) return false;
+		if (*target < 0 || *target >= (int)project.cards.len()) return false;
+		if (!project.card_visible(*target)) return false;
+		FileCard* target_card = &project.cards[*target];
+		RLVector2 source_pt   = rect_center(card.rect);
+		RLVector2 target_pt   = rect_center(target_card.rect);
+		*out_target = *target;
+		*out_p1 = rect_edge_point(card.rect, target_pt);
+		*out_p2 = rect_edge_point(target_card.rect, source_pt);
+		bezier_controls(*out_p1, *out_p2, out_c2, out_c3);
+		return true;
+	}
+
+	*out_p2 = {
+		card.rect.x + card.rect.width + 40.0f,
+		card.rect.y - 18.0f - (float)slot * 16.0f,
+	};
+	*out_p1 = rect_edge_point(card.rect, *out_p2);
+	bezier_controls(*out_p1, *out_p2, out_c2, out_c3);
+	return true;
+}
+
+fn float point_segment_distance(RLVector2 p, RLVector2 a, RLVector2 b)
+{
+	float abx   = b[0] - a[0];
+	float aby   = b[1] - a[1];
+	float apx   = p[0] - a[0];
+	float apy   = p[1] - a[1];
+	float denom = abx * abx + aby * aby;
+	float t     = 0.0f;
+	if (denom > 0.000001f) t = (apx * abx + apy * aby) / denom;
+	if (t < 0.0f) t = 0.0f;
+	if (t > 1.0f) t = 1.0f;
+	float cx = a[0] + abx * t;
+	float cy = a[1] + aby * t;
+	float dx = p[0] - cx;
+	float dy = p[1] - cy;
+	return math::sqrt(dx * dx + dy * dy);
+}
+
+fn float bezier_min_distance(RLVector2 p, RLVector2 p1, RLVector2 c2, RLVector2 c3, RLVector2 p2, int steps)
+{
+	if (steps < 1) steps = 1;
+	float best     = 1000000000.0f;
+	RLVector2 prev = p1;
+	for (int s = 1; s <= steps; s++)
+	{
+		float t         = (float)s / (float)steps;
+		RLVector2 point = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, t);
+		float d         = point_segment_distance(p, prev, point);
+		if (d < best) best = d;
+		prev = point;
+	}
+	return best;
+}
+
 fn void draw_one(
 	ImportIndex* index,
 	project::Project* project,
@@ -1030,44 +1120,98 @@ fn void draw_one(
 	RLFont font,
 	float thick,
 	int active,
-	int slot
+	int slot,
+	bool hovered
 )
 {
-	float zoom          = camera.zoom > 0.0f ? camera.zoom : 1.0f;
-	RLVector2 source_pt = rect_center(card.rect);
-	bool related        = active < 0 || source_index == active;
+	float zoom =  camera.zoom > 0.0f ? camera.zoom : 1.0f;
+	int target = -1;
+	RLVector2 p1;
+	RLVector2 c2;
+	RLVector2 c3;
+	RLVector2 p2;
+	if (!arrow_geometry(index, project, card, ref, slot, &target, &p1, &c2, &c3, &p2)) return;
+
+	bool related = active < 0 || source_index == active || target == active;
+	if (hovered)
+	{
+		related = true;
+		thick *= 1.8f;
+	}
 
 	if (ref.resolved)
 	{
-		if (ref.target_path.compare_to((String)card.path) == 0) return;
-		int*? target = index.card_paths.get_ref(ref.target_path);
-		if (catch excuse = target) return;
-		if (*target < 0 || *target >= (int)project.cards.len()) return;
-		if (*target == active) related = true;
-		FileCard* target_card = &project.cards[*target];
-		if (!project.card_visible(*target)) return;
-		RLColor color       = related ? IMPORT_SOLID : IMPORT_SOLID_DIM;
-		RLVector2 target_pt = rect_center(target_card.rect);
-		RLVector2 p1        = rect_edge_point(card.rect, target_pt);
-		RLVector2 p2        = rect_edge_point(target_card.rect, source_pt);
+		RLColor color = hovered ? IMPORT_SOLID_HOVER : (related ? IMPORT_SOLID : IMPORT_SOLID_DIM);
 		draw_bezier(p1, p2, thick, color);
-		RLVector2 c2;
-		RLVector2 c3;
-		bezier_controls(p1, p2, &c2, &c3);
 		draw_arrowhead(p1, c2, c3, p2, zoom, color);
 		return;
 	}
 
-	RLColor line_color  = related ? IMPORT_EXTERNAL : IMPORT_EXTERNAL_DIM;
-	RLColor label_color = related ? IMPORT_LABEL : IMPORT_LABEL_DIM;
-	RLVector2 marker = {
-		card.rect.x + card.rect.width + 40.0f,
-		card.rect.y - 18.0f - (float)slot * 16.0f,
-	};
-	RLVector2 p1 = rect_edge_point(card.rect, marker);
-	draw_dashed_bezier(p1, marker, thick, zoom, line_color);
-	rl::draw_circle_v(marker, 3.0f / zoom, line_color);
-	draw_label(font, ref.specifier, marker[0] + 8.0f / zoom, marker[1] - 6.0f / zoom, 14.0f, label_color);
+	RLColor line_color  = hovered ? IMPORT_EXT_HOVER : (related ? IMPORT_EXTERNAL : IMPORT_EXTERNAL_DIM);
+	RLColor label_color = hovered ? IMPORT_EXT_HOVER : (related ? IMPORT_LABEL : IMPORT_LABEL_DIM);
+	draw_dashed_bezier(p1, p2, thick, zoom, line_color);
+	rl::draw_circle_v(p2, 3.0f / zoom, line_color);
+	draw_label(font, ref.specifier, p2[0] + 8.0f / zoom, p2[1] - 6.0f / zoom, 14.0f, label_color);
+}
+
+fn void ImportIndex.clear_hover(&self)
+{
+	self.hover.valid = false;
+}
+
+fn bool ImportIndex.hit_test(
+	&self,
+	project::Project* project,
+	RLCamera2D camera,
+	RLVector2 world,
+	float screen_threshold
+)
+{
+	self.hover.valid = false;
+	self.refresh_card_paths(project);
+	float zoom      = camera.zoom > 0.0f ? camera.zoom : 1.0f;
+	float threshold = screen_threshold / zoom;
+	Rect visible    = project::expand_rect(project::visible_world_rect(camera), 64.0f);
+	float best      = threshold;
+
+	for (sz i = 0; i < project.cards.len(); i++)
+	{
+		FileCard* card = &project.cards[i];
+		if (!project.card_visible((int)i)) continue;
+		if (!project::rect_intersects(card.rect, visible)) continue;
+
+		ImportRef[] refs = self.imports_for((String)card.path);
+		if (refs.len == 0) continue;
+
+		usz external_slot = 0;
+		for (usz r = 0; r < refs.len; r++)
+		{
+			ImportRef ref = refs[r];
+			int slot      = 0;
+			if (!ref.resolved)
+			{
+				slot = (int)external_slot;
+				external_slot++;
+			}
+			int target = -1;
+			RLVector2 p1;
+			RLVector2 c2;
+			RLVector2 c3;
+			RLVector2 p2;
+			if (!arrow_geometry(self, project, card, ref, slot, &target, &p1, &c2, &c3, &p2)) continue;
+			float d = bezier_min_distance(world, p1, c2, c3, p2, BEZIER_HIT_STEPS);
+			if (d <= best)
+			{
+				best = d;
+				self.hover.valid = true;
+				self.hover.source = (int)i;
+				self.hover.ref_index = r;
+				self.hover.target = target;
+				self.hover.world = world;
+			}
+		}
+	}
+	return self.hover.valid;
 }
 
 fn void ImportIndex.draw(&self, project::Project* project, RLCamera2D camera, RLFont font)
@@ -1096,7 +1240,60 @@ fn void ImportIndex.draw(&self, project::Project* project, RLCamera2D camera, RL
 				slot = (int)external_slot;
 				external_slot++;
 			}
-			draw_one(self, project, (int)i, card, ref, camera, font, thick, active, slot);
+			bool hovered = self.hover.valid && self.hover.source == (int)i && self.hover.ref_index == r;
+			draw_one(self, project, (int)i, card, ref, camera, font, thick, active, slot, hovered);
 		}
 	}
+}
+
+fn void ImportIndex.draw_tooltip(&self, project::Project* project, RLFont font)
+{
+	if (!self.hover.valid) return;
+	if (self.hover.source < 0 || self.hover.source >= (int)project.cards.len()) return;
+	FileCard* card   = &project.cards[self.hover.source];
+	ImportRef[] refs = self.imports_for((String)card.path);
+	if (self.hover.ref_index >= refs.len) return;
+	ImportRef ref = refs[self.hover.ref_index];
+
+	@pool()
+	{
+		String source_name = rl::get_file_name((ZString)card.path.ptr).str_view();
+		String keyword     = highlight::language_for_path((String)card.path) == highlight::Language.C ? "#include"
+			: "import";
+		String markdown;
+		if (ref.resolved)
+		{
+			String target_name = "";
+			int*? target       = self.card_paths.get_ref(ref.target_path);
+			if (catch excuse = target)
+			{
+				target_name = "";
+			}
+			else
+			{
+				target_name = rl::get_file_name((ZString)project.cards[*target].path.ptr).str_view();
+			}
+			markdown = string::format(
+				tmem,
+				"`%s %s`\n%s:%d -> %s",
+				keyword,
+				ref.specifier,
+				source_name,
+				(long)(ref.line + 1),
+				target_name
+			);
+		}
+		else
+		{
+			markdown = string::format(
+				tmem,
+				"`%s %s`\n%s:%d (unresolved)",
+				keyword,
+				ref.specifier,
+				source_name,
+				(long)(ref.line + 1)
+			);
+		}
+		hover::draw_hover(markdown, rl::get_mouse_position(), font);
+	};
 }

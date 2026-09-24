@@ -86,6 +86,7 @@ struct Project
 	int drag_index;
 	bool drag_cluster;
 	int drag_cluster_index;
+	bool drag_cluster_title;
 	bool cluster_moved;
 	RLVector2 drag_world;
 	double last_input_time;
@@ -110,6 +111,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.focused = -1;
 	self.drag_card = false;
 	self.drag_cluster = false;
+	self.drag_cluster_title = false;
 	self.last_poll = 0.0;
 	self.pending_reload = -1;
 	self.pending_close = -1;
@@ -136,6 +138,7 @@ fn void Project.reset(&self)
 	self.focused = -1;
 	self.drag_card = false;
 	self.drag_cluster = false;
+	self.drag_cluster_title = false;
 	self.cluster_moved = false;
 	self.selecting = false;
 }
@@ -444,6 +447,22 @@ fn Rect Project.cluster_visual_bounds(&self, int index)
 		.width = CLUSTER_COLLAPSED_WIDTH,
 		.height = CLUSTER_TITLE_HEIGHT,
 	};
+}
+
+fn Rect Project.cluster_title_rect(&self, int index)
+{
+	Rect bounds = self.cluster_visual_bounds(index);
+	return {
+		.x = bounds.x,
+		.y = bounds.y,
+		.width = bounds.width,
+		.height = CLUSTER_TITLE_HEIGHT,
+	};
+}
+
+fn bool Project.cluster_title_hit(&self, int index, RLVector2 world)
+{
+	return rect_contains(self.cluster_title_rect(index), world);
 }
 
 fn bool Project.content_bounds(&self, Rect* out)
@@ -1374,6 +1393,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 			{
 				self.drag_cluster = true;
 				self.drag_cluster_index = cluster_hit;
+				self.drag_cluster_title = self.cluster_title_hit(cluster_hit, world);
 				self.cluster_moved = false;
 				self.drag_world = world;
 			}
@@ -1426,7 +1446,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 	{
 		if (!rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
 		{
-			if (!self.cluster_moved) self.toggle_collapse(self.drag_cluster_index);
+			if (!self.cluster_moved && self.drag_cluster_title) self.toggle_collapse(self.drag_cluster_index);
 			self.drag_cluster = false;
 		}
 		else
@@ -1783,12 +1803,7 @@ fn void Project.draw_cluster(&self, int index)
 	FolderCluster cluster = self.folders[index];
 	Rect bounds           = self.cluster_visual_bounds(index);
 	rl::draw_rectangle_rec(bounds, CLUSTER_BODY);
-	Rect title = {
-		.x = bounds.x,
-		.y = bounds.y,
-		.width = bounds.width,
-		.height = CLUSTER_TITLE_HEIGHT,
-	};
+	Rect title = self.cluster_title_rect(index);
 	rl::draw_rectangle_rec(title, CLUSTER_TITLE);
 	rl::draw_rectangle_lines_ex(bounds, 1.0f, CLUSTER_BORDER);
 	String name = rl::get_file_name((ZString)cluster.path.ptr).str_view();
