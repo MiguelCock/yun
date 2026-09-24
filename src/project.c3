@@ -1802,18 +1802,23 @@ fn void Project.draw_cluster(&self, int index)
 	);
 }
 
-fn void Project.draw(&self, RLCamera2D camera, RLFont font, EditorMetrics metrics, findbar::FindBar* find_bar)
+fn void Project.draw_folders(&self, RLCamera2D camera)
 {
-	double elapsed = rl::get_time() - self.last_input_time;
-	bool caret_on  = (elapsed - math::floor(elapsed)) < 0.5;
-	Rect visible   = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
-
+	Rect visible = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
 		if (!self.cluster_visible((int)i)) continue;
 		if (!rect_intersects(self.cluster_visual_bounds((int)i), visible)) continue;
 		self.draw_cluster((int)i);
 	}
+}
+
+fn void Project.draw_cards(&self, RLCamera2D camera, RLFont font, EditorMetrics metrics, findbar::FindBar* find_bar)
+{
+	double elapsed = rl::get_time() - self.last_input_time;
+	bool caret_on  = (elapsed - math::floor(elapsed)) < 0.5;
+	Rect visible   = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
+
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
 		if (!self.card_visible((int)i)) continue;
