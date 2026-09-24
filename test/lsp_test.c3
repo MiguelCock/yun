@@ -411,3 +411,38 @@ fn void test_normalize_definition()
 		out.free();
 	};
 }
+fn void test_normalize_completion()
+{
+	@pool()
+	{
+		List{CompletionItem} out;
+		out.init(tmem);
+		bool incomplete = false;
+
+		Object*? arr = json::parse(
+			tmem,
+			"[{\"label\":\"foo\",\"kind\":3,\"filterText\":\"fooF\"},{\"label\":\"bar\",\"insertText\":\"bar()\"}]"
+		);
+		if (try obj = arr) lsp_normalize_completion(tmem, obj, &out, &incomplete);
+		assert(out.len() == 2);
+		assert(out[0].label.compare_to("foo") == 0);
+		assert(out[0].kind == 3);
+		assert(out[0].filter_text.compare_to("fooF") == 0);
+		assert(out[1].insert_text.compare_to("bar()") == 0);
+		assert(!incomplete);
+		out.clear();
+
+		Object*? list = json::parse(
+			tmem,
+			"{\"isIncomplete\":true,\"items\":[{\"label\":\"baz\",\"textEdit\":{\"newText\":\"baz!\",\"range\":{\"start\":{\"line\":0,\"character\":2},\"end\":{\"line\":0,\"character\":5}}}}]}"
+		);
+		if (try obj = list) lsp_normalize_completion(tmem, obj, &out, &incomplete);
+		assert(out.len() == 1);
+		assert(out[0].has_text_edit);
+		assert(out[0].insert_text.compare_to("baz!") == 0);
+		assert(out[0].edit_start_character == 2);
+		assert(out[0].edit_end_character == 5);
+		assert(incomplete);
+		out.free();
+	};
+}

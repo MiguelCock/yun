@@ -10,6 +10,7 @@ import std::io::path;
 import std::math;
 import yun::canvas;
 import yun::card;
+import yun::completion;
 import yun::editor;
 import yun::findbar;
 import yun::gitignore;
@@ -1278,6 +1279,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 
 	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && canvas.pointer_over_ui && !pointer_blocked)
 	{
+		completion::completion_close();
 		int card_hit = self.hit_test(world);
 		if (card_hit >= 0)
 		{
@@ -1524,6 +1526,53 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 	bool moved        = false;
 	bool vertical     = false;
 
+	if (completion::completion_is_open())
+	{
+		if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+		{
+			completion::completion_close();
+			return;
+		}
+		if (rl::is_key_pressed(
+			rl::RLKeyboardKey.UP
+		) || rl::is_key_pressed_repeat(
+			rl::RLKeyboardKey.UP
+		) || (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.P)))
+		{
+			completion::completion_move(-1);
+			return;
+		}
+		if (rl::is_key_pressed(
+			rl::RLKeyboardKey.DOWN
+		) || rl::is_key_pressed_repeat(
+			rl::RLKeyboardKey.DOWN
+		) || (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.N)))
+		{
+			completion::completion_move(1);
+			return;
+		}
+		if (rl::is_key_pressed(
+			rl::RLKeyboardKey.ENTER
+		) || rl::is_key_pressed_repeat(
+			rl::RLKeyboardKey.ENTER
+		) || rl::is_key_pressed(rl::RLKeyboardKey.TAB) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.TAB))
+		{
+			usz new_cursor = completion::completion_accept(table, history, card.cursor, now);
+			if (new_cursor != card.cursor)
+			{
+				card.cursor = new_cursor;
+				card.selection_anchor = new_cursor;
+				card.dirty = true;
+				if (card.highlight) card.highlight.mark_dirty();
+				lsp::lsp_did_change((String)card.path, card.buffer);
+				self.last_input_time = rl::get_time();
+				if (out_changed) *out_changed = true;
+			}
+			self.reveal_focused(metrics);
+			return;
+		}
+	}
+
 	if (ctrl_down() && !shift && rl::is_key_pressed(rl::RLKeyboardKey.Z))
 	{
 		usz cursor = card.cursor;
@@ -1627,6 +1676,18 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 			card.cursor = history.replace(table, start, end - start, text, now);
 			card.selection_anchor = card.cursor;
 			changed = true;
+			if (!completion::completion_is_open())
+			{
+				String[] triggers = lsp::lsp_completion_triggers((String)card.path);
+				for (usz t = 0; t < triggers.len; t++)
+				{
+					if (text.ends_with(triggers[t]))
+					{
+						completion::completion_request((String)card.path, table, card.cursor, 2, triggers[t]);
+						break;
+					}
+				}
+			}
 		}
 	}
 
@@ -1702,6 +1763,8 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 		usz line = table.line_of(card.cursor);
 		card.preferred_column = editor::column_for_offset(table, line, card.cursor);
 	}
+
+	if (completion::completion_is_open()) completion::completion_refilter(table, card.cursor);
 
 	if (changed || moved) self.reveal_focused(metrics);
 

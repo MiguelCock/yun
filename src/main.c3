@@ -8,6 +8,7 @@ import yun::browser;
 import yun::canvas;
 import yun::card;
 import yun::commands;
+import yun::completion;
 import yun::config;
 import yun::context;
 import yun::editor;
@@ -321,6 +322,14 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.COMPLETE:
+
+			{
+				FileCard* card = project.focused_card();
+				if (!card || !card.buffer) return;
+				completion::completion_request((String)card.path, card.buffer, card.cursor, 1, "");
+				return;
+			}
 	}
 }
 
@@ -494,6 +503,7 @@ fn int main(String[] args)
 	lsp::Lsp lsp;
 	lsp.init(mem, &config);
 	lsp::lsp_set_active(&lsp);
+	completion::completion_init(mem);
 
 	browser::Browser browser;
 	browser.init(mem);
@@ -612,6 +622,7 @@ fn int main(String[] args)
 					project_open = true;
 					finish_open(&project, &canvas, &config, &keymap, &notifier);
 					lsp.set_root((String)project.root);
+					completion::completion_close();
 				}
 				else if (!open_job.cancelled)
 				{
@@ -1021,6 +1032,13 @@ fn int main(String[] args)
 		}
 
 		lsp.update(rl::get_time());
+
+		FileCard* completion_card = project.focused_card();
+		if (completion_card && completion_card.buffer)
+		{
+			completion::completion_poll(completion_card.buffer, completion_card.cursor);
+		}
+
 		lsp.update_hover(rl::get_time(), hover.over, hover.path, hover.table, hover.offset);
 
 		List{lsp::DefinitionTarget} definitions = { };
@@ -1084,6 +1102,23 @@ fn int main(String[] args)
 				else if (hover.over && lsp.hover_is_valid())
 				{
 					hover::draw_hover(lsp.hover_message(), hover.anchor, font);
+				}
+			}
+			if (completion::completion_is_open() && !problems.open && !palette.open && !definition_menu.open)
+			{
+				FileCard* completion_draw_card = project.focused_card();
+				if (completion_draw_card && completion_draw_card.buffer)
+				{
+					completion::completion_draw(
+						font,
+						metrics,
+						canvas.camera,
+						completion_draw_card.buffer,
+						completion_draw_card.rect,
+						completion_draw_card.scroll,
+						completion_draw_card.scroll_x,
+						completion_draw_card.cursor
+					);
 				}
 			}
 			String project_name = "";

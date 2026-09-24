@@ -50,11 +50,16 @@ struct Lsp
 	int definition_request_id;
 	List{DefinitionTarget} definition_results;
 	bool definition_ready;
+	int completion_request_id;
+	List{CompletionItem} completion_items;
+	bool completion_ready;
+	bool completion_incomplete;
 }
 
 Lsp* active_lsp;
 
 const LspDiagnostic[] NO_DIAGNOSTICS = { };
+const String[] NO_TRIGGERS           = { };
 
 fn void Lsp.init(&self, Allocator allocator, config::Config* config)
 {
@@ -76,6 +81,10 @@ fn void Lsp.init(&self, Allocator allocator, config::Config* config)
 	self.definition_request_id = -1;
 	self.definition_results.init(allocator);
 	self.definition_ready = false;
+	self.completion_request_id = -1;
+	self.completion_items.init(allocator);
+	self.completion_ready = false;
+	self.completion_incomplete = false;
 }
 
 fn void Lsp.free_diagnostics(&self)
@@ -101,6 +110,7 @@ fn void Lsp.shutdown_all(&self)
 	self.free_diagnostics();
 	self.clear_hover();
 	self.clear_definition_results();
+	self.clear_completion();
 	for (sz i = 0; i < self.clients.len(); i++)
 	{
 		LspClient* client = self.clients[i];
@@ -270,6 +280,64 @@ fn bool Lsp.take_definition(&self, List{DefinitionTarget}* out)
 	*out = self.definition_results;
 	self.definition_results.init(self.allocator);
 	return true;
+}
+
+fn void Lsp.clear_completion(&self)
+{
+	for (sz i = 0; i < self.completion_items.len(); i++)
+	{
+		CompletionItem item = self.completion_items[i];
+		if (item.label.len) item.label.free(self.allocator);
+		if (item.filter_text.len) item.filter_text.free(self.allocator);
+		if (item.sort_text.len) item.sort_text.free(self.allocator);
+		if (item.insert_text.len) item.insert_text.free(self.allocator);
+		if (item.detail.len) item.detail.free(self.allocator);
+	}
+	self.completion_items.clear();
+	self.completion_ready = false;
+	self.completion_incomplete = false;
+}
+
+fn bool Lsp.request_completion(&self, String path, PieceTable* table, usz offset, int trigger_kind, String trigger_char)
+{
+	self.clear_completion();
+	self.completion_request_id = -1;
+
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY || !client.caps.completion) return false;
+
+	uint line      = 0;
+	uint character = 0;
+	position_from_offset(table, offset, &line, &character);
+	@pool()
+	{
+		String uri     = path_to_uri(tmem, path);
+		Object* params = lsp_completion_params(tmem, uri, line, character, trigger_kind, trigger_char);
+		self.completion_request_id = client.send_request("textDocument/completion", params);
+	};
+	return true;
+}
+
+fn bool Lsp.take_completion(&self, List{CompletionItem}* out, bool* incomplete)
+{
+	if (!self.completion_ready) return false;
+	self.completion_ready = false;
+	self.completion_request_id = -1;
+	*out = self.completion_items;
+	self.completion_items.init(self.allocator);
+	*incomplete = self.completion_incomplete;
+	self.completion_incomplete = false;
+	return true;
+}
+
+fn String[] Lsp.completion_triggers(&self, String path)
+{
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY) return NO_TRIGGERS;
+	List{String}* triggers = &client.caps.trigger_characters;
+	return triggers.entries[0:triggers.len()];
 }
 
 fn void Lsp.update_hover(&self, double now, bool over, String path, PieceTable* table, usz offset)
@@ -594,6 +662,25 @@ fn void Lsp.update(&self, double now)
 				self.definition_ready = true;
 				self.definition_request_id = -1;
 			}
+			else if (self.completion_request_id >= 0 && response.id == self.completion_request_id
+				&& response.method.compare_to(
+				"textDocument/completion"
+			) == 0)
+			{
+				self.clear_completion();
+				Object*? result_opt = response.message.get("result");
+				if (try result = result_opt)
+				{
+					lsp_normalize_completion(
+						self.allocator,
+						result,
+						&self.completion_items,
+						&self.completion_incomplete
+					);
+				}
+				self.completion_ready = true;
+				self.completion_request_id = -1;
+			}
 			response.method.free(client.allocator);
 			response.message.free();
 		}
@@ -716,4 +803,21 @@ fn bool lsp_take_definition(List{DefinitionTarget}* out)
 {
 	if (!active_lsp) return false;
 	return active_lsp.take_definition(out);
+}
+fn bool lsp_request_completion(String path, PieceTable* table, usz offset, int trigger_kind, String trigger_char)
+{
+	if (!active_lsp) return false;
+	return active_lsp.request_completion(path, table, offset, trigger_kind, trigger_char);
+}
+
+fn bool lsp_take_completion(List{CompletionItem}* out, bool* incomplete)
+{
+	if (!active_lsp) return false;
+	return active_lsp.take_completion(out, incomplete);
+}
+
+fn String[] lsp_completion_triggers(String path)
+{
+	if (!active_lsp) return NO_TRIGGERS;
+	return active_lsp.completion_triggers(path);
 }

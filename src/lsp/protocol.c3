@@ -33,6 +33,21 @@ struct DefinitionTarget
 	uint character;
 }
 
+struct CompletionItem
+{
+	String label;
+	String filter_text;
+	String sort_text;
+	String insert_text;
+	String detail;
+	int kind;
+	bool has_text_edit;
+	uint edit_start_line;
+	uint edit_start_character;
+	uint edit_end_line;
+	uint edit_end_character;
+}
+
 const int DIAGNOSTIC_ERROR   = 1;
 const int DIAGNOSTIC_WARNING = 2;
 const int DIAGNOSTIC_INFO    = 3;
@@ -140,6 +155,22 @@ fn Object* lsp_document_position_params(Allocator allocator, String uri, uint li
 	Object* position = root.get_or_create_obj("position");
 	position.set("line", (long)line);
 	position.set("character", (long)character);
+	return root;
+}
+
+fn Object* lsp_completion_params(
+	Allocator allocator,
+	String uri,
+	uint line,
+	uint character,
+	int trigger_kind,
+	String trigger_char
+)
+{
+	Object* root    = lsp_document_position_params(allocator, uri, line, character);
+	Object* context = root.get_or_create_obj("context");
+	context.set("triggerKind", (long)trigger_kind);
+	if (trigger_char.len > 0) context.set("triggerCharacter", trigger_char);
 	return root;
 }
 
@@ -281,6 +312,138 @@ fn void lsp_normalize_definition(Allocator allocator, Object* result, List{Defin
 		return;
 	}
 	if (result.is_map()) lsp_add_definition(allocator, result, out);
+}
+
+fn void lsp_add_completion_item(Allocator allocator, Object* item, List{CompletionItem}* out)
+{
+	if (!item.is_map()) return;
+	Object*? label_opt = item.get("label");
+	if (catch excuse = label_opt) return;
+	if (!label_opt.is_string()) return;
+
+	String label = label_opt.s.copy(allocator);
+
+	CompletionItem entry = {
+		.label = label,
+		.filter_text = label.copy(allocator),
+		.sort_text = label.copy(allocator),
+		.insert_text = label.copy(allocator),
+		.detail = "",
+		.kind = (int)lsp_object_uint(item, "kind"),
+		.has_text_edit = false,
+	};
+
+	Object*? filter_opt = item.get("filterText");
+	if (try filter = filter_opt)
+	{
+		if (filter.is_string())
+		{
+			entry.filter_text.free(allocator);
+			entry.filter_text = filter.s.copy(allocator);
+		}
+	}
+	Object*? sort_opt = item.get("sortText");
+	if (try sort = sort_opt)
+	{
+		if (sort.is_string())
+		{
+			entry.sort_text.free(allocator);
+			entry.sort_text = sort.s.copy(allocator);
+		}
+	}
+	Object*? insert_opt = item.get("insertText");
+	if (try insert = insert_opt)
+	{
+		if (insert.is_string())
+		{
+			entry.insert_text.free(allocator);
+			entry.insert_text = insert.s.copy(allocator);
+		}
+	}
+	Object*? detail_opt = item.get("detail");
+	if (try detail = detail_opt)
+	{
+		if (detail.is_string()) entry.detail = detail.s.copy(allocator);
+	}
+
+	Object*? text_edit_opt = item.get("textEdit");
+	if (try text_edit = text_edit_opt)
+	{
+		if (text_edit.is_map())
+		{
+			Object* range_obj         = null;
+			Object*? range_opt        = text_edit.get("range");
+			Object*? insert_range_opt = text_edit.get("insert");
+			if (try range = range_opt)
+			{
+				range_obj = range;
+			}
+			else if (try insert_range = insert_range_opt)
+			{
+				range_obj = insert_range;
+			}
+			if (range_obj && range_obj.is_map())
+			{
+				Object*? start_opt = range_obj.get("start");
+				Object*? end_opt   = range_obj.get("end");
+				if (try start = start_opt)
+				{
+					if (try end = end_opt)
+					{
+						entry.has_text_edit = true;
+						entry.edit_start_line = lsp_object_uint(start, "line");
+						entry.edit_start_character = lsp_object_uint(start, "character");
+						entry.edit_end_line = lsp_object_uint(end, "line");
+						entry.edit_end_character = lsp_object_uint(end, "character");
+					}
+				}
+			}
+			Object*? new_text_opt = text_edit.get("newText");
+			if (try new_text = new_text_opt)
+			{
+				if (new_text.is_string())
+				{
+					entry.insert_text.free(allocator);
+					entry.insert_text = new_text.s.copy(allocator);
+				}
+			}
+		}
+	}
+
+	out.push(entry);
+}
+
+fn void lsp_normalize_completion(Allocator allocator, Object* result, List{CompletionItem}* out, bool* incomplete)
+{
+	*incomplete = false;
+	if (result.is_array())
+	{
+		for (sz i = 0; i < result.get_len(); i++)
+		{
+			lsp_add_completion_item(allocator, result.get_at(i), out);
+		}
+		return;
+	}
+	if (!result.is_map()) return;
+
+	Object*? items_opt = result.get("items");
+	if (catch excuse = items_opt)
+	{
+		lsp_add_completion_item(allocator, result, out);
+		return;
+	}
+	if (items_opt.is_array())
+	{
+		for (sz i = 0; i < items_opt.get_len(); i++)
+		{
+			lsp_add_completion_item(allocator, items_opt.get_at(i), out);
+		}
+	}
+	Object*? incomplete_opt = result.get("isIncomplete");
+	if (try flag = incomplete_opt)
+	{
+		if (flag.is_bool()) *incomplete = flag.b;
+	}
 }
 
 fn void lsp_parse_capabilities(Allocator allocator, Object* result, LspCapabilities* out)
