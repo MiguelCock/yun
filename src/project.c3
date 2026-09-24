@@ -102,6 +102,8 @@ struct Project
 	String jump_path;
 	usz jump_line;
 	double jump_until;
+	int awake_count;
+	int asleep_count;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -125,6 +127,8 @@ fn void Project.init(&self, Allocator allocator)
 	self.jump_path = "";
 	self.jump_line = 0;
 	self.jump_until = 0.0;
+	self.awake_count = 0;
+	self.asleep_count = 0;
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
 	{
@@ -1521,6 +1525,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 		}
 	}
 
+	self.refresh_sleep(expand_rect(visible_world_rect(canvas.camera), DRAW_CULL_MARGIN));
 	self.poll_external(rl::get_time());
 	self.handle_keyboard(metrics, out_changed);
 }
@@ -1534,6 +1539,31 @@ fn RLMouseCursor cursor_for_handle(int handle)
 	return rl::RLMouseCursor.DEFAULT;
 }
 
+fn void Project.refresh_sleep(&self, Rect visible)
+{
+	int awake  = 0;
+	int asleep = 0;
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		bool is_focused = (int)i == self.focused;
+		bool on_screen  = self.card_visible(
+			(int)i
+		) && self.cards[i].open && rect_intersects(self.cards[i].rect, visible);
+		bool wake       = is_focused || on_screen;
+		self.cards[i].sleeping = !wake;
+		if (wake)
+		{
+			awake++;
+		}
+		else
+		{
+			asleep++;
+		}
+	}
+	self.awake_count = awake;
+	self.asleep_count = asleep;
+}
+
 fn void Project.poll_external(&self, double now)
 {
 	if (self.pending_reload >= 0) return;
@@ -1542,7 +1572,7 @@ fn void Project.poll_external(&self, double now)
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
 		FileCard* card = &self.cards[i];
-		if (!card.buffer || card.missing) continue;
+		if (!card.buffer || card.missing || card.sleeping) continue;
 		if (editor::file_changed(card))
 		{
 			self.pending_reload = (int)i;
