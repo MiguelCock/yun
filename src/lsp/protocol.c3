@@ -163,6 +163,8 @@ fn void lsp_append_marked_string(Allocator allocator, Object* item, DString* out
 
 fn String? lsp_normalize_hover(Allocator allocator, Object* result)
 {
+	if (!result.is_map()) return LSP_NO_HOVER~;
+
 	Object*? contents_opt = result.get("contents");
 	if (catch excuse = contents_opt) return LSP_NO_HOVER~;
 	Object* contents = contents_opt;

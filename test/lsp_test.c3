@@ -328,5 +328,41 @@ fn void test_normalize_hover()
 			if (catch excuse = text) faulted = true;
 			assert(faulted);
 		}
+
+		// A null hover result (e.g. clangd hovering whitespace) must not crash.
+		Object*? null_result = json::parse(tmem, "{\"result\":null}");
+		if (try message = null_result)
+		{
+			Object*? null_result_opt = message.get("result");
+			if (catch null_excuse = null_result_opt)
+			{
+				assert(false);
+			}
+			else
+			{
+				String? text = lsp_normalize_hover(tmem, null_result_opt);
+				bool faulted = false;
+				if (catch null_text_excuse = text) faulted = true;
+				assert(faulted);
+			}
+		}
+
+		// A non-map result (array) must also be treated as no hover.
+		Object*? array_result = json::parse(tmem, "{\"result\":[\"x\"]}");
+		if (try message = array_result)
+		{
+			Object*? array_result_opt = message.get("result");
+			if (catch array_excuse = array_result_opt)
+			{
+				assert(false);
+			}
+			else
+			{
+				String? text = lsp_normalize_hover(tmem, array_result_opt);
+				bool faulted = false;
+				if (catch array_text_excuse = text) faulted = true;
+				assert(faulted);
+			}
+		}
 	};
 }
