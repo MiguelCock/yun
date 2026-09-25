@@ -5,6 +5,7 @@ import std::collections::object;
 import std::core::dstring;
 import std::core::mem::alloc;
 import std::encoding::json;
+import yun::version;
 
 faultdef LSP_NO_HOVER;
 
@@ -89,7 +90,7 @@ fn Object* lsp_initialize_params(Allocator allocator, String root_uri)
 
 	Object* client = root.get_or_create_obj("clientInfo");
 	client.set("name", "Yun");
-	client.set("version", "0.1.0");
+	client.set("version", version::APP_VERSION);
 
 	Object* caps = root.get_or_create_obj("capabilities");
 	Object* td   = caps.get_or_create_obj("textDocument");

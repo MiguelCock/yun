@@ -107,6 +107,19 @@ assets/     bundled fonts (JetBrains Mono, SIL OFL 1.1)
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the branch/PR workflow, [`AGENTS.md`](AGENTS.md) for the build/architecture cheat sheet, and [`.opencode/skills/yun-development/SKILL.md`](.opencode/skills/yun-development/SKILL.md) for C3 conventions.
 
+## Versioning and releases
+
+Yun follows [semantic versioning](https://semver.org/): `MAJOR` for breaking changes, `MINOR` for new features, and `PATCH` for bug fixes. The version lives in [`project.json`](project.json) (and `yun::version.APP_VERSION`, kept in sync by a test).
+
+Releases are built and published by [`.github/workflows/release.yml`](.github/workflows/release.yml). **Merging a PR never publishes anything** — the workflow only builds. To cut a release, bump the version and push a matching tag:
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Tagging builds `linux-x64`, `macos-aarch64`, and `windows-x64` and attaches the archives (with SHA-256 checksums) to the GitHub Release. The tag must equal `v<version from project.json>`, otherwise publishing is aborted.
+
 ## License
 
 Yun is released under the [MIT License](LICENSE). In short: use it however you like, but any copy or fork must keep the copyright and license notice.

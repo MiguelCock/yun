@@ -9,6 +9,16 @@
       "linked-libraries": [
         "tree-sitter-javascript"
       ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-javascript"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-javascript"
+      ]
     }
   }
 }
