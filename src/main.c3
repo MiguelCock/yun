@@ -1222,20 +1222,6 @@ fn int main(String[] args)
 						canvas.target.target = selected_card.center();
 					}
 				}
-
-				if ((rl::is_key_pressed(
-					rl::RLKeyboardKey.ENTER
-				) || rl::is_key_pressed(rl::RLKeyboardKey.I)) && project.selected >= 0)
-				{
-					int idx = project.focus(project.selected);
-					project.selected = idx;
-					if (idx >= 0 && idx < (int)project.cards.len())
-					{
-						editor::ensure_buffer(&project.cards[idx], project.allocator);
-						project.reveal_focused(metrics);
-						ui_mode = UiMode.EDIT;
-					}
-				}
 			}
 
 			bool over_minimap = minimap::contains_screen(&project, &canvas, mouse);
@@ -1338,10 +1324,33 @@ fn int main(String[] args)
 			{
 				ui_mode = UiMode.MOVE;
 			}
-			else if (ui_mode == UiMode.MOVE && project.focused >= 0)
+			else if (ui_mode == UiMode.MOVE)
 			{
-				project.selected = project.focused;
-				ui_mode = UiMode.EDIT;
+				bool enter_edit = false;
+				if ((rl::is_key_pressed(
+					rl::RLKeyboardKey.ENTER
+				) || rl::is_key_pressed(rl::RLKeyboardKey.I)) && project.selected >= 0)
+				{
+					int idx = project.focus(project.selected);
+					if (idx >= 0 && idx < (int)project.cards.len())
+					{
+						project.selected = idx;
+						editor::ensure_buffer(&project.cards[idx], project.allocator);
+						project.reveal_focused(metrics);
+						enter_edit = true;
+					}
+				}
+				else if (project.focused >= 0)
+				{
+					project.selected = project.focused;
+					enter_edit = true;
+				}
+				if (enter_edit && project.focused >= 0)
+				{
+					ui_mode = UiMode.EDIT;
+					FileCard* card = project.focused_card();
+					if (card) canvas.target.target = card.center();
+				}
 			}
 			project.discard_ephemeral(project.focused);
 			if (content_changed)
