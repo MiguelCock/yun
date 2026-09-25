@@ -54,8 +54,15 @@ jobs:
               unzip -q c3.zip -d "$HOME/c3c"
               ;;
           esac
-          echo "$HOME/c3c" >> "$GITHUB_PATH"
-          chmod +x "$HOME/c3c/c3c" 2>/dev/null || true
+          bin="$(find "$HOME/c3c" -maxdepth 4 -type f \( -name c3c -o -name c3c.exe \) | head -n1)"
+          if [ -z "$bin" ]; then
+            echo "c3c binary not found after extraction"
+            find "$HOME/c3c" -maxdepth 3
+            exit 1
+          fi
+          chmod +x "$bin" 2>/dev/null || true
+          echo "C3C=$bin" >> "$GITHUB_ENV"
+          echo "using c3c at $bin"
 
       - name: Build tree-sitter (macOS/Linux)
         if: runner.os != 'Windows'
@@ -74,7 +81,7 @@ jobs:
 
       - name: Build yun
         shell: bash
-        run: c3c build -O2
+        run: '"$C3C" build -O2'
 
       - name: Stage package (macOS/Linux)
         if: runner.os != 'Windows'
