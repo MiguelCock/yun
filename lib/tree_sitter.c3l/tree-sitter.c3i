@@ -1,0 +1,146 @@
+module tree_sitter;
+
+typedef TSParser = void;
+typedef TSTree = void;
+typedef TSLanguage = void;
+typedef TSQuery = void;
+typedef TSQueryCursor = void;
+
+const uint TS_LANGUAGE_VERSION                = 15;
+const uint TS_MIN_COMPATIBLE_LANGUAGE_VERSION = 13;
+
+enum TSInputEncoding : int
+{
+	TS_INPUT_UTF8,
+	TS_INPUT_UTF16,
+	TS_INPUT_UTF16_BE,
+	TS_INPUT_UTF16_LE,
+	TS_INPUT_CUSTOM,
+}
+
+enum TSSymbolType : int
+{
+	TS_SYMBOL_TYPE_REGULAR,
+	TS_SYMBOL_TYPE_ANONYMOUS,
+	TS_SYMBOL_TYPE_SUPERTYPE,
+	TS_SYMBOL_TYPE_AUXILIARY,
+}
+
+enum TSQuantifier : int
+{
+	TS_QUANTIFIER_ZERO,
+	TS_QUANTIFIER_ZERO_OR_ONE,
+	TS_QUANTIFIER_ZERO_OR_MORE,
+	TS_QUANTIFIER_ONE,
+	TS_QUANTIFIER_ONE_OR_MORE,
+}
+
+enum TSQueryError : int
+{
+	TS_QUERY_ERROR_NONE,
+	TS_QUERY_ERROR_SYNTAX,
+	TS_QUERY_ERROR_NODE_TYPE,
+	TS_QUERY_ERROR_FIELD,
+	TS_QUERY_ERROR_CAPTURE,
+	TS_QUERY_ERROR_PREDICATE,
+	TS_QUERY_ERROR_STRUCTURE,
+	TS_QUERY_ERROR_LANGUAGE,
+}
+
+struct TSPoint
+{
+	uint row;
+	uint column;
+}
+
+struct TSRange
+{
+	TSPoint start_point;
+	TSPoint end_point;
+	uint start_byte;
+	uint end_byte;
+}
+
+struct TSInputEdit
+{
+	uint start_byte;
+	uint old_end_byte;
+	uint new_end_byte;
+	TSPoint start_point;
+	TSPoint old_end_point;
+	TSPoint new_end_point;
+}
+
+struct TSNode
+{
+	uint[4] context;
+	void* id;
+	TSTree* tree;
+}
+
+struct TSTreeCursor
+{
+	void* tree;
+	void* id;
+	uint[3] context;
+}
+
+struct TSQueryCapture
+{
+	TSNode node;
+	uint index;
+}
+
+struct TSQueryMatch
+{
+	uint id;
+	ushort pattern_index;
+	ushort capture_count;
+	TSQueryCapture* captures;
+}
+
+extern fn TSParser* ts_parser_new();
+extern fn void ts_parser_delete(TSParser* self);
+extern fn bool ts_parser_set_language(TSParser* self, TSLanguage* language);
+extern fn TSLanguage* ts_parser_language(TSParser* self);
+extern fn TSTree* ts_parser_parse_string(TSParser* self, TSTree* old_tree, char* string, uint length);
+
+extern fn void ts_tree_delete(TSTree* self);
+extern fn TSNode ts_tree_root_node(TSTree* self);
+extern fn void ts_tree_edit(TSTree* self, TSInputEdit* edit);
+
+extern fn char* ts_node_type(TSNode self);
+extern fn uint ts_node_start_byte(TSNode self);
+extern fn uint ts_node_end_byte(TSNode self);
+extern fn TSPoint ts_node_start_point(TSNode self);
+extern fn TSPoint ts_node_end_point(TSNode self);
+extern fn bool ts_node_is_null(TSNode self);
+extern fn bool ts_node_is_named(TSNode self);
+extern fn bool ts_node_has_error(TSNode self);
+extern fn TSNode ts_node_child(TSNode self, uint child_index);
+extern fn uint ts_node_child_count(TSNode self);
+extern fn TSNode ts_node_named_child(TSNode self, uint child_index);
+extern fn uint ts_node_named_child_count(TSNode self);
+extern fn TSNode ts_node_child_by_field_name(TSNode self, char* name, uint name_length);
+extern fn void ts_node_edit(TSNode* self, TSInputEdit* edit);
+
+extern fn TSQuery* ts_query_new(
+	TSLanguage* language,
+	char* source,
+	uint source_len,
+	uint* error_offset,
+	TSQueryError* error_type
+);
+extern fn void ts_query_delete(TSQuery* self);
+extern fn uint ts_query_pattern_count(TSQuery* self);
+extern fn uint ts_query_capture_count(TSQuery* self);
+extern fn uint ts_query_string_count(TSQuery* self);
+extern fn char* ts_query_capture_name_for_id(TSQuery* self, uint index, uint* length);
+
+extern fn TSQueryCursor* ts_query_cursor_new();
+extern fn void ts_query_cursor_delete(TSQueryCursor* self);
+extern fn void ts_query_cursor_exec(TSQueryCursor* self, TSQuery* query, TSNode node);
+extern fn bool ts_query_cursor_next_capture(TSQueryCursor* self, TSQueryMatch* match, uint* capture_index);
+
+extern fn uint ts_language_symbol_count(TSLanguage* self);
+extern fn uint ts_language_field_count(TSLanguage* self);

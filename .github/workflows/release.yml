@@ -1,0 +1,186 @@
+name: Release
+
+on:
+  push:
+    branches: [main, development]
+    tags: ['v*']
+  pull_request:
+    branches: [development, main]
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x64
+          - os: macos-14
+            target: macos-aarch64
+          - os: windows-2022
+            target: windows-x64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install native dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libgl1-mesa-dev
+
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install c3c (pinned)
+        shell: bash
+        run: |
+          mkdir -p "$HOME/c3c"
+          case "${{ runner.os }}" in
+            Linux)
+              curl -fsSL -o c3.tar.gz "https://github.com/c3lang/c3c/releases/download/v0.8.4/c3-linux-static.tar.gz"
+              tar -xzf c3.tar.gz -C "$HOME/c3c"
+              ;;
+            macOS)
+              curl -fsSL -o c3.zip "https://github.com/c3lang/c3c/releases/download/v0.8.4/c3-macos.zip"
+              unzip -q c3.zip -d "$HOME/c3c"
+              ;;
+            Windows)
+              curl -fsSL -o c3.zip "https://github.com/c3lang/c3c/releases/download/v0.8.4/c3-windows.zip"
+              unzip -q c3.zip -d "$HOME/c3c"
+              ;;
+          esac
+          bin="$(find "$HOME/c3c" -maxdepth 4 -type f \( -name c3c -o -name c3c.exe \) | head -n1)"
+          if [ -z "$bin" ]; then
+            echo "c3c binary not found after extraction"
+            find "$HOME/c3c" -maxdepth 3
+            exit 1
+          fi
+          chmod +x "$bin" 2>/dev/null || true
+          echo "C3C=$bin" >> "$GITHUB_ENV"
+          echo "using c3c at $bin"
+
+      - name: Build tree-sitter (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ "${{ matrix.target }}" = "linux-x64" ]; then
+            CC=cc scripts/build-tree-sitter.sh "${{ matrix.target }}"
+          else
+            CC=clang AR=ar scripts/build-tree-sitter.sh "${{ matrix.target }}"
+          fi
+
+      - name: Build tree-sitter (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: scripts/build-tree-sitter-windows.ps1 -Target "${{ matrix.target }}"
+
+      - name: Build yun
+        shell: bash
+        run: '"$C3C" build -O2'
+
+      - name: Stage package (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(python3 -c "import json;print(json.load(open('project.json'))['version'])")
+          target="${{ matrix.target }}"
+          name="yun-$version-$target"
+          dist="dist/$name"
+          mkdir -p "$dist"
+          cp build/yun "$dist/yun"
+          cp -r assets "$dist/assets"
+          for q in lib/tree_sitter*.c3l/queries; do
+            mkdir -p "$dist/$(dirname "$q")"
+            cp -r "$q" "$dist/$(dirname "$q")/"
+          done
+          cp LICENSE README.md "$dist/"
+          tar -czf "$name.tar.gz" -C dist "$name"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+          else
+            shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          fi
+
+      - name: Stage package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Get-Content project.json | ConvertFrom-Json).version
+          $target = "${{ matrix.target }}"
+          $name = "yun-$version-$target"
+          $dist = "dist/$name"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          Copy-Item "build/yun.exe" "$dist/yun.exe"
+          Copy-Item -Recurse "assets" "$dist/assets"
+          Get-ChildItem -Path "lib" -Directory -Filter "tree_sitter*.c3l" | ForEach-Object {
+            $queries = Join-Path $_.FullName "queries"
+            if (Test-Path $queries) {
+              $dest = Join-Path $dist ("lib/" + $_.Name + "/queries")
+              New-Item -ItemType Directory -Force -Path $dest | Out-Null
+              Copy-Item -Recurse "$queries/*" $dest
+            }
+          }
+          Copy-Item "LICENSE", "README.md" $dist
+          Compress-Archive -Path $dist -DestinationPath "$name.zip" -Force
+          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yun-${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            yun-*.tar.gz
+            yun-*.zip
+            yun-*.sha256
+
+  release:
+    name: publish
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches project version
+        run: |
+          version=$(python3 -c "import json;print(json.load(open('project.json'))['version'])")
+          if [ "${GITHUB_REF_NAME}" != "v$version" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match project version v$version"
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} matches project version $version"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Combine checksums
+        run: cat artifacts/*.sha256 > checksums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.zip
+            checksums.txt
+          body: |
+            Prebuilt Yun binaries for ${{ github.ref_name }}.
+
+            Download and extract the archive for your platform, then run `yun`
+            (`yun.exe` on Windows) from the extracted folder.
+
+            Note: Lua mods (#33) are not wired up yet; when they are, they will
+            require a system Lua 5.4.

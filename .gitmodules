@@ -1,0 +1,18 @@
+[submodule "lib/lua54.c3l"]
+	path = lib/lua54.c3l
+	url = https://github.com/MiguelCock/lua54.c3l.git
+[submodule "lib/tree_sitter_c3.c3l/upstream"]
+	path = lib/tree_sitter_c3.c3l/upstream
+	url = https://github.com/c3lang/tree-sitter-c3.git
+[submodule "lib/tree_sitter_python.c3l/upstream"]
+	path = lib/tree_sitter_python.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-python.git
+[submodule "lib/tree_sitter_javascript.c3l/upstream"]
+	path = lib/tree_sitter_javascript.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-javascript.git
+[submodule "lib/tree_sitter.c3l/upstream"]
+	path = lib/tree_sitter.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter.git
+[submodule "lib/tree_sitter_c.c3l/upstream"]
+	path = lib/tree_sitter_c.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-c.git

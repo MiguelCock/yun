@@ -1,0 +1,150 @@
+module yun::keymap @test;
+
+import raylib6::rl;
+import yun::commands;
+import yun::config;
+
+fn void test_parse_chord()
+{
+	Chord ctrl_s = parse_chord("Ctrl+S");
+	assert(ctrl_s.valid);
+	assert(ctrl_s.mods == MOD_CTRL);
+	assert(ctrl_s.key == rl::RLKeyboardKey.S);
+
+	Chord combo = parse_chord("ctrl+shift+p");
+	assert(combo.valid);
+	assert(combo.mods == (MOD_CTRL | MOD_SHIFT));
+	assert(combo.key == rl::RLKeyboardKey.P);
+
+	Chord f5 = parse_chord("F5");
+	assert(f5.valid && f5.mods == 0 && f5.key == rl::RLKeyboardKey.F5);
+
+	Chord escape = parse_chord("Escape");
+	assert(escape.valid && escape.key == rl::RLKeyboardKey.ESCAPE);
+
+	Chord del = parse_chord("Ctrl+Alt+Delete");
+	assert(del.valid && del.mods == (MOD_CTRL | MOD_ALT) && del.key == rl::RLKeyboardKey.DELETE);
+}
+
+fn void test_parse_chord_invalid()
+{
+	assert(!parse_chord("").valid);
+	assert(!parse_chord("Ctrl+").valid);
+	assert(!parse_chord("+S").valid);
+	assert(!parse_chord("Foo").valid);
+	assert(!parse_chord("Ctrl+S+T").valid);
+	assert(!parse_chord("F13").valid);
+}
+
+fn void test_format_chord()
+{
+	@pool()
+	{
+		Chord chord = parse_chord("Ctrl+Shift+P");
+		assert(format_chord(tmem, chord, false).compare_to("Ctrl+Shift+P") == 0);
+		assert(format_chord(tmem, chord, true).compare_to("Cmd+Shift+P") == 0);
+
+		Chord plain = parse_chord("F5");
+		assert(format_chord(tmem, plain, false).compare_to("F5") == 0);
+	};
+}
+
+fn void test_chord_equals()
+{
+	assert(chord_equals(parse_chord("Ctrl+S"), parse_chord("ctrl+s")));
+	assert(!chord_equals(parse_chord("Ctrl+S"), parse_chord("Ctrl+Shift+S")));
+	assert(!chord_equals(parse_chord("Ctrl+S"), parse_chord("Ctrl+O")));
+}
+
+fn void test_defaults()
+{
+	@pool()
+	{
+		config::Config c;
+		c.init(tmem);
+		c.reset();
+
+		Keymap k;
+		k.init(tmem);
+		k.build(&c);
+
+		assert(k.shortcut(commands::CommandId.SAVE).compare_to("Ctrl+S") == 0);
+		assert(k.shortcut(commands::CommandId.OPEN).compare_to("Ctrl+O") == 0);
+		assert(k.shortcut(commands::CommandId.SHOW_PALETTE).compare_to("Ctrl+Shift+P") == 0);
+		assert(k.shortcut(commands::CommandId.NEW_FOLDER).len == 0);
+		assert(k.warnings.len() == 0);
+	};
+}
+
+fn void test_override()
+{
+	@pool()
+	{
+		config::Config c;
+		c.init(tmem);
+		c.reset();
+		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+Alt+S\"}}"));
+
+		Keymap k;
+		k.init(tmem);
+		k.build(&c);
+
+		assert(k.shortcut(commands::CommandId.SAVE).compare_to("Ctrl+Alt+S") == 0);
+		assert(k.warnings.len() == 0);
+	};
+}
+
+fn void test_unknown_command_warns()
+{
+	@pool()
+	{
+		config::Config c;
+		c.init(tmem);
+		c.reset();
+		assert(c.apply_json("{\"keymap\":{\"nope\":\"Ctrl+K\"}}"));
+
+		Keymap k;
+		k.init(tmem);
+		k.build(&c);
+
+		assert(k.warnings.len() == 1);
+		assert(k.warnings[0].compare_to("Unknown command in keymap: nope") == 0);
+	};
+}
+
+fn void test_invalid_chord_warns()
+{
+	@pool()
+	{
+		config::Config c;
+		c.init(tmem);
+		c.reset();
+		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+\"}}"));
+
+		Keymap k;
+		k.init(tmem);
+		k.build(&c);
+
+		assert(k.warnings.len() == 1);
+		assert(k.warnings[0].compare_to("Invalid shortcut for save: Ctrl+") == 0);
+		assert(k.shortcut(commands::CommandId.SAVE).compare_to("Ctrl+S") == 0);
+	};
+}
+
+fn void test_conflict_warns()
+{
+	@pool()
+	{
+		config::Config c;
+		c.init(tmem);
+		c.reset();
+		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+N\"}}"));
+
+		Keymap k;
+		k.init(tmem);
+		k.build(&c);
+
+		assert(k.warnings.len() == 1);
+		assert(k.warnings[0].compare_to("Shortcut Ctrl+N is bound to both New and Save") == 0);
+	};
+}

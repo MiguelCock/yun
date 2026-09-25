@@ -1,0 +1,5 @@
+module tree_sitter_python;
+
+import tree_sitter;
+
+extern fn TSLanguage* tree_sitter_python();

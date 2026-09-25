@@ -1,0 +1,5 @@
+module tree_sitter_c;
+
+import tree_sitter;
+
+extern fn TSLanguage* tree_sitter_c();

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [development, main]
+  push:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libgl1-mesa-dev
+
+      - name: Install c3c (pinned)
+        run: |
+          curl -fsSL -o c3.tar.gz https://github.com/c3lang/c3c/releases/download/v0.8.4/c3-linux-static.tar.gz
+          tar -xzf c3.tar.gz
+          echo "$PWD/c3" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: c3c build
+
+      - name: Test
+        run: c3c test
+
+      - name: Format check
+        run: c3fmt --check $(git ls-files '*.c3')
