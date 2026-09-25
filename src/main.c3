@@ -38,6 +38,11 @@ enum UiMode : int
 	TOP_BAR,
 }
 
+fn bool alt_down()
+{
+	return rl::is_key_down(rl::RLKeyboardKey.LEFT_ALT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_ALT);
+}
+
 fn void set_project_title(project::Project* project)
 {
 	String name  = rl::get_file_name((ZString)project.root.ptr).str_view();
@@ -1149,13 +1154,16 @@ fn int main(String[] args)
 					if (id >= 0) run_command((commands::CommandId)id, &app);
 				}
 				if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE)) ui_mode = UiMode.MOVE;
+				while (rl::get_char_pressed() != 0)
+				{
+				}
 			}
 			else if (ui_mode == UiMode.MOVE)
 			{
 				int before = project.selected;
 				project.ensure_selection();
 
-				if (project::ctrl_down())
+				if (alt_down())
 				{
 					float step = 48.0f;
 					if (rl::is_key_pressed(
@@ -1221,6 +1229,10 @@ fn int main(String[] args)
 					{
 						canvas.target.target = selected_card.center();
 					}
+				}
+
+				while (rl::get_char_pressed() != 0)
+				{
 				}
 			}
 
