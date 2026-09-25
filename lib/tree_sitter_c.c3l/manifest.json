@@ -9,6 +9,16 @@
       "linked-libraries": [
         "tree-sitter-c"
       ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-c"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-c"
+      ]
     }
   }
 }

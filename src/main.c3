@@ -2,6 +2,7 @@ module yun;
 
 import raylib6::rl;
 import std::collections::list;
+import std::io::file;
 import std::io::path;
 import std::math;
 import yun::browser;
@@ -544,10 +545,22 @@ const String FONT_PATH       = "assets/fonts/JetBrainsMono-Regular.ttf";
 const float JUMP_ZOOM_MIN    = 0.6f;
 const float JUMP_ZOOM_TARGET = 1.0f;
 
+fn RLFont load_bundled_font(int size)
+{
+	if (file::exists(FONT_PATH)) return rl::load_font_ex(FONT_PATH, size, null, 0);
+	@pool()
+	{
+		String exe    = rl::get_application_directory().str_view();
+		String joined = string::format(tmem, "%s%s", exe, FONT_PATH);
+		if (file::exists(joined)) return rl::load_font_ex((ZString)joined.ptr, size, null, 0);
+	};
+	return rl::load_font_ex(FONT_PATH, size, null, 0);
+}
+
 fn void reload_editor_font(RLFont* font, int size, editor::EditorMetrics* metrics)
 {
 	rl::unload_font(*font);
-	*font = rl::load_font_ex(FONT_PATH, size, null, 0);
+	*font = load_bundled_font(size);
 	*metrics = editor::metrics_for_font(*font, (float)size);
 	editor::set_font_size((float)size);
 }
@@ -560,11 +573,11 @@ fn int main(String[] args)
 	rl::set_target_fps(60);
 	rl::set_exit_key(rl::RLKeyboardKey.NONE);
 
-	RLFont font = rl::load_font_ex(FONT_PATH, 16, null, 0);
+	RLFont font = load_bundled_font(16);
 	defer rl::unload_font(font);
 
 	int font_size                 = editor::FONT_SIZE_DEFAULT;
-	RLFont editor_font            = rl::load_font_ex(FONT_PATH, font_size, null, 0);
+	RLFont editor_font            = load_bundled_font(font_size);
 	editor::EditorMetrics metrics = editor::metrics_for_font(editor_font, (float)font_size);
 	editor::set_font_size((float)font_size);
 
