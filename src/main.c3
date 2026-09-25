@@ -38,11 +38,6 @@ enum UiMode : int
 	TOP_BAR,
 }
 
-fn bool alt_down()
-{
-	return rl::is_key_down(rl::RLKeyboardKey.LEFT_ALT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_ALT);
-}
-
 fn void set_project_title(project::Project* project)
 {
 	String name  = rl::get_file_name((ZString)project.root.ptr).str_view();
@@ -665,6 +660,7 @@ fn int main(String[] args)
 	double font_indicator_until = 0.0;
 	bool font_save_pending      = false;
 	UiMode ui_mode              = UiMode.MOVE;
+	int edit_grace_frames       = 0;
 	if (args.len > 1)
 	{
 		String? resolved = project::resolve_path(project.allocator, args[1]);
@@ -1083,6 +1079,13 @@ fn int main(String[] args)
 		}
 		else
 		{
+			if (ui_mode == UiMode.EDIT && edit_grace_frames > 0)
+			{
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+				edit_grace_frames--;
+			}
 			RLVector2 mouse = rl::get_mouse_position();
 			RLVector2 world = canvas.screen_to_world(mouse);
 			bool over_top   = topbar::contains_screen(mouse);
@@ -1163,7 +1166,7 @@ fn int main(String[] args)
 				int before = project.selected;
 				project.ensure_selection();
 
-				if (alt_down())
+				if (project::shift_down())
 				{
 					float step = 48.0f;
 					if (rl::is_key_pressed(
@@ -1360,6 +1363,7 @@ fn int main(String[] args)
 				if (enter_edit && project.focused >= 0)
 				{
 					ui_mode = UiMode.EDIT;
+					edit_grace_frames = 2;
 					FileCard* card = project.focused_card();
 					if (card) canvas.target.target = card.center();
 				}
