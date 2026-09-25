@@ -35,3 +35,28 @@ fn void test_hit_button()
 	assert(hit_button(open_in, false, false) == (int)commands::CommandId.OPEN);
 	assert(hit_button({ 0.0f, 0.0f }, true, true) == -1);
 }
+fn void test_keyboard_selection()
+{
+	TopBar bar;
+	bar.init();
+	// bar commands: NEW_FILE, OPEN, SAVE
+	bar.selected = 0;
+	bar.clamp_selection(false, false);
+	assert(bar.selected == 1); // NEW_FILE disabled -> OPEN
+
+	bar.move_selection(1, false, false);
+	assert(bar.selected == 1); // only OPEN enabled
+	assert(bar.activate(false, false) == (int)commands::CommandId.OPEN);
+
+	bar.selected = 0;
+	bar.move_selection(1, true, true);
+	assert(bar.selected == 1);
+	bar.move_selection(-1, true, true);
+	assert(bar.selected == 0);
+	bar.move_selection(-1, true, true);
+	assert(bar.selected == (int)commands::bar_command_count() - 1);
+
+	bar.selected = 2; // SAVE
+	assert(bar.activate(true, false) == -1); // disabled without a buffer
+	assert(bar.activate(true, true) == (int)commands::CommandId.SAVE);
+}

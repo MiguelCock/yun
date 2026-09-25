@@ -11,13 +11,67 @@ The project is early and evolving quickly. The roadmap is the flat GitHub issue 
 - **Canvas** — infinite adaptive grid, drag-to-pan, cursor-anchored zoom, inertial pan, and a minimap overview.
 - **Project** — open a folder from the CLI (`c3c run -- <dir>`) or the in-app browser; folder clusters mirror disk folders.
 - **Files** — drop files onto the canvas, create new file cards and folders, resize cards, and use right-click context menus.
-- **Editor** — a piece-table text buffer with undo/redo, line numbers and gutter, caret navigation and scrolling, UTF-8 input, in-file find (and replace), and external-edit reload.
+- **Editor** — a piece-table text buffer with undo/redo, line numbers and gutter, caret navigation and scrolling, UTF-8 input, in-file find (and replace), adjustable font size, and external-edit reload.
 - **Syntax highlighting** — tree-sitter grammars for C3, C, Python, and JavaScript.
-- **App** — top bar actions, command palette, customizable keybindings, notifications, layered config (global + project), and `.yun/workspace.json` persistence.
+- **Search** — in-file find/replace, project-wide search, and a fuzzy symbol palette.
+- **Dependencies** — import arrows between cards, with animated, line-highlighted jumps to results, definitions, and symbols.
+- **LSP** — hover, go-to-definition, completion, and a problems panel, driven by per-language servers configured in the config.
+- **Themes** — nine built-in palettes with a picker.
+- **App** — top bar actions, Vim-like keyboard modes (see [Keyboard and modes](#keyboard-and-modes)), command palette, customizable keybindings, notifications, layered config (global + project), and `.yun/workspace.json` persistence.
 
 ## Not yet
 
-Import dependency arrows (#24–#27), LSP features (#28–#32), Lua mods (#33–#36), global project search (#38–#40), light/dark themes (#41), large-file/perf work (#14, #45–#47), and release packaging (#48–#49).
+Lua mods (#33–#36), large-file support (#14), very-large-project perf (#45), crash recovery (#47), HiDPI scaling (#44), and release packaging (#48–#49).
+
+## Keyboard and modes
+
+Yun is keyboard-first and Vim-inspired. There are three modes, shown by an indicator next to the FPS counter (`-- MOVE --`, `-- EDIT --`, `-- TOP BAR --`). Overlays (command palette, search, symbol palette, problems panel, find bar, menus, prompts) are modal and handle their own keys.
+
+### MOVE (default)
+
+The cursor is a card on the canvas; no text is being edited.
+
+| Key | Action |
+| --- | --- |
+| `h` `j` `k` `l` / arrow keys | Move the cursor to the nearest card left / down / up / right |
+| `[` / `]` | Previous / next card (wraps) |
+| `Shift` + `h` `j` `k` `l` | Pan the canvas |
+| `=` / `+` / keypad `+` | Zoom in |
+| `-` / keypad `-` | Zoom out |
+| `Enter` or `i` | Edit the selected card (enter EDIT) |
+| `Tab` | Focus the top bar (enter TOP BAR) |
+
+Mouse panning, zooming, clicking and dragging still work as before.
+
+### EDIT
+
+Typing edits the focused card; arrow keys move the caret, `Tab` indents, and the usual editing shortcuts apply. `Esc` returns to MOVE and keeps the card selected, so you can keep browsing with `[` / `]`.
+
+### TOP BAR
+
+`Left` / `Right` move between buttons (disabled ones are skipped), `Enter` / `Space` activate the selected one, and `Tab` or `Esc` return to MOVE. The focused button is outlined.
+
+### Global shortcuts
+
+These work from any mode:
+
+| Key | Action |
+| --- | --- |
+| `Ctrl+Shift+P` | Command palette |
+| `Ctrl+F` / `Ctrl+H` | Find / replace in the focused file |
+| `Ctrl+Shift+F` | Search in project |
+| `Ctrl+Shift+O` | Go to symbol |
+| `F12` | Go to definition |
+| `Ctrl+Shift+M` | Problems panel |
+| `Ctrl+Shift+T` | Theme picker |
+| `Ctrl+N` / `Ctrl+O` / `Ctrl+S` | New / open / save |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| `Ctrl+C` / `Ctrl+X` / `Ctrl+V` / `Ctrl+A` | Copy / cut / paste / select all |
+| `Ctrl+Space` | Trigger completion |
+| `Ctrl` + scroll | Editor font size |
+| `F3` (hold) | Show the awake/asleep editor counter |
+
+Bindings are customizable via the `keymap` object in the config — global `~/.config/yun/config.json` or project `<root>/.yun/config.json` — e.g. `{ "keymap": { "save": "Ctrl+K" } }`.
 
 ## Getting started
 

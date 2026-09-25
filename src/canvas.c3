@@ -207,6 +207,20 @@ fn void Canvas.pan_by(&self, RLVector2 screen_delta)
 	self.target.target[1] -= screen_delta[1] / self.target.zoom;
 }
 
+fn void Canvas.key_pan(&self, RLVector2 screen_delta)
+{
+	float zoom = self.target.zoom > 0.0f ? self.target.zoom : 1.0f;
+	self.target.target[0] += screen_delta[0] / zoom;
+	self.target.target[1] += screen_delta[1] / zoom;
+	self.velocity = { 0.0f, 0.0f };
+}
+
+fn void Canvas.key_zoom(&self, float direction)
+{
+	float zoom = self.target.zoom > 0.0f ? self.target.zoom : 1.0f;
+	self.target.zoom = math::clamp(zoom * math::pow(ZOOM_STEP, direction), MIN_ZOOM, MAX_ZOOM);
+}
+
 fn RLVector2 Canvas.clamp_delta(&self, RLVector2 delta)
 {
 	float len_sq = delta[0] * delta[0] + delta[1] * delta[1];
