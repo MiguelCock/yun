@@ -1152,23 +1152,24 @@ fn int main(String[] args)
 			}
 			else if (ui_mode == UiMode.MOVE)
 			{
+				int before = project.selected;
 				project.ensure_selection();
 
 				if (project::ctrl_down())
 				{
 					float step = 48.0f;
 					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.RIGHT
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT)) canvas.key_pan({ step, 0.0f });
+						rl::RLKeyboardKey.L
+					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.L)) canvas.key_pan({ step, 0.0f });
 					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.LEFT
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT)) canvas.key_pan({ -step, 0.0f });
+						rl::RLKeyboardKey.H
+					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.H)) canvas.key_pan({ -step, 0.0f });
 					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.DOWN
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) canvas.key_pan({ 0.0f, step });
+						rl::RLKeyboardKey.J
+					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.J)) canvas.key_pan({ 0.0f, step });
 					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.UP
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) canvas.key_pan({ 0.0f, -step });
+						rl::RLKeyboardKey.K
+					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.K)) canvas.key_pan({ 0.0f, -step });
 				}
 				else
 				{
@@ -1211,8 +1212,16 @@ fn int main(String[] args)
 					rl::RLKeyboardKey.MINUS
 				) || rl::is_key_pressed(rl::RLKeyboardKey.KP_SUBTRACT)) canvas.key_zoom(-1.0f);
 
+				bool selection_changed  = project.selected != before;
 				FileCard* selected_card = project.selected_card();
-				if (selected_card) canvas.target.target = selected_card.center();
+				if (selection_changed && selected_card)
+				{
+					Rect view = project::visible_world_rect(canvas.camera);
+					if (!project::rect_intersects(selected_card.rect, view))
+					{
+						canvas.target.target = selected_card.center();
+					}
+				}
 
 				if ((rl::is_key_pressed(
 					rl::RLKeyboardKey.ENTER

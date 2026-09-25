@@ -35,7 +35,7 @@ The cursor is a card on the canvas; no text is being edited.
 | --- | --- |
 | `h` `j` `k` `l` / arrow keys | Move the cursor to the nearest card left / down / up / right |
 | `[` / `]` | Previous / next card (wraps) |
-| `Ctrl` + arrow keys | Pan the canvas |
+| `Ctrl` + `h` `j` `k` `l` | Pan the canvas |
 | `=` / `+` / keypad `+` | Zoom in |
 | `-` / keypad `-` | Zoom out |
 | `Enter` or `i` | Edit the selected card (enter EDIT) |
