@@ -6,6 +6,7 @@ import std::core::dstring;
 import std::os::env;
 import yun::commands;
 import yun::config;
+import yun::settings;
 
 const uint MOD_CTRL    = 1;
 const uint MOD_SHIFT   = 2;
@@ -452,6 +453,65 @@ fn bool chord_pressed_repeat(Chord chord)
 	return chord_mods_ok(chord);
 }
 
+fn bool is_modifier_key(rl::RLKeyboardKey key)
+{
+	switch (key)
+	{
+		case rl::RLKeyboardKey.LEFT_SHIFT:
+		case rl::RLKeyboardKey.RIGHT_SHIFT:
+		case rl::RLKeyboardKey.LEFT_CONTROL:
+		case rl::RLKeyboardKey.RIGHT_CONTROL:
+		case rl::RLKeyboardKey.LEFT_ALT:
+		case rl::RLKeyboardKey.RIGHT_ALT:
+		case rl::RLKeyboardKey.LEFT_SUPER:
+		case rl::RLKeyboardKey.RIGHT_SUPER:
+			return true;
+		default:
+			return false;
+	}
+}
+
+fn int capture_chord(Chord* out)
+{
+	rl::RLKeyboardKey key = rl::get_key_pressed();
+	while (key != rl::RLKeyboardKey.NONE)
+	{
+		if (key == rl::RLKeyboardKey.ESCAPE) return -1;
+		if (!is_modifier_key(key))
+		{
+			bool ctrl;
+			bool shift;
+			bool alt;
+			bool super;
+			mod_state(&ctrl, &shift, &alt, &super);
+			uint mods = 0;
+			if (ctrl) mods |= MOD_CTRL;
+			if (shift) mods |= MOD_SHIFT;
+			if (alt) mods |= MOD_ALT;
+			if (super) mods |= MOD_SUPER;
+			*out = { .mods = mods, .key = key, .valid = true };
+			return 1;
+		}
+		key = rl::get_key_pressed();
+	}
+	return 0;
+}
+
+fn bool Keymap.conflicts(&self, int id)
+{
+	if (id < 0 || (usz)id >= commands::command_count()) return false;
+	if (!self.bound[id]) return false;
+	for (usz j = 0; j < commands::command_count(); j++)
+	{
+		if ((int)j == id) continue;
+		if (!self.bound[j]) continue;
+		if (!chord_equals(self.chords[id], self.chords[j])) continue;
+		if (contexts_overlap(commands::command_def((commands::CommandId)id)
+			.contexts, commands::command_def((commands::CommandId)j).contexts)) return true;
+	}
+	return false;
+}
+
 fn void Keymap.init(&self, Allocator allocator)
 {
 	self.allocator = allocator;
@@ -557,32 +617,49 @@ fn void Keymap.build(&self, config::Config* config)
 		if (chord.valid) self.set_chord((int)i, chord);
 	}
 
-	for (sz i = 0; i < config.keymap.len(); i++)
+	for (usz i = 0; i < commands::command_count(); i++)
 	{
-		String name = config.keymap[i].command;
-		int id      = commands::command_from_name(name);
-		if (id < 0)
+		String name = commands::command_name((commands::CommandId)i);
+		String text;
+		settings::SettingLayer layer;
+		if (!config.keymap_override(name, &text, &layer)) continue;
+		if (text.len == 0)
 		{
-			self.push_warning(string::format(self.allocator, "Unknown command in keymap: %s", name));
+			self.unbind((int)i);
 			continue;
 		}
-		if (config.keymap[i].chord.len == 0)
-		{
-			self.unbind(id);
-			continue;
-		}
-		Chord chord = parse_chord(config.keymap[i].chord);
+		Chord chord = parse_chord(text);
 		if (!chord.valid)
 		{
-			self.push_warning(
-				string::format(self.allocator, "Invalid shortcut for %s: %s", name, config.keymap[i].chord)
-			);
+			self.push_warning(string::format(self.allocator, "Invalid shortcut for %s: %s", name, text));
 			continue;
 		}
-		self.set_chord(id, chord);
+		self.set_chord((int)i, chord);
 	}
 
+	self.warn_unknown_commands(config);
+
 	self.detect_conflicts();
+}
+
+fn void Keymap.warn_unknown_commands(&self, config::Config* config)
+{
+	for (sz i = 0; i < config.keymap_global.len(); i++)
+	{
+		String name = config.keymap_global.get(i).command;
+		if (commands::command_from_name(name) < 0)
+		{
+			self.push_warning(string::format(self.allocator, "Unknown command in keymap: %s", name));
+		}
+	}
+	for (sz i = 0; i < config.keymap_project.len(); i++)
+	{
+		String name = config.keymap_project.get(i).command;
+		if (commands::command_from_name(name) < 0)
+		{
+			self.push_warning(string::format(self.allocator, "Unknown command in keymap: %s", name));
+		}
+	}
 }
 
 fn String Keymap.shortcut(&self, commands::CommandId id)

@@ -32,7 +32,8 @@ struct Config
 {
 	Allocator allocator;
 	settings::Settings settings;
-	List{KeyBinding} keymap;
+	List{KeyBinding} keymap_global;
+	List{KeyBinding} keymap_project;
 	List{LspCommand} lsp;
 	List{String} warnings;
 }
@@ -41,7 +42,8 @@ fn void Config.init(&self, Allocator allocator)
 {
 	self.allocator = allocator;
 	self.settings.init(allocator);
-	self.keymap.init(allocator);
+	self.keymap_global.init(allocator);
+	self.keymap_project.init(allocator);
 	self.lsp.init(allocator);
 	self.warnings.init(allocator);
 }
@@ -52,19 +54,48 @@ fn void Config.destroy(&self)
 	self.free_keymap();
 	self.free_lsp();
 	self.free_warnings();
-	self.keymap.free();
+	self.keymap_global.free();
+	self.keymap_project.free();
 	self.lsp.free();
 	self.warnings.free();
 }
 
 fn void Config.free_keymap(&self)
 {
-	for (sz i = 0; i < self.keymap.len(); i++)
+	self.free_keymap_layer(&self.keymap_global);
+	self.free_keymap_layer(&self.keymap_project);
+}
+
+fn void Config.free_keymap_layer(&self, List{KeyBinding}* list)
+{
+	for (sz i = 0; i < list.len(); i++)
 	{
-		self.keymap[i].command.free(self.allocator);
-		self.keymap[i].chord.free(self.allocator);
+		list.get_ref(i).command.free(self.allocator);
+		list.get_ref(i).chord.free(self.allocator);
 	}
-	self.keymap.clear();
+	list.clear();
+}
+
+fn List{KeyBinding}* Config.keymap_layer(&self, settings::SettingLayer layer)
+{
+	switch (layer)
+	{
+		case settings::SettingLayer.GLOBAL:
+			return &self.keymap_global;
+		case settings::SettingLayer.PROJECT:
+			return &self.keymap_project;
+		case settings::SettingLayer.DEFAULT:
+			return null;
+	}
+}
+
+fn sz Config.keymap_index(&self, List{KeyBinding}* list, String command)
+{
+	for (sz i = 0; i < list.len(); i++)
+	{
+		if (list.get(i).command.compare_to(command) == 0) return i;
+	}
+	return -1;
 }
 
 fn void Config.free_lsp(&self)
@@ -99,18 +130,60 @@ fn void Config.add_warning(&self, String message)
 	self.warnings.push(message.copy(self.allocator));
 }
 
-fn void Config.set_key_binding(&self, String command, String chord)
+fn void Config.set_key_binding(&self, String command, String chord, settings::SettingLayer layer)
 {
-	for (sz i = 0; i < self.keymap.len(); i++)
+	List{KeyBinding}* list = self.keymap_layer(layer);
+	if (list == null) return;
+	sz index = self.keymap_index(list, command);
+	if (index >= 0)
 	{
-		if (self.keymap[i].command.compare_to(command) == 0)
-		{
-			self.keymap[i].chord.free(self.allocator);
-			self.keymap[i].chord = chord.copy(self.allocator);
-			return;
-		}
+		list.get_ref(index).chord.free(self.allocator);
+		list.get_ref(index).chord = chord.copy(self.allocator);
+		return;
 	}
-	self.keymap.push({ .command = command.copy(self.allocator), .chord = chord.copy(self.allocator) });
+	list.push({ .command = command.copy(self.allocator), .chord = chord.copy(self.allocator) });
+}
+
+fn void Config.remove_key_binding(&self, String command, settings::SettingLayer layer)
+{
+	List{KeyBinding}* list = self.keymap_layer(layer);
+	if (list == null) return;
+	sz index = self.keymap_index(list, command);
+	if (index < 0) return;
+	list.get_ref(index).command.free(self.allocator);
+	list.get_ref(index).chord.free(self.allocator);
+	list.remove_at(index);
+}
+
+fn void Config.clear_keymap(&self, settings::SettingLayer layer)
+{
+	List{KeyBinding}* list = self.keymap_layer(layer);
+	if (list == null) return;
+	for (sz i = 0; i < list.len(); i++)
+	{
+		list.get_ref(i).command.free(self.allocator);
+		list.get_ref(i).chord.free(self.allocator);
+	}
+	list.clear();
+}
+
+fn bool Config.keymap_override(&self, String command, String* out_chord, settings::SettingLayer* out_layer)
+{
+	sz project = self.keymap_index(&self.keymap_project, command);
+	if (project >= 0)
+	{
+		*out_chord = self.keymap_project.get(project).chord;
+		*out_layer = settings::SettingLayer.PROJECT;
+		return true;
+	}
+	sz global = self.keymap_index(&self.keymap_global, command);
+	if (global >= 0)
+	{
+		*out_chord = self.keymap_global.get(global).chord;
+		*out_layer = settings::SettingLayer.GLOBAL;
+		return true;
+	}
+	return false;
 }
 
 fn void Config.set_lsp_command(&self, String language, String command)
@@ -127,7 +200,7 @@ fn void Config.set_lsp_command(&self, String language, String command)
 	self.lsp.push({ .language = language.copy(self.allocator), .command = command.copy(self.allocator) });
 }
 
-fn void Config.apply_keymap(&self, Object* map)
+fn void Config.apply_keymap(&self, Object* map, settings::SettingLayer layer)
 {
 	map.@each_entry(; String key, Object* value)
 	{
@@ -137,7 +210,7 @@ fn void Config.apply_keymap(&self, Object* map)
 		}
 		else
 		{
-			self.set_key_binding(key, value.s);
+			self.set_key_binding(key, value.s, layer);
 		}
 	};
 }
@@ -188,7 +261,7 @@ fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
 		}
 		else if (keymap.is_map())
 		{
-			self.apply_keymap(keymap);
+			self.apply_keymap(keymap, layer);
 		}
 		else
 		{
@@ -295,10 +368,9 @@ fn void Config.load(&self, String project_root)
 fn String Config.key_binding(&self, commands::CommandId id)
 {
 	String name = commands::command_name(id);
-	for (sz i = 0; i < self.keymap.len(); i++)
-	{
-		if (self.keymap[i].command.compare_to(name) == 0) return self.keymap[i].chord;
-	}
+	String chord;
+	settings::SettingLayer layer;
+	if (self.keymap_override(name, &chord, &layer)) return chord;
 	return "";
 }
 
@@ -331,13 +403,17 @@ fn void Config.save_path(&self, Path path, settings::SettingLayer scope)
 		out.init(tmem, 256);
 		out.append_string("{\n");
 		self.settings.write_sections(&out, scope);
+		List{KeyBinding}* keymap = self.keymap_layer(scope);
 		out.append_string("  \"keymap\": {");
-		for (sz i = 0; i < self.keymap.len(); i++)
+		if (keymap != null)
 		{
-			if (i > 0) out.append_string(", ");
-			append_json_string(&out, self.keymap[i].command);
-			out.append_string(": ");
-			append_json_string(&out, self.keymap[i].chord);
+			for (sz i = 0; i < keymap.len(); i++)
+			{
+				if (i > 0) out.append_string(", ");
+				append_json_string(&out, keymap.get(i).command);
+				out.append_string(": ");
+				append_json_string(&out, keymap.get(i).chord);
+			}
 		}
 		out.append_string("},\n");
 		out.append_string("  \"lsp\": {");
