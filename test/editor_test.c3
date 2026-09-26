@@ -773,3 +773,34 @@ fn void test_outdent_count()
 		s.destroy();
 	};
 }
+
+fn void test_tab_columns()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "\tabc");
+		EditorSettings saved = settings();
+		EditorSettings s     = saved;
+		s.indent_width = 4;
+		set_settings(s);
+
+		assert(column_for_offset(&t, 0, t.line_start(0) + 1) == 4);
+		assert(column_for_offset(&t, 0, t.line_start(0) + 2) == 5);
+		assert(offset_for_column(&t, 0, 4) == t.line_start(0) + 1);
+		assert(offset_for_column(&t, 0, 2) == t.line_start(0));
+		assert(offset_for_column(&t, 0, 5) == t.line_start(0) + 2);
+
+		t.destroy();
+		set_settings(saved);
+	};
+}
+
+fn void test_expand_tabs()
+{
+	@pool()
+	{
+		assert(expand_tabs("\ta", 4, tmem).compare_to("    a") == 0);
+		assert(expand_tabs("ab", 4, tmem).compare_to("ab") == 0);
+	};
+}

@@ -119,6 +119,43 @@ fn float x_for_column(usz column, EditorMetrics metrics)
 	return metrics.padding_x + (float)column * metrics.char_width;
 }
 
+fn int tab_columns()
+{
+	return g_editor_settings.indent_width > 0 ? g_editor_settings.indent_width : 1;
+}
+
+fn String expand_tabs(String text, int width, Allocator allocator)
+{
+	if (width < 1) width = 1;
+	bool has_tab = false;
+	for (usz i = 0; i < text.len; i++)
+	{
+		if (text[i] == '\t')
+		{
+			has_tab = true;
+			break;
+		}
+	}
+	if (!has_tab) return text.copy(allocator);
+	DString out;
+	out.init(allocator, (sz)(text.len + 8));
+	for (usz i = 0; i < text.len; i++)
+	{
+		char c = text[i];
+		if (c == '\t')
+		{
+			for (int s = 0; s < width; s++) out.append_char(' ');
+		}
+		else
+		{
+			out.append_char(c);
+		}
+	}
+	String result = out.str_view().copy(allocator);
+	out.free();
+	return result;
+}
+
 fn usz line_length_bytes(PieceTable* table, usz line)
 {
 	usz start = table.line_start(line);
@@ -139,10 +176,18 @@ fn usz column_for_offset(PieceTable* table, usz line, usz offset)
 	if (offset <= start) return 0;
 	usz pos    = start;
 	usz column = 0;
+	int tabs   = tab_columns();
 	while (pos < offset && pos < table.length())
 	{
+		if (table.byte_at(pos) == '\t')
+		{
+			column += (usz)tabs;
+		}
+		else
+		{
+			column++;
+		}
 		pos = table.next_boundary(pos);
-		column++;
 	}
 	return column;
 }
@@ -172,15 +217,7 @@ fn usz offset_for_point(
 	usz start   = table.line_start((usz)line);
 	usz max_col = column_for_offset(table, (usz)line, start + line_length_bytes(table, (usz)line));
 	if ((usz)column > max_col) column = (sz)max_col;
-
-	usz pos      = start;
-	sz remaining = column;
-	while (remaining > 0 && pos < table.length())
-	{
-		pos = table.next_boundary(pos);
-		remaining--;
-	}
-	return pos;
+	return offset_for_column(table, (usz)line, (usz)column);
 }
 
 fn void selection_range(usz anchor, usz cursor, usz* start, usz* end)
@@ -555,8 +592,9 @@ fn void draw_text(
 		{
 			String text = line_text(table, line, tmem);
 			if (text.len == 0) continue;
-			float y = area.y + (float)line * metrics.line_height - scroll_y;
-			rl::draw_text_ex(font, (ZString)text.ptr, { area.x - scroll_x, y }, font_size, 0.0f, color);
+			String vis = expand_tabs(text, tab_columns(), tmem);
+			float y    = area.y + (float)line * metrics.line_height - scroll_y;
+			rl::draw_text_ex(font, vis.zstr_tcopy(), { area.x - scroll_x, y }, font_size, 0.0f, color);
 		}
 	};
 	rl::end_scissor_mode();
@@ -597,37 +635,38 @@ fn void draw_text_highlighted(
 			String text = table.slice(line_start, len, tmem);
 			highlighter.runs_for_line(line_start, line_start + len, &runs);
 
-			DString buffer;
-			buffer.init(tmem, (sz)(len + 1));
-			buffer.append_string(text);
-			buffer.append_char(0);
-			char* raw = buffer.str_view().ptr;
-
-			float y = area.y + (float)line * metrics.line_height - scroll_y;
-			usz pos = 0;
-			usz col = 0;
+			float y  = area.y + (float)line * metrics.line_height - scroll_y;
+			int tabs = tab_columns();
+			usz pos  = 0;
+			usz col  = 0;
 			foreach (highlight::Span run : runs)
 			{
 				usz start = run.start - line_start;
 				usz end   = run.end - line_start;
 				while (pos < start)
 				{
-					if (((int)text[pos] & 0xC0) != 0x80) col++;
+					char c = text[pos];
+					if (c == '\t')
+					{
+						col += (usz)tabs;
+					}
+					else if (((int)c & 0xC0) != 0x80)
+					{
+						col++;
+					}
 					pos++;
 				}
-				char saved = raw[end];
-				raw[end] = 0;
+				String span = text[start:end - start];
+				String vis  = expand_tabs(span, tabs, tmem);
 				rl::draw_text_ex(
 					font,
-					(ZString)(raw + start),
+					vis.zstr_tcopy(),
 					{ area.x + (float)col * metrics.char_width - scroll_x, y },
 					font_size,
 					0.0f,
 					highlight::role_color(run.role)
 				);
-				raw[end] = saved;
 			}
-			buffer.free();
 		}
 		runs.free();
 	};
@@ -714,10 +753,20 @@ fn usz offset_for_column(PieceTable* table, usz line, usz column)
 	usz end   = start + line_length_bytes(table, line);
 	usz pos   = start;
 	usz col   = 0;
-	while (col < column && pos < end)
+	int tabs  = tab_columns();
+	while (pos < end)
 	{
+		if (col >= column) break;
+		if (table.byte_at(pos) == '\t')
+		{
+			if (col + (usz)tabs > column) break;
+			col += (usz)tabs;
+		}
+		else
+		{
+			col++;
+		}
 		pos = table.next_boundary(pos);
-		col++;
 	}
 	return pos;
 }

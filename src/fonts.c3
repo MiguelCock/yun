@@ -5,7 +5,8 @@ import std::collections::list;
 import std::io::path;
 import std::os::env;
 
-const int MAX_FONTS = 200;
+const int MAX_FONTS      = 1000;
+const String FONT_FILTER = ".ttf;.otf";
 
 struct FontEntry
 {
@@ -65,21 +66,25 @@ fn bool is_monospace_name(String name)
 	) || contains_ci(name, "hack") || contains_ci(name, "inconsolata") || contains_ci(name, "fira");
 }
 
+fn String strip_extension(Allocator allocator, String name)
+{
+	usz end = name.len;
+	for (usz i = 0; i < name.len; i++)
+	{
+		if (name[i] == '.')
+		{
+			end = i;
+			break;
+		}
+	}
+	return name[0:end].copy(allocator);
+}
+
 fn String file_label(Allocator allocator, ZString path)
 {
 	@pool()
 	{
-		String base = path.str_view();
-		usz end     = base.len;
-		for (usz i = 0; i < base.len; i++)
-		{
-			if (base[i] == '.')
-			{
-				end = i;
-				break;
-			}
-		}
-		return base[0:end].copy(allocator);
+		return strip_extension(allocator, rl::get_file_name(path).str_view());
 	};
 }
 
@@ -118,16 +123,20 @@ fn bool Fonts.has_label(&self, String label)
 fn void Fonts.add_path(&self, ZString path)
 {
 	if (self.entries.len() >= (sz)MAX_FONTS) return;
-	String name = path.str_view();
-	if (!is_monospace_name(name)) return;
-	String label = file_label(self.allocator, path);
-	if (self.has_label(label))
+	@pool()
 	{
-		label.free(self.allocator);
-		return;
-	}
-	self.entries.push({ .label = label, .path = name.copy(self.allocator) });
-	self.names.push(label);
+		String full = path.str_view();
+		String name = rl::get_file_name(path).str_view();
+		if (!is_monospace_name(name)) return;
+		String label = file_label(self.allocator, path);
+		if (self.has_label(label))
+		{
+			label.free(self.allocator);
+			return;
+		}
+		self.entries.push({ .label = label, .path = full.copy(self.allocator) });
+		self.names.push(label);
+	};
 }
 
 fn void Fonts.scan_dir(&self, String dir)
@@ -135,7 +144,7 @@ fn void Fonts.scan_dir(&self, String dir)
 	@pool()
 	{
 		if (!path::is_dir((Path)dir)) return;
-		RLFilePathList files = rl::load_directory_files_ex(dir.zstr_tcopy(), "*.ttf;*.otf", true);
+		RLFilePathList files = rl::load_directory_files_ex(dir.zstr_tcopy(), FONT_FILTER.zstr_tcopy(), true);
 		for (uint i = 0; i < files.count; i++)
 		{
 			self.add_path(files.paths[i]);
@@ -151,6 +160,8 @@ fn void Fonts.scan_user(&self)
 		String? home = env::get_home_dir(tmem);
 		if (catch excuse = home) return;
 		self.scan_dir(string::format(tmem, "%s/.config/yun/fonts", home));
+		self.scan_dir(string::format(tmem, "%s/.local/share/fonts", home));
+		self.scan_dir(string::format(tmem, "%s/.fonts", home));
 	};
 }
 
