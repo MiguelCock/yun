@@ -23,10 +23,19 @@ const int MAX_VISIBLE_ROWS = 10;
 const int QUERY_MAX        = 64;
 const int EDIT_MAX         = 128;
 
+enum RowKind : int
+{
+	HEADER,
+	SETTING,
+	COMMAND,
+	ACTION,
+}
+
 struct Row
 {
-	settings::SettingId id;
-	bool header;
+	RowKind kind;
+	settings::SettingId setting;
+	commands::CommandId command;
 	String section;
 }
 
@@ -44,6 +53,8 @@ struct Panel
 	char[EDIT_MAX + 1] edit_buf;
 	int edit_len;
 	settings::SettingId edit_id;
+	bool capturing;
+	commands::CommandId capture_id;
 	bool consumed;
 }
 
@@ -135,6 +146,8 @@ fn void Panel.init(&self, Allocator allocator)
 	self.edit_len = 0;
 	self.edit_buf[0] = 0;
 	self.edit_id = settings::SettingId.APP_THEME;
+	self.capturing = false;
+	self.capture_id = (commands::CommandId)0;
 	self.consumed = false;
 }
 
@@ -152,14 +165,16 @@ fn void Panel.show(&self)
 	self.selected = 0;
 	self.scroll = 0;
 	self.editing = false;
+	self.capturing = false;
 	self.rebuild();
-	if (self.selected_id() < 0) self.move_selection(1);
+	if (self.selected_row() < 0) self.move_selection(1);
 }
 
 fn void Panel.close(&self)
 {
 	self.open = false;
 	self.editing = false;
+	self.capturing = false;
 }
 
 fn String Panel.query_view(&self)
@@ -201,6 +216,15 @@ fn bool section_visible_before(usz index, String query)
 	return false;
 }
 
+fn bool command_matches(commands::CommandId id, String query)
+{
+	if (query.len == 0) return true;
+	usz[QUERY_MAX] positions;
+	if (commands::fuzzy_match(commands::command_def(id).label, query, positions[0:QUERY_MAX]) >= 0) return true;
+	if (commands::fuzzy_match(commands::command_name(id), query, positions[0:QUERY_MAX]) >= 0) return true;
+	return false;
+}
+
 fn void Panel.rebuild(&self)
 {
 	self.rows.clear();
@@ -211,24 +235,71 @@ fn void Panel.rebuild(&self)
 		if (!matches(s.section, s.label, s.key, s.description, query)) continue;
 		if (!section_visible_before(i, query))
 		{
-			self.rows.push({ .header = true, .section = s.section });
+			self.rows.push({ .kind = RowKind.HEADER, .section = s.section });
 		}
-		self.rows.push({ .header = false, .section = s.section, .id = (settings::SettingId)i });
+		self.rows.push(
+			{
+				.kind = RowKind.SETTING,
+				.section = s.section,
+				.setting = (settings::SettingId)i,
+			}
+		);
 	}
+
+	bool any_command = false;
+	for (usz i = 0; i < commands::command_count(); i++)
+	{
+		if (command_matches((commands::CommandId)i, query))
+		{
+			any_command = true;
+			break;
+		}
+	}
+	if (any_command)
+	{
+		self.rows.push({ .kind = RowKind.HEADER, .section = "keys" });
+		self.rows.push({ .kind = RowKind.ACTION, .section = "keys" });
+		for (usz i = 0; i < commands::command_count(); i++)
+		{
+			if (!command_matches((commands::CommandId)i, query)) continue;
+			self.rows.push(
+				{
+					.kind = RowKind.COMMAND,
+					.section = "keys",
+					.command = (commands::CommandId)i,
+				}
+			);
+		}
+	}
+
 	self.clamp_selection();
 }
 
 fn bool Panel.is_header(&self, int index)
 {
 	if (index < 0 || index >= (int)self.rows.len()) return true;
-	return self.rows[index].header;
+	return self.rows[index].kind == RowKind.HEADER;
 }
 
-fn int Panel.selected_id(&self)
+fn int Panel.selected_row(&self)
 {
 	if (self.selected < 0 || self.selected >= (int)self.rows.len()) return -1;
-	if (self.rows[self.selected].header) return -1;
-	return (int)self.rows[self.selected].id;
+	if (self.rows[self.selected].kind == RowKind.HEADER) return -1;
+	return self.selected;
+}
+
+fn int Panel.selected_setting(&self)
+{
+	int index = self.selected_row();
+	if (index < 0 || self.rows[index].kind != RowKind.SETTING) return -1;
+	return (int)self.rows[index].setting;
+}
+
+fn int Panel.selected_command(&self)
+{
+	int index = self.selected_row();
+	if (index < 0 || self.rows[index].kind != RowKind.COMMAND) return -1;
+	return (int)self.rows[index].command;
 }
 
 fn void Panel.clamp_selection(&self)
@@ -273,7 +344,7 @@ fn void Panel.move_selection(&self, int delta)
 			next += step;
 			if (next < 0) next = rows - 1;
 			if (next >= rows) next = 0;
-			if (!self.rows[next].header) break;
+			if (self.rows[next].kind != RowKind.HEADER) break;
 		}
 		current = next;
 	}
@@ -295,7 +366,7 @@ fn void Panel.persist(&self, config::Config* config, bool project_open, String p
 
 fn void Panel.change_selected(&self, config::Config* config, int dir, bool project_open, String project_root)
 {
-	int index = self.selected_id();
+	int index = self.selected_setting();
 	if (index < 0) return;
 	settings::SettingId id     = (settings::SettingId)index;
 	settings::SettingSpec spec = settings::spec(id);
@@ -320,7 +391,7 @@ fn void Panel.change_selected(&self, config::Config* config, int dir, bool proje
 
 fn void Panel.start_edit(&self, config::Config* config)
 {
-	int index = self.selected_id();
+	int index = self.selected_setting();
 	if (index < 0) return;
 	settings::SettingId id = (settings::SettingId)index;
 	if (settings::spec(id).kind != settings::SettingKind.STRING) return;
@@ -334,9 +405,9 @@ fn void Panel.start_edit(&self, config::Config* config)
 	self.editing = true;
 }
 
-fn void Panel.activate(&self, config::Config* config, bool project_open, String project_root)
+fn void Panel.activate_setting(&self, config::Config* config, bool project_open, String project_root)
 {
-	int index = self.selected_id();
+	int index = self.selected_setting();
 	if (index < 0) return;
 	settings::SettingId id = (settings::SettingId)index;
 	switch (settings::spec(id).kind)
@@ -359,7 +430,7 @@ fn void Panel.toggle_scope(&self, bool project_open)
 		: settings::SettingLayer.PROJECT;
 }
 
-fn void Panel.reset_selected(
+fn void Panel.reset_setting(
 	&self,
 	config::Config* config,
 	bool project_open,
@@ -367,11 +438,94 @@ fn void Panel.reset_selected(
 	notify::Notifier* notifier
 )
 {
-	int index = self.selected_id();
+	int index = self.selected_setting();
 	if (index < 0) return;
 	config.settings.clear((settings::SettingId)index, self.scope);
 	self.persist(config, project_open, project_root);
 	notifier.push("Reset to default");
+}
+
+fn void Panel.start_capture(&self, commands::CommandId id)
+{
+	self.capturing = true;
+	self.capture_id = id;
+}
+
+fn void Panel.apply_capture(
+	&self,
+	keymap::Keymap* keymap,
+	config::Config* config,
+	keymap::Chord chord,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
+{
+	String name = commands::command_name(self.capture_id);
+	@pool()
+	{
+		String text = keymap::format_chord(tmem, chord, keymap::is_macos());
+		config.set_key_binding(name, text, self.scope);
+	};
+	keymap.build(config);
+	self.persist(config, project_open, project_root);
+	if (keymap.conflicts((int)self.capture_id))
+	{
+		notifier.push("Shortcut conflict");
+	}
+	else
+	{
+		notifier.push("Shortcut updated");
+	}
+}
+
+fn void Panel.command_unbind(
+	&self,
+	keymap::Keymap* keymap,
+	config::Config* config,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
+{
+	int index = self.selected_command();
+	if (index < 0) return;
+	config.set_key_binding(commands::command_name((commands::CommandId)index), "", self.scope);
+	keymap.build(config);
+	self.persist(config, project_open, project_root);
+	notifier.push("Shortcut cleared");
+}
+
+fn void Panel.command_reset(
+	&self,
+	keymap::Keymap* keymap,
+	config::Config* config,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
+{
+	int index = self.selected_command();
+	if (index < 0) return;
+	config.remove_key_binding(commands::command_name((commands::CommandId)index), self.scope);
+	keymap.build(config);
+	self.persist(config, project_open, project_root);
+	notifier.push("Reset to default");
+}
+
+fn void Panel.reset_all(
+	&self,
+	keymap::Keymap* keymap,
+	config::Config* config,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
+{
+	config.clear_keymap(self.scope);
+	keymap.build(config);
+	self.persist(config, project_open, project_root);
+	notifier.push("Keybindings reset");
 }
 
 fn Rect Panel.panel_rect(&self)
@@ -408,7 +562,7 @@ fn int Panel.row_at(&self, RLVector2 mouse)
 	int index   = self.scroll;
 	while (index < (int)self.rows.len())
 	{
-		float h = self.rows[index].header ? (float)HEADER_HEIGHT : (float)ROW_HEIGHT;
+		float h = self.rows[index].kind == RowKind.HEADER ? (float)HEADER_HEIGHT : (float)ROW_HEIGHT;
 		if (mouse[1] >= y && mouse[1] < y + h) return index;
 		y += h;
 		if (y > limit) break;
@@ -430,6 +584,26 @@ fn void Panel.update(
 	self.consumed = false;
 
 	if (!project_open && self.scope == settings::SettingLayer.PROJECT) self.scope = settings::SettingLayer.GLOBAL;
+
+	if (self.capturing)
+	{
+		self.consumed = true;
+		keymap::Chord chord;
+		int captured = keymap::capture_chord(&chord);
+		while (rl::get_char_pressed() != 0)
+		{
+		}
+		if (captured < 0)
+		{
+			self.capturing = false;
+		}
+		else if (captured > 0)
+		{
+			self.capturing = false;
+			self.apply_capture(keymap, config, chord, project_open, project_root, notifier);
+		}
+		return;
+	}
 
 	if (self.editing)
 	{
@@ -477,8 +651,16 @@ fn void Panel.update(
 	bool typed = false;
 	if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))
 	{
-		self.backspace_query();
-		typed = true;
+		if (self.query_len > 0)
+		{
+			self.backspace_query();
+			typed = true;
+		}
+		else
+		{
+			self.consumed = true;
+			self.command_reset(keymap, config, project_open, project_root, notifier);
+		}
 	}
 	int codepoint = rl::get_char_pressed();
 	while (codepoint != 0)
@@ -506,12 +688,40 @@ fn void Panel.update(
 	if (keymap.pressed((int)commands::CommandId.SETTINGS_RESET, commands::CTX_SETTINGS))
 	{
 		self.consumed = true;
-		self.reset_selected(config, project_open, project_root, notifier);
+		int row = self.selected_row();
+		if (row >= 0)
+		{
+			switch (self.rows[row].kind)
+			{
+				case RowKind.SETTING:
+					self.reset_setting(config, project_open, project_root, notifier);
+				case RowKind.COMMAND:
+					self.command_unbind(keymap, config, project_open, project_root, notifier);
+				case RowKind.ACTION:
+					self.reset_all(keymap, config, project_open, project_root, notifier);
+				default:
+					break;
+			}
+		}
 	}
 	if (keymap.pressed((int)commands::CommandId.LIST_ACCEPT, commands::CTX_SETTINGS))
 	{
 		self.consumed = true;
-		self.activate(config, project_open, project_root);
+		int row = self.selected_row();
+		if (row >= 0)
+		{
+			switch (self.rows[row].kind)
+			{
+				case RowKind.SETTING:
+					self.activate_setting(config, project_open, project_root);
+				case RowKind.COMMAND:
+					self.start_capture(self.rows[row].command);
+				case RowKind.ACTION:
+					self.reset_all(keymap, config, project_open, project_root, notifier);
+				default:
+					break;
+			}
+		}
 	}
 
 	int dir = 0;
@@ -537,7 +747,7 @@ fn void Panel.update(
 	if (rl::get_mouse_wheel_move() < 0.0f) self.move_selection(1);
 
 	int row = self.row_at(mouse);
-	if (row >= 0 && !self.rows[row].header)
+	if (row >= 0 && self.rows[row].kind != RowKind.HEADER)
 	{
 		if (row != self.selected) self.selected = row;
 		if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
@@ -545,7 +755,17 @@ fn void Panel.update(
 			float value_x = panel.x + panel.width - 200.0f;
 			if (mouse[0] >= value_x)
 			{
-				self.change_selected(config, 1, project_open, project_root);
+				switch (self.rows[row].kind)
+				{
+					case RowKind.SETTING:
+						self.change_selected(config, 1, project_open, project_root);
+					case RowKind.COMMAND:
+						self.start_capture(self.rows[row].command);
+					case RowKind.ACTION:
+						self.reset_all(keymap, config, project_open, project_root, notifier);
+					default:
+						break;
+				}
 			}
 			else
 			{
@@ -577,7 +797,7 @@ fn void draw_text(RLFont font, String text, float x, float y, float size, RLColo
 	};
 }
 
-fn void Panel.draw(&self, RLFont font, bool project_open, config::Config* config)
+fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap, config::Config* config)
 {
 	if (!self.open) return;
 
@@ -625,7 +845,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, config::Config* config
 	{
 		if (y >= limit) break;
 		Row row = self.rows[index];
-		if (row.header)
+		if (row.kind == RowKind.HEADER)
 		{
 			draw_text(font, row.section, panel.x + (float)PADDING, y + 7.0f, 18.0f, theme::current().panel_header);
 			y += (float)HEADER_HEIGHT;
@@ -637,64 +857,164 @@ fn void Panel.draw(&self, RLFont font, bool project_open, config::Config* config
 			rl::draw_rectangle((int)panel.x + 2, (int)y, (int)panel.width - 4, ROW_HEIGHT, theme::current()
 				.panel_selected);
 		}
-		settings::SettingSpec spec = settings::spec(row.id);
-		draw_text(font, spec.label, panel.x + (float)PADDING + 4.0f, y + 9.0f, 20.0f, theme::current().panel_text);
-
-		@pool()
+		if (row.kind == RowKind.SETTING)
 		{
-			String source              = "default";
-			settings::SettingLayer src = config.settings.source(row.id);
-			if (src == settings::SettingLayer.GLOBAL) source = "global";
-			if (src == settings::SettingLayer.PROJECT) source = "project";
-			RLVector2 src_size = rl::measure_text_ex(font, source.zstr_tcopy(), 15.0f, 0.0f);
-			rl::draw_text_ex(
+			self.draw_setting_row(font, panel, row, selected, y, config);
+		}
+		else if (row.kind == RowKind.COMMAND)
+		{
+			self.draw_command_row(font, panel, row, selected, y, keymap, config);
+		}
+		else
+		{
+			draw_text(
 				font,
-				source.zstr_tcopy(),
-				{ panel.x + panel.width - 210.0f - src_size[0] - 8.0f, y + 11.0f },
-				15.0f,
-				0.0f,
+				"Reset all keybindings (scope)",
+				panel.x + (float)PADDING + 4.0f,
+				y + 9.0f,
+				20.0f,
 				theme::current()
-				.panel_dim);
-
-			DString value_text;
-			value_text.init(tmem, 32);
-			if (self.editing && (int)row.id == (int)self.edit_id)
-			{
-				value_text.append_string(self.edit_view());
-				value_text.append_string("_");
-			}
-			else
-			{
-				append_value(&value_text, config.settings.effective(row.id), spec.kind);
-			}
-			RLVector2 value_size = rl::measure_text_ex(font, value_text.str_view().zstr_tcopy(), 20.0f, 0.0f);
-			rl::draw_text_ex(font, value_text.str_view()
-				.zstr_tcopy(), {
-					panel.x + panel.width - (float)PADDING - value_size[0],
-					y + 9.0f
-				}, 20.0f, 0.0f, selected ? theme::current()
-					.panel_text : theme::current().panel_dim);
-			value_text.free();
-		};
+				.panel_text);
+		}
 		y += (float)ROW_HEIGHT;
 	}
 
 	float footer_y = panel.y + panel.height - (float)FOOTER_HEIGHT;
 	rl::draw_line((int)panel.x, (int)footer_y, (int)(panel.x + panel.width), (int)footer_y, theme::current()
 		.panel_border);
-	int index = self.selected_id();
+	int index = self.selected_row();
 	if (index >= 0)
 	{
-		settings::SettingSpec spec = settings::spec((settings::SettingId)index);
-		draw_text(font, spec.description, panel.x + (float)PADDING, footer_y + 10.0f, 18.0f, theme::current()
-			.panel_dim);
+		Row row = self.rows[index];
+		if (row.kind == RowKind.SETTING)
+		{
+			draw_text(font, settings::spec(row.setting)
+				.description, panel.x + (float)PADDING, footer_y + 10.0f, 18.0f, theme::current().panel_dim);
+		}
+		else if (row.kind == RowKind.COMMAND)
+		{
+			draw_text(
+				font,
+				"Enter: capture   Del: unbind   Backspace: reset (empty search)",
+				panel.x + (float)PADDING,
+				footer_y + 10.0f,
+				18.0f,
+				theme::current()
+				.panel_dim);
+		}
+		else
+		{
+			draw_text(
+				font,
+				"Enter: reset all keybindings in this scope",
+				panel.x + (float)PADDING,
+				footer_y + 10.0f,
+				18.0f,
+				theme::current()
+				.panel_dim);
+		}
 	}
 	draw_text(
 		font,
-		"Arrows: change   Enter: edit/toggle   Tab: scope   Del: reset   Esc: close",
+		self.capturing ? "Press a chord   Esc: cancel" : "Enter: activate   Tab: scope   Esc: close",
 		panel.x + (float)PADDING,
 		footer_y + 34.0f,
 		15.0f,
 		theme::current()
 		.panel_dim);
+}
+
+fn void Panel.draw_setting_row(&self, RLFont font, Rect panel, Row row, bool selected, float y, config::Config* config)
+{
+	settings::SettingSpec spec = settings::spec(row.setting);
+	draw_text(font, spec.label, panel.x + (float)PADDING + 4.0f, y + 9.0f, 20.0f, theme::current().panel_text);
+
+	@pool()
+	{
+		String source              = "default";
+		settings::SettingLayer src = config.settings.source(row.setting);
+		if (src == settings::SettingLayer.GLOBAL) source = "global";
+		if (src == settings::SettingLayer.PROJECT) source = "project";
+		RLVector2 src_size = rl::measure_text_ex(font, source.zstr_tcopy(), 15.0f, 0.0f);
+		rl::draw_text_ex(
+			font,
+			source.zstr_tcopy(),
+			{ panel.x + panel.width - 210.0f - src_size[0] - 8.0f, y + 11.0f },
+			15.0f,
+			0.0f,
+			theme::current()
+			.panel_dim);
+
+		DString value_text;
+		value_text.init(tmem, 32);
+		if (self.editing && (int)row.setting == (int)self.edit_id)
+		{
+			value_text.append_string(self.edit_view());
+			value_text.append_string("_");
+		}
+		else
+		{
+			append_value(&value_text, config.settings.effective(row.setting), spec.kind);
+		}
+		RLVector2 value_size = rl::measure_text_ex(font, value_text.str_view().zstr_tcopy(), 20.0f, 0.0f);
+		rl::draw_text_ex(font, value_text.str_view()
+			.zstr_tcopy(), {
+				panel.x + panel.width - (float)PADDING - value_size[0],
+				y + 9.0f
+			}, 20.0f, 0.0f, selected ? theme::current()
+				.panel_text : theme::current().panel_dim);
+		value_text.free();
+	};
+}
+
+fn void Panel.draw_command_row(
+	&self,
+	RLFont font,
+	Rect panel,
+	Row row,
+	bool selected,
+	float y,
+	keymap::Keymap* keymap,
+	config::Config* config
+)
+{
+	commands::CommandId id = row.command;
+	draw_text(font, commands::command_def(id)
+		.label, panel.x + (float)PADDING + 4.0f, y + 9.0f, 20.0f, theme::current().panel_text);
+
+	bool capturing = self.capturing && (int)id == (int)self.capture_id;
+	bool conflict  = keymap.conflicts((int)id);
+	@pool()
+	{
+		String source = "default";
+		String chord;
+		settings::SettingLayer layer;
+		if (config.keymap_override(commands::command_name(id), &chord, &layer))
+		{
+			source = layer == settings::SettingLayer.PROJECT ? "project" : "global";
+		}
+		RLVector2 src_size = rl::measure_text_ex(font, source.zstr_tcopy(), 15.0f, 0.0f);
+		rl::draw_text_ex(
+			font,
+			source.zstr_tcopy(),
+			{ panel.x + panel.width - 210.0f - src_size[0] - 8.0f, y + 11.0f },
+			15.0f,
+			0.0f,
+			theme::current()
+			.panel_dim);
+
+		String text = capturing ? "Press a chord..." : keymap.shortcut(id);
+		if (text.len == 0) text = "(unbound)";
+		RLVector2 value_size = rl::measure_text_ex(font, text.zstr_tcopy(), 20.0f, 0.0f);
+		RLColor color        = selected ? theme::current().panel_text : theme::current().panel_dim;
+		if (conflict || capturing) color = theme::current().panel_match;
+		rl::draw_text_ex(
+			font,
+			text.zstr_tcopy(),
+			{ panel.x + panel.width - (float)PADDING - value_size[0], y + 9.0f },
+			20.0f,
+			0.0f,
+			color
+		);
+	};
 }
