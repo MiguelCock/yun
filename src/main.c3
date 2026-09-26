@@ -110,7 +110,7 @@ fn void apply_settings(
 			notifier.push("Unknown font; using bundled font");
 		}
 		rl::unload_font(*ui_font);
-		*ui_font = load_editor_font(fonts, family, *ui_size);
+		*ui_font = load_editor_font(fonts, family, *ui_size * dpi_font_px());
 		ui::set_font(*ui_font, *ui_size);
 	}
 
@@ -165,14 +165,15 @@ fn void apply_settings(
 	float old_lh = metrics.line_height;
 	float old_cw = metrics.char_width;
 	editor::set_settings(es);
+	float draw_size = (float)*font_size * ui::layout_scale();
 	if (font_changed)
 	{
 		String family = config.settings.get_string(settings::SettingId.EDITOR_FONT_FAMILY);
-		reload_editor_font(fonts, editor_font, *font_size, family, metrics);
+		reload_editor_font(fonts, editor_font, *font_size * dpi_font_px(), draw_size, family, metrics);
 	}
 	else
 	{
-		*metrics = editor::metrics_for_font(*editor_font, (float)*font_size);
+		*metrics = editor::metrics_for_font(*editor_font, draw_size);
 	}
 
 	float lh_ratio = old_lh > 0.0f ? metrics.line_height / old_lh : 1.0f;
@@ -1111,17 +1112,97 @@ fn RLFont load_editor_font(fonts::Fonts* fonts, String family, int size)
 	return load_bundled_font(size);
 }
 
-fn void reload_editor_font(fonts::Fonts* fonts, RLFont* font, int size, String family, editor::EditorMetrics* metrics)
+fn int dpi_font_px()
+{
+	int s = (int)math::ceil(ui::font_scale());
+	return s < 1 ? 1 : s;
+}
+
+fn void reload_editor_font(
+	fonts::Fonts* fonts,
+	RLFont* font,
+	int atlas_size,
+	float draw_size,
+	String family,
+	editor::EditorMetrics* metrics
+)
 {
 	rl::unload_font(*font);
-	*font = load_editor_font(fonts, family, size);
-	*metrics = editor::metrics_for_font(*font, (float)size);
-	editor::set_font_size((float)size);
+	*font = load_editor_font(fonts, family, atlas_size);
+	*metrics = editor::metrics_for_font(*font, draw_size);
+	editor::set_font_size(draw_size);
+}
+
+fn void update_dpi(
+	fonts::Fonts* fonts,
+	config::Config* config,
+	canvas::Canvas* canvas,
+	RLFont* ui_font,
+	RLFont* editor_font,
+	int ui_size,
+	int font_size,
+	editor::EditorMetrics* metrics,
+	bool* ready,
+	float* last_font_scale,
+	float* last_layout_scale
+)
+{
+	int monitor    = rl::get_current_monitor();
+	float os_scale = rl::get_window_scale_dpi()[0];
+	if (os_scale < 1.0f) os_scale = 1.0f;
+
+	float ppi   = 1.0f;
+	int phys_mm = rl::get_monitor_physical_width(monitor);
+	int mon_w   = rl::get_monitor_width(monitor);
+	if (phys_mm > 0 && mon_w > 0)
+	{
+		float dpi = (float)mon_w / ((float)phys_mm / 25.4f);
+		ppi = dpi / 96.0f;
+	}
+	if (ppi < 1.0f) ppi = 1.0f;
+	if (ppi > 3.0f) ppi = 3.0f;
+
+	int sw             = rl::get_screen_width();
+	int rw             = rl::get_render_width();
+	float render_scale = (sw > 0 && rw > sw) ? (float)rw / (float)sw : 1.0f;
+
+	float layout_scale = render_scale > 1.0f ? 1.0f : math::max(os_scale, ppi);
+	float font_scale   = layout_scale * math::max(1.0f, render_scale);
+
+	if (*ready && layout_scale == *last_layout_scale && font_scale == *last_font_scale) return;
+	*ready = true;
+	*last_font_scale = font_scale;
+	*last_layout_scale = layout_scale;
+	ui::set_dpi(font_scale, layout_scale);
+
+	int atlas = dpi_font_px();
+	rl::unload_font(*ui_font);
+	*ui_font = load_editor_font(
+		fonts,
+		config.settings.get_string(settings::SettingId.APP_UI_FONT_FAMILY),
+		ui_size * atlas
+	);
+	ui::set_font(*ui_font, ui_size);
+
+	reload_editor_font(
+		fonts,
+		editor_font,
+		font_size * atlas,
+		(float)font_size * layout_scale,
+		config.settings.get_string(settings::SettingId.EDITOR_FONT_FAMILY),
+		metrics
+	);
+
+	canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
+	canvas.camera.offset = { (float)rl::get_screen_width() / 2.0f, canvas.usable_offset_y() };
 }
 
 fn int main(String[] args)
 {
-	rl::set_config_flags((RLConfigFlag)(rl::RLConfigFlag.WINDOW_RESIZABLE | rl::RLConfigFlag.VSYNC_HINT));
+	rl::set_config_flags(
+		(RLConfigFlag)(rl::RLConfigFlag.WINDOW_RESIZABLE | rl::RLConfigFlag.VSYNC_HINT
+			| rl::RLConfigFlag.WINDOW_HIGHDPI)
+	);
 	rl::init_window(1280, 720, "Yun");
 	defer rl::close_window();
 	rl::set_target_fps(60);
@@ -1132,6 +1213,9 @@ fn int main(String[] args)
 	ui::set_font(font, 16);
 
 	int ui_size                   = 16;
+	bool dpi_ready                = false;
+	float dpi_font_scale          = 1.0f;
+	float dpi_layout_scale        = 1.0f;
 	int font_size                 = editor::FONT_SIZE_DEFAULT;
 	RLFont editor_font            = load_bundled_font(font_size);
 	editor::EditorMetrics metrics = editor::metrics_for_font(editor_font, (float)font_size);
@@ -1295,7 +1379,20 @@ fn int main(String[] args)
 
 	while (!rl::window_should_close())
 	{
-		float dt           = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
+		float dt = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
+		update_dpi(
+			&fonts,
+			&config,
+			&canvas,
+			&font,
+			&editor_font,
+			ui_size,
+			font_size,
+			&metrics,
+			&dpi_ready,
+			&dpi_font_scale,
+			&dpi_layout_scale
+		);
 		HoverInfo hover    = { };
 		bool arrow_hovered = false;
 		import_index.clear_hover();
