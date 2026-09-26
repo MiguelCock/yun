@@ -107,6 +107,26 @@ assets/     bundled fonts (JetBrains Mono, SIL OFL 1.1)
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the branch/PR workflow, [`AGENTS.md`](AGENTS.md) for the build/architecture cheat sheet, and [`.opencode/skills/yun-development/SKILL.md`](.opencode/skills/yun-development/SKILL.md) for C3 conventions.
 
+## Configuration
+
+Settings are JSON, layered as `defaults < global < project`, so a project can override your global preferences:
+
+- Global: `<OS config dir>/yun/config.json` (e.g. `~/.config/yun/config.json` on Linux).
+- Project: `.yun/config.json` at the project root (wins over global).
+
+Values are grouped into sections, for example:
+
+```json
+{
+  "app": { "theme": "dark" },
+  "editor": { "font_size": 16 },
+  "keymap": { "save": "Ctrl+S" },
+  "lsp": { "c3": "c3lsp" }
+}
+```
+
+Unknown top-level keys or section keys warn and are ignored, and a missing config is valid (built-in defaults apply).
+
 ## Versioning and releases
 
 Yun is **pre-1.0**: versions are `0.<MINOR>.0`, where `MINOR` is the cumulative number of closed issues at release time (it only ever increases), and `PATCH` stays `0`. Once the API and UX are stable we will move to [semantic versioning](https://semver.org/). The version lives in [`project.json`](project.json) (and `yun::version.APP_VERSION`, kept in sync by a test).
