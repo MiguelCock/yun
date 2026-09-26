@@ -503,10 +503,26 @@ fn void Keymap.set_chord(&self, int id, Chord chord)
 	self.display[id] = format_chord(self.allocator, chord, is_macos());
 }
 
+fn ulong overlay_context_mask()
+{
+	return commands::CTX_PALETTE | commands::CTX_FIND | commands::CTX_SEARCH | commands::CTX_SYMBOLS
+		| commands::CTX_PROBLEMS
+		| commands::CTX_PROMPT
+		| commands::CTX_BROWSER
+		| commands::CTX_SETTINGS
+		| commands::CTX_MENU;
+}
+
 fn bool contexts_overlap(ulong a, ulong b)
 {
-	if ((a & commands::CTX_GLOBAL) != 0 || (b & commands::CTX_GLOBAL) != 0) return true;
-	return (a & b) != 0;
+	if ((a & b) != 0) return true;
+	ulong mask    = overlay_context_mask();
+	bool a_global = (a & commands::CTX_GLOBAL) != 0;
+	bool b_global = (b & commands::CTX_GLOBAL) != 0;
+	if (a_global && b_global) return true;
+	if (a_global) return (b & ~mask) != 0;
+	if (b_global) return (a & ~mask) != 0;
+	return false;
 }
 
 fn void Keymap.detect_conflicts(&self)

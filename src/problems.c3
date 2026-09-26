@@ -5,7 +5,9 @@ import std::collections::list;
 import std::core::dstring;
 import std::core::mem::alloc;
 import std::math;
+import yun::commands;
 import yun::editor;
+import yun::keymap;
 import yun::lsp;
 import yun::theme;
 
@@ -40,6 +42,7 @@ struct Problems
 	List{ProblemRow} rows;
 	int selected;
 	int scroll;
+	bool consumed;
 }
 
 fn void Problems.init(&self, Allocator allocator)
@@ -50,6 +53,7 @@ fn void Problems.init(&self, Allocator allocator)
 	self.rows.init(allocator);
 	self.selected = 0;
 	self.scroll = 0;
+	self.consumed = false;
 }
 
 fn void Problems.free_contents(&self)
@@ -212,25 +216,40 @@ fn int Problems.row_at(&self, RLVector2 mouse)
 	return row;
 }
 
-fn int Problems.update(&self)
+fn int Problems.update(&self, keymap::Keymap* keymap)
 {
 	if (!self.open) return -1;
+	self.consumed = false;
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_PROBLEMS))
 	{
+		self.consumed = true;
 		self.open = false;
 		return -1;
 	}
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.DOWN
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) self.move_selection(1);
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.UP
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) self.move_selection(-1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN)) self.move_selection(MAX_VISIBLE_ROWS);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP)) self.move_selection(-MAX_VISIBLE_ROWS);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_PROBLEMS))
 	{
+		self.consumed = true;
+		self.move_selection(1);
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_PROBLEMS))
+	{
+		self.consumed = true;
+		self.move_selection(-1);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_DOWN, commands::CTX_PROBLEMS))
+	{
+		self.consumed = true;
+		self.move_selection(MAX_VISIBLE_ROWS);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_UP, commands::CTX_PROBLEMS))
+	{
+		self.consumed = true;
+		self.move_selection(-MAX_VISIBLE_ROWS);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_ACCEPT, commands::CTX_PROBLEMS))
+	{
+		self.consumed = true;
 		int entry = self.selected_entry();
 		if (entry >= 0)
 		{

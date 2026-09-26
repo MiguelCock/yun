@@ -14,6 +14,7 @@ import tree_sitter;
 import yun::commands;
 import yun::editor;
 import yun::highlight;
+import yun::keymap;
 import yun::project;
 import yun::theme;
 
@@ -104,6 +105,7 @@ struct Symbols
 	bool dirty;
 	int selected;
 	int scroll;
+	bool consumed;
 }
 
 fn String def_query_text(highlight::Language language)
@@ -374,6 +376,7 @@ fn void Symbols.init(&self, Allocator allocator)
 	self.dirty = false;
 	self.selected = 0;
 	self.scroll = 0;
+	self.consumed = false;
 	self.results = null;
 	self.pool_ready = false;
 	self.init_pool();
@@ -699,30 +702,45 @@ fn void draw_text(RLFont font, String text, float x, float y, float size, RLColo
 	};
 }
 
-fn SymbolTarget Symbols.update(&self, project::Project* project, double now)
+fn SymbolTarget Symbols.update(&self, keymap::Keymap* keymap, project::Project* project, double now)
 {
 	SymbolTarget target = { .valid = false, .path = "", .line = 0, .column = 0 };
 	if (!self.open) return target;
+	self.consumed = false;
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_SYMBOLS))
 	{
+		self.consumed = true;
 		self.close();
 		return target;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_ACCEPT, commands::CTX_SYMBOLS))
 	{
+		self.consumed = true;
 		return self.activate();
 	}
 
 	int visible = self.visible_rows();
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.DOWN
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) self.move_selection(1);
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.UP
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) self.move_selection(-1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN)) self.move_selection(visible);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP)) self.move_selection(-visible);
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_SYMBOLS))
+	{
+		self.consumed = true;
+		self.move_selection(1);
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_SYMBOLS))
+	{
+		self.consumed = true;
+		self.move_selection(-1);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_DOWN, commands::CTX_SYMBOLS))
+	{
+		self.consumed = true;
+		self.move_selection(visible);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_UP, commands::CTX_SYMBOLS))
+	{
+		self.consumed = true;
+		self.move_selection(-visible);
+	}
 	self.ensure_visible(visible);
 
 	if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))

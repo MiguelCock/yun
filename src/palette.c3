@@ -25,6 +25,7 @@ struct Palette
 	Allocator allocator;
 	int selected;
 	int scroll;
+	bool consumed;
 }
 
 fn void Palette.init(&self, Allocator allocator)
@@ -37,6 +38,7 @@ fn void Palette.init(&self, Allocator allocator)
 	self.query[0] = 0;
 	self.selected = 0;
 	self.scroll = 0;
+	self.consumed = false;
 }
 
 fn void Palette.show(&self)
@@ -212,12 +214,15 @@ fn int Palette.row_at(&self, RLVector2 mouse)
 	return row;
 }
 
-fn int Palette.update(&self, bool has_project, bool has_buffer)
+fn int Palette.update(&self, keymap::Keymap* keymap, bool has_project, bool has_buffer)
 {
 	if (!self.open) return -1;
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	self.consumed = false;
+
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_PALETTE))
 	{
+		self.consumed = true;
 		self.open = false;
 		return -1;
 	}
@@ -234,15 +239,20 @@ fn int Palette.update(&self, bool has_project, bool has_buffer)
 	}
 	self.filter();
 
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.DOWN
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) self.move_selection(1);
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.UP
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) self.move_selection(-1);
-
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_PALETTE))
 	{
+		self.consumed = true;
+		self.move_selection(1);
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_PALETTE))
+	{
+		self.consumed = true;
+		self.move_selection(-1);
+	}
+
+	if (keymap.pressed((int)commands::CommandId.LIST_ACCEPT, commands::CTX_PALETTE))
+	{
+		self.consumed = true;
 		int id = self.selected_command();
 		if (id >= 0 && commands::command_enabled((commands::CommandId)id, has_project, has_buffer))
 		{

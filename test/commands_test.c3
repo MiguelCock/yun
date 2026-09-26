@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 56);
+	assert(command_count() == 74);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -71,15 +71,25 @@ fn void test_contexts()
 	assert(command_def(CommandId.FOCUS_EDITOR).contexts == CTX_MOVE);
 	assert(command_def(CommandId.TOPBAR_LEFT).contexts == CTX_TOP_BAR);
 	assert(command_def(CommandId.FOCUS_CANVAS).contexts == CTX_TOP_BAR);
+	assert(command_def(CommandId.OVERLAY_CLOSE).contexts == CTX_OVERLAY_CLOSE);
+	assert(command_def(CommandId.LIST_ACCEPT).contexts == CTX_OVERLAY_ACCEPT);
+	assert(command_def(CommandId.FIND_REPLACE).contexts == CTX_FIND);
+	assert(command_def(CommandId.SEARCH_TOGGLE_CASE).contexts == CTX_SEARCH);
+	assert(command_def(CommandId.SETTINGS_RESET).contexts == CTX_SETTINGS);
+	assert(command_def(CommandId.BROWSER_PARENT).contexts == CTX_BROWSER);
+	assert((command_def(CommandId.LIST_UP).contexts & CTX_FIND) == 0);
 }
 
 fn void test_repeat_flags()
 {
 	assert(command_def(CommandId.PAN_LEFT).repeat);
 	assert(command_def(CommandId.TOPBAR_RIGHT).repeat);
+	assert(command_def(CommandId.LIST_UP).repeat);
+	assert(command_def(CommandId.SETTINGS_VALUE_INC).repeat);
 	assert(!command_def(CommandId.SELECT_LEFT).repeat);
 	assert(!command_def(CommandId.ZOOM_IN).repeat);
 	assert(!command_def(CommandId.UNDO).repeat);
+	assert(!command_def(CommandId.FIND_NEXT).repeat);
 }
 
 fn void test_command_from_name()

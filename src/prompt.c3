@@ -2,6 +2,8 @@ module yun::prompt;
 
 import raylib6::rl;
 import std::math;
+import yun::commands;
+import yun::keymap;
 import yun::theme;
 
 const int PROMPT_WIDTH  = 440;
@@ -14,6 +16,7 @@ struct Prompt
 	String title;
 	char[PROMPT_MAX + 1] text;
 	int len;
+	bool consumed;
 }
 
 fn void Prompt.init(&self)
@@ -21,6 +24,7 @@ fn void Prompt.init(&self)
 	self.open = false;
 	self.title = "";
 	self.len = 0;
+	self.consumed = false;
 }
 
 fn void Prompt.open_with(&self, String title, String default_text)
@@ -107,12 +111,14 @@ fn Rect Prompt.panel_rect(&self)
 	return { .x = (float)x, .y = (float)y, .width = (float)PROMPT_WIDTH, .height = (float)PROMPT_HEIGHT };
 }
 
-fn bool Prompt.update(&self)
+fn bool Prompt.update(&self, keymap::Keymap* keymap)
 {
 	if (!self.open) return false;
+	self.consumed = false;
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_PROMPT))
 	{
+		self.consumed = true;
 		self.open = false;
 		return false;
 	}
@@ -128,7 +134,11 @@ fn bool Prompt.update(&self)
 		}
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE)) self.backspace();
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER)) return true;
+	if (keymap.pressed((int)commands::CommandId.LIST_ACCEPT, commands::CTX_PROMPT))
+	{
+		self.consumed = true;
+		return true;
+	}
 
 	int codepoint = rl::get_char_pressed();
 	while (codepoint != 0)

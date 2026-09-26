@@ -6,6 +6,7 @@ import std::core::dstring;
 import std::math;
 import yun::commands;
 import yun::config;
+import yun::keymap;
 import yun::notify;
 import yun::settings;
 import yun::theme;
@@ -43,6 +44,7 @@ struct Panel
 	char[EDIT_MAX + 1] edit_buf;
 	int edit_len;
 	settings::SettingId edit_id;
+	bool consumed;
 }
 
 fn bool matches(String section, String label, String key, String description, String query)
@@ -133,6 +135,7 @@ fn void Panel.init(&self, Allocator allocator)
 	self.edit_len = 0;
 	self.edit_buf[0] = 0;
 	self.edit_id = settings::SettingId.APP_THEME;
+	self.consumed = false;
 }
 
 fn void Panel.destroy(&self)
@@ -414,9 +417,17 @@ fn int Panel.row_at(&self, RLVector2 mouse)
 	return -1;
 }
 
-fn void Panel.update(&self, config::Config* config, bool project_open, String project_root, notify::Notifier* notifier)
+fn void Panel.update(
+	&self,
+	keymap::Keymap* keymap,
+	config::Config* config,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
 {
 	if (!self.open) return;
+	self.consumed = false;
 
 	if (!project_open && self.scope == settings::SettingLayer.PROJECT) self.scope = settings::SettingLayer.GLOBAL;
 
@@ -456,8 +467,9 @@ fn void Panel.update(&self, config::Config* config, bool project_open, String pr
 		return;
 	}
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_SETTINGS))
 	{
+		self.consumed = true;
 		self.open = false;
 		return;
 	}
@@ -476,20 +488,40 @@ fn void Panel.update(&self, config::Config* config, bool project_open, String pr
 	}
 	if (typed) self.rebuild();
 
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.DOWN
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) self.move_selection(1);
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.UP
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) self.move_selection(-1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.TAB)) self.toggle_scope(project_open);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.DELETE)) self.reset_selected(config, project_open, project_root, notifier);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER)) self.activate(config, project_open, project_root);
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_SETTINGS))
+	{
+		self.consumed = true;
+		self.move_selection(1);
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_SETTINGS))
+	{
+		self.consumed = true;
+		self.move_selection(-1);
+	}
+	if (keymap.pressed((int)commands::CommandId.SETTINGS_SCOPE_TOGGLE, commands::CTX_SETTINGS))
+	{
+		self.consumed = true;
+		self.toggle_scope(project_open);
+	}
+	if (keymap.pressed((int)commands::CommandId.SETTINGS_RESET, commands::CTX_SETTINGS))
+	{
+		self.consumed = true;
+		self.reset_selected(config, project_open, project_root, notifier);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_ACCEPT, commands::CTX_SETTINGS))
+	{
+		self.consumed = true;
+		self.activate(config, project_open, project_root);
+	}
 
 	int dir = 0;
-	if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT)) dir = -1;
-	if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT)) dir = 1;
-	if (dir != 0) self.change_selected(config, dir, project_open, project_root);
+	if (keymap.pressed_repeat((int)commands::CommandId.SETTINGS_VALUE_DEC, commands::CTX_SETTINGS)) dir = -1;
+	if (keymap.pressed_repeat((int)commands::CommandId.SETTINGS_VALUE_INC, commands::CTX_SETTINGS)) dir = 1;
+	if (dir != 0)
+	{
+		self.consumed = true;
+		self.change_selected(config, dir, project_open, project_root);
+	}
 
 	Rect panel      = self.panel_rect();
 	RLVector2 mouse = rl::get_mouse_position();
