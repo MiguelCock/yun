@@ -12,8 +12,10 @@ import std::os;
 import std::thread;
 import std::thread::channel;
 import yun::card;
+import yun::commands;
 import yun::editor;
 import yun::find;
+import yun::keymap;
 import yun::project;
 import yun::theme;
 
@@ -89,6 +91,7 @@ struct Search
 	bool restart_pending;
 	double restart_at;
 	String root;
+	bool consumed;
 }
 
 fn bool search_match_at(String line, usz at, String query, bool case_sensitive, bool whole_word)
@@ -284,6 +287,7 @@ fn void Search.init(&self, Allocator allocator)
 	self.restart_pending = false;
 	self.restart_at = 0.0;
 	self.root = "";
+	self.consumed = false;
 	self.cancel.store(false);
 	self.results = null;
 	self.pool_ready = false;
@@ -639,40 +643,56 @@ fn void Search.chip_rects(&self, Rect* case_rect, Rect* word_rect)
 	*word_rect = { .x = panel.x + pad + w + 6.0f * s, .y = y, .width = w, .height = h };
 }
 
-fn SearchTarget Search.update(&self, project::Project* project, double now)
+fn SearchTarget Search.update(&self, keymap::Keymap* keymap, project::Project* project, double now)
 {
 	SearchTarget target = { .valid = false, .path = "", .line = 0, .column = 0 };
 	if (!self.open) return target;
+	self.consumed = false;
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_SEARCH))
 	{
+		self.consumed = true;
 		self.close();
 		return target;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_ACCEPT, commands::CTX_SEARCH))
 	{
+		self.consumed = true;
 		return self.activate();
 	}
 
 	int visible = self.visible_rows();
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.DOWN
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) self.move_selection(1);
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.UP
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) self.move_selection(-1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN)) self.move_selection(visible);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP)) self.move_selection(-visible);
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_SEARCH))
+	{
+		self.consumed = true;
+		self.move_selection(1);
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_SEARCH))
+	{
+		self.consumed = true;
+		self.move_selection(-1);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_DOWN, commands::CTX_SEARCH))
+	{
+		self.consumed = true;
+		self.move_selection(visible);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_UP, commands::CTX_SEARCH))
+	{
+		self.consumed = true;
+		self.move_selection(-visible);
+	}
 	self.ensure_visible();
 
-	bool alt = rl::is_key_down(rl::RLKeyboardKey.LEFT_ALT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_ALT);
-	if (alt && rl::is_key_pressed(rl::RLKeyboardKey.C))
+	if (keymap.pressed((int)commands::CommandId.SEARCH_TOGGLE_CASE, commands::CTX_SEARCH))
 	{
+		self.consumed = true;
 		self.case_sensitive = !self.case_sensitive;
 		self.schedule_restart(now);
 	}
-	if (alt && rl::is_key_pressed(rl::RLKeyboardKey.W))
+	if (keymap.pressed((int)commands::CommandId.SEARCH_TOGGLE_WORD, commands::CTX_SEARCH))
 	{
+		self.consumed = true;
 		self.whole_word = !self.whole_word;
 		self.schedule_restart(now);
 	}

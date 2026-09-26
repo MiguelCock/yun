@@ -3,6 +3,8 @@ module yun::menu;
 import raylib6::rl;
 import std::collections::list;
 import std::math;
+import yun::commands;
+import yun::keymap;
 import yun::theme;
 
 const int MENU_ROW_HEIGHT = 26;
@@ -18,6 +20,7 @@ struct Menu
 	Allocator allocator;
 	int selected;
 	RLVector2 position;
+	bool consumed;
 }
 
 fn void Menu.init(&self, Allocator allocator)
@@ -28,6 +31,7 @@ fn void Menu.init(&self, Allocator allocator)
 	self.open = false;
 	self.selected = 0;
 	self.position = { 0.0f, 0.0f };
+	self.consumed = false;
 }
 
 fn void Menu.open_at(&self, RLVector2 position, String[] items)
@@ -130,19 +134,30 @@ fn Rect Menu.panel_rect(&self)
 	return { .x = x, .y = y, .width = (float)width, .height = (float)height };
 }
 
-fn int Menu.update(&self)
+fn int Menu.update(&self, keymap::Keymap* keymap)
 {
 	if (!self.open) return -1;
+	self.consumed = false;
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN)) self.move_selection(1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.UP)) self.move_selection(-1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_MENU))
 	{
+		self.consumed = true;
+		self.move_selection(1);
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_MENU))
+	{
+		self.consumed = true;
+		self.move_selection(-1);
+	}
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_MENU))
+	{
+		self.consumed = true;
 		self.open = false;
 		return -1;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed((int)commands::CommandId.LIST_ACCEPT, commands::CTX_MENU))
 	{
+		self.consumed = true;
 		if (self.is_enabled(self.selected))
 		{
 			int chosen = self.selected;

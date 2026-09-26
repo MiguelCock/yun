@@ -15,6 +15,17 @@ const ulong CTX_SETTINGS   = 1 << 11;
 const ulong CTX_MENU       = 1 << 12;
 const ulong CTX_COMPLETION = 1 << 13;
 
+const ulong CTX_OVERLAY_CLOSE  = CTX_PALETTE | CTX_FIND | CTX_SEARCH | CTX_SYMBOLS | CTX_PROBLEMS | CTX_PROMPT
+	| CTX_BROWSER
+	| CTX_SETTINGS
+	| CTX_MENU;
+const ulong CTX_OVERLAY_LIST   = CTX_PALETTE | CTX_SEARCH | CTX_SYMBOLS | CTX_PROBLEMS | CTX_BROWSER | CTX_SETTINGS
+	| CTX_MENU;
+const ulong CTX_OVERLAY_PAGE   = CTX_SEARCH | CTX_SYMBOLS | CTX_PROBLEMS;
+const ulong CTX_OVERLAY_ACCEPT = CTX_PALETTE | CTX_SEARCH | CTX_SYMBOLS | CTX_PROBLEMS | CTX_BROWSER | CTX_PROMPT
+	| CTX_SETTINGS
+	| CTX_MENU;
+
 enum CommandId
 {
 	NEW_FILE,
@@ -73,6 +84,24 @@ enum CommandId
 	TOPBAR_RIGHT,
 	TOPBAR_ACTIVATE,
 	FOCUS_CANVAS,
+	OVERLAY_CLOSE,
+	LIST_UP,
+	LIST_DOWN,
+	LIST_PAGE_UP,
+	LIST_PAGE_DOWN,
+	LIST_ACCEPT,
+	FIND_NEXT,
+	FIND_PREV,
+	FIND_REPLACE,
+	FIND_REPLACE_ALL,
+	FIND_CYCLE_FIELD,
+	SEARCH_TOGGLE_CASE,
+	SEARCH_TOGGLE_WORD,
+	SETTINGS_SCOPE_TOGGLE,
+	SETTINGS_RESET,
+	SETTINGS_VALUE_DEC,
+	SETTINGS_VALUE_INC,
+	BROWSER_PARENT,
 }
 
 struct CommandDef
@@ -376,6 +405,136 @@ const CommandDef[] COMMAND_DEFS = {
 		.in_top_bar = false,
 		.contexts = CTX_TOP_BAR,
 	},
+	{
+		.id = CommandId.OVERLAY_CLOSE,
+		.label = "Close Overlay",
+		.shortcut = "Esc",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_CLOSE,
+	},
+	{
+		.id = CommandId.LIST_UP,
+		.label = "List Up",
+		.shortcut = "Up",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_LIST,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.LIST_DOWN,
+		.label = "List Down",
+		.shortcut = "Down",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_LIST,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.LIST_PAGE_UP,
+		.label = "List Page Up",
+		.shortcut = "PageUp",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_PAGE,
+	},
+	{
+		.id = CommandId.LIST_PAGE_DOWN,
+		.label = "List Page Down",
+		.shortcut = "PageDown",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_PAGE,
+	},
+	{
+		.id = CommandId.LIST_ACCEPT,
+		.label = "List Accept",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_ACCEPT,
+	},
+	{
+		.id = CommandId.FIND_NEXT,
+		.label = "Find Next",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_FIND,
+	},
+	{
+		.id = CommandId.FIND_PREV,
+		.label = "Find Previous",
+		.shortcut = "Shift+Enter",
+		.in_top_bar = false,
+		.contexts = CTX_FIND,
+	},
+	{
+		.id = CommandId.FIND_REPLACE,
+		.label = "Replace Match",
+		.shortcut = "Ctrl+H",
+		.in_top_bar = false,
+		.contexts = CTX_FIND,
+	},
+	{
+		.id = CommandId.FIND_REPLACE_ALL,
+		.label = "Replace All",
+		.shortcut = "Ctrl+Enter",
+		.in_top_bar = false,
+		.contexts = CTX_FIND,
+	},
+	{
+		.id = CommandId.FIND_CYCLE_FIELD,
+		.label = "Find Field",
+		.shortcut = "Tab",
+		.in_top_bar = false,
+		.contexts = CTX_FIND,
+	},
+	{
+		.id = CommandId.SEARCH_TOGGLE_CASE,
+		.label = "Match Case",
+		.shortcut = "Alt+C",
+		.in_top_bar = false,
+		.contexts = CTX_SEARCH,
+	},
+	{
+		.id = CommandId.SEARCH_TOGGLE_WORD,
+		.label = "Whole Word",
+		.shortcut = "Alt+W",
+		.in_top_bar = false,
+		.contexts = CTX_SEARCH,
+	},
+	{
+		.id = CommandId.SETTINGS_SCOPE_TOGGLE,
+		.label = "Toggle Scope",
+		.shortcut = "Tab",
+		.in_top_bar = false,
+		.contexts = CTX_SETTINGS,
+	},
+	{
+		.id = CommandId.SETTINGS_RESET,
+		.label = "Reset Setting",
+		.shortcut = "Del",
+		.in_top_bar = false,
+		.contexts = CTX_SETTINGS,
+	},
+	{
+		.id = CommandId.SETTINGS_VALUE_DEC,
+		.label = "Decrease Value",
+		.shortcut = "Left",
+		.in_top_bar = false,
+		.contexts = CTX_SETTINGS,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.SETTINGS_VALUE_INC,
+		.label = "Increase Value",
+		.shortcut = "Right",
+		.in_top_bar = false,
+		.contexts = CTX_SETTINGS,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.BROWSER_PARENT,
+		.label = "Parent Folder",
+		.shortcut = "Backspace",
+		.in_top_bar = false,
+		.contexts = CTX_BROWSER,
+	},
 };
 
 fn usz command_count()
@@ -504,6 +663,42 @@ fn String command_name(CommandId id)
 			return "topbar_activate";
 		case CommandId.FOCUS_CANVAS:
 			return "focus_canvas";
+		case CommandId.OVERLAY_CLOSE:
+			return "overlay_close";
+		case CommandId.LIST_UP:
+			return "list_up";
+		case CommandId.LIST_DOWN:
+			return "list_down";
+		case CommandId.LIST_PAGE_UP:
+			return "list_page_up";
+		case CommandId.LIST_PAGE_DOWN:
+			return "list_page_down";
+		case CommandId.LIST_ACCEPT:
+			return "list_accept";
+		case CommandId.FIND_NEXT:
+			return "find_next";
+		case CommandId.FIND_PREV:
+			return "find_prev";
+		case CommandId.FIND_REPLACE:
+			return "find_replace";
+		case CommandId.FIND_REPLACE_ALL:
+			return "find_replace_all";
+		case CommandId.FIND_CYCLE_FIELD:
+			return "find_cycle_field";
+		case CommandId.SEARCH_TOGGLE_CASE:
+			return "search_toggle_case";
+		case CommandId.SEARCH_TOGGLE_WORD:
+			return "search_toggle_word";
+		case CommandId.SETTINGS_SCOPE_TOGGLE:
+			return "settings_scope_toggle";
+		case CommandId.SETTINGS_RESET:
+			return "settings_reset";
+		case CommandId.SETTINGS_VALUE_DEC:
+			return "settings_value_dec";
+		case CommandId.SETTINGS_VALUE_INC:
+			return "settings_value_inc";
+		case CommandId.BROWSER_PARENT:
+			return "browser_parent";
 	}
 }
 
@@ -618,6 +813,24 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.TOPBAR_RIGHT:
 		case CommandId.TOPBAR_ACTIVATE:
 		case CommandId.FOCUS_CANVAS:
+		case CommandId.OVERLAY_CLOSE:
+		case CommandId.LIST_UP:
+		case CommandId.LIST_DOWN:
+		case CommandId.LIST_PAGE_UP:
+		case CommandId.LIST_PAGE_DOWN:
+		case CommandId.LIST_ACCEPT:
+		case CommandId.FIND_NEXT:
+		case CommandId.FIND_PREV:
+		case CommandId.FIND_REPLACE:
+		case CommandId.FIND_REPLACE_ALL:
+		case CommandId.FIND_CYCLE_FIELD:
+		case CommandId.SEARCH_TOGGLE_CASE:
+		case CommandId.SEARCH_TOGGLE_WORD:
+		case CommandId.SETTINGS_SCOPE_TOGGLE:
+		case CommandId.SETTINGS_RESET:
+		case CommandId.SETTINGS_VALUE_DEC:
+		case CommandId.SETTINGS_VALUE_INC:
+		case CommandId.BROWSER_PARENT:
 			return true;
 	}
 }

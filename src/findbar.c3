@@ -31,6 +31,7 @@ struct FindBar
 	bool needs_search;
 	List{usz} starts;
 	Allocator allocator;
+	bool consumed;
 }
 
 fn void FindBar.init(&self, Allocator allocator)
@@ -49,6 +50,7 @@ fn void FindBar.init(&self, Allocator allocator)
 	self.total = 0;
 	self.capped = false;
 	self.needs_search = false;
+	self.consumed = false;
 }
 
 fn void FindBar.open_for(&self, find::FindField field)
@@ -202,6 +204,7 @@ fn Rect FindBar.bar_rect(&self, Rect card_rect, EditorMetrics metrics)
 
 fn int FindBar.update(
 	&self,
+	keymap::Keymap* keymap,
 	PieceTable* table,
 	History* history,
 	bool content_changed,
@@ -214,51 +217,54 @@ fn int FindBar.update(
 	*out_replaced = false;
 	*out_jumped = false;
 	if (!self.open) return 0;
+	self.consumed = false;
 	if (content_changed) self.needs_search = true;
 
 	bool ctrl  = rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
-	bool shift = rl::is_key_down(rl::RLKeyboardKey.LEFT_SHIFT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_SHIFT);
 	double now = rl::get_time();
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_FIND))
 	{
+		self.consumed = true;
 		self.close();
 		return -1;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.TAB))
+	if (keymap.pressed((int)commands::CommandId.FIND_CYCLE_FIELD, commands::CTX_FIND))
 	{
+		self.consumed = true;
 		self.cycle_field();
 	}
 
-	if (ctrl && rl::is_key_pressed(rl::RLKeyboardKey.H))
+	if (keymap.pressed((int)commands::CommandId.FIND_REPLACE, commands::CTX_FIND))
 	{
+		self.consumed = true;
 		if (self.replace_current(table, history, now))
 		{
 			self.needs_search = true;
 			*out_replaced = true;
 		}
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed((int)commands::CommandId.FIND_REPLACE_ALL, commands::CTX_FIND))
 	{
-		if (ctrl)
+		self.consumed = true;
+		if (self.replace_all(table, history, now) > 0) *out_replaced = true;
+	}
+	if (keymap.pressed((int)commands::CommandId.FIND_PREV, commands::CTX_FIND))
+	{
+		self.consumed = true;
+		if (self.move_prev())
 		{
-			if (self.replace_all(table, history, now) > 0) *out_replaced = true;
+			*out_reveal = self.current_start();
+			*out_jumped = true;
 		}
-		else if (shift)
+	}
+	if (keymap.pressed((int)commands::CommandId.FIND_NEXT, commands::CTX_FIND))
+	{
+		self.consumed = true;
+		if (self.move_next())
 		{
-			if (self.move_prev())
-			{
-				*out_reveal = self.current_start();
-				*out_jumped = true;
-			}
-		}
-		else
-		{
-			if (self.move_next())
-			{
-				*out_reveal = self.current_start();
-				*out_jumped = true;
-			}
+			*out_reveal = self.current_start();
+			*out_jumped = true;
 		}
 	}
 

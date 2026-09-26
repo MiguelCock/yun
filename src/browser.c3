@@ -4,6 +4,8 @@ import raylib6::rl;
 import std::collections::list;
 import std::io::path;
 import std::math;
+import yun::commands;
+import yun::keymap;
 import yun::theme;
 
 const int BROWSER_WIDTH  = 680;
@@ -19,6 +21,7 @@ struct Browser
 	Allocator allocator;
 	int selected;
 	int scroll;
+	bool consumed;
 }
 
 fn void Browser.init(&self, Allocator allocator)
@@ -28,6 +31,7 @@ fn void Browser.init(&self, Allocator allocator)
 	self.open = false;
 	self.selected = 0;
 	self.scroll = 0;
+	self.consumed = false;
 }
 
 fn String Browser.parent_dir(&self)
@@ -85,23 +89,37 @@ fn void Browser.move_selection(&self, int delta)
 	if (self.selected >= self.scroll + VISIBLE_ROWS) self.scroll = self.selected - VISIBLE_ROWS + 1;
 }
 
-fn bool Browser.update(&self)
+fn bool Browser.update(&self, keymap::Keymap* keymap)
 {
-	if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN)) self.move_selection(1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.UP)) self.move_selection(-1);
+	if (!self.open) return false;
+	self.consumed = false;
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.LIST_DOWN, commands::CTX_BROWSER))
 	{
+		self.consumed = true;
+		self.move_selection(1);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_UP, commands::CTX_BROWSER))
+	{
+		self.consumed = true;
+		self.move_selection(-1);
+	}
+
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_BROWSER))
+	{
+		self.consumed = true;
 		self.open = false;
 		return false;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE))
+	if (keymap.pressed((int)commands::CommandId.BROWSER_PARENT, commands::CTX_BROWSER))
 	{
+		self.consumed = true;
 		self.navigate(self.parent_dir());
 		return false;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed((int)commands::CommandId.LIST_ACCEPT, commands::CTX_BROWSER))
 	{
+		self.consumed = true;
 		if (self.selected == 0)
 		{
 			self.open = false;

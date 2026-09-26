@@ -189,6 +189,11 @@ struct App
 	findbar::FindBar* find_bar;
 	problems::Problems* problems;
 	menu::Menu* theme_menu;
+	menu::Menu* context_menu;
+	menu::Menu* close_menu;
+	menu::Menu* delete_menu;
+	menu::Menu* reload_menu;
+	menu::Menu* definition_menu;
 	search::Search* search;
 	symbols::Symbols* symbols;
 	editor::EditorMetrics metrics;
@@ -242,6 +247,29 @@ fn void enter_edit_mode(
 	}
 }
 
+fn void close_overlays(App* app)
+{
+	app.palette.close();
+	app.settings_panel.close();
+	app.problems.close();
+	app.name_prompt.close();
+	app.theme_menu.close();
+	app.context_menu.close();
+	app.close_menu.close();
+	app.delete_menu.close();
+	app.reload_menu.close();
+	app.definition_menu.close();
+	app.search.close();
+	app.symbols.close();
+	app.find_bar.close();
+}
+
+fn void poll_global(keymap::Keymap* keymap, App* app)
+{
+	int cmd = keymap.poll(commands::CTX_GLOBAL);
+	if (cmd >= 0) run_command((commands::CommandId)cmd, app);
+}
+
 fn void run_command(commands::CommandId id, App* app)
 {
 	project::Project* project = app.project;
@@ -288,6 +316,7 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.OPEN:
 
 			{
+				close_overlays(app);
 				app.browser.open_at((String)project.root);
 				return;
 			}
@@ -318,6 +347,7 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.SHOW_PALETTE:
 
 			{
+				close_overlays(app);
 				app.palette.show();
 				while (rl::get_char_pressed() != 0)
 				{
@@ -337,6 +367,7 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				find::FindField field = id == commands::CommandId.REPLACE ? find::FindField.REPLACE
 					: find::FindField.QUERY;
+				close_overlays(app);
 				app.find_bar.open_for(field);
 				while (rl::get_char_pressed() != 0)
 				{
@@ -380,6 +411,7 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.PROBLEMS:
 
 			{
+				close_overlays(app);
 				app.problems.show();
 				return;
 			}
@@ -413,6 +445,7 @@ fn void run_command(commands::CommandId id, App* app)
 					(float)rl::get_screen_width() / 2.0f,
 					(float)rl::get_screen_height() / 2.0f,
 				};
+				close_overlays(app);
 				@pool()
 				{
 					String[32] labels;
@@ -431,6 +464,7 @@ fn void run_command(commands::CommandId id, App* app)
 					app.notifier.push("No project open");
 					return;
 				}
+				close_overlays(app);
 				app.search.show();
 				while (rl::get_char_pressed() != 0)
 				{
@@ -445,6 +479,7 @@ fn void run_command(commands::CommandId id, App* app)
 					app.notifier.push("No project open");
 					return;
 				}
+				close_overlays(app);
 				app.symbols.show();
 				while (rl::get_char_pressed() != 0)
 				{
@@ -454,7 +489,9 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.TOGGLE_SETTINGS:
 
 			{
-				app.settings_panel.show();
+				bool was_open = app.settings_panel.open;
+				close_overlays(app);
+				if (!was_open) app.settings_panel.show();
 				while (rl::get_char_pressed() != 0)
 				{
 				}
@@ -963,6 +1000,11 @@ fn int main(String[] args)
 		.find_bar = &find_bar,
 		.problems = &problems,
 		.theme_menu = &theme_menu,
+		.context_menu = &context_menu,
+		.close_menu = &close_menu,
+		.delete_menu = &delete_menu,
+		.reload_menu = &reload_menu,
+		.definition_menu = &definition_menu,
 		.search = &search,
 		.symbols = &symbols,
 		.metrics = metrics,
@@ -1022,7 +1064,7 @@ fn int main(String[] args)
 		}
 		else if (browser.open)
 		{
-			if (browser.update())
+			if (browser.update(&keymap))
 			{
 				search.close();
 				symbols.close();
@@ -1031,23 +1073,26 @@ fn int main(String[] args)
 				open_job = project::open_job_create(project.allocator, &project, (String)browser.dir);
 				opening = true;
 			}
+			if (!browser.consumed) poll_global(&keymap, &app);
 		}
 		else if (palette.open)
 		{
-			int chosen = palette.update(project_open, has_focused_buffer(&project));
+			int chosen = palette.update(&keymap, project_open, has_focused_buffer(&project));
 			if (chosen >= 0)
 			{
 				palette.record((commands::CommandId)chosen);
 				run_command((commands::CommandId)chosen, &app);
 			}
+			if (!palette.consumed) poll_global(&keymap, &app);
 		}
 		else if (settings_panel.open)
 		{
-			settings_panel.update(&config, project_open, (String)project.root, &notifier);
+			settings_panel.update(&keymap, &config, project_open, (String)project.root, &notifier);
+			if (!settings_panel.consumed) poll_global(&keymap, &app);
 		}
 		else if (problems.open)
 		{
-			int chosen = problems.update();
+			int chosen = problems.update(&keymap);
 			if (chosen >= 0)
 			{
 				problems::ProblemEntry* entry = problems.entry_at(chosen);
@@ -1056,10 +1101,11 @@ fn int main(String[] args)
 					navigate_to_location(&project, &canvas, metrics, entry.path, entry.line, entry.character);
 				}
 			}
+			if (!problems.consumed) poll_global(&keymap, &app);
 		}
 		else if (definition_menu.open)
 		{
-			int chosen = definition_menu.update();
+			int chosen = definition_menu.update(&keymap);
 			if (chosen >= 0 && chosen < (int)pending_definitions.len())
 			{
 				lsp::DefinitionTarget target = pending_definitions[(sz)chosen];
@@ -1069,10 +1115,11 @@ fn int main(String[] args)
 			{
 				clear_definitions(&pending_definitions);
 			}
+			if (!definition_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (name_prompt.open)
 		{
-			if (name_prompt.update())
+			if (name_prompt.update(&keymap))
 			{
 				String name = name_prompt.text_view();
 				if (!project::is_valid_name(name))
@@ -1104,10 +1151,11 @@ fn int main(String[] args)
 					}
 				}
 			}
+			if (!name_prompt.consumed) poll_global(&keymap, &app);
 		}
 		else if (close_menu.open)
 		{
-			int chosen = close_menu.update();
+			int chosen = close_menu.update(&keymap);
 			if (chosen >= 0)
 			{
 				int index = project.pending_close;
@@ -1117,10 +1165,11 @@ fn int main(String[] args)
 				}
 				project.pending_close = -1;
 			}
+			if (!close_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (delete_menu.open)
 		{
-			int chosen = delete_menu.update();
+			int chosen = delete_menu.update(&keymap);
 			if (chosen >= 0)
 			{
 				if (chosen == 0 && pending_delete_card >= 0 && pending_delete_card < (int)project.cards.len())
@@ -1136,10 +1185,11 @@ fn int main(String[] args)
 				}
 				pending_delete_card = -1;
 			}
+			if (!delete_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (reload_menu.open)
 		{
-			int chosen = reload_menu.update();
+			int chosen = reload_menu.update(&keymap);
 			if (chosen >= 0)
 			{
 				int index = project.pending_reload;
@@ -1157,10 +1207,11 @@ fn int main(String[] args)
 				}
 				project.pending_reload = -1;
 			}
+			if (!reload_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (theme_menu.open)
 		{
-			int chosen = theme_menu.update();
+			int chosen = theme_menu.update(&keymap);
 			if (chosen >= 0)
 			{
 				config.settings.set_string(
@@ -1174,10 +1225,11 @@ fn int main(String[] args)
 					notifier.push(string::format(tmem, "Theme: %s", theme::label(chosen)));
 				};
 			}
+			if (!theme_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (context_menu.open)
 		{
-			int chosen = context_menu.update();
+			int chosen = context_menu.update(&keymap);
 			if (chosen >= 0 && chosen < (int)context_item_count)
 			{
 				context::ContextAction action = context_items[chosen].action;
@@ -1279,24 +1331,27 @@ fn int main(String[] args)
 						}
 				}
 			}
+			if (!context_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (search.open)
 		{
-			search::SearchTarget target = search.update(&project, rl::get_time());
+			search::SearchTarget target = search.update(&keymap, &project, rl::get_time());
 			if (target.valid)
 			{
 				search.close();
 				navigate_to_location(&project, &canvas, metrics, target.path, (uint)target.line, (uint)target.column);
 			}
+			if (!search.consumed) poll_global(&keymap, &app);
 		}
 		else if (symbols.open)
 		{
-			symbols::SymbolTarget target = symbols.update(&project, rl::get_time());
+			symbols::SymbolTarget target = symbols.update(&keymap, &project, rl::get_time());
 			if (target.valid)
 			{
 				symbols.close();
 				navigate_to_location(&project, &canvas, metrics, target.path, (uint)target.line, (uint)target.column);
 			}
+			if (!symbols.consumed) poll_global(&keymap, &app);
 		}
 		else if (find_bar.open)
 		{
@@ -1311,6 +1366,7 @@ fn int main(String[] args)
 				bool replaced = false;
 				bool jumped   = false;
 				int result = find_bar.update(
+					&keymap,
 					project.cards[focus].buffer,
 					project.cards[focus].history,
 					false,
@@ -1341,6 +1397,7 @@ fn int main(String[] args)
 					}
 				}
 			}
+			if (!find_bar.consumed) poll_global(&keymap, &app);
 		}
 		else
 		{

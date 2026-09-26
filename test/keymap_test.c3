@@ -207,6 +207,11 @@ fn void test_contexts_overlap()
 	assert(contexts_overlap(commands::CTX_EDIT | commands::CTX_MOVE, commands::CTX_MOVE));
 	assert(!contexts_overlap(commands::CTX_EDIT, commands::CTX_COMPLETION));
 	assert(!contexts_overlap(commands::CTX_EDIT, commands::CTX_MENU));
+	assert(!contexts_overlap(commands::CTX_GLOBAL, commands::CTX_FIND));
+	assert(!contexts_overlap(commands::CTX_FIND, commands::CTX_GLOBAL));
+	assert(!contexts_overlap(commands::CTX_GLOBAL, commands::CTX_PALETTE));
+	assert(contexts_overlap(commands::CTX_GLOBAL, commands::CTX_MOVE));
+	assert(contexts_overlap(commands::CTX_GLOBAL, commands::CTX_GLOBAL));
 }
 
 fn void test_eligible_exact()
