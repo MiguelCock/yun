@@ -820,6 +820,19 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.ZOOM_RESET:
+			app.canvas.reset_zoom();
+			return;
+		case commands::CommandId.ZOOM_FIT:
+
+			{
+				Rect bounds;
+				if (project.content_bounds(&bounds))
+				{
+					app.canvas.fit_zoom(bounds, rl::get_screen_width(), rl::get_screen_height());
+				}
+				return;
+			}
 		default:
 			return;
 	}

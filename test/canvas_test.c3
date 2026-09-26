@@ -3,6 +3,33 @@ module yun::canvas @test;
 import raylib6::rl;
 import std::math;
 
+fn void test_reset_zoom_returns_to_one()
+{
+	Canvas c;
+	c.target.zoom = 4.0f;
+	c.reset_zoom();
+	assert(c.target.zoom == 1.0f);
+}
+
+fn void test_fit_zoom_centers_and_clamps()
+{
+	Canvas c;
+	Rect content = { .x = 100.0f, .y = 50.0f, .width = 2000.0f, .height = 1000.0f };
+	c.fit_zoom(content, 1200, 800);
+	assert(c.target.zoom > MIN_ZOOM && c.target.zoom < 1.0f);
+	assert(c.target.target[0] == 1100.0f);
+	assert(c.target.target[1] == 550.0f);
+
+	Rect tiny = { .x = 0.0f, .y = 0.0f, .width = 1.0f, .height = 1.0f };
+	c.fit_zoom(tiny, 1200, 800);
+	assert(c.target.zoom == MAX_ZOOM);
+
+	Rect empty = { .x = 0.0f, .y = 0.0f, .width = 0.0f, .height = 0.0f };
+	c.target.zoom = 2.0f;
+	c.fit_zoom(empty, 1200, 800);
+	assert(c.target.zoom == 2.0f);
+}
+
 fn void test_grid_step_is_pow2_multiple()
 {
 	float[5] zooms = { 0.05f, 0.25f, 1.0f, 3.0f, 8.0f };

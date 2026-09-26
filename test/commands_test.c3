@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 82);
+	assert(command_count() == 84);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -86,6 +86,8 @@ fn void test_contexts()
 	assert(command_def(CommandId.DELETE_CARD).contexts == CTX_MOVE);
 	assert(command_def(CommandId.OPEN_CONTEXT_MENU).contexts == CTX_MOVE);
 	assert(command_def(CommandId.MINIMAP_FOCUS).contexts == CTX_MOVE);
+	assert(command_def(CommandId.ZOOM_RESET).contexts == CTX_MOVE);
+	assert(command_def(CommandId.ZOOM_FIT).contexts == CTX_MOVE);
 }
 
 fn void test_repeat_flags()
