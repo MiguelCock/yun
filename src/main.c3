@@ -1166,7 +1166,16 @@ fn int main(String[] args)
 				}
 			}
 
-			int key_cmd = keymap.poll();
+			ulong key_context = commands::CTX_MOVE;
+			if (ui_mode == UiMode.EDIT)
+			{
+				key_context = commands::CTX_EDIT;
+			}
+			else if (ui_mode == UiMode.TOP_BAR)
+			{
+				key_context = commands::CTX_TOP_BAR;
+			}
+			int key_cmd = keymap.poll(key_context);
 			if (key_cmd >= 0) run_command((commands::CommandId)key_cmd, &app);
 
 			int bar_cmd = bar.update(mouse, project_open, has_buffer);

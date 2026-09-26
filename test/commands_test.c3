@@ -55,6 +55,13 @@ fn void test_command_defs()
 	assert(settings.in_top_bar);
 }
 
+fn void test_contexts()
+{
+	assert(command_def(CommandId.SAVE).contexts == CTX_GLOBAL);
+	assert(command_def(CommandId.COPY).contexts == CTX_GLOBAL);
+	assert(command_def(CommandId.TOGGLE_SETTINGS).contexts == CTX_GLOBAL);
+}
+
 fn void test_command_from_name()
 {
 	assert(command_from_name("new_file") == (int)CommandId.NEW_FILE);

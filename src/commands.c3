@@ -1,5 +1,19 @@
 module yun::commands;
 
+const ulong CTX_GLOBAL   = 1 << 0;
+const ulong CTX_EDIT     = 1 << 1;
+const ulong CTX_MOVE     = 1 << 2;
+const ulong CTX_TOP_BAR  = 1 << 3;
+const ulong CTX_PALETTE  = 1 << 4;
+const ulong CTX_FIND     = 1 << 5;
+const ulong CTX_SEARCH   = 1 << 6;
+const ulong CTX_SYMBOLS  = 1 << 7;
+const ulong CTX_PROBLEMS = 1 << 8;
+const ulong CTX_PROMPT   = 1 << 9;
+const ulong CTX_BROWSER  = 1 << 10;
+const ulong CTX_SETTINGS = 1 << 11;
+const ulong CTX_MENU     = 1 << 12;
+
 enum CommandId
 {
 	NEW_FILE,
@@ -28,31 +42,81 @@ struct CommandDef
 	String label;
 	String shortcut;
 	bool in_top_bar;
+	ulong contexts;
 }
 
 const CommandDef[] COMMAND_DEFS = {
-	{ .id = CommandId.NEW_FILE, .label = "New", .shortcut = "Ctrl+N", .in_top_bar = true },
-	{ .id = CommandId.NEW_FOLDER, .label = "New Folder", .shortcut = "", .in_top_bar = false },
-	{ .id = CommandId.OPEN, .label = "Open", .shortcut = "Ctrl+O", .in_top_bar = true },
-	{ .id = CommandId.SAVE, .label = "Save", .shortcut = "Ctrl+S", .in_top_bar = true },
-	{ .id = CommandId.SHOW_PALETTE, .label = "Command Palette", .shortcut = "Ctrl+Shift+P", .in_top_bar = false },
-	{ .id = CommandId.FIND, .label = "Find", .shortcut = "Ctrl+F", .in_top_bar = false },
-	{ .id = CommandId.REPLACE, .label = "Replace", .shortcut = "Ctrl+H", .in_top_bar = false },
-	{ .id = CommandId.COPY, .label = "Copy", .shortcut = "Ctrl+C", .in_top_bar = false },
-	{ .id = CommandId.CUT, .label = "Cut", .shortcut = "Ctrl+X", .in_top_bar = false },
-	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false },
-	{ .id = CommandId.SELECT_ALL, .label = "Select All", .shortcut = "Ctrl+A", .in_top_bar = false },
-	{ .id = CommandId.PROBLEMS, .label = "Problems", .shortcut = "Ctrl+Shift+M", .in_top_bar = false },
-	{ .id = CommandId.GO_TO_DEFINITION, .label = "Go to Definition", .shortcut = "F12", .in_top_bar = false },
-	{ .id = CommandId.COMPLETE, .label = "Complete", .shortcut = "Ctrl+Space", .in_top_bar = false },
-	{ .id = CommandId.SELECT_THEME, .label = "Theme", .shortcut = "Ctrl+Shift+T", .in_top_bar = false },
-	{ .id = CommandId.SEARCH_PROJECT, .label = "Search in Project", .shortcut = "Ctrl+Shift+F", .in_top_bar = false },
-	{ .id = CommandId.SYMBOLS_PROJECT, .label = "Go to Symbol", .shortcut = "Ctrl+Shift+O", .in_top_bar = false },
+	{ .id = CommandId.NEW_FILE, .label = "New", .shortcut = "Ctrl+N", .in_top_bar = true, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.NEW_FOLDER, .label = "New Folder", .shortcut = "", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.OPEN, .label = "Open", .shortcut = "Ctrl+O", .in_top_bar = true, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.SAVE, .label = "Save", .shortcut = "Ctrl+S", .in_top_bar = true, .contexts = CTX_GLOBAL },
+	{
+		.id = CommandId.SHOW_PALETTE,
+		.label = "Command Palette",
+		.shortcut = "Ctrl+Shift+P",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{ .id = CommandId.FIND, .label = "Find", .shortcut = "Ctrl+F", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.REPLACE, .label = "Replace", .shortcut = "Ctrl+H", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.COPY, .label = "Copy", .shortcut = "Ctrl+C", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.CUT, .label = "Cut", .shortcut = "Ctrl+X", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{
+		.id = CommandId.SELECT_ALL,
+		.label = "Select All",
+		.shortcut = "Ctrl+A",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.PROBLEMS,
+		.label = "Problems",
+		.shortcut = "Ctrl+Shift+M",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.GO_TO_DEFINITION,
+		.label = "Go to Definition",
+		.shortcut = "F12",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.COMPLETE,
+		.label = "Complete",
+		.shortcut = "Ctrl+Space",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.SELECT_THEME,
+		.label = "Theme",
+		.shortcut = "Ctrl+Shift+T",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.SEARCH_PROJECT,
+		.label = "Search in Project",
+		.shortcut = "Ctrl+Shift+F",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.SYMBOLS_PROJECT,
+		.label = "Go to Symbol",
+		.shortcut = "Ctrl+Shift+O",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
 	{
 		.id = CommandId.TOGGLE_SETTINGS,
 		.label = "Settings",
 		.shortcut = "Ctrl+Shift+S",
 		.in_top_bar = true,
+		.contexts = CTX_GLOBAL,
 	},
 };
 

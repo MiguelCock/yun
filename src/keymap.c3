@@ -11,7 +11,7 @@ const uint MOD_CTRL    = 1;
 const uint MOD_SHIFT   = 2;
 const uint MOD_ALT     = 4;
 const uint MOD_SUPER   = 8;
-const int MAX_COMMANDS = 64;
+const int MAX_COMMANDS = 256;
 
 struct Chord
 {
@@ -60,7 +60,7 @@ fn bool key_from_name(String token, rl::RLKeyboardKey* out)
 	{
 		char c = token[0];
 		if (c >= 'a' && c <= 'z') c = (char)(c - 32);
-		if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
+		if (c >= 33 && c <= 126)
 		{
 			*out = (rl::RLKeyboardKey)(int)c;
 			return true;
@@ -136,6 +136,91 @@ fn bool key_from_name(String token, rl::RLKeyboardKey* out)
 	if (equals_ci(token, "pagedown") || equals_ci(token, "pgdn"))
 	{
 		*out = rl::RLKeyboardKey.PAGE_DOWN;
+		return true;
+	}
+
+	if (equals_ci(token, "insert") || equals_ci(token, "ins"))
+	{
+		*out = rl::RLKeyboardKey.INSERT;
+		return true;
+	}
+	if (equals_ci(token, "caps_lock") || equals_ci(token, "capslock"))
+	{
+		*out = rl::RLKeyboardKey.CAPS_LOCK;
+		return true;
+	}
+	if (equals_ci(token, "scroll_lock"))
+	{
+		*out = rl::RLKeyboardKey.SCROLL_LOCK;
+		return true;
+	}
+	if (equals_ci(token, "num_lock"))
+	{
+		*out = rl::RLKeyboardKey.NUM_LOCK;
+		return true;
+	}
+	if (equals_ci(token, "print_screen") || equals_ci(token, "printscreen"))
+	{
+		*out = rl::RLKeyboardKey.PRINT_SCREEN;
+		return true;
+	}
+	if (equals_ci(token, "pause"))
+	{
+		*out = rl::RLKeyboardKey.PAUSE;
+		return true;
+	}
+	if (equals_ci(token, "kb_menu") || equals_ci(token, "menu"))
+	{
+		*out = rl::RLKeyboardKey.KB_MENU;
+		return true;
+	}
+	if (equals_ci(token, "kp_decimal"))
+	{
+		*out = rl::RLKeyboardKey.KP_DECIMAL;
+		return true;
+	}
+	if (equals_ci(token, "kp_divide"))
+	{
+		*out = rl::RLKeyboardKey.KP_DIVIDE;
+		return true;
+	}
+	if (equals_ci(token, "kp_multiply"))
+	{
+		*out = rl::RLKeyboardKey.KP_MULTIPLY;
+		return true;
+	}
+	if (equals_ci(token, "kp_subtract"))
+	{
+		*out = rl::RLKeyboardKey.KP_SUBTRACT;
+		return true;
+	}
+	if (equals_ci(token, "kp_add"))
+	{
+		*out = rl::RLKeyboardKey.KP_ADD;
+		return true;
+	}
+	if (equals_ci(token, "kp_enter"))
+	{
+		*out = rl::RLKeyboardKey.KP_ENTER;
+		return true;
+	}
+	if (equals_ci(token, "kp_equal"))
+	{
+		*out = rl::RLKeyboardKey.KP_EQUAL;
+		return true;
+	}
+	if (token.len == 3 && lower_ascii(
+		token[0]
+	) == 'k' && lower_ascii(token[1]) == 'p' && token[2] >= '0' && token[2] <= '9')
+	{
+		*out = (rl::RLKeyboardKey)((int)rl::RLKeyboardKey.KP_0 + (token[2] - '0'));
+		return true;
+	}
+	if (token.len == 4 && lower_ascii(
+		token[0]
+	) == 'k' && lower_ascii(token[1]) == 'p' && token[2] == '_' && token[3] >= '0' && token[3] <= '9')
+	{
+		*out = (rl::RLKeyboardKey)((int)rl::RLKeyboardKey.KP_0 + (token[3] - '0'));
 		return true;
 	}
 
@@ -253,12 +338,44 @@ fn String key_name(Allocator allocator, rl::RLKeyboardKey key)
 			return "PageUp";
 		case rl::RLKeyboardKey.PAGE_DOWN:
 			return "PageDown";
+		case rl::RLKeyboardKey.INSERT:
+			return "Insert";
+		case rl::RLKeyboardKey.CAPS_LOCK:
+			return "CapsLock";
+		case rl::RLKeyboardKey.SCROLL_LOCK:
+			return "ScrollLock";
+		case rl::RLKeyboardKey.NUM_LOCK:
+			return "NumLock";
+		case rl::RLKeyboardKey.PRINT_SCREEN:
+			return "PrintScreen";
+		case rl::RLKeyboardKey.PAUSE:
+			return "Pause";
+		case rl::RLKeyboardKey.KB_MENU:
+			return "Menu";
+		case rl::RLKeyboardKey.KP_DECIMAL:
+			return "KP_Decimal";
+		case rl::RLKeyboardKey.KP_DIVIDE:
+			return "KP_Divide";
+		case rl::RLKeyboardKey.KP_MULTIPLY:
+			return "KP_Multiply";
+		case rl::RLKeyboardKey.KP_SUBTRACT:
+			return "KP_Subtract";
+		case rl::RLKeyboardKey.KP_ADD:
+			return "KP_Add";
+		case rl::RLKeyboardKey.KP_ENTER:
+			return "KP_Enter";
+		case rl::RLKeyboardKey.KP_EQUAL:
+			return "KP_Equal";
 		default:
 			break;
 	}
 
 	int k = (int)key;
-	if ((k >= 'A' && k <= 'Z') || (k >= '0' && k <= '9')) return string::format(allocator, "%c", (char)k);
+	if (k >= 33 && k <= 126) return string::format(allocator, "%c", (char)k);
+	if (k >= (int)rl::RLKeyboardKey.KP_0 && k <= (int)rl::RLKeyboardKey.KP_9)
+	{
+		return string::format(allocator, "KP_%d", k - (int)rl::RLKeyboardKey.KP_0);
+	}
 	if (k >= (int)rl::RLKeyboardKey.F1 && k <= (int)rl::RLKeyboardKey.F12)
 	{
 		return string::format(allocator, "F%d", k - (int)rl::RLKeyboardKey.F1 + 1);
@@ -358,6 +475,15 @@ fn void Keymap.push_warning(&self, String message)
 	self.warnings.push(message);
 }
 
+fn void Keymap.unbind(&self, int id)
+{
+	if (id < 0 || id >= MAX_COMMANDS) return;
+	if (self.display[id].len > 0) self.display[id].free(self.allocator);
+	self.display[id] = "";
+	self.chords[id] = { .valid = false };
+	self.bound[id] = false;
+}
+
 fn void Keymap.set_chord(&self, int id, Chord chord)
 {
 	if (self.display[id].len > 0) self.display[id].free(self.allocator);
@@ -405,6 +531,11 @@ fn void Keymap.build(&self, config::Config* config)
 			self.push_warning(string::format(self.allocator, "Unknown command in keymap: %s", name));
 			continue;
 		}
+		if (config.keymap[i].chord.len == 0)
+		{
+			self.unbind(id);
+			continue;
+		}
 		Chord chord = parse_chord(config.keymap[i].chord);
 		if (!chord.valid)
 		{
@@ -426,11 +557,23 @@ fn String Keymap.shortcut(&self, commands::CommandId id)
 	return self.display[i];
 }
 
-fn int Keymap.poll(&self)
+fn bool context_matches(ulong contexts, ulong context)
+{
+	return ((contexts & context) != 0) || ((contexts & commands::CTX_GLOBAL) != 0);
+}
+
+fn bool Keymap.active(&self, int id, ulong context)
+{
+	if (id < 0 || id >= MAX_COMMANDS) return false;
+	if (!self.bound[id]) return false;
+	return context_matches(commands::command_def((commands::CommandId)id).contexts, context);
+}
+
+fn int Keymap.poll(&self, ulong context)
 {
 	for (usz i = 0; i < commands::command_count(); i++)
 	{
-		if (!self.bound[i]) continue;
+		if (!self.active((int)i, context)) continue;
 		if (chord_pressed(self.chords[i])) return (int)i;
 	}
 	return -1;

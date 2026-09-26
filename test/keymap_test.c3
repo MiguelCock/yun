@@ -149,3 +149,95 @@ fn void test_conflict_warns()
 		assert(k.warnings[0].compare_to("Shortcut Ctrl+N is bound to both New and Save") == 0);
 	};
 }
+
+fn void test_parse_punctuation()
+{
+	Chord comma = parse_chord("Ctrl+,");
+	assert(comma.valid && comma.key == rl::RLKeyboardKey.COMMA && comma.mods == MOD_CTRL);
+
+	Chord left = parse_chord("Ctrl+[");
+	assert(left.valid && left.key == rl::RLKeyboardKey.LEFT_BRACKET);
+
+	Chord right = parse_chord("]");
+	assert(right.valid && right.key == rl::RLKeyboardKey.RIGHT_BRACKET && right.mods == 0);
+
+	assert(parse_chord("Ctrl+-").key == rl::RLKeyboardKey.MINUS);
+	assert(parse_chord("Ctrl+=").key == rl::RLKeyboardKey.EQUAL);
+	assert(parse_chord("Ctrl+`").key == rl::RLKeyboardKey.GRAVE);
+	assert(parse_chord("Ctrl+/").key == rl::RLKeyboardKey.SLASH);
+	assert(parse_chord("Ctrl+.").key == rl::RLKeyboardKey.PERIOD);
+}
+
+fn void test_parse_named_and_keypad()
+{
+	assert(parse_chord("Insert").valid && parse_chord("Insert").key == rl::RLKeyboardKey.INSERT);
+	assert(parse_chord("CapsLock").valid && parse_chord("CapsLock").key == rl::RLKeyboardKey.CAPS_LOCK);
+	assert(parse_chord("PrintScreen").valid && parse_chord("PrintScreen").key == rl::RLKeyboardKey.PRINT_SCREEN);
+	assert(parse_chord("KP_Add").valid && parse_chord("KP_Add").key == rl::RLKeyboardKey.KP_ADD);
+	assert(parse_chord("KP_Subtract").valid && parse_chord("KP_Subtract").key == rl::RLKeyboardKey.KP_SUBTRACT);
+	assert(parse_chord("KP_Enter").valid && parse_chord("KP_Enter").key == rl::RLKeyboardKey.KP_ENTER);
+	assert(parse_chord("KP_5").valid && parse_chord("KP_5").key == rl::RLKeyboardKey.KP_5);
+}
+
+fn void test_format_punctuation_roundtrip()
+{
+	@pool()
+	{
+		assert(format_chord(tmem, parse_chord("Ctrl+,"), false).compare_to("Ctrl+,") == 0);
+		assert(format_chord(tmem, parse_chord("Ctrl+["), false).compare_to("Ctrl+[") == 0);
+		assert(format_chord(tmem, parse_chord("-"), false).compare_to("-") == 0);
+		assert(format_chord(tmem, parse_chord("KP_Add"), false).compare_to("KP_Add") == 0);
+		assert(format_chord(tmem, parse_chord("Insert"), false).compare_to("Insert") == 0);
+	};
+}
+
+fn void test_context_matches()
+{
+	assert(context_matches(commands::CTX_GLOBAL, commands::CTX_MOVE));
+	assert(context_matches(commands::CTX_GLOBAL, commands::CTX_SETTINGS));
+	assert(context_matches(commands::CTX_EDIT, commands::CTX_EDIT));
+	assert(!context_matches(commands::CTX_EDIT, commands::CTX_MOVE));
+	assert(context_matches(commands::CTX_EDIT | commands::CTX_MOVE, commands::CTX_MOVE));
+}
+
+fn void test_active_by_context()
+{
+	@pool()
+	{
+		config::Config c;
+		c.init(tmem);
+		c.reset();
+
+		Keymap k;
+		k.init(tmem);
+		k.build(&c);
+
+		int save = (int)commands::CommandId.SAVE;
+		assert(k.active(save, commands::CTX_MOVE));
+		assert(k.active(save, commands::CTX_SETTINGS));
+		k.unbind(save);
+		assert(!k.active(save, commands::CTX_MOVE));
+		assert(k.shortcut(commands::CommandId.SAVE).len == 0);
+		k.destroy();
+	};
+}
+
+fn void test_unbind_via_config()
+{
+	@pool()
+	{
+		config::Config c;
+		c.init(tmem);
+		c.reset();
+		assert(c.apply_json("{\"keymap\":{\"save\":\"\"}}", settings::SettingLayer.GLOBAL));
+
+		Keymap k;
+		k.init(tmem);
+		k.build(&c);
+
+		assert(k.shortcut(commands::CommandId.SAVE).len == 0);
+		assert(k.shortcut(commands::CommandId.OPEN).compare_to("Ctrl+O") == 0);
+		assert(k.warnings.len() == 0);
+		k.destroy();
+	};
+}
