@@ -95,6 +95,16 @@ fn int command_for(ContextAction action)
 			return (int)commands::CommandId.OPEN;
 		case ContextAction.GO_TO_DEFINITION:
 			return (int)commands::CommandId.GO_TO_DEFINITION;
+		case ContextAction.TOGGLE_CARD:
+			return (int)commands::CommandId.TOGGLE_CARD;
+		case ContextAction.RENAME_CARD:
+			return (int)commands::CommandId.RENAME_CARD;
+		case ContextAction.DUPLICATE_CARD:
+			return (int)commands::CommandId.DUPLICATE_CARD;
+		case ContextAction.COPY_PATH:
+			return (int)commands::CommandId.COPY_PATH;
+		case ContextAction.DELETE_CARD:
+			return (int)commands::CommandId.DELETE_CARD;
 		default:
 			return -1;
 	}

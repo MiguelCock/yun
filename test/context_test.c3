@@ -51,6 +51,9 @@ fn void test_command_mapping()
 	assert(command_for(ContextAction.NEW_FOLDER) == (int)commands::CommandId.NEW_FOLDER);
 	assert(command_for(ContextAction.OPEN_PROJECT) == (int)commands::CommandId.OPEN);
 	assert(command_for(ContextAction.GO_TO_DEFINITION) == (int)commands::CommandId.GO_TO_DEFINITION);
-	assert(command_for(ContextAction.DELETE_CARD) == -1);
-	assert(command_for(ContextAction.COPY_PATH) == -1);
+	assert(command_for(ContextAction.DELETE_CARD) == (int)commands::CommandId.DELETE_CARD);
+	assert(command_for(ContextAction.COPY_PATH) == (int)commands::CommandId.COPY_PATH);
+	assert(command_for(ContextAction.TOGGLE_CARD) == (int)commands::CommandId.TOGGLE_CARD);
+	assert(command_for(ContextAction.RENAME_CARD) == (int)commands::CommandId.RENAME_CARD);
+	assert(command_for(ContextAction.DUPLICATE_CARD) == (int)commands::CommandId.DUPLICATE_CARD);
 }
