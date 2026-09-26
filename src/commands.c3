@@ -1,18 +1,19 @@
 module yun::commands;
 
-const ulong CTX_GLOBAL   = 1 << 0;
-const ulong CTX_EDIT     = 1 << 1;
-const ulong CTX_MOVE     = 1 << 2;
-const ulong CTX_TOP_BAR  = 1 << 3;
-const ulong CTX_PALETTE  = 1 << 4;
-const ulong CTX_FIND     = 1 << 5;
-const ulong CTX_SEARCH   = 1 << 6;
-const ulong CTX_SYMBOLS  = 1 << 7;
-const ulong CTX_PROBLEMS = 1 << 8;
-const ulong CTX_PROMPT   = 1 << 9;
-const ulong CTX_BROWSER  = 1 << 10;
-const ulong CTX_SETTINGS = 1 << 11;
-const ulong CTX_MENU     = 1 << 12;
+const ulong CTX_GLOBAL     = 1 << 0;
+const ulong CTX_EDIT       = 1 << 1;
+const ulong CTX_MOVE       = 1 << 2;
+const ulong CTX_TOP_BAR    = 1 << 3;
+const ulong CTX_PALETTE    = 1 << 4;
+const ulong CTX_FIND       = 1 << 5;
+const ulong CTX_SEARCH     = 1 << 6;
+const ulong CTX_SYMBOLS    = 1 << 7;
+const ulong CTX_PROBLEMS   = 1 << 8;
+const ulong CTX_PROMPT     = 1 << 9;
+const ulong CTX_BROWSER    = 1 << 10;
+const ulong CTX_SETTINGS   = 1 << 11;
+const ulong CTX_MENU       = 1 << 12;
+const ulong CTX_COMPLETION = 1 << 13;
 
 enum CommandId
 {
@@ -34,6 +35,26 @@ enum CommandId
 	SEARCH_PROJECT,
 	SYMBOLS_PROJECT,
 	TOGGLE_SETTINGS,
+	UNDO,
+	REDO,
+	INDENT,
+	OUTDENT,
+	NEWLINE,
+	DELETE_BACK,
+	DELETE_FORWARD,
+	CURSOR_LEFT,
+	CURSOR_RIGHT,
+	CURSOR_UP,
+	CURSOR_DOWN,
+	LINE_START,
+	LINE_END,
+	PAGE_UP,
+	PAGE_DOWN,
+	EXIT_EDITOR,
+	COMPLETION_NEXT,
+	COMPLETION_PREV,
+	COMPLETION_ACCEPT,
+	COMPLETION_CLOSE,
 }
 
 struct CommandDef
@@ -118,6 +139,104 @@ const CommandDef[] COMMAND_DEFS = {
 		.in_top_bar = true,
 		.contexts = CTX_GLOBAL,
 	},
+	{ .id = CommandId.UNDO, .label = "Undo", .shortcut = "Ctrl+Z", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.REDO, .label = "Redo", .shortcut = "Ctrl+Y", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.INDENT, .label = "Indent", .shortcut = "Tab", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.OUTDENT,
+		.label = "Outdent",
+		.shortcut = "Shift+Tab",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{ .id = CommandId.NEWLINE, .label = "New Line", .shortcut = "Enter", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.DELETE_BACK,
+		.label = "Delete Back",
+		.shortcut = "Backspace",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.DELETE_FORWARD,
+		.label = "Delete Forward",
+		.shortcut = "Delete",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.CURSOR_LEFT,
+		.label = "Cursor Left",
+		.shortcut = "Left",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.CURSOR_RIGHT,
+		.label = "Cursor Right",
+		.shortcut = "Right",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{ .id = CommandId.CURSOR_UP, .label = "Cursor Up", .shortcut = "Up", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.CURSOR_DOWN,
+		.label = "Cursor Down",
+		.shortcut = "Down",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.LINE_START,
+		.label = "Line Start",
+		.shortcut = "Home",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{ .id = CommandId.LINE_END, .label = "Line End", .shortcut = "End", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.PAGE_UP, .label = "Page Up", .shortcut = "PageUp", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.PAGE_DOWN,
+		.label = "Page Down",
+		.shortcut = "PageDown",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.EXIT_EDITOR,
+		.label = "Exit Editor",
+		.shortcut = "Esc",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{
+		.id = CommandId.COMPLETION_NEXT,
+		.label = "Completion Next",
+		.shortcut = "Down",
+		.in_top_bar = false,
+		.contexts = CTX_COMPLETION,
+	},
+	{
+		.id = CommandId.COMPLETION_PREV,
+		.label = "Completion Previous",
+		.shortcut = "Up",
+		.in_top_bar = false,
+		.contexts = CTX_COMPLETION,
+	},
+	{
+		.id = CommandId.COMPLETION_ACCEPT,
+		.label = "Completion Accept",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_COMPLETION,
+	},
+	{
+		.id = CommandId.COMPLETION_CLOSE,
+		.label = "Completion Close",
+		.shortcut = "Esc",
+		.in_top_bar = false,
+		.contexts = CTX_COMPLETION,
+	},
 };
 
 fn usz command_count()
@@ -170,6 +289,46 @@ fn String command_name(CommandId id)
 			return "symbols_project";
 		case CommandId.TOGGLE_SETTINGS:
 			return "toggle_settings";
+		case CommandId.UNDO:
+			return "undo";
+		case CommandId.REDO:
+			return "redo";
+		case CommandId.INDENT:
+			return "indent";
+		case CommandId.OUTDENT:
+			return "outdent";
+		case CommandId.NEWLINE:
+			return "newline";
+		case CommandId.DELETE_BACK:
+			return "delete_back";
+		case CommandId.DELETE_FORWARD:
+			return "delete_forward";
+		case CommandId.CURSOR_LEFT:
+			return "cursor_left";
+		case CommandId.CURSOR_RIGHT:
+			return "cursor_right";
+		case CommandId.CURSOR_UP:
+			return "cursor_up";
+		case CommandId.CURSOR_DOWN:
+			return "cursor_down";
+		case CommandId.LINE_START:
+			return "line_start";
+		case CommandId.LINE_END:
+			return "line_end";
+		case CommandId.PAGE_UP:
+			return "page_up";
+		case CommandId.PAGE_DOWN:
+			return "page_down";
+		case CommandId.EXIT_EDITOR:
+			return "exit_editor";
+		case CommandId.COMPLETION_NEXT:
+			return "completion_next";
+		case CommandId.COMPLETION_PREV:
+			return "completion_prev";
+		case CommandId.COMPLETION_ACCEPT:
+			return "completion_accept";
+		case CommandId.COMPLETION_CLOSE:
+			return "completion_close";
 	}
 }
 
@@ -244,6 +403,27 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 			return has_project;
 		case CommandId.TOGGLE_SETTINGS:
 			return true;
+		case CommandId.UNDO:
+		case CommandId.REDO:
+		case CommandId.INDENT:
+		case CommandId.OUTDENT:
+		case CommandId.NEWLINE:
+		case CommandId.DELETE_BACK:
+		case CommandId.DELETE_FORWARD:
+		case CommandId.CURSOR_LEFT:
+		case CommandId.CURSOR_RIGHT:
+		case CommandId.CURSOR_UP:
+		case CommandId.CURSOR_DOWN:
+		case CommandId.LINE_START:
+		case CommandId.LINE_END:
+		case CommandId.PAGE_UP:
+		case CommandId.PAGE_DOWN:
+		case CommandId.EXIT_EDITOR:
+		case CommandId.COMPLETION_NEXT:
+		case CommandId.COMPLETION_PREV:
+		case CommandId.COMPLETION_ACCEPT:
+		case CommandId.COMPLETION_CLOSE:
+			return has_buffer;
 	}
 }
 

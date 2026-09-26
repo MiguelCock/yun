@@ -423,11 +423,8 @@ fn void mod_state(bool* ctrl, bool* shift, bool* alt, bool* super)
 	*alt = rl::is_key_down(rl::RLKeyboardKey.LEFT_ALT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_ALT);
 }
 
-fn bool chord_pressed(Chord chord)
+fn bool chord_mods_ok(Chord chord)
 {
-	if (!chord.valid) return false;
-	if (!rl::is_key_pressed(chord.key)) return false;
-
 	bool ctrl;
 	bool shift;
 	bool alt;
@@ -439,6 +436,20 @@ fn bool chord_pressed(Chord chord)
 	if (((chord.mods & MOD_ALT) != 0) != alt) return false;
 	if (((chord.mods & MOD_SUPER) != 0) != super) return false;
 	return true;
+}
+
+fn bool chord_pressed(Chord chord)
+{
+	if (!chord.valid) return false;
+	if (!rl::is_key_pressed(chord.key)) return false;
+	return chord_mods_ok(chord);
+}
+
+fn bool chord_pressed_repeat(Chord chord)
+{
+	if (!chord.valid) return false;
+	if (!rl::is_key_pressed(chord.key) && !rl::is_key_pressed_repeat(chord.key)) return false;
+	return chord_mods_ok(chord);
 }
 
 fn void Keymap.init(&self, Allocator allocator)
@@ -492,6 +503,12 @@ fn void Keymap.set_chord(&self, int id, Chord chord)
 	self.display[id] = format_chord(self.allocator, chord, is_macos());
 }
 
+fn bool contexts_overlap(ulong a, ulong b)
+{
+	if ((a & commands::CTX_GLOBAL) != 0 || (b & commands::CTX_GLOBAL) != 0) return true;
+	return (a & b) != 0;
+}
+
 fn void Keymap.detect_conflicts(&self)
 {
 	for (usz i = 0; i < commands::command_count(); i++)
@@ -501,6 +518,8 @@ fn void Keymap.detect_conflicts(&self)
 		{
 			if (!self.bound[j]) continue;
 			if (!chord_equals(self.chords[i], self.chords[j])) continue;
+			if (!contexts_overlap(commands::command_def((commands::CommandId)i)
+				.contexts, commands::command_def((commands::CommandId)j).contexts)) continue;
 			self.push_warning(
 				string::format(
 					self.allocator,
@@ -567,6 +586,41 @@ fn bool Keymap.active(&self, int id, ulong context)
 	if (id < 0 || id >= MAX_COMMANDS) return false;
 	if (!self.bound[id]) return false;
 	return context_matches(commands::command_def((commands::CommandId)id).contexts, context);
+}
+
+fn bool Keymap.pressed(&self, int id, ulong context)
+{
+	if (!self.active(id, context)) return false;
+	return chord_pressed(self.chords[id]);
+}
+
+fn bool Keymap.pressed_repeat(&self, int id, ulong context)
+{
+	if (!self.active(id, context)) return false;
+	return chord_pressed_repeat(self.chords[id]);
+}
+
+fn bool chord_mods_ok_ignore_shift(Chord chord)
+{
+	bool ctrl;
+	bool shift;
+	bool alt;
+	bool super;
+	mod_state(&ctrl, &shift, &alt, &super);
+
+	if (((chord.mods & MOD_CTRL) != 0) != ctrl) return false;
+	if (((chord.mods & MOD_ALT) != 0) != alt) return false;
+	if (((chord.mods & MOD_SUPER) != 0) != super) return false;
+	return true;
+}
+
+fn bool Keymap.pressed_move(&self, int id, ulong context)
+{
+	if (!self.active(id, context)) return false;
+	Chord chord = self.chords[id];
+	if (!chord.valid) return false;
+	if (!rl::is_key_pressed(chord.key) && !rl::is_key_pressed_repeat(chord.key)) return false;
+	return chord_mods_ok_ignore_shift(chord);
 }
 
 fn int Keymap.poll(&self, ulong context)

@@ -129,7 +129,7 @@ Unknown top-level keys or section keys warn and are ignored, and a missing confi
 
 In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's *Settings* button, or the command palette. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value.
 
-Keybindings use chords like `Ctrl+Shift+P`. Modifiers are `Ctrl` (shown as `Cmd` on macOS), `Shift`, `Alt` and `Super`; keys can be letters/digits, punctuation (`, . / ; ' [ ] - = \ \``), named keys (`Enter`, `Esc`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `CapsLock`, `PrintScreen`, `Pause`), function keys `F1`-`F12`, or keypad keys (`KP_0`-`KP_9`, `KP_Add`, `KP_Subtract`, `KP_Multiply`, `KP_Divide`, `KP_Enter`). Set a command's chord to `""` to unbind it.
+Keybindings use chords like `Ctrl+Shift+P`. Modifiers are `Ctrl` (shown as `Cmd` on macOS), `Shift`, `Alt` and `Super`; keys can be letters/digits, punctuation (`, . / ; ' [ ] - = \ \``), named keys (`Enter`, `Esc`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `CapsLock`, `PrintScreen`, `Pause`), function keys `F1`-`F12`, or keypad keys (`KP_0`-`KP_9`, `KP_Add`, `KP_Subtract`, `KP_Multiply`, `KP_Divide`, `KP_Enter`). Set a command's chord to `""` to unbind it. Editor and completion actions (undo/redo, indentation, cursor movement, completion next/prev/accept) are registered commands too, so they can be rebound the same way.
 
 ## Versioning and releases
 
