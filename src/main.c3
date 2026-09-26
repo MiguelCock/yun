@@ -193,6 +193,7 @@ struct App
 	symbols::Symbols* symbols;
 	editor::EditorMetrics metrics;
 	bool* project_open;
+	bool* content_changed;
 	int* pending_kind;
 	int* pending_parent;
 	RLVector2* pending_world;
@@ -422,6 +423,105 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.UNDO:
+
+			{
+				if (project.editor_undo())
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.REDO:
+
+			{
+				if (project.editor_redo())
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.NEWLINE:
+
+			{
+				if (project.editor_insert("\n"))
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.INDENT:
+
+			{
+				if (project.editor_insert("\t"))
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.OUTDENT:
+
+			{
+				if (project.editor_outdent())
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.DELETE_BACK:
+
+			{
+				if (project.editor_delete(true))
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.DELETE_FORWARD:
+
+			{
+				if (project.editor_delete(false))
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.CURSOR_LEFT:
+			project.editor_move(project::EditorMove.LEFT, app.metrics);
+			return;
+		case commands::CommandId.CURSOR_RIGHT:
+			project.editor_move(project::EditorMove.RIGHT, app.metrics);
+			return;
+		case commands::CommandId.CURSOR_UP:
+			project.editor_move(project::EditorMove.UP, app.metrics);
+			return;
+		case commands::CommandId.CURSOR_DOWN:
+			project.editor_move(project::EditorMove.DOWN, app.metrics);
+			return;
+		case commands::CommandId.LINE_START:
+			project.editor_move(project::EditorMove.LINE_START, app.metrics);
+			return;
+		case commands::CommandId.LINE_END:
+			project.editor_move(project::EditorMove.LINE_END, app.metrics);
+			return;
+		case commands::CommandId.PAGE_UP:
+			project.editor_move(project::EditorMove.PAGE_UP, app.metrics);
+			return;
+		case commands::CommandId.PAGE_DOWN:
+			project.editor_move(project::EditorMove.PAGE_DOWN, app.metrics);
+			return;
+		case commands::CommandId.EXIT_EDITOR:
+			project.editor_exit();
+			return;
+		default:
+			return;
 	}
 }
 
@@ -714,6 +814,7 @@ fn int main(String[] args)
 	bool project_open           = false;
 	project::OpenJob* open_job  = null;
 	bool opening                = false;
+	bool content_changed        = false;
 	double font_indicator_until = 0.0;
 	UiMode ui_mode              = UiMode.MOVE;
 	int edit_grace_frames       = 0;
@@ -759,6 +860,7 @@ fn int main(String[] args)
 		.symbols = &symbols,
 		.metrics = metrics,
 		.project_open = &project_open,
+		.content_changed = &content_changed,
 		.pending_kind = &pending_kind,
 		.pending_parent = &pending_parent,
 		.pending_world = &pending_world,
@@ -1169,7 +1271,7 @@ fn int main(String[] args)
 			ulong key_context = commands::CTX_MOVE;
 			if (ui_mode == UiMode.EDIT)
 			{
-				key_context = commands::CTX_EDIT;
+				key_context = commands::CTX_GLOBAL;
 			}
 			else if (ui_mode == UiMode.TOP_BAR)
 			{
@@ -1388,8 +1490,8 @@ fn int main(String[] args)
 				rl::unload_dropped_files(files);
 			}
 
-			bool content_changed = false;
-			project.update(&canvas, metrics, over_top || font_wheel, &content_changed);
+			content_changed = false;
+			project.update(&canvas, &keymap, metrics, over_top || font_wheel, &content_changed);
 			if (ui_mode == UiMode.EDIT && project.focused < 0)
 			{
 				ui_mode = UiMode.MOVE;

@@ -200,6 +200,15 @@ fn void test_context_matches()
 	assert(context_matches(commands::CTX_EDIT | commands::CTX_MOVE, commands::CTX_MOVE));
 }
 
+fn void test_contexts_overlap()
+{
+	assert(contexts_overlap(commands::CTX_GLOBAL, commands::CTX_MOVE));
+	assert(contexts_overlap(commands::CTX_EDIT, commands::CTX_EDIT));
+	assert(contexts_overlap(commands::CTX_EDIT | commands::CTX_MOVE, commands::CTX_MOVE));
+	assert(!contexts_overlap(commands::CTX_EDIT, commands::CTX_COMPLETION));
+	assert(!contexts_overlap(commands::CTX_EDIT, commands::CTX_MENU));
+}
+
 fn void test_active_by_context()
 {
 	@pool()

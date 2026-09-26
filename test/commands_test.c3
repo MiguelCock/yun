@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 18);
+	assert(command_count() == 38);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -60,6 +60,11 @@ fn void test_contexts()
 	assert(command_def(CommandId.SAVE).contexts == CTX_GLOBAL);
 	assert(command_def(CommandId.COPY).contexts == CTX_GLOBAL);
 	assert(command_def(CommandId.TOGGLE_SETTINGS).contexts == CTX_GLOBAL);
+	assert(command_def(CommandId.UNDO).contexts == CTX_EDIT);
+	assert(command_def(CommandId.CURSOR_UP).contexts == CTX_EDIT);
+	assert(command_def(CommandId.OUTDENT).contexts == CTX_EDIT);
+	assert(command_def(CommandId.COMPLETION_ACCEPT).contexts == CTX_COMPLETION);
+	assert(command_def(CommandId.COMPLETION_NEXT).contexts == CTX_COMPLETION);
 }
 
 fn void test_command_from_name()
