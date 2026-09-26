@@ -209,6 +209,30 @@ fn void test_contexts_overlap()
 	assert(!contexts_overlap(commands::CTX_EDIT, commands::CTX_MENU));
 }
 
+fn void test_eligible_exact()
+{
+	@pool()
+	{
+		config::Config c;
+		c.init(tmem);
+		c.reset();
+
+		Keymap k;
+		k.init(tmem);
+		k.build(&c);
+
+		int save = (int)commands::CommandId.SAVE;
+		int pan  = (int)commands::CommandId.PAN_LEFT;
+
+		assert(k.eligible(save, commands::CTX_GLOBAL, false));
+		assert(!k.eligible(save, commands::CTX_MOVE, true));
+		assert(k.eligible(save, commands::CTX_MOVE, false));
+		assert(k.eligible(pan, commands::CTX_MOVE, true));
+		assert(!k.eligible(pan, commands::CTX_TOP_BAR, true));
+		k.destroy();
+	};
+}
+
 fn void test_active_by_context()
 {
 	@pool()
