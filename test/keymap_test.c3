@@ -279,3 +279,43 @@ fn void test_unbind_via_config()
 		k.destroy();
 	};
 }
+
+fn void test_build_project_override()
+{
+	@pool()
+	{
+		config::Config c;
+		c.init(tmem);
+		c.set_key_binding("save", "", settings::SettingLayer.GLOBAL);
+		c.set_key_binding("save", "Ctrl+J", settings::SettingLayer.PROJECT);
+
+		Keymap k;
+		k.init(tmem);
+		k.build(&c);
+		assert(k.shortcut(commands::CommandId.SAVE).compare_to("Ctrl+J") == 0);
+		k.destroy();
+		c.destroy();
+	};
+}
+
+fn void test_conflicts()
+{
+	@pool()
+	{
+		config::Config c;
+		c.init(tmem);
+		c.reset();
+
+		Keymap k;
+		k.init(tmem);
+		k.build(&c);
+		assert(!k.conflicts((int)commands::CommandId.SAVE));
+
+		c.set_key_binding("open", "Ctrl+S", settings::SettingLayer.GLOBAL);
+		k.build(&c);
+		assert(k.conflicts((int)commands::CommandId.SAVE));
+		assert(k.conflicts((int)commands::CommandId.OPEN));
+		k.destroy();
+		c.destroy();
+	};
+}
