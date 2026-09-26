@@ -1418,6 +1418,7 @@ fn void Project.update(
 	&self,
 	Canvas* canvas,
 	keymap::Keymap* keymap,
+	bool suppress_input,
 	EditorMetrics metrics,
 	bool pointer_blocked,
 	bool* out_changed
@@ -1645,7 +1646,7 @@ fn void Project.update(
 
 	self.refresh_sleep(expand_rect(visible_world_rect(canvas.camera), DRAW_CULL_MARGIN));
 	self.poll_external(rl::get_time());
-	self.handle_keyboard(keymap, metrics, out_changed);
+	self.handle_keyboard(keymap, suppress_input, metrics, out_changed);
 }
 
 fn RLMouseCursor cursor_for_handle(int handle)
@@ -1913,8 +1914,16 @@ fn bool shift_down()
 	return rl::is_key_down(rl::RLKeyboardKey.LEFT_SHIFT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_SHIFT);
 }
 
-fn void Project.handle_keyboard(&self, keymap::Keymap* keymap, EditorMetrics metrics, bool* out_changed)
+fn void Project.handle_keyboard(
+	&self,
+	keymap::Keymap* keymap,
+	bool suppress_input,
+	EditorMetrics metrics,
+	bool* out_changed
+)
 {
+	if (suppress_input) return;
+
 	FileCard* card = self.focused_editable_card();
 	if (!card) return;
 
