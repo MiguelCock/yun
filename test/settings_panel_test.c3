@@ -11,7 +11,7 @@ fn void test_keys_section_rows()
 		p.init(tmem);
 		p.show();
 
-		assert(p.rows.len() == 101);
+		assert(p.rows.len() == 103);
 		bool found_header = false;
 		bool found_action = false;
 		int command_rows  = 0;

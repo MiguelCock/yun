@@ -127,7 +127,7 @@ Values are grouped into sections, for example:
 
 Unknown top-level keys or section keys warn and are ignored, and a missing config is valid (built-in defaults apply).
 
-The `editor` section covers font size and family (monospace fonts found on the system), line height, padding, indentation (tabs or spaces + width), auto-indent, caret blink, scroll margin, wheel-scroll lines and the line-number gutter.
+The `editor` section covers font size and family (monospace fonts found on the system), line height, padding, indentation (tabs or spaces + width), auto-indent, caret blink, scroll margin, wheel-scroll lines and the line-number gutter. The `app` section also sets the interface font (`ui_font_family`) and `ui_font_size`, which scale the whole UI (text and layout).
 
 In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's *Settings* button, or the command palette. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value. The panel's **Keys** section lists every command's shortcut: `Enter` captures a new chord, `Del` unbinds, `Backspace` resets it (when the search is empty), `Esc` cancels, and a *Reset all* row clears the current scope.
 

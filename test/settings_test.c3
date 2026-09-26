@@ -321,9 +321,18 @@ fn void test_font_options_hook()
 	String[] opts = { "A", "B" };
 	set_font_options(opts);
 	assert(setting_options(SettingId.EDITOR_FONT_FAMILY).len == 2);
+	assert(setting_options(SettingId.APP_UI_FONT_FAMILY).len == 2);
 	assert(setting_options(SettingId.EDITOR_INDENT_STYLE).len == 2);
 	set_font_options({ });
 	assert(setting_options(SettingId.EDITOR_FONT_FAMILY).len == 1);
+	assert(setting_options(SettingId.APP_UI_FONT_FAMILY).len == 1);
+}
+
+fn void test_ui_font_defaults()
+{
+	assert(SETTINGS[(int)SettingId.APP_UI_FONT_FAMILY].kind == SettingKind.ENUM);
+	assert(SETTINGS[(int)SettingId.APP_UI_FONT_FAMILY].fallback.s.compare_to("JetBrains Mono") == 0);
+	assert(SETTINGS[(int)SettingId.APP_UI_FONT_SIZE].fallback.i == 16);
 }
 
 fn void test_editor_clamp()

@@ -7,6 +7,7 @@ import std::math;
 import yun::commands;
 import yun::keymap;
 import yun::theme;
+import yun::ui;
 
 const int BROWSER_WIDTH  = 680;
 const int BROWSER_HEIGHT = 460;
@@ -151,28 +152,54 @@ fn void Browser.draw(&self)
 {
 	if (!self.open) return;
 
-	int x = (rl::get_screen_width() - BROWSER_WIDTH) / 2;
-	int y = (rl::get_screen_height() - BROWSER_HEIGHT) / 2;
-	rl::draw_rectangle(x, y, BROWSER_WIDTH, BROWSER_HEIGHT, theme::current().panel_bg);
-	rl::draw_rectangle(x, y, BROWSER_WIDTH, 28, theme::current().panel_bg_alt);
-	rl::draw_rectangle_lines(x, y, BROWSER_WIDTH, BROWSER_HEIGHT, theme::current().panel_border);
-	rl::draw_text((ZString)self.dir.ptr, x + 10, y + 6, 16, theme::current().panel_text);
+	int width  = ui::px(BROWSER_WIDTH);
+	int height = ui::px(BROWSER_HEIGHT);
+	int row_h  = ui::px(ROW_HEIGHT);
+	int x      = (rl::get_screen_width() - width) / 2;
+	int y      = (rl::get_screen_height() - height) / 2;
+	rl::draw_rectangle(x, y, width, height, theme::current().panel_bg);
+	rl::draw_rectangle(x, y, width, ui::px(28), theme::current().panel_bg_alt);
+	rl::draw_rectangle_lines(x, y, width, height, theme::current().panel_border);
+	rl::draw_text_ex(
+		ui::font(),
+		(ZString)self.dir.ptr,
+		{ (float)(x + ui::px(10)), (float)(y + ui::px(6)) },
+		(float)ui::px(16),
+		0.0f,
+		theme::current()
+		.panel_text);
 
 	int last = math::min(self.scroll + VISIBLE_ROWS, self.rows());
 	for (int i = self.scroll; i < last; i++)
 	{
-		int row_y = y + 36 + (i - self.scroll) * ROW_HEIGHT;
-		if (i == self.selected) rl::draw_rectangle(x + 4, row_y - 2, BROWSER_WIDTH - 8, ROW_HEIGHT, theme::current()
+		int row_y = y + ui::px(36) + (i - self.scroll) * row_h;
+		if (i == self.selected) rl::draw_rectangle(
+			x + ui::px(4),
+			row_y - ui::px(2),
+			width - ui::px(8),
+			row_h,
+			theme::current()
 			.panel_selected);
 		String label = self.row_label(i);
-		rl::draw_text((ZString)label.ptr, x + 12, row_y, 16, theme::current().panel_text);
+		@pool()
+		{
+			rl::draw_text_ex(
+				ui::font(),
+				label.zstr_tcopy(),
+				{ (float)(x + ui::px(12)), (float)row_y },
+				(float)ui::px(16),
+				0.0f,
+				theme::current()
+				.panel_text);
+		};
 	}
 
-	rl::draw_text(
+	rl::draw_text_ex(
+		ui::font(),
 		"Enter: open/select    Backspace: up    Esc: cancel",
-		x + 10,
-		y + BROWSER_HEIGHT - 24,
-		14,
+		{ (float)(x + ui::px(10)), (float)(y + height - ui::px(24)) },
+		(float)ui::px(14),
+		0.0f,
 		theme::current()
 		.panel_text);
 }

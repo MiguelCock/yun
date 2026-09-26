@@ -17,6 +17,7 @@ import yun::highlight;
 import yun::keymap;
 import yun::project;
 import yun::theme;
+import yun::ui;
 
 enum SymbolKind : int
 {
@@ -642,7 +643,7 @@ fn void Symbols.ensure_visible(&self, int visible_rows)
 
 fn Rect Symbols.panel_rect(&self)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	int screen_w = rl::get_screen_width();
 	int screen_h = rl::get_screen_height();
 	float width  = 640.0f * s;
@@ -657,7 +658,7 @@ fn Rect Symbols.panel_rect(&self)
 
 fn int Symbols.visible_rows(&self)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	Rect panel   = self.panel_rect();
 	float list_y = panel.y + 62.0f * s;
 	float list_h = panel.y + panel.height - list_y - 10.0f * s;
@@ -668,7 +669,7 @@ fn int Symbols.visible_rows(&self)
 
 fn int Symbols.row_at_mouse(&self, RLVector2 mouse)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	Rect panel   = self.panel_rect();
 	float list_y = panel.y + 62.0f * s;
 	if (mouse[1] < list_y) return -1;
@@ -785,7 +786,7 @@ fn void Symbols.draw(&self, RLFont font)
 {
 	if (!self.open) return;
 
-	float s    = editor::text_scale();
+	float s    = ui::scale();
 	Rect panel = self.panel_rect();
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);

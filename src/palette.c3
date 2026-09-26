@@ -7,6 +7,7 @@ import yun::commands;
 import yun::keymap;
 import yun::theme;
 import yun::topbar;
+import yun::ui;
 
 const int QUERY_MAX        = 64;
 const int ROW_HEIGHT       = 26;
@@ -180,36 +181,38 @@ fn void Palette.record(&self, commands::CommandId id)
 
 fn Rect Palette.panel_rect(&self)
 {
+	int rh   = ui::px(ROW_HEIGHT);
+	int pad  = ui::px(PADDING);
 	int rows = (int)self.results.len();
 	if (rows > MAX_VISIBLE_ROWS) rows = MAX_VISIBLE_ROWS;
 	if (rows == 0) rows = 1;
-	int height = PADDING * 2 + ROW_HEIGHT + 6 + rows * ROW_HEIGHT;
-	int x      = (rl::get_screen_width() - PANEL_WIDTH) / 2;
-	int y      = (int)topbar::TOP_BAR_HEIGHT + TOP_MARGIN;
-	return { .x = (float)x, .y = (float)y, .width = (float)PANEL_WIDTH, .height = (float)height };
+	int height = pad * 2 + rh + ui::px(6) + rows * rh;
+	int x      = (rl::get_screen_width() - ui::px(PANEL_WIDTH)) / 2;
+	int y      = (int)ui::pxf(topbar::TOP_BAR_HEIGHT) + ui::px(TOP_MARGIN);
+	return { .x = (float)x, .y = (float)y, .width = (float)ui::px(PANEL_WIDTH), .height = (float)height };
 }
 
 fn Rect Palette.field_rect(&self)
 {
 	Rect panel = self.panel_rect();
 	return {
-		.x = panel.x + (float)PADDING,
-		.y = panel.y + (float)PADDING,
-		.width = panel.width - (float)(PADDING * 2),
-		.height = (float)ROW_HEIGHT,
+		.x = panel.x + (float)ui::px(PADDING),
+		.y = panel.y + (float)ui::px(PADDING),
+		.width = panel.width - (float)(ui::px(PADDING) * 2),
+		.height = (float)ui::px(ROW_HEIGHT),
 	};
 }
 
 fn float Palette.list_y(&self)
 {
-	return self.panel_rect().y + (float)(PADDING + ROW_HEIGHT + 6);
+	return self.panel_rect().y + (float)ui::px(PADDING + ROW_HEIGHT + 6);
 }
 
 fn int Palette.row_at(&self, RLVector2 mouse)
 {
 	float list_y = self.list_y();
 	if (mouse[1] < list_y) return -1;
-	int row = (int)((mouse[1] - list_y) / (float)ROW_HEIGHT) + self.scroll;
+	int row = (int)((mouse[1] - list_y) / (float)ui::px(ROW_HEIGHT)) + self.scroll;
 	if (row < 0 || row >= (int)self.results.len()) return -1;
 	return row;
 }
@@ -303,7 +306,7 @@ fn void draw_run(RLFont font, String text, float x, float y, RLColor color)
 	@pool()
 	{
 		ZString z = text.zstr_tcopy();
-		rl::draw_text_ex(font, z, { x, y }, 16.0f, 0.0f, color);
+		rl::draw_text_ex(font, z, { x, y }, (float)ui::px(16), 0.0f, color);
 	};
 }
 
@@ -313,7 +316,7 @@ fn float measure_width(RLFont font, String text)
 	float width;
 	@pool()
 	{
-		width = rl::measure_text_ex(font, text.zstr_tcopy(), 16.0f, 0.0f)[0];
+		width = rl::measure_text_ex(font, text.zstr_tcopy(), (float)ui::px(16), 0.0f)[0];
 	};
 	return width;
 }
@@ -358,15 +361,25 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 	Rect field = self.field_rect();
 	rl::draw_rectangle_rec(field, theme::current().panel_field);
 	String query = self.query_view();
-	draw_run(font, query, field.x + 8.0f, field.y + 5.0f, theme::current().panel_text);
+	draw_run(font, query, field.x + (float)ui::px(8), field.y + (float)ui::px(5), theme::current().panel_text);
 	float query_width = measure_width(font, query);
-	rl::draw_rectangle((int)(field.x + 8.0f + query_width + 1.0f), (int)(field.y + 5.0f), 2, 16, theme::current()
+	rl::draw_rectangle(
+		(int)(field.x + (float)ui::px(8) + query_width + 1.0f),
+		(int)(field.y + (float)ui::px(5)),
+		2,
+		ui::px(16),
+		theme::current()
 		.panel_caret);
 
 	float list_y = self.list_y();
 	if (self.results.len() == 0)
 	{
-		draw_run(font, "No matching commands", panel.x + (float)PADDING + 4.0f, list_y + 5.0f, theme::current()
+		draw_run(
+			font,
+			"No matching commands",
+			panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
+			list_y + (float)ui::px(5),
+			theme::current()
 			.panel_dim);
 		return;
 	}
@@ -378,13 +391,19 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 		commands::CommandId id   = self.results[index];
 		commands::CommandDef def = commands::command_def(id);
 		bool enabled             = commands::command_enabled(id, has_project, has_buffer);
-		float row_y              = list_y + (float)slot * (float)ROW_HEIGHT;
+		float row_y              = list_y + (float)slot * (float)ui::px(ROW_HEIGHT);
 		if (index == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ROW_HEIGHT, theme::current()
+			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ui::px(ROW_HEIGHT), theme::current()
 				.panel_selected);
 		}
-		draw_label(font, def.label, query, panel.x + (float)PADDING + 4.0f, row_y + 5.0f, enabled ? theme::current()
+		draw_label(
+			font,
+			def.label,
+			query,
+			panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
+			row_y + (float)ui::px(5),
+			enabled ? theme::current()
 			.panel_text : theme::current().panel_disabled);
 		String shortcut = keymap.shortcut(id);
 		if (shortcut.len > 0)
@@ -392,12 +411,12 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 			@pool()
 			{
 				ZString z      = shortcut.zstr_tcopy();
-				RLVector2 size = rl::measure_text_ex(font, z, 14.0f, 0.0f);
+				RLVector2 size = rl::measure_text_ex(font, z, (float)ui::px(14), 0.0f);
 				rl::draw_text_ex(
 					font,
 					z,
-					{ panel.x + panel.width - (float)PADDING - size[0], row_y + 6.0f },
-					14.0f,
+					{ panel.x + panel.width - (float)ui::px(PADDING) - size[0], row_y + (float)ui::px(6) },
+					(float)ui::px(14),
 					0.0f,
 					theme::current()
 					.panel_dim);

@@ -3,6 +3,7 @@ module yun::notify;
 import raylib6::rl;
 import std::collections::list;
 import yun::theme;
+import yun::ui;
 
 const float NOTICE_TTL  = 4.0f;
 const int MAX_NOTICES   = 5;
@@ -46,12 +47,24 @@ fn void Notifier.update(&self, float dt)
 
 fn void Notifier.draw(&self)
 {
-	int y = rl::get_screen_height() - NOTICE_HEIGHT - 10;
+	int height = ui::px(NOTICE_HEIGHT);
+	int y      = rl::get_screen_height() - height - ui::px(10);
 	foreach (Notice notice : self.items)
 	{
-		int width = rl::measure_text((ZString)notice.text.ptr, NOTICE_HEIGHT - 8) + 16;
-		rl::draw_rectangle(10, y, width, NOTICE_HEIGHT, theme::current().notice_bg);
-		rl::draw_text((ZString)notice.text.ptr, 18, y + 4, NOTICE_HEIGHT - 8, theme::current().notice_text);
-		y -= NOTICE_HEIGHT + 4;
+		@pool()
+		{
+			float size  = (float)(height - ui::px(8));
+			float width = rl::measure_text_ex(ui::font(), notice.text.zstr_tcopy(), size, 0.0f)[0] + (float)ui::px(16);
+			rl::draw_rectangle(ui::px(10), y, (int)width, height, theme::current().notice_bg);
+			rl::draw_text_ex(
+				ui::font(),
+				notice.text.zstr_tcopy(),
+				{ (float)ui::px(18), (float)(y + ui::px(4)) },
+				size,
+				0.0f,
+				theme::current()
+				.notice_text);
+		};
+		y -= height + ui::px(4);
 	}
 }

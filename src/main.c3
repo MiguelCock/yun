@@ -33,6 +33,7 @@ import yun::settings_panel;
 import yun::symbols;
 import yun::theme;
 import yun::topbar;
+import yun::ui;
 import yun::workspace;
 
 enum UiMode : int
@@ -72,7 +73,9 @@ fn void apply_settings(
 	project::Project* project,
 	int* font_size,
 	RLFont* editor_font,
-	editor::EditorMetrics* metrics
+	editor::EditorMetrics* metrics,
+	int* ui_size,
+	RLFont* ui_font
 )
 {
 	if (config.settings.consume_change(settings::SettingId.APP_THEME))
@@ -81,6 +84,34 @@ fn void apply_settings(
 		{
 			notifier.push("Unknown theme in config; using default");
 		}
+	}
+
+	bool ui_changed = false;
+	if (config.settings.consume_change(settings::SettingId.APP_UI_FONT_SIZE))
+	{
+		int next = (int)config.settings.get_int(settings::SettingId.APP_UI_FONT_SIZE);
+		if (next < 8) next = 8;
+		if (next > 32) next = 32;
+		if (next != *ui_size)
+		{
+			*ui_size = next;
+			ui_changed = true;
+		}
+	}
+	if (config.settings.consume_change(settings::SettingId.APP_UI_FONT_FAMILY))
+	{
+		ui_changed = true;
+	}
+	if (ui_changed)
+	{
+		String family = config.settings.get_string(settings::SettingId.APP_UI_FONT_FAMILY);
+		if (family.len > 0 && family.compare_to("JetBrains Mono") != 0 && fonts.path_for(family).len == 0)
+		{
+			notifier.push("Unknown font; using bundled font");
+		}
+		rl::unload_font(*ui_font);
+		*ui_font = load_editor_font(fonts, family, *ui_size);
+		ui::set_font(*ui_font, *ui_size);
 	}
 
 	editor::EditorSettings es = editor::settings();
@@ -1098,7 +1129,9 @@ fn int main(String[] args)
 
 	RLFont font = load_bundled_font(16);
 	defer rl::unload_font(font);
+	ui::set_font(font, 16);
 
+	int ui_size                   = 16;
 	int font_size                 = editor::FONT_SIZE_DEFAULT;
 	RLFont editor_font            = load_bundled_font(font_size);
 	editor::EditorMetrics metrics = editor::metrics_for_font(editor_font, (float)font_size);
@@ -1106,7 +1139,7 @@ fn int main(String[] args)
 
 	canvas::Canvas canvas;
 	canvas.init();
-	canvas.top_inset = topbar::TOP_BAR_HEIGHT;
+	canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
 
 	project::Project project;
 	project.init(mem);
@@ -1216,7 +1249,7 @@ fn int main(String[] args)
 	else
 	{
 		config.load("");
-		apply_settings(&config, &fonts, &notifier, &project, &font_size, &editor_font, &metrics);
+		apply_settings(&config, &fonts, &notifier, &project, &font_size, &editor_font, &metrics, &ui_size, &font);
 	}
 	keymap.build(&config);
 	push_config_warnings(&config, &notifier);
@@ -1269,7 +1302,7 @@ fn int main(String[] args)
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
 
-		apply_settings(&config, &fonts, &notifier, &project, &font_size, &editor_font, &metrics);
+		apply_settings(&config, &fonts, &notifier, &project, &font_size, &editor_font, &metrics, &ui_size, &font);
 
 		if (opening)
 		{
@@ -1291,7 +1324,17 @@ fn int main(String[] args)
 					symbols.start_scan(&project);
 					ui_mode = UiMode.MOVE;
 					project.selected = -1;
-					apply_settings(&config, &fonts, &notifier, &project, &font_size, &editor_font, &metrics);
+					apply_settings(
+						&config,
+						&fonts,
+						&notifier,
+						&project,
+						&font_size,
+						&editor_font,
+						&metrics,
+						&ui_size,
+						&font
+					);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
 					import_index.start_scan(&project);
@@ -1945,7 +1988,7 @@ fn int main(String[] args)
 			rl::@mode2d(canvas.camera)
 			{
 				project.draw_folders(canvas.camera);
-				import_index.draw(&project, canvas.camera, editor_font);
+				import_index.draw(&project, canvas.camera, font);
 				project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar);
 			};
 			minimap::draw(&project, &canvas);
@@ -1954,20 +1997,20 @@ fn int main(String[] args)
 				@pool()
 				{
 					String label = string::format(tmem, "Font %d", (long)font_size);
-					float width  = rl::measure_text_ex(font, label.zstr_tcopy(), 16.0f, 0.0f)[0];
+					float width  = rl::measure_text_ex(font, label.zstr_tcopy(), (float)ui::px(16), 0.0f)[0];
 					Rect panel = {
-						.x = (float)rl::get_screen_width() / 2.0f - (width + 24.0f) / 2.0f,
-						.y = topbar::TOP_BAR_HEIGHT + 16.0f,
-						.width = width + 24.0f,
-						.height = 30.0f,
+						.x = (float)rl::get_screen_width() / 2.0f - (width + (float)ui::px(24)) / 2.0f,
+						.y = ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(16),
+						.width = width + (float)ui::px(24),
+						.height = (float)ui::px(30),
 					};
 					rl::draw_rectangle_rec(panel, theme::current().panel_bg_alt);
 					rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 					rl::draw_text_ex(
 						font,
 						label.zstr_tcopy(),
-						{ panel.x + 12.0f, panel.y + 7.0f },
-						16.0f,
+						{ panel.x + (float)ui::px(12), panel.y + (float)ui::px(7) },
+						(float)ui::px(16),
 						0.0f,
 						theme::current()
 						.panel_text);
@@ -1977,15 +2020,15 @@ fn int main(String[] args)
 			{
 				if (import_index.hover.valid)
 				{
-					import_index.draw_tooltip(&project, editor_font);
+					import_index.draw_tooltip(&project, font);
 				}
 				else if (hover.diagnostic.len > 0)
 				{
-					problems::draw_tooltip(hover.diagnostic, hover.anchor, editor_font);
+					problems::draw_tooltip(hover.diagnostic, hover.anchor, font);
 				}
 				else if (hover.over && lsp.hover_is_valid())
 				{
-					hover::draw_hover(lsp.hover_message(), hover.anchor, editor_font);
+					hover::draw_hover(lsp.hover_message(), hover.anchor, font);
 				}
 			}
 			if (completion::completion_is_open() && !problems.open && !palette.open && !definition_menu.open)
@@ -2029,16 +2072,16 @@ fn int main(String[] args)
 			reload_menu.draw();
 			theme_menu.draw();
 			context_menu.draw();
-			name_prompt.draw();
+			name_prompt.draw(font);
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
 			settings_panel.draw(font, project_open, &keymap, &config);
-			problems.draw(editor_font);
-			search.draw(editor_font);
-			symbols.draw(editor_font);
+			problems.draw(font);
+			search.draw(font);
+			symbols.draw(font);
 			definition_menu.draw();
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
-			rl::draw_fps(10, (int)topbar::TOP_BAR_HEIGHT + 10);
+			rl::draw_fps(10, (int)ui::pxf(topbar::TOP_BAR_HEIGHT) + 10);
 			if (project_open)
 			{
 				String mode_label = "-- MOVE --";
@@ -2053,8 +2096,8 @@ fn int main(String[] args)
 				rl::draw_text_ex(
 					font,
 					(ZString)mode_label.ptr,
-					{ 10.0f, (float)topbar::TOP_BAR_HEIGHT + 34.0f },
-					15.0f,
+					{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(34) },
+					(float)ui::px(15),
 					0.0f,
 					theme::current()
 					.topbar_name);
@@ -2072,8 +2115,8 @@ fn int main(String[] args)
 					rl::draw_text_ex(
 						font,
 						counter.zstr_tcopy(),
-						{ 10.0f, (float)topbar::TOP_BAR_HEIGHT + 54.0f },
-						14.0f,
+						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(54) },
+						(float)ui::px(14),
 						0.0f,
 						theme::current()
 						.panel_dim);

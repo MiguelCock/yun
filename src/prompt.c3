@@ -5,6 +5,7 @@ import std::math;
 import yun::commands;
 import yun::keymap;
 import yun::theme;
+import yun::ui;
 
 const int PROMPT_WIDTH  = 440;
 const int PROMPT_HEIGHT = 100;
@@ -106,9 +107,11 @@ fn void Prompt.backspace(&self)
 
 fn Rect Prompt.panel_rect(&self)
 {
-	int x = (rl::get_screen_width() - PROMPT_WIDTH) / 2;
-	int y = (rl::get_screen_height() - PROMPT_HEIGHT) / 2;
-	return { .x = (float)x, .y = (float)y, .width = (float)PROMPT_WIDTH, .height = (float)PROMPT_HEIGHT };
+	int width  = ui::px(PROMPT_WIDTH);
+	int height = ui::px(PROMPT_HEIGHT);
+	int x      = (rl::get_screen_width() - width) / 2;
+	int y      = (rl::get_screen_height() - height) / 2;
+	return { .x = (float)x, .y = (float)y, .width = (float)width, .height = (float)height };
 }
 
 fn bool Prompt.update(&self, keymap::Keymap* keymap)
@@ -149,28 +152,48 @@ fn bool Prompt.update(&self, keymap::Keymap* keymap)
 	return false;
 }
 
-fn void Prompt.draw(&self)
+fn void Prompt.draw(&self, RLFont font)
 {
 	if (!self.open) return;
 
-	Rect panel = self.panel_rect();
-	int x      = (int)panel.x;
-	int y      = (int)panel.y;
-	rl::draw_rectangle(x, y, PROMPT_WIDTH, PROMPT_HEIGHT, theme::current().panel_bg);
-	rl::draw_rectangle_lines(x, y, PROMPT_WIDTH, PROMPT_HEIGHT, theme::current().panel_border);
-	rl::draw_text((ZString)self.title.ptr, x + 12, y + 8, 16, theme::current().panel_header);
+	Rect panel      = self.panel_rect();
+	float pad       = (float)ui::px(12);
+	float text_size = (float)ui::px(16);
+	float hint_size = (float)ui::px(14);
+	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
+	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 
 	Rect field = {
-		.x = (float)(x + 12),
-		.y = (float)(y + 36),
-		.width = (float)(PROMPT_WIDTH - 24),
-		.height = 28.0f,
+		.x = panel.x + pad,
+		.y = panel.y + (float)ui::px(36),
+		.width = panel.width - pad * 2.0f,
+		.height = (float)ui::px(28),
 	};
 	rl::draw_rectangle_rec(field, theme::current().panel_field);
 
 	String text = self.text_view();
-	rl::draw_text((ZString)text.ptr, x + 18, y + 42, 16, theme::current().panel_text);
-	int width = rl::measure_text((ZString)text.ptr, 16);
-	rl::draw_rectangle(x + 18 + width + 1, y + 42, 2, 16, theme::current().panel_caret);
-	rl::draw_text("Enter: create    Esc: cancel", x + 12, y + PROMPT_HEIGHT - 22, 14, theme::current().panel_dim);
+	@pool()
+	{
+		rl::draw_text_ex(
+			font,
+			self.title.zstr_tcopy(),
+			{ panel.x + pad, panel.y + (float)ui::px(8) },
+			text_size,
+			0.0f,
+			theme::current()
+			.panel_header);
+		float tx = panel.x + (float)ui::px(18);
+		float ty = panel.y + (float)ui::px(42);
+		rl::draw_text_ex(font, text.zstr_tcopy(), { tx, ty }, text_size, 0.0f, theme::current().panel_text);
+		float width = rl::measure_text_ex(font, text.zstr_tcopy(), text_size, 0.0f)[0];
+		rl::draw_rectangle((int)(tx + width + 1.0f), (int)ty, 2, ui::px(16), theme::current().panel_caret);
+	};
+	rl::draw_text_ex(
+		font,
+		"Enter: create    Esc: cancel",
+		{ panel.x + pad, panel.y + panel.height - (float)ui::px(22) },
+		hint_size,
+		0.0f,
+		theme::current()
+		.panel_dim);
 }

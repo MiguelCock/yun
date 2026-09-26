@@ -9,6 +9,7 @@ import yun::editor;
 import yun::lsp;
 import yun::text;
 import yun::theme;
+import yun::ui;
 
 const int VISIBLE_ROWS   = 12;
 const int ROW_HEIGHT     = 20;
@@ -307,23 +308,23 @@ fn void Completion.draw(
 
 	int rows = (int)self.order.len();
 	if (rows > VISIBLE_ROWS) rows = VISIBLE_ROWS;
-	float height = (float)rows * (float)ROW_HEIGHT + 6.0f;
+	float height = (float)rows * (float)ui::px(ROW_HEIGHT) + (float)ui::px(6);
 	Rect panel = {
 		.x = caret_scr.x,
 		.y = caret_scr.y + caret_scr.height,
-		.width = PANEL_WIDTH,
+		.width = ui::pxf(PANEL_WIDTH),
 		.height = height,
 	};
 	if (panel.x + panel.width > (float)rl::get_screen_width())
 	{
-		panel.x = (float)rl::get_screen_width() - panel.width - 4.0f;
+		panel.x = (float)rl::get_screen_width() - panel.width - (float)ui::px(4);
 	}
 	if (panel.y + panel.height > (float)rl::get_screen_height())
 	{
-		panel.y = caret_scr.y - panel.height - 2.0f;
+		panel.y = caret_scr.y - panel.height - (float)ui::px(2);
 	}
-	if (panel.x < 4.0f) panel.x = 4.0f;
-	if (panel.y < 4.0f) panel.y = 4.0f;
+	if (panel.x < (float)ui::px(4)) panel.x = (float)ui::px(4);
+	if (panel.y < (float)ui::px(4)) panel.y = (float)ui::px(4);
 
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
@@ -334,20 +335,40 @@ fn void Completion.draw(
 		int index = self.scroll + slot;
 		if (index >= (int)self.order.len()) break;
 		lsp::CompletionItem item = self.items[self.order[index]];
-		float row_y              = panel.y + 3.0f + (float)slot * (float)ROW_HEIGHT;
+		float row_y              = panel.y + (float)ui::px(3) + (float)slot * (float)ui::px(ROW_HEIGHT);
 		if (index == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ROW_HEIGHT, theme::current()
+			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ui::px(ROW_HEIGHT), theme::current()
 				.panel_selected);
 		}
-		draw_text(font, kind_label(item.kind), panel.x + 6.0f, row_y + 2.0f, 13.0f, theme::current().panel_header);
-		draw_text(font, item.label, panel.x + (float)KIND_WIDTH, row_y + 1.0f, 15.0f, theme::current().panel_text);
+		draw_text(
+			font,
+			kind_label(item.kind),
+			panel.x + (float)ui::px(6),
+			row_y + (float)ui::px(2),
+			(float)ui::px(13),
+			theme::current()
+			.panel_header);
+		draw_text(
+			font,
+			item.label,
+			panel.x + (float)ui::px(KIND_WIDTH),
+			row_y + (float)ui::px(1),
+			(float)ui::px(15),
+			theme::current()
+			.panel_text);
 		if (item.detail.len > 0)
 		{
 			@pool()
 			{
 				String detail = string::format(tmem, "  %s", item.detail);
-				draw_text(font, detail, panel.x + (float)KIND_WIDTH + 120.0f, row_y + 3.0f, 13.0f, theme::current()
+				draw_text(
+					font,
+					detail,
+					panel.x + (float)ui::px(KIND_WIDTH) + (float)ui::px(120),
+					row_y + (float)ui::px(3),
+					(float)ui::px(13),
+					theme::current()
 					.panel_dim);
 			};
 		}
