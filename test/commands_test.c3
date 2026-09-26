@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 74);
+	assert(command_count() == 82);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -78,6 +78,14 @@ fn void test_contexts()
 	assert(command_def(CommandId.SETTINGS_RESET).contexts == CTX_SETTINGS);
 	assert(command_def(CommandId.BROWSER_PARENT).contexts == CTX_BROWSER);
 	assert((command_def(CommandId.LIST_UP).contexts & CTX_FIND) == 0);
+	assert(command_def(CommandId.CLOSE_CARD).contexts == CTX_MOVE);
+	assert(command_def(CommandId.TOGGLE_CARD).contexts == CTX_MOVE);
+	assert(command_def(CommandId.RENAME_CARD).contexts == CTX_MOVE);
+	assert(command_def(CommandId.DUPLICATE_CARD).contexts == CTX_MOVE);
+	assert(command_def(CommandId.COPY_PATH).contexts == CTX_MOVE);
+	assert(command_def(CommandId.DELETE_CARD).contexts == CTX_MOVE);
+	assert(command_def(CommandId.OPEN_CONTEXT_MENU).contexts == CTX_MOVE);
+	assert(command_def(CommandId.MINIMAP_FOCUS).contexts == CTX_MOVE);
 }
 
 fn void test_repeat_flags()
@@ -150,6 +158,8 @@ fn void test_command_enabled()
 	assert(!command_enabled(CommandId.SYMBOLS_PROJECT, false, false));
 	assert(command_enabled(CommandId.TOGGLE_SETTINGS, false, false));
 	assert(command_enabled(CommandId.TOGGLE_SETTINGS, true, true));
+	assert(command_enabled(CommandId.CLOSE_CARD, true, false));
+	assert(!command_enabled(CommandId.DELETE_CARD, false, false));
 }
 
 fn void test_fuzzy_exact_and_case()

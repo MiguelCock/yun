@@ -202,6 +202,15 @@ struct App
 	UiMode* ui_mode;
 	int* edit_grace_frames;
 	topbar::TopBar* bar;
+	keymap::Keymap* keymap;
+	context::ContextItem[context::CONTEXT_MAX_ITEMS] context_items;
+	usz context_item_count;
+	int context_card;
+	int context_parent;
+	RLVector2 context_world;
+	int context_offset;
+	int pending_rename_card;
+	int pending_delete_card;
 	int* pending_kind;
 	int* pending_parent;
 	RLVector2* pending_world;
@@ -268,6 +277,49 @@ fn void poll_global(keymap::Keymap* keymap, App* app)
 {
 	int cmd = keymap.poll(commands::CTX_GLOBAL);
 	if (cmd >= 0) run_command((commands::CommandId)cmd, app);
+}
+
+fn int target_card_index(project::Project* project)
+{
+	if (project.selected >= 0 && project.selected < (int)project.cards.len()) return project.selected;
+	if (project.focused >= 0 && project.focused < (int)project.cards.len()) return project.focused;
+	return -1;
+}
+
+fn void open_context_menu(App* app, context::ContextTarget target, int card, int folder, RLVector2 world, int offset)
+{
+	project::Project* project = app.project;
+	app.context_card = card;
+	app.context_parent = folder;
+	app.context_world = world;
+	app.context_offset = offset;
+
+	bool card_open    = card >= 0 && project.cards[card].open;
+	bool card_missing = card >= 0 && project.cards[card].missing;
+	app.context_item_count = context::build(
+		target,
+		card_open,
+		card_missing,
+		*app.project_open,
+		offset >= 0,
+		app.context_items[0:context::CONTEXT_MAX_ITEMS]
+	);
+
+	@pool()
+	{
+		String[context::CONTEXT_MAX_ITEMS] labels;
+		bool[context::CONTEXT_MAX_ITEMS] enabled;
+		for (usz i = 0; i < app.context_item_count; i++)
+		{
+			context::ContextItem item = app.context_items[i];
+			int cmd                   = context::command_for(item.action);
+			String hint               = cmd >= 0 ? app.keymap.shortcut((commands::CommandId)cmd) : "";
+			labels[i] = hint.len > 0 ? string::format(tmem, "%s   %s", item.label, hint) : item.label;
+			enabled[i] = item.enabled;
+		}
+		RLVector2 screen = rl::get_world_to_screen2d(world, app.canvas.camera);
+		app.context_menu.open_with(screen, labels[0:app.context_item_count], enabled[0:app.context_item_count]);
+	};
 }
 
 fn void run_command(commands::CommandId id, App* app)
@@ -664,6 +716,110 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.FOCUS_CANVAS:
 			*app.ui_mode = UiMode.MOVE;
 			return;
+		case commands::CommandId.CLOSE_CARD:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				FileCard* card = &project.cards[index];
+				if (card.ephemeral)
+				{
+					project.discard_ephemeral(-1);
+				}
+				else if (card.buffer)
+				{
+					if (card.dirty)
+					{
+						project.pending_close = project.focus(index);
+					}
+					else
+					{
+						(void)editor::unload_buffer(card, project.allocator);
+					}
+				}
+				return;
+			}
+		case commands::CommandId.TOGGLE_CARD:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				project.cards[index].open = !project.cards[index].open;
+				return;
+			}
+		case commands::CommandId.RENAME_CARD:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				app.pending_rename_card = index;
+				*app.pending_kind = 2;
+				app.name_prompt.open_with("Rename", project.cards[index].name);
+				return;
+			}
+		case commands::CommandId.DUPLICATE_CARD:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				RLVector2 pos = project.cards[index].center();
+				if (project.duplicate_card(index, pos) < 0)
+				{
+					app.notifier.push("Could not duplicate");
+				}
+				else
+				{
+					app.notifier.push("Duplicated");
+				}
+				return;
+			}
+		case commands::CommandId.COPY_PATH:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				@pool()
+				{
+					rl::set_clipboard_text(((String)project.cards[index].path).zstr_tcopy());
+				};
+				app.notifier.push("Path copied");
+				return;
+			}
+		case commands::CommandId.DELETE_CARD:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				app.pending_delete_card = index;
+				RLVector2 center = {
+					(float)rl::get_screen_width() / 2.0f,
+					(float)rl::get_screen_height() / 2.0f,
+				};
+				app.delete_menu.open_at(center, { "Delete", "Cancel" });
+				return;
+			}
+		case commands::CommandId.OPEN_CONTEXT_MENU:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				FileCard* card = &project.cards[index];
+				open_context_menu(app, context::ContextTarget.CARD, index, project::ROOT_FOLDER, card.center(), -1);
+				return;
+			}
+		case commands::CommandId.MINIMAP_FOCUS:
+
+			{
+				Rect bounds;
+				if (project.content_bounds(&bounds))
+				{
+					app.canvas.target.target = {
+						bounds.x + bounds.width / 2.0f,
+						bounds.y + bounds.height / 2.0f,
+					};
+				}
+				return;
+			}
 		default:
 			return;
 	}
@@ -941,15 +1097,6 @@ fn int main(String[] args)
 	int pending_parent      = project::ROOT_FOLDER;
 	RLVector2 pending_world = { 0.0f, 0.0f };
 
-	context::ContextItem[context::CONTEXT_MAX_ITEMS] context_items;
-	usz context_item_count  =  0;
-	int context_card        = -1;
-	int context_parent      =  project::ROOT_FOLDER;
-	RLVector2 context_world =  { 0.0f, 0.0f };
-	int context_offset      = -1;
-	int pending_rename_card = -1;
-	int pending_delete_card = -1;
-
 	menu::Menu definition_menu;
 	definition_menu.init(mem);
 	List{lsp::DefinitionTarget} pending_definitions;
@@ -1013,6 +1160,14 @@ fn int main(String[] args)
 		.ui_mode = &ui_mode,
 		.edit_grace_frames = &edit_grace_frames,
 		.bar = &bar,
+		.keymap = &keymap,
+		.context_item_count = 0,
+		.context_card = -1,
+		.context_parent = project::ROOT_FOLDER,
+		.context_world = { 0.0f, 0.0f },
+		.context_offset = -1,
+		.pending_rename_card = -1,
+		.pending_delete_card = -1,
 		.pending_kind = &pending_kind,
 		.pending_parent = &pending_parent,
 		.pending_world = &pending_world,
@@ -1128,7 +1283,7 @@ fn int main(String[] args)
 				}
 				else if (pending_kind == 2)
 				{
-					if (project.rename_card(pending_rename_card, name))
+					if (project.rename_card(app.pending_rename_card, name))
 					{
 						name_prompt.close();
 					}
@@ -1172,9 +1327,9 @@ fn int main(String[] args)
 			int chosen = delete_menu.update(&keymap);
 			if (chosen >= 0)
 			{
-				if (chosen == 0 && pending_delete_card >= 0 && pending_delete_card < (int)project.cards.len())
+				if (chosen == 0 && app.pending_delete_card >= 0 && app.pending_delete_card < (int)project.cards.len())
 				{
-					if (project.delete_card_file(pending_delete_card))
+					if (project.delete_card_file(app.pending_delete_card))
 					{
 						notifier.push("Deleted");
 					}
@@ -1183,7 +1338,7 @@ fn int main(String[] args)
 						notifier.push("Could not delete");
 					}
 				}
-				pending_delete_card = -1;
+				app.pending_delete_card = -1;
 			}
 			if (!delete_menu.consumed) poll_global(&keymap, &app);
 		}
@@ -1230,9 +1385,9 @@ fn int main(String[] args)
 		else if (context_menu.open)
 		{
 			int chosen = context_menu.update(&keymap);
-			if (chosen >= 0 && chosen < (int)context_item_count)
+			if (chosen >= 0 && chosen < (int)app.context_item_count)
 			{
-				context::ContextAction action = context_items[chosen].action;
+				context::ContextAction action = app.context_items[chosen].action;
 				switch (action)
 				{
 					case context::ContextAction.NEW_FILE:
@@ -1240,8 +1395,8 @@ fn int main(String[] args)
 
 						{
 							pending_kind = action == context::ContextAction.NEW_FILE ? 0 : 1;
-							pending_parent = context_parent;
-							pending_world = context_world;
+							pending_parent = app.context_parent;
+							pending_world = app.context_world;
 							name_prompt.open_with(pending_kind == 0 ? "New file" : "New folder", "");
 							break;
 						}
@@ -1251,27 +1406,27 @@ fn int main(String[] args)
 					case context::ContextAction.TOGGLE_CARD:
 
 						{
-							if (context_card >= 0 && context_card < (int)project.cards.len())
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len())
 							{
-								project.cards[context_card].open = !project.cards[context_card].open;
+								project.cards[app.context_card].open = !project.cards[app.context_card].open;
 							}
 							break;
 						}
 					case context::ContextAction.RENAME_CARD:
 
 						{
-							if (context_card >= 0 && context_card < (int)project.cards.len())
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len())
 							{
-								pending_rename_card = context_card;
+								app.pending_rename_card = app.context_card;
 								pending_kind = 2;
-								name_prompt.open_with("Rename", project.cards[context_card].name);
+								name_prompt.open_with("Rename", project.cards[app.context_card].name);
 							}
 							break;
 						}
 					case context::ContextAction.DUPLICATE_CARD:
 
 						{
-							if (project.duplicate_card(context_card, context_world) < 0)
+							if (project.duplicate_card(app.context_card, app.context_world) < 0)
 							{
 								notifier.push("Could not duplicate");
 							}
@@ -1284,11 +1439,11 @@ fn int main(String[] args)
 					case context::ContextAction.COPY_PATH:
 
 						{
-							if (context_card >= 0 && context_card < (int)project.cards.len())
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len())
 							{
 								@pool()
 								{
-									rl::set_clipboard_text(((String)project.cards[context_card].path).zstr_tcopy());
+									rl::set_clipboard_text(((String)project.cards[app.context_card].path).zstr_tcopy());
 								};
 								notifier.push("Path copied");
 							}
@@ -1297,9 +1452,9 @@ fn int main(String[] args)
 					case context::ContextAction.DELETE_CARD:
 
 						{
-							if (context_card >= 0 && context_card < (int)project.cards.len())
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len())
 							{
-								pending_delete_card = context_card;
+								app.pending_delete_card = app.context_card;
 								RLVector2 center = {
 									(float)rl::get_screen_width() / 2.0f,
 									(float)rl::get_screen_height() / 2.0f,
@@ -1311,14 +1466,15 @@ fn int main(String[] args)
 					case context::ContextAction.GO_TO_DEFINITION:
 
 						{
-							if (context_card >= 0 && context_card < (int)project.cards.len() && context_offset >= 0)
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len()
+								&& app.context_offset >= 0)
 							{
-								int index    = project.focus(context_card);
+								int index    = project.focus(app.context_card);
 								FileCard* cc = &project.cards[index];
 								editor::ensure_buffer(cc, project.allocator);
 								if (cc.buffer)
 								{
-									cc.cursor = (usz)context_offset;
+									cc.cursor = (usz)app.context_offset;
 									cc.selection_anchor = cc.cursor;
 									if (!lsp::lsp_request_definition(
 										(String)cc.path,
@@ -1520,9 +1676,6 @@ fn int main(String[] args)
 			{
 				int card   = project.hit_test(world);
 				int folder = project.cluster_hit(world);
-				context_card = card;
-				context_parent = folder;
-				context_world = world;
 
 				context::ContextTarget target = context::ContextTarget.CANVAS;
 				if (card >= 0)
@@ -1534,9 +1687,7 @@ fn int main(String[] args)
 					target = context::ContextTarget.CLUSTER;
 				}
 
-				bool card_open    = card >= 0 && project.cards[card].open;
-				bool card_missing = card >= 0 && project.cards[card].missing;
-				context_offset = -1;
+				int offset = -1;
 				if (card >= 0 && project.cards[card].open && project.cards[card].buffer)
 				{
 					FileCard* cc = &project.cards[card];
@@ -1544,7 +1695,7 @@ fn int main(String[] args)
 					if (world[0] >= text.x && world[0] <= text.x + text.width && world[1] >= text.y
 						&& world[1] <= text.y + text.height)
 					{
-						context_offset = (int)editor::offset_for_point(
+						offset = (int)editor::offset_for_point(
 							cc.buffer,
 							world[0] - text.x,
 							world[1] - text.y,
@@ -1554,24 +1705,7 @@ fn int main(String[] args)
 						);
 					}
 				}
-				bool can_define = context_offset >= 0;
-				context_item_count = context::build(
-					target,
-					card_open,
-					card_missing,
-					project_open,
-					can_define,
-					context_items[0:context::CONTEXT_MAX_ITEMS]
-				);
-
-				String[context::CONTEXT_MAX_ITEMS] labels;
-				bool[context::CONTEXT_MAX_ITEMS] enabled;
-				for (usz i = 0; i < context_item_count; i++)
-				{
-					labels[i] = context_items[i].label;
-					enabled[i] = context_items[i].enabled;
-				}
-				context_menu.open_with(mouse, labels[0:context_item_count], enabled[0:context_item_count]);
+				open_context_menu(&app, target, card, folder, world, offset);
 			}
 
 			if (!over_top && rl::is_file_dropped())

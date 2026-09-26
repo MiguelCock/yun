@@ -102,6 +102,14 @@ enum CommandId
 	SETTINGS_VALUE_DEC,
 	SETTINGS_VALUE_INC,
 	BROWSER_PARENT,
+	CLOSE_CARD,
+	TOGGLE_CARD,
+	RENAME_CARD,
+	DUPLICATE_CARD,
+	COPY_PATH,
+	DELETE_CARD,
+	OPEN_CONTEXT_MENU,
+	MINIMAP_FOCUS,
 }
 
 struct CommandDef
@@ -535,6 +543,56 @@ const CommandDef[] COMMAND_DEFS = {
 		.in_top_bar = false,
 		.contexts = CTX_BROWSER,
 	},
+	{ .id = CommandId.CLOSE_CARD, .label = "Close Card", .shortcut = "C", .in_top_bar = false, .contexts = CTX_MOVE },
+	{
+		.id = CommandId.TOGGLE_CARD,
+		.label = "Toggle Card",
+		.shortcut = "Space",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.RENAME_CARD,
+		.label = "Rename Card",
+		.shortcut = "F2",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE
+	},
+	{
+		.id = CommandId.DUPLICATE_CARD,
+		.label = "Duplicate Card",
+		.shortcut = "Ctrl+D",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.COPY_PATH,
+		.label = "Copy Path",
+		.shortcut = "Ctrl+Shift+C",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.DELETE_CARD,
+		.label = "Delete Card",
+		.shortcut = "Delete",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.OPEN_CONTEXT_MENU,
+		.label = "Context Menu",
+		.shortcut = "Shift+F10",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.MINIMAP_FOCUS,
+		.label = "Focus Content",
+		.shortcut = "M",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
 };
 
 fn usz command_count()
@@ -699,6 +757,22 @@ fn String command_name(CommandId id)
 			return "settings_value_inc";
 		case CommandId.BROWSER_PARENT:
 			return "browser_parent";
+		case CommandId.CLOSE_CARD:
+			return "close_card";
+		case CommandId.TOGGLE_CARD:
+			return "toggle_card";
+		case CommandId.RENAME_CARD:
+			return "rename_card";
+		case CommandId.DUPLICATE_CARD:
+			return "duplicate_card";
+		case CommandId.COPY_PATH:
+			return "copy_path";
+		case CommandId.DELETE_CARD:
+			return "delete_card";
+		case CommandId.OPEN_CONTEXT_MENU:
+			return "open_context_menu";
+		case CommandId.MINIMAP_FOCUS:
+			return "minimap_focus";
 	}
 }
 
@@ -832,6 +906,15 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.SETTINGS_VALUE_INC:
 		case CommandId.BROWSER_PARENT:
 			return true;
+		case CommandId.CLOSE_CARD:
+		case CommandId.TOGGLE_CARD:
+		case CommandId.RENAME_CARD:
+		case CommandId.DUPLICATE_CARD:
+		case CommandId.COPY_PATH:
+		case CommandId.DELETE_CARD:
+		case CommandId.OPEN_CONTEXT_MENU:
+		case CommandId.MINIMAP_FOCUS:
+			return has_project;
 	}
 }
 
