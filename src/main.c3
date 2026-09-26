@@ -15,6 +15,7 @@ import yun::context;
 import yun::editor;
 import yun::find;
 import yun::findbar;
+import yun::fonts;
 import yun::hover;
 import yun::imports;
 import yun::keymap;
@@ -66,6 +67,7 @@ fn void finish_open(
 
 fn void apply_settings(
 	config::Config* config,
+	fonts::Fonts* fonts,
 	notify::Notifier* notifier,
 	project::Project* project,
 	int* font_size,
@@ -80,25 +82,76 @@ fn void apply_settings(
 			notifier.push("Unknown theme in config; using default");
 		}
 	}
+
+	editor::EditorSettings es = editor::settings();
+	es.line_height = (float)config.settings.get_float(settings::SettingId.EDITOR_LINE_HEIGHT);
+	es.padding_x = (float)config.settings.get_int(settings::SettingId.EDITOR_PADDING_X);
+	es.padding_y = (float)config.settings.get_int(settings::SettingId.EDITOR_PADDING_Y);
+	es.caret_blink_ms = (int)config.settings.get_int(settings::SettingId.EDITOR_CARET_BLINK_MS);
+	es.scroll_margin_lines = (int)config.settings.get_int(settings::SettingId.EDITOR_SCROLL_MARGIN_LINES);
+	es.wheel_scroll_lines = (int)config.settings.get_int(settings::SettingId.EDITOR_WHEEL_SCROLL_LINES);
+	es.show_line_numbers = config.settings.get_bool(settings::SettingId.EDITOR_SHOW_LINE_NUMBERS);
+	es.indent_width = (int)config.settings.get_int(settings::SettingId.EDITOR_INDENT_WIDTH);
+	es.indent_spaces = config.settings.get_string(settings::SettingId.EDITOR_INDENT_STYLE).compare_to("spaces") == 0;
+	es.auto_indent = config.settings.get_bool(settings::SettingId.EDITOR_AUTO_INDENT);
+
+	bool font_changed    = false;
+	bool metrics_changed = false;
+
 	if (config.settings.consume_change(settings::SettingId.EDITOR_FONT_SIZE))
 	{
 		int next = editor::clamp_font_size((int)config.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE));
 		if (next != *font_size)
 		{
-			float old_lh = metrics.line_height;
-			float old_cw = metrics.char_width;
 			*font_size = next;
-			reload_editor_font(editor_font, *font_size, metrics);
-			float lh_ratio = old_lh > 0.0f ? metrics.line_height / old_lh : 1.0f;
-			float cw_ratio = old_cw > 0.0f ? metrics.char_width / old_cw : 1.0f;
-			for (sz i = 0; i < project.cards.len(); i++)
-			{
-				project.cards[i].scroll *= lh_ratio;
-				project.cards[i].scroll_x *= cw_ratio;
-			}
-			project.reveal_focused(*metrics);
+			font_changed = true;
 		}
 	}
+	if (config.settings.consume_change(settings::SettingId.EDITOR_FONT_FAMILY))
+	{
+		font_changed = true;
+		String family = config.settings.get_string(settings::SettingId.EDITOR_FONT_FAMILY);
+		if (family.len > 0 && family.compare_to("JetBrains Mono") != 0 && fonts.path_for(family).len == 0)
+		{
+			notifier.push("Unknown font; using bundled font");
+		}
+	}
+	if (config.settings.consume_change(
+		settings::SettingId.EDITOR_LINE_HEIGHT
+	) || config.settings.consume_change(
+		settings::SettingId.EDITOR_PADDING_X
+	) || config.settings.consume_change(settings::SettingId.EDITOR_PADDING_Y))
+	{
+		metrics_changed = true;
+	}
+
+	if (!font_changed && !metrics_changed)
+	{
+		editor::set_settings(es);
+		return;
+	}
+
+	float old_lh = metrics.line_height;
+	float old_cw = metrics.char_width;
+	editor::set_settings(es);
+	if (font_changed)
+	{
+		String family = config.settings.get_string(settings::SettingId.EDITOR_FONT_FAMILY);
+		reload_editor_font(fonts, editor_font, *font_size, family, metrics);
+	}
+	else
+	{
+		*metrics = editor::metrics_for_font(*editor_font, (float)*font_size);
+	}
+
+	float lh_ratio = old_lh > 0.0f ? metrics.line_height / old_lh : 1.0f;
+	float cw_ratio = old_cw > 0.0f ? metrics.char_width / old_cw : 1.0f;
+	for (sz i = 0; i < project.cards.len(); i++)
+	{
+		project.cards[i].scroll *= lh_ratio;
+		project.cards[i].scroll_x *= cw_ratio;
+	}
+	project.reveal_focused(*metrics);
 }
 
 fn String open_phase_label(project::OpenPhase phase)
@@ -572,7 +625,7 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.NEWLINE:
 
 			{
-				if (project.editor_insert("\n"))
+				if (project.editor_newline())
 				{
 					project.finish_edit(app.metrics);
 					*app.content_changed = true;
@@ -582,7 +635,7 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.INDENT:
 
 			{
-				if (project.editor_insert("\t"))
+				if (project.editor_indent())
 				{
 					project.finish_edit(app.metrics);
 					*app.content_changed = true;
@@ -1011,10 +1064,26 @@ fn RLFont load_bundled_font(int size)
 	return rl::load_font_ex(FONT_PATH, size, null, 0);
 }
 
-fn void reload_editor_font(RLFont* font, int size, editor::EditorMetrics* metrics)
+fn RLFont load_editor_font(fonts::Fonts* fonts, String family, int size)
+{
+	if (family.len > 0 && family.compare_to("JetBrains Mono") != 0)
+	{
+		String path = fonts.path_for(family);
+		if (path.len > 0 && file::exists(path))
+		{
+			@pool()
+			{
+				return rl::load_font_ex(path.zstr_tcopy(), size, null, 0);
+			};
+		}
+	}
+	return load_bundled_font(size);
+}
+
+fn void reload_editor_font(fonts::Fonts* fonts, RLFont* font, int size, String family, editor::EditorMetrics* metrics)
 {
 	rl::unload_font(*font);
-	*font = load_bundled_font(size);
+	*font = load_editor_font(fonts, family, size);
 	*metrics = editor::metrics_for_font(*font, (float)size);
 	editor::set_font_size((float)size);
 }
@@ -1106,6 +1175,11 @@ fn int main(String[] args)
 	keymap.init(mem);
 	defer keymap.destroy();
 
+	fonts::Fonts fonts;
+	fonts.init(mem);
+	defer fonts.destroy();
+	settings::set_font_options(fonts.labels());
+
 	int pending_kind        = 0;
 	int pending_parent      = project::ROOT_FOLDER;
 	RLVector2 pending_world = { 0.0f, 0.0f };
@@ -1142,7 +1216,7 @@ fn int main(String[] args)
 	else
 	{
 		config.load("");
-		apply_settings(&config, &notifier, &project, &font_size, &editor_font, &metrics);
+		apply_settings(&config, &fonts, &notifier, &project, &font_size, &editor_font, &metrics);
 	}
 	keymap.build(&config);
 	push_config_warnings(&config, &notifier);
@@ -1195,7 +1269,7 @@ fn int main(String[] args)
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
 
-		apply_settings(&config, &notifier, &project, &font_size, &editor_font, &metrics);
+		apply_settings(&config, &fonts, &notifier, &project, &font_size, &editor_font, &metrics);
 
 		if (opening)
 		{
@@ -1217,7 +1291,7 @@ fn int main(String[] args)
 					symbols.start_scan(&project);
 					ui_mode = UiMode.MOVE;
 					project.selected = -1;
-					apply_settings(&config, &notifier, &project, &font_size, &editor_font, &metrics);
+					apply_settings(&config, &fonts, &notifier, &project, &font_size, &editor_font, &metrics);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
 					import_index.start_scan(&project);

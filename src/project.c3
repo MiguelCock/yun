@@ -1441,7 +1441,8 @@ fn void Project.update(
 				usz line_count = self.cards[index].buffer.line_count();
 				Rect text      = editor::text_rect(self.cards[index].rect, metrics, line_count);
 				float max      = editor::max_scroll(line_count, metrics, text.height);
-				float value    = self.cards[index].scroll - wheel * metrics.line_height * 3.0f;
+				float value    = self.cards[index].scroll - wheel * metrics.line_height * (float)editor::settings()
+					.wheel_scroll_lines;
 				if (value < 0.0f) value = 0.0f;
 				if (value > max) value = max;
 				self.cards[index].scroll = value;
@@ -1755,15 +1756,41 @@ fn bool Project.editor_redo(&self)
 	return true;
 }
 
-fn bool Project.editor_insert(&self, String text)
+fn bool Project.editor_newline(&self)
 {
 	FileCard* card = self.focused_editable_card();
 	if (!card) return false;
-	usz start = 0;
-	usz end   = 0;
+	editor::EditorSettings es = editor::settings();
+	usz start                 = 0;
+	usz end                   = 0;
 	editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
 	card.history.break_coalescing();
+	String text = editor::newline_text(
+		card.buffer,
+		start,
+		es.auto_indent,
+		es.indent_spaces,
+		es.indent_width,
+		self.allocator
+	);
 	card.cursor = card.history.replace(card.buffer, start, end - start, text, rl::get_time());
+	text.free(self.allocator);
+	card.selection_anchor = card.cursor;
+	return true;
+}
+
+fn bool Project.editor_indent(&self)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return false;
+	editor::EditorSettings es = editor::settings();
+	usz start                 = 0;
+	usz end                   = 0;
+	editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+	card.history.break_coalescing();
+	String unit = editor::indent_unit(self.allocator, es.indent_spaces, es.indent_width);
+	card.cursor = card.history.replace(card.buffer, start, end - start, unit, rl::get_time());
+	unit.free(self.allocator);
 	card.selection_anchor = card.cursor;
 	return true;
 }
@@ -1772,11 +1799,12 @@ fn bool Project.editor_outdent(&self)
 {
 	FileCard* card = self.focused_editable_card();
 	if (!card) return false;
-	usz line  = card.buffer.line_of(card.cursor);
-	usz start = card.buffer.line_start(line);
-	if (card.buffer.char_at(start) != '\t') return false;
+	editor::EditorSettings es = editor::settings();
+	usz start                 = card.buffer.line_start(card.buffer.line_of(card.cursor));
+	usz count                 = editor::outdent_count(card.buffer, card.cursor, es.indent_spaces, es.indent_width);
+	if (count == 0) return false;
 	card.history.break_coalescing();
-	card.cursor = card.history.replace(card.buffer, start, 1, "", rl::get_time());
+	card.cursor = card.history.replace(card.buffer, start, count, "", rl::get_time());
 	card.selection_anchor = card.cursor;
 	return true;
 }
@@ -1985,11 +2013,11 @@ fn void Project.handle_keyboard(
 
 	if (keymap.pressed_repeat((int)commands::CommandId.NEWLINE, commands::CTX_EDIT))
 	{
-		if (self.editor_insert("\n")) changed = true;
+		if (self.editor_newline()) changed = true;
 	}
 	if (keymap.pressed_repeat((int)commands::CommandId.INDENT, commands::CTX_EDIT))
 	{
-		if (self.editor_insert("\t")) changed = true;
+		if (self.editor_indent()) changed = true;
 	}
 	if (keymap.pressed_repeat((int)commands::CommandId.OUTDENT, commands::CTX_EDIT))
 	{
@@ -2131,8 +2159,15 @@ fn void Project.draw_cards(
 )
 {
 	double elapsed = rl::get_time() - self.last_input_time;
-	bool caret_on  = (elapsed - math::floor(elapsed)) < 0.5;
-	Rect visible   = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
+	int blink_ms   = editor::settings().caret_blink_ms;
+	bool caret_on  = true;
+	if (blink_ms > 0)
+	{
+		float period = (float)blink_ms / 1000.0f;
+		float phase  = (float)elapsed - math::floor((float)elapsed / period) * period;
+		caret_on = phase < period * 0.5f;
+	}
+	Rect visible = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
 
 	for (sz i = 0; i < self.cards.len(); i++)
 	{

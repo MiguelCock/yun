@@ -11,7 +11,7 @@ fn void test_keys_section_rows()
 		p.init(tmem);
 		p.show();
 
-		assert(p.rows.len() == 90);
+		assert(p.rows.len() == 101);
 		bool found_header = false;
 		bool found_action = false;
 		int command_rows  = 0;
@@ -77,12 +77,12 @@ fn void test_step_float_clamps()
 
 fn void test_enum_next_wraps()
 {
-	settings::SettingSpec s = settings::SETTINGS[(int)settings::SettingId.APP_THEME];
-	assert(enum_next(s, "yun_dark", 1).compare_to("yun_light") == 0);
-	assert(enum_next(s, "yun_dark", -1).compare_to("catppuccin_latte") == 0);
-	assert(enum_next(s, "catppuccin_latte", 1).compare_to("yun_dark") == 0);
-	assert(enum_next(s, "unknown", 1).compare_to("yun_dark") == 0);
-	assert(enum_next(s, "unknown", -1).compare_to("catppuccin_latte") == 0);
+	String[] options = settings::SETTINGS[(int)settings::SettingId.APP_THEME].options;
+	assert(enum_next(options, "yun_dark", 1).compare_to("yun_light") == 0);
+	assert(enum_next(options, "yun_dark", -1).compare_to("catppuccin_latte") == 0);
+	assert(enum_next(options, "catppuccin_latte", 1).compare_to("yun_dark") == 0);
+	assert(enum_next(options, "unknown", 1).compare_to("yun_dark") == 0);
+	assert(enum_next(options, "unknown", -1).compare_to("catppuccin_latte") == 0);
 }
 
 fn void test_matches()
