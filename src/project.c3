@@ -260,8 +260,8 @@ fn int path_compare(void* a, void* b)
 fn int layout_columns(int count)
 {
 	if (count <= 1) return 1;
-	float cell_w = CLUSTER_COLLAPSED_WIDTH + CLUSTER_GAP;
-	float cell_h = CLUSTER_TITLE_HEIGHT + CLUSTER_GAP;
+	float cell_w = ui::pxf(CLUSTER_COLLAPSED_WIDTH) + ui::pxf(CLUSTER_GAP);
+	float cell_h = ui::pxf(CLUSTER_TITLE_HEIGHT) + ui::pxf(CLUSTER_GAP);
 	int columns  = (int)math::ceil(math::sqrt((float)count * cell_h / cell_w));
 	if (columns < 1) columns = 1;
 	if (columns > count) columns = count;
@@ -273,8 +273,8 @@ fn RLVector2 layout_slot(int index, int columns)
 	int col = index % columns;
 	int row = index / columns;
 	return {
-		(float)col * (CLUSTER_COLLAPSED_WIDTH + CLUSTER_GAP),
-		(float)row * (CLUSTER_TITLE_HEIGHT + CLUSTER_GAP),
+		(float)col * (ui::pxf(CLUSTER_COLLAPSED_WIDTH) + ui::pxf(CLUSTER_GAP)),
+		(float)row * (ui::pxf(CLUSTER_TITLE_HEIGHT) + ui::pxf(CLUSTER_GAP)),
 	};
 }
 
@@ -415,7 +415,7 @@ fn int Project.add_folder(&self, String folder_path, int parent)
 {
 	FolderCluster cluster = {
 		.path = (Path)folder_path.copy(self.allocator),
-		.bounds = { .x = 0.0f, .y = 0.0f, .width = 320.0f, .height = 220.0f },
+		.bounds = { .x = 0.0f, .y = 0.0f, .width = ui::pxf(320.0f), .height = ui::pxf(220.0f) },
 		.collapsed = false,
 		.parent = parent,
 		.bounds_valid = false,
@@ -487,10 +487,10 @@ fn Rect Project.compute_cluster_bounds(&self, int index)
 
 	if (!found) return self.folders[index].bounds;
 	return {
-		.x = min_x - CLUSTER_PADDING,
-		.y = min_y - CLUSTER_PADDING - CLUSTER_TITLE_HEIGHT,
-		.width = (max_x - min_x) + CLUSTER_PADDING * 2.0f,
-		.height = (max_y - min_y) + CLUSTER_PADDING * 2.0f + CLUSTER_TITLE_HEIGHT,
+		.x = min_x - ui::pxf(CLUSTER_PADDING),
+		.y = min_y - ui::pxf(CLUSTER_PADDING) - ui::pxf(CLUSTER_TITLE_HEIGHT),
+		.width = (max_x - min_x) + ui::pxf(CLUSTER_PADDING) * 2.0f,
+		.height = (max_y - min_y) + ui::pxf(CLUSTER_PADDING) * 2.0f + ui::pxf(CLUSTER_TITLE_HEIGHT),
 	};
 }
 
@@ -501,8 +501,8 @@ fn Rect Project.cluster_visual_bounds(&self, int index)
 	return {
 		.x = b.x,
 		.y = b.y,
-		.width = CLUSTER_COLLAPSED_WIDTH,
-		.height = CLUSTER_TITLE_HEIGHT,
+		.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH),
+		.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
 	};
 }
 
@@ -513,7 +513,7 @@ fn Rect Project.cluster_title_rect(&self, int index)
 		.x = bounds.x,
 		.y = bounds.y,
 		.width = bounds.width,
-		.height = CLUSTER_TITLE_HEIGHT,
+		.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
 	};
 }
 
@@ -674,10 +674,10 @@ fn int Project.append_card(&self, String abs, RLVector2 world_pos)
 		.copy(
 			self.allocator
 		), .rect = {
-			.x = world_pos[0] - card::CARD_WIDTH / 2.0f,
-			.y = world_pos[1] - card::CARD_HEIGHT / 2.0f,
-			.width = card::CARD_WIDTH,
-			.height = card::CARD_HEIGHT,
+			.x = world_pos[0] - ui::pxf(card::CARD_WIDTH) / 2.0f,
+			.y = world_pos[1] - ui::pxf(card::CARD_HEIGHT) / 2.0f,
+			.width = ui::pxf(card::CARD_WIDTH),
+			.height = ui::pxf(card::CARD_HEIGHT),
 		}, .open = true, .dirty = false, .folder = self.folder_for(abs), };
 	self.cards.push(card);
 	int index = (int)(self.cards.len() - 1);
@@ -714,27 +714,27 @@ fn int Project.add_folder_from_disk(&self, String dir, RLVector2 world_pos)
 	self.folders[index].bounds = {
 		.x = world_pos[0],
 		.y = world_pos[1],
-		.width = 320.0f,
-		.height = 220.0f,
+		.width = ui::pxf(320.0f),
+		.height = ui::pxf(220.0f),
 	};
 	self.invalidate_bounds();
 
 	PathList? entries = path::ls(self.allocator, (Path)dir, no_dirs: true, recursive: false, relative: false);
 	if (catch excuse = entries) return index;
 
-	float x = world_pos[0] + CLUSTER_PADDING;
-	float y = world_pos[1] + CLUSTER_TITLE_HEIGHT + CLUSTER_PADDING;
+	float x = world_pos[0] + ui::pxf(CLUSTER_PADDING);
+	float y = world_pos[1] + ui::pxf(CLUSTER_TITLE_HEIGHT) + ui::pxf(CLUSTER_PADDING);
 	int col = 0;
 	foreach (Path entry : entries)
 	{
-		self.add_card((String)entry, { x + card::CARD_WIDTH / 2.0f, y + card::CARD_HEIGHT / 2.0f });
-		x += card::CARD_WIDTH + CARD_GAP;
+		self.add_card((String)entry, { x + ui::pxf(card::CARD_WIDTH) / 2.0f, y + ui::pxf(card::CARD_HEIGHT) / 2.0f });
+		x += ui::pxf(card::CARD_WIDTH) + ui::pxf((float)CARD_GAP);
 		col++;
 		if (col >= CLUSTER_COLUMNS)
 		{
 			col = 0;
-			x = world_pos[0] + CLUSTER_PADDING;
-			y += card::CARD_HEIGHT + CARD_GAP;
+			x = world_pos[0] + ui::pxf(CLUSTER_PADDING);
+			y += ui::pxf(card::CARD_HEIGHT) + ui::pxf((float)CARD_GAP);
 		}
 	}
 	return index;
@@ -750,8 +750,8 @@ fn void Project.layout(&self)
 		self.folders[f].bounds = {
 			.x = origin[0],
 			.y = origin[1],
-			.width = CLUSTER_COLLAPSED_WIDTH,
-			.height = CLUSTER_TITLE_HEIGHT,
+			.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH),
+			.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
 		};
 		self.folders[f].bounds_valid = false;
 	}
@@ -772,10 +772,14 @@ fn void Project.layout(&self)
 			int col = (int)(slot % (usz)CLUSTER_COLUMNS);
 			int row = (int)(slot / (usz)CLUSTER_COLUMNS);
 			self.cards[i].rect = {
-				.x = origin[0] + CLUSTER_PADDING + (float)col * (card::CARD_WIDTH + CARD_GAP),
-				.y = origin[1] + CLUSTER_TITLE_HEIGHT + CLUSTER_PADDING + (float)row * (card::CARD_HEIGHT + CARD_GAP),
-				.width = card::CARD_WIDTH,
-				.height = card::CARD_HEIGHT,
+				.x = origin[0] + ui::pxf(
+					CLUSTER_PADDING
+				) + (float)col * (ui::pxf(card::CARD_WIDTH) + ui::pxf((float)CARD_GAP)),
+				.y = origin[1] + ui::pxf(
+					CLUSTER_TITLE_HEIGHT
+				) + ui::pxf(CLUSTER_PADDING) + (float)row * (ui::pxf(card::CARD_HEIGHT) + ui::pxf((float)CARD_GAP)),
+				.width = ui::pxf(card::CARD_WIDTH),
+				.height = ui::pxf(card::CARD_HEIGHT),
 			};
 		}
 	};
@@ -1009,8 +1013,8 @@ fn int Project.create_folder_on_disk(&self, int parent_index, String name, RLVec
 	self.folders[index].bounds = {
 		.x = world_pos[0],
 		.y = world_pos[1],
-		.width = CLUSTER_COLLAPSED_WIDTH,
-		.height = CLUSTER_TITLE_HEIGHT,
+		.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH),
+		.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
 	};
 	return index;
 }
