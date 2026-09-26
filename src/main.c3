@@ -1957,7 +1957,7 @@ fn int main(String[] args)
 			context_menu.draw();
 			name_prompt.draw();
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
-			settings_panel.draw(font, project_open, &config);
+			settings_panel.draw(font, project_open, &keymap, &config);
 			problems.draw(editor_font);
 			search.draw(editor_font);
 			symbols.draw(editor_font);
