@@ -194,6 +194,9 @@ struct App
 	editor::EditorMetrics metrics;
 	bool* project_open;
 	bool* content_changed;
+	UiMode* ui_mode;
+	int* edit_grace_frames;
+	topbar::TopBar* bar;
 	int* pending_kind;
 	int* pending_parent;
 	RLVector2* pending_world;
@@ -203,6 +206,40 @@ fn bool has_focused_buffer(project::Project* project)
 {
 	int index = project.focused;
 	return index >= 0 && index < (int)project.cards.len() && project.cards[index].buffer != null;
+}
+
+fn void enter_edit_mode(
+	project::Project* project,
+	canvas::Canvas* canvas,
+	editor::EditorMetrics metrics,
+	UiMode* ui_mode,
+	int* edit_grace_frames
+)
+{
+	bool enter = false;
+	if (project.selected >= 0)
+	{
+		int idx = project.focus(project.selected);
+		if (idx >= 0 && idx < (int)project.cards.len())
+		{
+			project.selected = idx;
+			editor::ensure_buffer(&project.cards[idx], project.allocator);
+			project.reveal_focused(metrics);
+			enter = true;
+		}
+	}
+	else if (project.focused >= 0)
+	{
+		project.selected = project.focused;
+		enter = true;
+	}
+	if (enter && project.focused >= 0)
+	{
+		*ui_mode = UiMode.EDIT;
+		*edit_grace_frames = 2;
+		FileCard* card = project.focused_card();
+		if (card) canvas.target.target = card.center();
+	}
 }
 
 fn void run_command(commands::CommandId id, App* app)
@@ -519,6 +556,76 @@ fn void run_command(commands::CommandId id, App* app)
 			return;
 		case commands::CommandId.EXIT_EDITOR:
 			project.editor_exit();
+			return;
+		case commands::CommandId.PAN_LEFT:
+			app.canvas.key_pan({ -48.0f, 0.0f });
+			return;
+		case commands::CommandId.PAN_RIGHT:
+			app.canvas.key_pan({ 48.0f, 0.0f });
+			return;
+		case commands::CommandId.PAN_UP:
+			app.canvas.key_pan({ 0.0f, -48.0f });
+			return;
+		case commands::CommandId.PAN_DOWN:
+			app.canvas.key_pan({ 0.0f, 48.0f });
+			return;
+		case commands::CommandId.SELECT_LEFT:
+		case commands::CommandId.SELECT_RIGHT:
+		case commands::CommandId.SELECT_UP:
+		case commands::CommandId.SELECT_DOWN:
+
+			{
+				project.ensure_selection();
+				project::Dir dir = project::Dir.LEFT;
+				if (id == commands::CommandId.SELECT_RIGHT) dir = project::Dir.RIGHT;
+				if (id == commands::CommandId.SELECT_UP) dir = project::Dir.UP;
+				if (id == commands::CommandId.SELECT_DOWN) dir = project::Dir.DOWN;
+				int idx = project.card_in_direction(project.selected, dir);
+				if (idx >= 0) project.selected = idx;
+				return;
+			}
+		case commands::CommandId.CYCLE_NEXT:
+
+			{
+				int idx = project.next_visible_card(project.selected, 1);
+				if (idx >= 0) project.selected = idx;
+				return;
+			}
+		case commands::CommandId.CYCLE_PREV:
+
+			{
+				int idx = project.next_visible_card(project.selected, -1);
+				if (idx >= 0) project.selected = idx;
+				return;
+			}
+		case commands::CommandId.ZOOM_IN:
+			app.canvas.key_zoom(1.0f);
+			return;
+		case commands::CommandId.ZOOM_OUT:
+			app.canvas.key_zoom(-1.0f);
+			return;
+		case commands::CommandId.FOCUS_TOP_BAR:
+			*app.ui_mode = UiMode.TOP_BAR;
+			app.bar.clamp_selection(*app.project_open, has_focused_buffer(project));
+			return;
+		case commands::CommandId.FOCUS_EDITOR:
+			enter_edit_mode(project, app.canvas, app.metrics, app.ui_mode, app.edit_grace_frames);
+			return;
+		case commands::CommandId.TOPBAR_LEFT:
+			app.bar.move_selection(-1, *app.project_open, has_focused_buffer(project));
+			return;
+		case commands::CommandId.TOPBAR_RIGHT:
+			app.bar.move_selection(1, *app.project_open, has_focused_buffer(project));
+			return;
+		case commands::CommandId.TOPBAR_ACTIVATE:
+
+			{
+				int cmd_id = app.bar.activate(*app.project_open, has_focused_buffer(project));
+				if (cmd_id >= 0) run_command((commands::CommandId)cmd_id, app);
+				return;
+			}
+		case commands::CommandId.FOCUS_CANVAS:
+			*app.ui_mode = UiMode.MOVE;
 			return;
 		default:
 			return;
@@ -861,6 +968,9 @@ fn int main(String[] args)
 		.metrics = metrics,
 		.project_open = &project_open,
 		.content_changed = &content_changed,
+		.ui_mode = &ui_mode,
+		.edit_grace_frames = &edit_grace_frames,
+		.bar = &bar,
 		.pending_kind = &pending_kind,
 		.pending_parent = &pending_parent,
 		.pending_world = &pending_world,
@@ -1268,52 +1378,24 @@ fn int main(String[] args)
 				}
 			}
 
-			ulong key_context = commands::CTX_MOVE;
-			if (ui_mode == UiMode.EDIT)
-			{
-				key_context = commands::CTX_GLOBAL;
-			}
-			else if (ui_mode == UiMode.TOP_BAR)
-			{
-				key_context = commands::CTX_TOP_BAR;
-			}
-			int key_cmd = keymap.poll(key_context);
+			int key_cmd = keymap.poll(commands::CTX_GLOBAL);
 			if (key_cmd >= 0) run_command((commands::CommandId)key_cmd, &app);
 
 			int bar_cmd = bar.update(mouse, project_open, has_buffer);
 			if (bar_cmd >= 0) run_command((commands::CommandId)bar_cmd, &app);
 
-			if (rl::is_key_pressed(rl::RLKeyboardKey.TAB))
-			{
-				if (ui_mode == UiMode.TOP_BAR)
-				{
-					ui_mode = UiMode.MOVE;
-				}
-				else if (ui_mode == UiMode.MOVE)
-				{
-					bar.clamp_selection(project_open, has_buffer);
-					ui_mode = UiMode.TOP_BAR;
-				}
-			}
-
 			if (ui_mode == UiMode.TOP_BAR)
 			{
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.RIGHT
-				) || rl::is_key_pressed_repeat(
-					rl::RLKeyboardKey.RIGHT
-				)) bar.move_selection(1, project_open, has_buffer);
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.LEFT
-				) || rl::is_key_pressed_repeat(
-					rl::RLKeyboardKey.LEFT
-				)) bar.move_selection(-1, project_open, has_buffer);
-				if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.SPACE))
+				int bar_key_cmd = keymap.poll_exact(commands::CTX_TOP_BAR);
+				if (bar_key_cmd < 0 && rl::is_key_pressed(rl::RLKeyboardKey.SPACE))
 				{
-					int id = bar.activate(project_open, has_buffer);
-					if (id >= 0) run_command((commands::CommandId)id, &app);
+					bar_key_cmd = (int)commands::CommandId.TOPBAR_ACTIVATE;
 				}
-				if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE)) ui_mode = UiMode.MOVE;
+				if (bar_key_cmd < 0 && rl::is_key_pressed(rl::RLKeyboardKey.TAB))
+				{
+					bar_key_cmd = (int)commands::CommandId.FOCUS_CANVAS;
+				}
+				if (bar_key_cmd >= 0) run_command((commands::CommandId)bar_key_cmd, &app);
 				while (rl::get_char_pressed() != 0)
 				{
 				}
@@ -1323,62 +1405,29 @@ fn int main(String[] args)
 				int before = project.selected;
 				project.ensure_selection();
 
-				if (project::shift_down())
-				{
-					float step = 48.0f;
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.L
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.L)) canvas.key_pan({ step, 0.0f });
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.H
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.H)) canvas.key_pan({ -step, 0.0f });
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.J
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.J)) canvas.key_pan({ 0.0f, step });
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.K
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.K)) canvas.key_pan({ 0.0f, -step });
-				}
-				else
-				{
-					int direction = -1;
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.H
-					) || rl::is_key_pressed(rl::RLKeyboardKey.LEFT)) direction = (int)project::Dir.LEFT;
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.J
-					) || rl::is_key_pressed(rl::RLKeyboardKey.DOWN)) direction = (int)project::Dir.DOWN;
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.K
-					) || rl::is_key_pressed(rl::RLKeyboardKey.UP)) direction = (int)project::Dir.UP;
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.L
-					) || rl::is_key_pressed(rl::RLKeyboardKey.RIGHT)) direction = (int)project::Dir.RIGHT;
-
-					if (direction >= 0)
-					{
-						int idx = project.card_in_direction(project.selected, (project::Dir)direction);
-						if (idx >= 0) project.selected = idx;
-					}
-					else
-					{
-						int cycle = 0;
-						if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT_BRACKET)) cycle = 1;
-						if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT_BRACKET)) cycle = -1;
-						if (cycle != 0)
-						{
-							int idx = project.next_visible_card(project.selected, cycle);
-							if (idx >= 0) project.selected = idx;
-						}
-					}
-				}
-
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.EQUAL
-				) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ADD)) canvas.key_zoom(1.0f);
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.MINUS
-				) || rl::is_key_pressed(rl::RLKeyboardKey.KP_SUBTRACT)) canvas.key_zoom(-1.0f);
+				int move_cmd = keymap.poll_exact(commands::CTX_MOVE);
+				if (move_cmd < 0 && rl::is_key_pressed(
+					rl::RLKeyboardKey.LEFT
+				)) move_cmd = (int)commands::CommandId.SELECT_LEFT;
+				if (move_cmd < 0 && rl::is_key_pressed(
+					rl::RLKeyboardKey.RIGHT
+				)) move_cmd = (int)commands::CommandId.SELECT_RIGHT;
+				if (move_cmd < 0 && rl::is_key_pressed(
+					rl::RLKeyboardKey.UP
+				)) move_cmd = (int)commands::CommandId.SELECT_UP;
+				if (move_cmd < 0 && rl::is_key_pressed(
+					rl::RLKeyboardKey.DOWN
+				)) move_cmd = (int)commands::CommandId.SELECT_DOWN;
+				if (move_cmd < 0 && rl::is_key_pressed(
+					rl::RLKeyboardKey.I
+				)) move_cmd = (int)commands::CommandId.FOCUS_EDITOR;
+				if (move_cmd < 0 && rl::is_key_pressed(
+					rl::RLKeyboardKey.KP_ADD
+				)) move_cmd = (int)commands::CommandId.ZOOM_IN;
+				if (move_cmd < 0 && rl::is_key_pressed(
+					rl::RLKeyboardKey.KP_SUBTRACT
+				)) move_cmd = (int)commands::CommandId.ZOOM_OUT;
+				if (move_cmd >= 0) run_command((commands::CommandId)move_cmd, &app);
 
 				bool selection_changed  = project.selected != before;
 				FileCard* selected_card = project.selected_card();
@@ -1495,35 +1544,6 @@ fn int main(String[] args)
 			if (ui_mode == UiMode.EDIT && project.focused < 0)
 			{
 				ui_mode = UiMode.MOVE;
-			}
-			else if (ui_mode == UiMode.MOVE)
-			{
-				bool enter_edit = false;
-				if ((rl::is_key_pressed(
-					rl::RLKeyboardKey.ENTER
-				) || rl::is_key_pressed(rl::RLKeyboardKey.I)) && project.selected >= 0)
-				{
-					int idx = project.focus(project.selected);
-					if (idx >= 0 && idx < (int)project.cards.len())
-					{
-						project.selected = idx;
-						editor::ensure_buffer(&project.cards[idx], project.allocator);
-						project.reveal_focused(metrics);
-						enter_edit = true;
-					}
-				}
-				else if (project.focused >= 0)
-				{
-					project.selected = project.focused;
-					enter_edit = true;
-				}
-				if (enter_edit && project.focused >= 0)
-				{
-					ui_mode = UiMode.EDIT;
-					edit_grace_frames = 2;
-					FileCard* card = project.focused_card();
-					if (card) canvas.target.target = card.center();
-				}
 			}
 			project.discard_ephemeral(project.focused);
 			if (content_changed)

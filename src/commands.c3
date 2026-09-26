@@ -55,6 +55,24 @@ enum CommandId
 	COMPLETION_PREV,
 	COMPLETION_ACCEPT,
 	COMPLETION_CLOSE,
+	PAN_LEFT,
+	PAN_RIGHT,
+	PAN_UP,
+	PAN_DOWN,
+	SELECT_LEFT,
+	SELECT_RIGHT,
+	SELECT_UP,
+	SELECT_DOWN,
+	CYCLE_NEXT,
+	CYCLE_PREV,
+	ZOOM_IN,
+	ZOOM_OUT,
+	FOCUS_TOP_BAR,
+	FOCUS_EDITOR,
+	TOPBAR_LEFT,
+	TOPBAR_RIGHT,
+	TOPBAR_ACTIVATE,
+	FOCUS_CANVAS,
 }
 
 struct CommandDef
@@ -64,6 +82,7 @@ struct CommandDef
 	String shortcut;
 	bool in_top_bar;
 	ulong contexts;
+	bool repeat;
 }
 
 const CommandDef[] COMMAND_DEFS = {
@@ -237,6 +256,126 @@ const CommandDef[] COMMAND_DEFS = {
 		.in_top_bar = false,
 		.contexts = CTX_COMPLETION,
 	},
+	{
+		.id = CommandId.PAN_LEFT,
+		.label = "Pan Left",
+		.shortcut = "Shift+H",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.PAN_RIGHT,
+		.label = "Pan Right",
+		.shortcut = "Shift+L",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.PAN_UP,
+		.label = "Pan Up",
+		.shortcut = "Shift+K",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.PAN_DOWN,
+		.label = "Pan Down",
+		.shortcut = "Shift+J",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.SELECT_LEFT,
+		.label = "Select Left",
+		.shortcut = "H",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.SELECT_RIGHT,
+		.label = "Select Right",
+		.shortcut = "L",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.SELECT_UP,
+		.label = "Select Up",
+		.shortcut = "K",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.SELECT_DOWN,
+		.label = "Select Down",
+		.shortcut = "J",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.CYCLE_NEXT,
+		.label = "Next Card",
+		.shortcut = "]",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.CYCLE_PREV,
+		.label = "Previous Card",
+		.shortcut = "[",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{ .id = CommandId.ZOOM_IN, .label = "Zoom In", .shortcut = "=", .in_top_bar = false, .contexts = CTX_MOVE },
+	{ .id = CommandId.ZOOM_OUT, .label = "Zoom Out", .shortcut = "-", .in_top_bar = false, .contexts = CTX_MOVE },
+	{
+		.id = CommandId.FOCUS_TOP_BAR,
+		.label = "Focus Top Bar",
+		.shortcut = "Tab",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.FOCUS_EDITOR,
+		.label = "Focus Editor",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.TOPBAR_LEFT,
+		.label = "Top Bar Left",
+		.shortcut = "Left",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.TOPBAR_RIGHT,
+		.label = "Top Bar Right",
+		.shortcut = "Right",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.TOPBAR_ACTIVATE,
+		.label = "Top Bar Activate",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+	},
+	{
+		.id = CommandId.FOCUS_CANVAS,
+		.label = "Focus Canvas",
+		.shortcut = "Esc",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+	},
 };
 
 fn usz command_count()
@@ -329,6 +468,42 @@ fn String command_name(CommandId id)
 			return "completion_accept";
 		case CommandId.COMPLETION_CLOSE:
 			return "completion_close";
+		case CommandId.PAN_LEFT:
+			return "pan_left";
+		case CommandId.PAN_RIGHT:
+			return "pan_right";
+		case CommandId.PAN_UP:
+			return "pan_up";
+		case CommandId.PAN_DOWN:
+			return "pan_down";
+		case CommandId.SELECT_LEFT:
+			return "select_left";
+		case CommandId.SELECT_RIGHT:
+			return "select_right";
+		case CommandId.SELECT_UP:
+			return "select_up";
+		case CommandId.SELECT_DOWN:
+			return "select_down";
+		case CommandId.CYCLE_NEXT:
+			return "cycle_next";
+		case CommandId.CYCLE_PREV:
+			return "cycle_prev";
+		case CommandId.ZOOM_IN:
+			return "zoom_in";
+		case CommandId.ZOOM_OUT:
+			return "zoom_out";
+		case CommandId.FOCUS_TOP_BAR:
+			return "focus_top_bar";
+		case CommandId.FOCUS_EDITOR:
+			return "focus_editor";
+		case CommandId.TOPBAR_LEFT:
+			return "topbar_left";
+		case CommandId.TOPBAR_RIGHT:
+			return "topbar_right";
+		case CommandId.TOPBAR_ACTIVATE:
+			return "topbar_activate";
+		case CommandId.FOCUS_CANVAS:
+			return "focus_canvas";
 	}
 }
 
@@ -424,6 +599,26 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.COMPLETION_ACCEPT:
 		case CommandId.COMPLETION_CLOSE:
 			return has_buffer;
+		case CommandId.PAN_LEFT:
+		case CommandId.PAN_RIGHT:
+		case CommandId.PAN_UP:
+		case CommandId.PAN_DOWN:
+		case CommandId.SELECT_LEFT:
+		case CommandId.SELECT_RIGHT:
+		case CommandId.SELECT_UP:
+		case CommandId.SELECT_DOWN:
+		case CommandId.CYCLE_NEXT:
+		case CommandId.CYCLE_PREV:
+		case CommandId.ZOOM_IN:
+		case CommandId.ZOOM_OUT:
+		case CommandId.FOCUS_EDITOR:
+			return has_project;
+		case CommandId.FOCUS_TOP_BAR:
+		case CommandId.TOPBAR_LEFT:
+		case CommandId.TOPBAR_RIGHT:
+		case CommandId.TOPBAR_ACTIVATE:
+		case CommandId.FOCUS_CANVAS:
+			return true;
 	}
 }
 

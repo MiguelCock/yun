@@ -623,12 +623,34 @@ fn bool Keymap.pressed_move(&self, int id, ulong context)
 	return chord_mods_ok_ignore_shift(chord);
 }
 
-fn int Keymap.poll(&self, ulong context)
+fn bool Keymap.eligible(&self, int id, ulong context, bool exact)
+{
+	if (id < 0 || id >= MAX_COMMANDS) return false;
+	if (!self.bound[id]) return false;
+	ulong contexts = commands::command_def((commands::CommandId)id).contexts;
+	if (exact) return (contexts & context) != 0;
+	return context_matches(contexts, context);
+}
+
+fn int Keymap.poll_commands(&self, ulong context, bool exact)
 {
 	for (usz i = 0; i < commands::command_count(); i++)
 	{
-		if (!self.active((int)i, context)) continue;
-		if (chord_pressed(self.chords[i])) return (int)i;
+		if (!self.eligible((int)i, context, exact)) continue;
+		Chord chord  = self.chords[i];
+		bool pressed = commands::command_def((commands::CommandId)i)
+			.repeat ? chord_pressed_repeat(chord) : chord_pressed(chord);
+		if (pressed) return (int)i;
 	}
 	return -1;
+}
+
+fn int Keymap.poll(&self, ulong context)
+{
+	return self.poll_commands(context, false);
+}
+
+fn int Keymap.poll_exact(&self, ulong context)
+{
+	return self.poll_commands(context, true);
 }
