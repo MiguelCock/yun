@@ -1540,7 +1540,8 @@ fn int main(String[] args)
 			}
 
 			content_changed = false;
-			project.update(&canvas, &keymap, metrics, over_top || font_wheel, &content_changed);
+			bool suppress_edit_input = ui_mode == UiMode.EDIT && edit_grace_frames > 0;
+			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
 			if (ui_mode == UiMode.EDIT && project.focused < 0)
 			{
 				ui_mode = UiMode.MOVE;
