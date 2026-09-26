@@ -109,13 +109,13 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the branch/PR workflow, [`AGENTS.md
 
 ## Versioning and releases
 
-Yun follows [semantic versioning](https://semver.org/): `MAJOR` for breaking changes, `MINOR` for new features, and `PATCH` for bug fixes. The version lives in [`project.json`](project.json) (and `yun::version.APP_VERSION`, kept in sync by a test).
+Yun is **pre-1.0**: versions are `0.<MINOR>.0`, where `MINOR` is the cumulative number of closed issues at release time (it only ever increases), and `PATCH` stays `0`. Once the API and UX are stable we will move to [semantic versioning](https://semver.org/). The version lives in [`project.json`](project.json) (and `yun::version.APP_VERSION`, kept in sync by a test).
 
-Releases are built and published by [`.github/workflows/release.yml`](.github/workflows/release.yml). **Merging a PR never publishes anything** — the workflow only builds. To cut a release, bump the version and push a matching tag:
+Releases are built and published by [`.github/workflows/release.yml`](.github/workflows/release.yml). **Merging a PR never publishes anything** — the workflow only builds. To cut a release, set the version to `0.<closed-issues>.0` and push a matching tag:
 
 ```sh
-git tag v1.0.0
-git push origin v1.0.0
+git tag v0.44.0
+git push origin v0.44.0
 ```
 
 Tagging builds `linux-x64`, `macos-aarch64`, and `windows-x64` and attaches the archives (with SHA-256 checksums) to the GitHub Release. The tag must equal `v<version from project.json>`, otherwise publishing is aborted.
