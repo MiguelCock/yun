@@ -220,3 +220,36 @@ fn void test_save_load_roundtrip()
 		(void)path::rmtree(dir);
 	};
 }
+
+fn void test_empty_chord_roundtrip()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_config_empty_chord");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? f = dir.append(tmem, "config.json");
+		if (catch excuse = f) return;
+		Path file = f;
+
+		Config c;
+		c.init(tmem);
+		c.set_key_binding("save", "");
+		c.save_path(file, settings::SettingLayer.GLOBAL);
+
+		Config loaded;
+		loaded.init(tmem);
+		assert(loaded.load_path(file, settings::SettingLayer.GLOBAL));
+		assert(loaded.keymap.len() == 1);
+		assert(loaded.keymap[0].chord.len == 0);
+		assert(loaded.key_binding(commands::CommandId.SAVE).len == 0);
+
+		c.destroy();
+		loaded.destroy();
+		(void)path::rmtree(dir);
+	};
+}

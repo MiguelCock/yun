@@ -129,6 +129,8 @@ Unknown top-level keys or section keys warn and are ignored, and a missing confi
 
 In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's *Settings* button, or the command palette. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value.
 
+Keybindings use chords like `Ctrl+Shift+P`. Modifiers are `Ctrl` (shown as `Cmd` on macOS), `Shift`, `Alt` and `Super`; keys can be letters/digits, punctuation (`, . / ; ' [ ] - = \ \``), named keys (`Enter`, `Esc`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `CapsLock`, `PrintScreen`, `Pause`), function keys `F1`-`F12`, or keypad keys (`KP_0`-`KP_9`, `KP_Add`, `KP_Subtract`, `KP_Multiply`, `KP_Divide`, `KP_Enter`). Set a command's chord to `""` to unbind it.
+
 ## Versioning and releases
 
 Yun is **pre-1.0**: versions are `0.<MINOR>.0`, where `MINOR` is the cumulative number of closed issues at release time (it only ever increases), and `PATCH` stays `0`. Once the API and UX are stable we will move to [semantic versioning](https://semver.org/). The version lives in [`project.json`](project.json) (and `yun::version.APP_VERSION`, kept in sync by a test).
