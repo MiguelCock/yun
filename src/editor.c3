@@ -12,6 +12,7 @@ import yun::highlight;
 import yun::lsp;
 import yun::text;
 import yun::theme;
+import yun::ui;
 
 const int MAX_DIAGNOSTIC_SEGMENTS = 512;
 const int FONT_SIZE_MIN           = 8;
@@ -62,7 +63,7 @@ fn float min_card_width(EditorMetrics metrics)
 
 fn float min_card_height(EditorMetrics metrics)
 {
-	return 30.0f * metrics.line_height + card::CARD_TITLE_HEIGHT + metrics.padding_y * 2.0f;
+	return 30.0f * metrics.line_height + ui::pxf(card::CARD_TITLE_HEIGHT) + metrics.padding_y * 2.0f;
 }
 
 struct EditorMetrics
@@ -418,9 +419,9 @@ fn Rect inner_rect(Rect card_rect, EditorMetrics metrics)
 {
 	return {
 		.x = card_rect.x + metrics.padding_x,
-		.y = card_rect.y + card::CARD_TITLE_HEIGHT + metrics.padding_y,
+		.y = card_rect.y + ui::pxf(card::CARD_TITLE_HEIGHT) + metrics.padding_y,
 		.width = card_rect.width - metrics.padding_x * 2.0f,
-		.height = card_rect.height - card::CARD_TITLE_HEIGHT - metrics.padding_y * 2.0f,
+		.height = card_rect.height - ui::pxf(card::CARD_TITLE_HEIGHT) - metrics.padding_y * 2.0f,
 	};
 }
 
@@ -430,7 +431,7 @@ fn CardRegion region_at(FileCard* card, RLVector2 world, EditorMetrics metrics, 
 	if (card.resize_handle_at(world, camera) >= 0) return CardRegion.HANDLE;
 	if (card.close_marker_hit(world)) return CardRegion.CLOSE;
 	if (card.marker_hit(world)) return CardRegion.MARKER;
-	if (card.open && world[1] >= card.rect.y + card::CARD_TITLE_HEIGHT) return CardRegion.BODY;
+	if (card.open && world[1] >= card.rect.y + ui::pxf(card::CARD_TITLE_HEIGHT)) return CardRegion.BODY;
 	return CardRegion.TITLE;
 }
 

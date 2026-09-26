@@ -20,6 +20,7 @@ import yun::keymap;
 import yun::lsp;
 import yun::text;
 import yun::theme;
+import yun::ui;
 
 const int ROOT_FOLDER               = -1;
 const double POLL_SECONDS           =  1.0;
@@ -2127,13 +2128,23 @@ fn void Project.draw_cluster(&self, int index)
 	rl::draw_rectangle_rec(title, theme::current().cluster_title);
 	rl::draw_rectangle_lines_ex(bounds, 1.0f, theme::current().cluster_border);
 	String name = rl::get_file_name((ZString)cluster.path.ptr).str_view();
-	rl::draw_text((ZString)name.ptr, (int)(bounds.x + 10.0f), (int)(bounds.y + 5.0f), 16, theme::current()
-		.cluster_text);
-	rl::draw_text(
+	@pool()
+	{
+		rl::draw_text_ex(
+			ui::font(),
+			name.zstr_tcopy(),
+			{ bounds.x + (float)ui::px(10), bounds.y + (float)ui::px(5) },
+			(float)ui::px(16),
+			0.0f,
+			theme::current()
+			.cluster_text);
+	};
+	rl::draw_text_ex(
+		ui::font(),
 		cluster.collapsed ? "+" : "-",
-		(int)(bounds.x + bounds.width - 20.0f),
-		(int)(bounds.y + 5.0f),
-		16,
+		{ bounds.x + bounds.width - (float)ui::px(20), bounds.y + (float)ui::px(5) },
+		(float)ui::px(16),
+		0.0f,
 		theme::current()
 		.cluster_text);
 }

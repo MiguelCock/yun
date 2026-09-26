@@ -7,6 +7,7 @@ import std::core::mem::alloc;
 import std::math;
 import yun::editor;
 import yun::theme;
+import yun::ui;
 
 const float HOVER_MAX_WIDTH = 560.0f;
 const int HOVER_MAX_LINES   = 24;
@@ -124,7 +125,7 @@ fn void draw_run(RLFont font, String text, float x, float y, float size, RLColor
 
 fn float line_width(RLFont font, HoverLine* line)
 {
-	float size  = (line.heading ? 16.0f : 14.0f) * editor::text_scale();
+	float size  = (line.heading ? 16.0f : 14.0f) * ui::scale();
 	float width = 0.0f;
 	for (sz i = 0; i < line.runs.len(); i++)
 	{
@@ -143,7 +144,7 @@ fn void draw_hover(String markdown, RLVector2 anchor, RLFont font)
 		parse_markdown(tmem, markdown, &lines);
 		if (lines.len() == 0) return;
 
-		float s      = editor::text_scale();
+		float s      = ui::scale();
 		float line_h = HOVER_LINE_H * s;
 
 		int count = (int)lines.len();

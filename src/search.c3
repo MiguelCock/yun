@@ -18,6 +18,7 @@ import yun::find;
 import yun::keymap;
 import yun::project;
 import yun::theme;
+import yun::ui;
 
 const int MAX_MATCHES_PER_FILE = 200;
 const int MAX_RESULTS          = 2000;
@@ -547,7 +548,7 @@ fn int Search.selected_ordinal(&self)
 
 fn float Search.list_y(&self)
 {
-	float s    = editor::text_scale();
+	float s    = ui::scale();
 	Rect panel = self.panel_rect();
 	float pad  = 10.0f * s;
 	Rect case_rect;
@@ -559,7 +560,7 @@ fn float Search.list_y(&self)
 
 fn int Search.visible_rows(&self)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	Rect panel   = self.panel_rect();
 	float pad    = 10.0f * s;
 	float list_y = self.list_y();
@@ -581,7 +582,7 @@ fn void Search.ensure_visible(&self)
 
 fn int Search.row_at_mouse(&self, RLVector2 mouse)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	Rect panel   = self.panel_rect();
 	float list_y = self.list_y();
 	if (mouse[1] < list_y) return -1;
@@ -620,7 +621,7 @@ fn SearchTarget Search.activate(&self)
 
 fn Rect Search.panel_rect(&self)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	int screen_w = rl::get_screen_width();
 	int screen_h = rl::get_screen_height();
 	float width  = 780.0f * s;
@@ -633,7 +634,7 @@ fn Rect Search.panel_rect(&self)
 
 fn void Search.chip_rects(&self, Rect* case_rect, Rect* word_rect)
 {
-	float s    = editor::text_scale();
+	float s    = ui::scale();
 	Rect panel = self.panel_rect();
 	float pad  = 10.0f * s;
 	float y    = panel.y + pad + 30.0f * s + 8.0f * s;
@@ -781,7 +782,7 @@ fn void Search.draw(&self, RLFont font)
 {
 	if (!self.open) return;
 
-	float s    = editor::text_scale();
+	float s    = ui::scale();
 	Rect panel = self.panel_rect();
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);

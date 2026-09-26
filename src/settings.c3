@@ -23,6 +23,8 @@ enum SettingLayer : int
 enum SettingId : int
 {
 	APP_THEME,
+	APP_UI_FONT_FAMILY,
+	APP_UI_FONT_SIZE,
 	EDITOR_FONT_SIZE,
 	EDITOR_FONT_FAMILY,
 	EDITOR_LINE_HEIGHT,
@@ -84,6 +86,26 @@ const SettingSpec[] SETTINGS = {
 			"catppuccin_mocha",
 			"catppuccin_latte",
 		},
+	},
+	{
+		.section = "app",
+		.key = "ui_font_family",
+		.label = "UI font",
+		.description = "Font used for the interface (monospace fonts on the system).",
+		.kind = SettingKind.ENUM,
+		.fallback = { .s = "JetBrains Mono" },
+		.options = { "JetBrains Mono" },
+	},
+	{
+		.section = "app",
+		.key = "ui_font_size",
+		.label = "UI font size",
+		.description = "Interface font size in pixels.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 16 },
+		.min = 8.0,
+		.max = 32.0,
+		.step = 1.0,
 	},
 	{
 		.section = "editor",
@@ -237,7 +259,10 @@ fn void set_font_options(String[] options)
 
 fn String[] setting_options(SettingId id)
 {
-	if (id == SettingId.EDITOR_FONT_FAMILY && g_font_options.len > 0) return g_font_options;
+	if ((id == SettingId.EDITOR_FONT_FAMILY || id == SettingId.APP_UI_FONT_FAMILY) && g_font_options.len > 0)
+	{
+		return g_font_options;
+	}
 	return spec(id).options;
 }
 

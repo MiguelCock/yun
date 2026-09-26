@@ -9,6 +9,7 @@ import yun::find;
 import yun::keymap;
 import yun::text;
 import yun::theme;
+import yun::ui;
 
 const int FIELD_MAX  = 64;
 const int BAR_HEIGHT = 34;
@@ -198,7 +199,7 @@ fn Rect FindBar.bar_rect(&self, Rect card_rect, EditorMetrics metrics)
 		.x = card_rect.x + 1.0f,
 		.y = card_rect.y + 1.0f,
 		.width = card_rect.width - 2.0f,
-		.height = (float)BAR_HEIGHT,
+		.height = (float)ui::px(BAR_HEIGHT),
 	};
 }
 
@@ -293,15 +294,30 @@ fn void draw_field(RLFont font, Rect field, String text, bool active)
 	rl::draw_rectangle_lines_ex(field, 1.0f, active ? theme::current().panel_border : theme::current().findbar_chip);
 	if (text.len > 0)
 	{
-		rl::draw_text_ex(font, (ZString)text.ptr, { field.x + 4.0f, field.y + 3.0f }, 15.0f, 0.0f, theme::current()
-			.panel_text);
+		@pool()
+		{
+			rl::draw_text_ex(
+				font,
+				text.zstr_tcopy(),
+				{ field.x + (float)ui::px(4), field.y + (float)ui::px(3) },
+				(float)ui::px(15),
+				0.0f,
+				theme::current()
+				.panel_text);
+		};
 	}
 	if (active)
 	{
 		@pool()
 		{
-			float width = text.len > 0 ? rl::measure_text_ex(font, text.zstr_tcopy(), 15.0f, 0.0f)[0] : 0.0f;
-			rl::draw_rectangle((int)(field.x + 5.0f + width), (int)(field.y + 3.0f), 2, 16, theme::current()
+			float width = text.len > 0 ? rl::measure_text_ex(font, text.zstr_tcopy(), (float)ui::px(15), 0.0f)[0]
+				: 0.0f;
+			rl::draw_rectangle(
+				(int)(field.x + (float)ui::px(5) + width),
+				(int)(field.y + (float)ui::px(3)),
+				2,
+				ui::px(16),
+				theme::current()
 				.panel_caret);
 		};
 	}
@@ -313,12 +329,12 @@ fn void draw_chip(RLFont font, Rect chip, String label, bool toggled)
 	@pool()
 	{
 		ZString z      = label.zstr_tcopy();
-		RLVector2 size = rl::measure_text_ex(font, z, 13.0f, 0.0f);
+		RLVector2 size = rl::measure_text_ex(font, z, (float)ui::px(13), 0.0f);
 		rl::draw_text_ex(
 			font,
 			z,
 			{ chip.x + (chip.width - size[0]) / 2.0f, chip.y + (chip.height - size[1]) / 2.0f },
-			13.0f,
+			(float)ui::px(13),
 			0.0f,
 			theme::current()
 			.panel_text);
@@ -359,25 +375,25 @@ fn void FindBar.draw(&self, Rect card_rect, EditorMetrics metrics, RLFont font, 
 	rl::draw_line_ex({ bar.x, bar.y + bar.height }, { bar.x + bar.width, bar.y + bar.height }, 1.0f, theme::current()
 		.panel_border);
 
-	float x      = bar.x + (float)PADDING;
-	float y      = bar.y + (float)PADDING - 2.0f;
-	float height = (float)ROW_HEIGHT;
+	float x      = bar.x + (float)ui::px(PADDING);
+	float y      = bar.y + (float)ui::px(PADDING) - (float)ui::px(2);
+	float height = (float)ui::px(ROW_HEIGHT);
 
-	Rect query_field = { .x = x, .y = y, .width = 150.0f, .height = height };
+	Rect query_field = { .x = x, .y = y, .width = (float)ui::px(150), .height = height };
 	draw_field(font, query_field, self.query_view(), self.field == find::FindField.QUERY);
-	x += query_field.width + 6.0f;
+	x += query_field.width + (float)ui::px(6);
 
-	Rect replace_field = { .x = x, .y = y, .width = 150.0f, .height = height };
+	Rect replace_field = { .x = x, .y = y, .width = (float)ui::px(150), .height = height };
 	draw_field(font, replace_field, self.replace_view(), self.field == find::FindField.REPLACE);
-	x += replace_field.width + 8.0f;
+	x += replace_field.width + (float)ui::px(8);
 
-	Rect word_chip = { .x = x, .y = y, .width = 52.0f, .height = height };
+	Rect word_chip = { .x = x, .y = y, .width = (float)ui::px(52), .height = height };
 	draw_chip(font, word_chip, "Word", self.whole_word);
-	x += word_chip.width + 4.0f;
+	x += word_chip.width + (float)ui::px(4);
 
-	Rect case_chip = { .x = x, .y = y, .width = 44.0f, .height = height };
+	Rect case_chip = { .x = x, .y = y, .width = (float)ui::px(44), .height = height };
 	draw_chip(font, case_chip, "Case", self.case_sensitive);
-	x += case_chip.width + 8.0f;
+	x += case_chip.width + (float)ui::px(8);
 
 	@pool()
 	{
@@ -389,7 +405,14 @@ fn void FindBar.draw(&self, Rect card_rect, EditorMetrics metrics, RLFont font, 
 			self.capped ? "+" : ""
 		)
 			: "0/0";
-		rl::draw_text_ex(font, (ZString)count.ptr, { x, y + 4.0f }, 14.0f, 0.0f, theme::current().panel_dim);
+		rl::draw_text_ex(
+			font,
+			(ZString)count.ptr,
+			{ x, y + (float)ui::px(4) },
+			(float)ui::px(14),
+			0.0f,
+			theme::current()
+			.panel_dim);
 	};
 
 	(void)keymap;

@@ -19,6 +19,7 @@ import yun::hover;
 import yun::project;
 import yun::text;
 import yun::theme;
+import yun::ui;
 
 const int MAX_SCAN_WORKERS         = 8;
 const float ARROW_HIT_PX           = 6.0f;
@@ -1106,7 +1107,7 @@ fn bool arrow_geometry(
 		return true;
 	}
 
-	float label_scale = editor::text_scale();
+	float label_scale = ui::scale();
 	*out_p2 = {
 		card.rect.x + card.rect.width + 40.0f * label_scale,
 		card.rect.y - (18.0f + (float)slot * 16.0f) * label_scale,
@@ -1193,7 +1194,7 @@ fn void draw_one(
 	RLColor label_color = hovered ? theme::current()
 		.import_external_hover : (related ? theme::current().import_label : theme::current().import_label_dim);
 	draw_dashed_bezier(p1, p2, thick, zoom, line_color);
-	float s = editor::text_scale();
+	float s = ui::scale();
 	rl::draw_circle_v(p2, 3.0f * s / zoom, line_color);
 	draw_label(font, ref.specifier, p2[0] + 8.0f * s / zoom, p2[1] - 6.0f * s / zoom, 14.0f * s, label_color);
 }

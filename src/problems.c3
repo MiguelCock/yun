@@ -10,6 +10,7 @@ import yun::editor;
 import yun::keymap;
 import yun::lsp;
 import yun::theme;
+import yun::ui;
 
 const int ROW_HEIGHT       = 24;
 const int PADDING          = 10;
@@ -177,7 +178,7 @@ fn void Problems.move_selection(&self, int delta)
 
 fn Rect Problems.panel_rect(&self)
 {
-	float s     = editor::text_scale();
+	float s     = ui::scale();
 	int pad     = (int)((float)PADDING * s);
 	int title_h = (int)(TITLE_HEIGHT * s);
 	int row_h   = (int)((float)ROW_HEIGHT * s);
@@ -203,7 +204,7 @@ fn Rect Problems.panel_rect(&self)
 
 fn float Problems.list_y(&self)
 {
-	float s = editor::text_scale();
+	float s = ui::scale();
 	return self.panel_rect().y + (float)PADDING * s + TITLE_HEIGHT * s;
 }
 
@@ -211,7 +212,7 @@ fn int Problems.row_at(&self, RLVector2 mouse)
 {
 	float list_y = self.list_y();
 	if (mouse[1] < list_y) return -1;
-	int row = (int)((mouse[1] - list_y) / ((float)ROW_HEIGHT * editor::text_scale())) + self.scroll;
+	int row = (int)((mouse[1] - list_y) / ((float)ROW_HEIGHT * ui::scale())) + self.scroll;
 	if (row < 0 || row >= (int)self.rows.len()) return -1;
 	return row;
 }
@@ -324,7 +325,7 @@ fn void Problems.draw(&self, RLFont font)
 {
 	if (!self.open) return;
 
-	float s    = editor::text_scale();
+	float s    = ui::scale();
 	Rect panel = self.panel_rect();
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
@@ -400,7 +401,7 @@ fn float text_width(RLFont font, String text)
 	float width = 0.0f;
 	@pool()
 	{
-		width = rl::measure_text_ex(font, text.zstr_tcopy(), 14.0f * editor::text_scale(), 0.0f)[0];
+		width = rl::measure_text_ex(font, text.zstr_tcopy(), 14.0f * ui::scale(), 0.0f)[0];
 	};
 	return width;
 }
@@ -461,7 +462,7 @@ fn void draw_tooltip(String message, RLVector2 screen_pos, RLFont font)
 	if (message.len == 0) return;
 	@pool()
 	{
-		float s      = editor::text_scale();
+		float s      = ui::scale();
 		float line_h = 18.0f * s;
 		List{String} lines;
 		lines.init(tmem);
