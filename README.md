@@ -127,7 +127,7 @@ Values are grouped into sections, for example:
 
 Unknown top-level keys or section keys warn and are ignored, and a missing config is valid (built-in defaults apply).
 
-In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's *Prefs* button, or the command palette. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value.
+In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's *Settings* button, or the command palette. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value.
 
 ## Versioning and releases
 

@@ -51,7 +51,6 @@ fn void test_command_defs()
 
 	CommandDef settings = command_def(CommandId.TOGGLE_SETTINGS);
 	assert(settings.label.compare_to("Settings") == 0);
-	assert(settings.bar_label.compare_to("Prefs") == 0);
 	assert(settings.shortcut.compare_to("Ctrl+Shift+S") == 0);
 	assert(settings.in_top_bar);
 }

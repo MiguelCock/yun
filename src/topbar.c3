@@ -6,7 +6,7 @@ import yun::commands;
 import yun::theme;
 
 const float TOP_BAR_HEIGHT = 34.0f;
-const float BUTTON_WIDTH   = 72.0f;
+const float BUTTON_WIDTH   = 88.0f;
 const float BUTTON_HEIGHT  = 24.0f;
 const float BUTTON_GAP     = 8.0f;
 const float PADDING_X      = 8.0f;
@@ -179,7 +179,7 @@ fn void TopBar.draw(
 		Rect r         = button_rect(i);
 		bool hovered   = mouse[0] >= r.x && mouse[0] <= r.x + r.width && mouse[1] >= r.y && mouse[1] <= r.y + r.height;
 		rl::draw_rectangle_rec(r, hovered && enabled ? theme::current().topbar_hover : theme::current().topbar_button);
-		String label   = def.bar_label.len > 0 ? def.bar_label : def.label;
+		String label   = def.label;
 		RLVector2 size = rl::measure_text_ex(font, (ZString)label.ptr, 16.0f, 0.0f);
 		rl::draw_text_ex(
 			font,

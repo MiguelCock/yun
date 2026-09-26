@@ -11,14 +11,14 @@ import yun::settings;
 import yun::theme;
 import yun::topbar;
 
-const int PANEL_WIDTH      = 640;
-const int ROW_HEIGHT       = 28;
-const int HEADER_HEIGHT    = 24;
+const int PANEL_WIDTH      = 780;
+const int ROW_HEIGHT       = 38;
+const int HEADER_HEIGHT    = 32;
 const int PADDING          = 12;
-const int TITLE_HEIGHT     = 34;
-const int FIELD_HEIGHT     = 26;
-const int FOOTER_HEIGHT    = 42;
-const int MAX_VISIBLE_ROWS = 13;
+const int TITLE_HEIGHT     = 46;
+const int FIELD_HEIGHT     = 36;
+const int FOOTER_HEIGHT    = 64;
+const int MAX_VISIBLE_ROWS = 10;
 const int QUERY_MAX        = 64;
 const int EDIT_MAX         = 128;
 
@@ -510,7 +510,7 @@ fn void Panel.update(&self, config::Config* config, bool project_open, String pr
 		if (row != self.selected) self.selected = row;
 		if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
 		{
-			float value_x = panel.x + panel.width - 150.0f;
+			float value_x = panel.x + panel.width - 200.0f;
 			if (mouse[0] >= value_x)
 			{
 				self.change_selected(config, 1, project_open, project_root);
@@ -553,16 +553,16 @@ fn void Panel.draw(&self, RLFont font, bool project_open, config::Config* config
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 
-	draw_text(font, "Settings", panel.x + (float)PADDING, panel.y + 8.0f, 18.0f, theme::current().panel_header);
+	draw_text(font, "Settings", panel.x + (float)PADDING, panel.y + 12.0f, 24.0f, theme::current().panel_header);
 	@pool()
 	{
 		String label   = string::format(tmem, "Scope: %s%s", self.scope_label(), project_open ? "" : " (no project)");
-		RLVector2 size = rl::measure_text_ex(font, label.zstr_tcopy(), 14.0f, 0.0f);
+		RLVector2 size = rl::measure_text_ex(font, label.zstr_tcopy(), 18.0f, 0.0f);
 		rl::draw_text_ex(
 			font,
 			label.zstr_tcopy(),
-			{ panel.x + panel.width - (float)PADDING - size[0], panel.y + 11.0f },
-			14.0f,
+			{ panel.x + panel.width - (float)PADDING - size[0], panel.y + 15.0f },
+			18.0f,
 			0.0f,
 			theme::current()
 			.panel_dim);
@@ -571,20 +571,20 @@ fn void Panel.draw(&self, RLFont font, bool project_open, config::Config* config
 	Rect field = self.field_rect();
 	rl::draw_rectangle_rec(field, theme::current().panel_field);
 	String query = self.query_view();
-	draw_text(font, query, field.x + 8.0f, field.y + 5.0f, 16.0f, theme::current().panel_text);
+	draw_text(font, query, field.x + 8.0f, field.y + 8.0f, 20.0f, theme::current().panel_text);
 	if (query.len == 0)
 	{
-		draw_text(font, "Search settings", field.x + 8.0f, field.y + 5.0f, 16.0f, theme::current().panel_dim);
+		draw_text(font, "Search settings", field.x + 8.0f, field.y + 8.0f, 20.0f, theme::current().panel_dim);
 	}
 	float query_width = 0.0f;
 	if (query.len > 0)
 	{
 		@pool()
 		{
-			query_width = rl::measure_text_ex(font, query.zstr_tcopy(), 16.0f, 0.0f)[0];
+			query_width = rl::measure_text_ex(font, query.zstr_tcopy(), 20.0f, 0.0f)[0];
 		};
 	}
-	rl::draw_rectangle((int)(field.x + 8.0f + query_width + 1.0f), (int)(field.y + 5.0f), 2, 16, theme::current()
+	rl::draw_rectangle((int)(field.x + 8.0f + query_width + 1.0f), (int)(field.y + 8.0f), 2, 20, theme::current()
 		.panel_caret);
 
 	float y     = self.list_y();
@@ -595,7 +595,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, config::Config* config
 		Row row = self.rows[index];
 		if (row.header)
 		{
-			draw_text(font, row.section, panel.x + (float)PADDING, y + 4.0f, 14.0f, theme::current().panel_header);
+			draw_text(font, row.section, panel.x + (float)PADDING, y + 7.0f, 18.0f, theme::current().panel_header);
 			y += (float)HEADER_HEIGHT;
 			continue;
 		}
@@ -606,7 +606,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, config::Config* config
 				.panel_selected);
 		}
 		settings::SettingSpec spec = settings::spec(row.id);
-		draw_text(font, spec.label, panel.x + (float)PADDING + 4.0f, y + 5.0f, 16.0f, theme::current().panel_text);
+		draw_text(font, spec.label, panel.x + (float)PADDING + 4.0f, y + 9.0f, 20.0f, theme::current().panel_text);
 
 		@pool()
 		{
@@ -614,12 +614,12 @@ fn void Panel.draw(&self, RLFont font, bool project_open, config::Config* config
 			settings::SettingLayer src = config.settings.source(row.id);
 			if (src == settings::SettingLayer.GLOBAL) source = "global";
 			if (src == settings::SettingLayer.PROJECT) source = "project";
-			RLVector2 src_size = rl::measure_text_ex(font, source.zstr_tcopy(), 12.0f, 0.0f);
+			RLVector2 src_size = rl::measure_text_ex(font, source.zstr_tcopy(), 15.0f, 0.0f);
 			rl::draw_text_ex(
 				font,
 				source.zstr_tcopy(),
-				{ panel.x + panel.width - 160.0f - src_size[0] - 8.0f, y + 8.0f },
-				12.0f,
+				{ panel.x + panel.width - 210.0f - src_size[0] - 8.0f, y + 11.0f },
+				15.0f,
 				0.0f,
 				theme::current()
 				.panel_dim);
@@ -635,12 +635,12 @@ fn void Panel.draw(&self, RLFont font, bool project_open, config::Config* config
 			{
 				append_value(&value_text, config.settings.effective(row.id), spec.kind);
 			}
-			RLVector2 value_size = rl::measure_text_ex(font, value_text.str_view().zstr_tcopy(), 16.0f, 0.0f);
+			RLVector2 value_size = rl::measure_text_ex(font, value_text.str_view().zstr_tcopy(), 20.0f, 0.0f);
 			rl::draw_text_ex(font, value_text.str_view()
 				.zstr_tcopy(), {
 					panel.x + panel.width - (float)PADDING - value_size[0],
-					y + 5.0f
-				}, 16.0f, 0.0f, selected ? theme::current()
+					y + 9.0f
+				}, 20.0f, 0.0f, selected ? theme::current()
 					.panel_text : theme::current().panel_dim);
 			value_text.free();
 		};
@@ -654,14 +654,15 @@ fn void Panel.draw(&self, RLFont font, bool project_open, config::Config* config
 	if (index >= 0)
 	{
 		settings::SettingSpec spec = settings::spec((settings::SettingId)index);
-		draw_text(font, spec.description, panel.x + (float)PADDING, footer_y + 6.0f, 14.0f, theme::current().panel_dim);
+		draw_text(font, spec.description, panel.x + (float)PADDING, footer_y + 10.0f, 18.0f, theme::current()
+			.panel_dim);
 	}
 	draw_text(
 		font,
 		"Arrows: change   Enter: edit/toggle   Tab: scope   Del: reset   Esc: close",
 		panel.x + (float)PADDING,
-		footer_y + 22.0f,
-		12.0f,
+		footer_y + 34.0f,
+		15.0f,
 		theme::current()
 		.panel_dim);
 }

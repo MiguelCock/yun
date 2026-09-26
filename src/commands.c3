@@ -26,7 +26,6 @@ struct CommandDef
 {
 	CommandId id;
 	String label;
-	String bar_label;
 	String shortcut;
 	bool in_top_bar;
 }
@@ -52,7 +51,6 @@ const CommandDef[] COMMAND_DEFS = {
 	{
 		.id = CommandId.TOGGLE_SETTINGS,
 		.label = "Settings",
-		.bar_label = "Prefs",
 		.shortcut = "Ctrl+Shift+S",
 		.in_top_bar = true,
 	},
