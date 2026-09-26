@@ -110,6 +110,8 @@ enum CommandId
 	DELETE_CARD,
 	OPEN_CONTEXT_MENU,
 	MINIMAP_FOCUS,
+	ZOOM_RESET,
+	ZOOM_FIT,
 }
 
 struct CommandDef
@@ -593,6 +595,8 @@ const CommandDef[] COMMAND_DEFS = {
 		.in_top_bar = false,
 		.contexts = CTX_MOVE,
 	},
+	{ .id = CommandId.ZOOM_RESET, .label = "Reset Zoom", .shortcut = "0", .in_top_bar = false, .contexts = CTX_MOVE },
+	{ .id = CommandId.ZOOM_FIT, .label = "Fit Content", .shortcut = "F", .in_top_bar = false, .contexts = CTX_MOVE },
 };
 
 fn usz command_count()
@@ -773,6 +777,10 @@ fn String command_name(CommandId id)
 			return "open_context_menu";
 		case CommandId.MINIMAP_FOCUS:
 			return "minimap_focus";
+		case CommandId.ZOOM_RESET:
+			return "zoom_reset";
+		case CommandId.ZOOM_FIT:
+			return "zoom_fit";
 	}
 }
 
@@ -905,6 +913,7 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.SETTINGS_VALUE_DEC:
 		case CommandId.SETTINGS_VALUE_INC:
 		case CommandId.BROWSER_PARENT:
+		case CommandId.ZOOM_RESET:
 			return true;
 		case CommandId.CLOSE_CARD:
 		case CommandId.TOGGLE_CARD:
@@ -914,6 +923,7 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.DELETE_CARD:
 		case CommandId.OPEN_CONTEXT_MENU:
 		case CommandId.MINIMAP_FOCUS:
+		case CommandId.ZOOM_FIT:
 			return has_project;
 	}
 }

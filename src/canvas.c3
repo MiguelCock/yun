@@ -221,6 +221,24 @@ fn void Canvas.key_zoom(&self, float direction)
 	self.target.zoom = math::clamp(zoom * math::pow(ZOOM_STEP, direction), MIN_ZOOM, MAX_ZOOM);
 }
 
+fn void Canvas.reset_zoom(&self)
+{
+	self.target.zoom = 1.0f;
+}
+
+fn void Canvas.fit_zoom(&self, Rect content, int screen_w, int screen_h)
+{
+	if (content.width <= 0.0f || content.height <= 0.0f) return;
+	float margin = 40.0f;
+	float fit_x  = ((float)screen_w - margin * 2.0f) / content.width;
+	float fit_y  = ((float)screen_h - margin * 2.0f) / content.height;
+	self.target.zoom = math::clamp(math::min(fit_x, fit_y), MIN_ZOOM, MAX_ZOOM);
+	self.target.target = {
+		content.x + content.width / 2.0f,
+		content.y + content.height / 2.0f,
+	};
+}
+
 fn RLVector2 Canvas.clamp_delta(&self, RLVector2 delta)
 {
 	float len_sq = delta[0] * delta[0] + delta[1] * delta[1];
