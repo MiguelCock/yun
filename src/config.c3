@@ -9,14 +9,12 @@ import std::io::file;
 import std::io::path;
 import std::os::env;
 import yun::commands;
+import yun::settings;
 
 const String CONFIG_DIR     = "yun";
 const String CONFIG_FILE    = "config.json";
 const String PROJECT_DIR    = ".yun";
-const String DEFAULT_THEME  = "dark";
-const int DEFAULT_FONT_SIZE = 16;
-const String DEFAULT_CONFIG = "{\n  \"theme\": \"dark\",\n  \"font_size\": 16,\n  \"keymap\": {},\n  \"lsp\": {}\n}\n";
-const String[] KNOWN_KEYS   = { "theme", "font_size", "keymap", "lsp" };
+const String DEFAULT_CONFIG = "{\n  \"app\": {\n    \"theme\": \"dark\"\n  },\n  \"editor\": {\n    \"font_size\": 16\n  },\n  \"keymap\": {},\n  \"lsp\": {}\n}\n";
 
 struct KeyBinding
 {
@@ -33,9 +31,7 @@ struct LspCommand
 struct Config
 {
 	Allocator allocator;
-	String theme;
-	int font_size;
-	bool owns_theme;
+	settings::Settings settings;
 	List{KeyBinding} keymap;
 	List{LspCommand} lsp;
 	List{String} warnings;
@@ -44,9 +40,7 @@ struct Config
 fn void Config.init(&self, Allocator allocator)
 {
 	self.allocator = allocator;
-	self.theme = DEFAULT_THEME;
-	self.font_size = DEFAULT_FONT_SIZE;
-	self.owns_theme = false;
+	self.settings.init(allocator);
 	self.keymap.init(allocator);
 	self.lsp.init(allocator);
 	self.warnings.init(allocator);
@@ -54,19 +48,13 @@ fn void Config.init(&self, Allocator allocator)
 
 fn void Config.destroy(&self)
 {
-	self.free_theme();
+	self.settings.destroy();
 	self.free_keymap();
 	self.free_lsp();
 	self.free_warnings();
 	self.keymap.free();
 	self.lsp.free();
 	self.warnings.free();
-}
-
-fn void Config.free_theme(&self)
-{
-	if (self.owns_theme) self.theme.free(self.allocator);
-	self.owns_theme = false;
 }
 
 fn void Config.free_keymap(&self)
@@ -100,33 +88,15 @@ fn void Config.free_warnings(&self)
 
 fn void Config.reset(&self)
 {
-	self.free_theme();
-	self.theme = DEFAULT_THEME;
-	self.font_size = DEFAULT_FONT_SIZE;
+	self.settings.reset();
 	self.free_keymap();
 	self.free_lsp();
 	self.free_warnings();
 }
 
-fn void Config.set_theme(&self, String value)
-{
-	self.free_theme();
-	self.theme = value.copy(self.allocator);
-	self.owns_theme = true;
-}
-
 fn void Config.add_warning(&self, String message)
 {
 	self.warnings.push(message.copy(self.allocator));
-}
-
-fn bool is_known_key(String key)
-{
-	foreach (String known : KNOWN_KEYS)
-	{
-		if (key.compare_to(known) == 0) return true;
-	}
-	return false;
 }
 
 fn void Config.set_key_binding(&self, String command, String chord)
@@ -187,7 +157,7 @@ fn void Config.apply_lsp(&self, Object* map)
 	};
 }
 
-fn void Config.apply_object(&self, Object* obj)
+fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
 {
 	if (!obj.is_map())
 	{
@@ -197,36 +167,18 @@ fn void Config.apply_object(&self, Object* obj)
 
 	obj.@each_entry(; String key, Object* value)
 	{
-		if (!is_known_key(key))
+		bool handled = key.compare_to("keymap") == 0 || key.compare_to("lsp") == 0;
+		if (!handled && settings::is_section(key))
+		{
+			self.settings.apply_section(key, value, layer, &self.warnings);
+			handled = true;
+		}
+		if (!handled)
 		{
 			self.add_warning(string::format(self.allocator, "Unknown config key: %s", key));
 		}
 	};
 
-	if (obj.has_key("theme"))
-	{
-		String? theme = obj.get_string("theme");
-		if (catch excuse = theme)
-		{
-			self.add_warning("Config \"theme\" must be a string");
-		}
-		else
-		{
-			self.set_theme(theme);
-		}
-	}
-	if (obj.has_key("font_size"))
-	{
-		int? size = obj.get_int("font_size");
-		if (catch excuse = size)
-		{
-			self.add_warning("Config \"font_size\" must be an integer");
-		}
-		else
-		{
-			self.font_size = size;
-		}
-	}
 	if (obj.has_key("keymap"))
 	{
 		Object*? keymap = obj.get("keymap");
@@ -261,17 +213,17 @@ fn void Config.apply_object(&self, Object* obj)
 	}
 }
 
-fn bool Config.apply_json(&self, String json)
+fn bool Config.apply_json(&self, String json_text, settings::SettingLayer layer)
 {
-	Object*? parsed = json::parse(self.allocator, json);
+	Object*? parsed = json::parse(self.allocator, json_text);
 	if (catch excuse = parsed) return false;
 	Object* obj = parsed;
-	self.apply_object(obj);
+	self.apply_object(obj, layer);
 	obj.free();
 	return true;
 }
 
-fn bool Config.load_path(&self, Path path)
+fn bool Config.load_path(&self, Path path, settings::SettingLayer layer)
 {
 	if (!path::exists(path)) return false;
 	bool ok = false;
@@ -284,7 +236,7 @@ fn bool Config.load_path(&self, Path path)
 		}
 		else
 		{
-			ok = self.apply_json((String)data);
+			ok = self.apply_json((String)data, layer);
 		}
 	};
 	if (!ok) self.add_warning(string::format(self.allocator, "Malformed config: %s", (String)path));
@@ -319,7 +271,7 @@ fn void Config.load_global(&self)
 		return;
 	}
 	self.ensure_defaults(dir, file);
-	self.load_path(file);
+	self.load_path(file, settings::SettingLayer.GLOBAL);
 }
 
 fn void Config.load_project(&self, String project_root)
@@ -329,7 +281,7 @@ fn void Config.load_project(&self, String project_root)
 	if (catch excuse = dir) return;
 	Path? file = dir.append(self.allocator, CONFIG_FILE);
 	if (catch excuse = file) return;
-	self.load_path(file);
+	self.load_path(file, settings::SettingLayer.PROJECT);
 }
 
 fn void Config.load(&self, String project_root)
@@ -337,6 +289,7 @@ fn void Config.load(&self, String project_root)
 	self.reset();
 	self.load_global();
 	self.load_project(project_root);
+	self.settings.mark_all_changed();
 }
 
 fn String Config.key_binding(&self, commands::CommandId id)
@@ -370,17 +323,14 @@ fn void append_json_string(DString* out, String s)
 	out.append_char('"');
 }
 
-fn void Config.save_path(&self, Path path)
+fn void Config.save_path(&self, Path path, settings::SettingLayer scope)
 {
 	@pool()
 	{
 		DString out;
 		out.init(tmem, 256);
 		out.append_string("{\n");
-		out.append_string("  \"theme\": ");
-		append_json_string(&out, self.theme);
-		out.append_string(",\n");
-		(void)out.appendf("  \"font_size\": %d,\n", (long)self.font_size);
+		self.settings.write_sections(&out, scope);
 		out.append_string("  \"keymap\": {");
 		for (sz i = 0; i < self.keymap.len(); i++)
 		{
@@ -413,5 +363,5 @@ fn void Config.save_global(&self)
 	if (catch excuse = path::mkdir(dir, recursive: true)) return;
 	Path? file = dir.append(self.allocator, CONFIG_FILE);
 	if (catch excuse = file) return;
-	self.save_path(file);
+	self.save_path(file, settings::SettingLayer.GLOBAL);
 }

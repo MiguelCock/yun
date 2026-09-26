@@ -27,6 +27,7 @@ import yun::problems;
 import yun::project;
 import yun::prompt;
 import yun::search;
+import yun::settings;
 import yun::symbols;
 import yun::theme;
 import yun::topbar;
@@ -56,18 +57,46 @@ fn void finish_open(
 {
 	workspace::load(project, canvas);
 	config.load((String)project.root);
-	apply_config_theme(config, notifier);
 	set_project_title(project);
 	keymap.build(config);
 	push_config_warnings(config, notifier);
 	push_keymap_warnings(keymap, notifier);
 }
 
-fn void apply_config_theme(config::Config* config, notify::Notifier* notifier)
+fn void apply_settings(
+	config::Config* config,
+	notify::Notifier* notifier,
+	project::Project* project,
+	int* font_size,
+	RLFont* editor_font,
+	editor::EditorMetrics* metrics
+)
 {
-	if (!theme::set_by_name(config.theme))
+	if (config.settings.consume_change(settings::SettingId.APP_THEME))
 	{
-		notifier.push("Unknown theme in config; using default");
+		if (!theme::set_by_name(config.settings.get_string(settings::SettingId.APP_THEME)))
+		{
+			notifier.push("Unknown theme in config; using default");
+		}
+	}
+	if (config.settings.consume_change(settings::SettingId.EDITOR_FONT_SIZE))
+	{
+		int next = editor::clamp_font_size((int)config.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE));
+		if (next != *font_size)
+		{
+			float old_lh = metrics.line_height;
+			float old_cw = metrics.char_width;
+			*font_size = next;
+			reload_editor_font(editor_font, *font_size, metrics);
+			float lh_ratio = old_lh > 0.0f ? metrics.line_height / old_lh : 1.0f;
+			float cw_ratio = old_cw > 0.0f ? metrics.char_width / old_cw : 1.0f;
+			for (sz i = 0; i < project.cards.len(); i++)
+			{
+				project.cards[i].scroll *= lh_ratio;
+				project.cards[i].scroll_x *= cw_ratio;
+			}
+			project.reveal_focused(*metrics);
+		}
 	}
 }
 
@@ -669,9 +698,7 @@ fn int main(String[] args)
 	bool project_open           = false;
 	project::OpenJob* open_job  = null;
 	bool opening                = false;
-	int pending_font_size       = 0;
 	double font_indicator_until = 0.0;
-	bool font_save_pending      = false;
 	UiMode ui_mode              = UiMode.MOVE;
 	int edit_grace_frames       = 0;
 	if (args.len > 1)
@@ -694,8 +721,7 @@ fn int main(String[] args)
 	else
 	{
 		config.load("");
-		apply_config_theme(&config, &notifier);
-		pending_font_size = editor::clamp_font_size(config.font_size);
+		apply_settings(&config, &notifier, &project, &font_size, &editor_font, &metrics);
 	}
 	keymap.build(&config);
 	push_config_warnings(&config, &notifier);
@@ -729,18 +755,7 @@ fn int main(String[] args)
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
 
-		if (pending_font_size > 0)
-		{
-			font_size = editor::clamp_font_size(pending_font_size);
-			reload_editor_font(&editor_font, font_size, &metrics);
-			pending_font_size = 0;
-		}
-		if (font_save_pending && !project::ctrl_down())
-		{
-			config.font_size = font_size;
-			config.save_global();
-			font_save_pending = false;
-		}
+		apply_settings(&config, &notifier, &project, &font_size, &editor_font, &metrics);
 
 		if (opening)
 		{
@@ -762,7 +777,7 @@ fn int main(String[] args)
 					symbols.start_scan(&project);
 					ui_mode = UiMode.MOVE;
 					project.selected = -1;
-					pending_font_size = editor::clamp_font_size(config.font_size);
+					apply_settings(&config, &notifier, &project, &font_size, &editor_font, &metrics);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
 					import_index.start_scan(&project);
@@ -914,8 +929,11 @@ fn int main(String[] args)
 			int chosen = theme_menu.update();
 			if (chosen >= 0)
 			{
-				theme::set_index(chosen);
-				config.set_theme(theme::name(chosen));
+				config.settings.set_string(
+					settings::SettingId.APP_THEME,
+					theme::name(chosen),
+					settings::SettingLayer.GLOBAL
+				);
 				config.save_global();
 				@pool()
 				{
@@ -1114,20 +1132,13 @@ fn int main(String[] args)
 					int next = editor::clamp_font_size(font_size + step);
 					if (next != font_size)
 					{
-						float old_lh = metrics.line_height;
-						float old_cw = metrics.char_width;
-						font_size = next;
-						reload_editor_font(&editor_font, font_size, &metrics);
-						float lh_ratio = old_lh > 0.0f ? metrics.line_height / old_lh : 1.0f;
-						float cw_ratio = old_cw > 0.0f ? metrics.char_width / old_cw : 1.0f;
-						for (sz i = 0; i < project.cards.len(); i++)
-						{
-							project.cards[i].scroll *= lh_ratio;
-							project.cards[i].scroll_x *= cw_ratio;
-						}
-						project.reveal_focused(metrics);
+						config.settings.set_int(
+							settings::SettingId.EDITOR_FONT_SIZE,
+							(long)next,
+							settings::SettingLayer.GLOBAL
+						);
+						config.save_global();
 						font_indicator_until = rl::get_time() + 1.2;
-						font_save_pending = true;
 					}
 					font_wheel = true;
 				}
