@@ -28,6 +28,7 @@ import yun::project;
 import yun::prompt;
 import yun::search;
 import yun::settings;
+import yun::settings_panel;
 import yun::symbols;
 import yun::theme;
 import yun::topbar;
@@ -179,10 +180,12 @@ struct App
 {
 	project::Project* project;
 	canvas::Canvas* canvas;
+	config::Config* config;
 	browser::Browser* browser;
 	notify::Notifier* notifier;
 	prompt::Prompt* name_prompt;
 	palette::Palette* palette;
+	settings_panel::Panel* settings_panel;
 	findbar::FindBar* find_bar;
 	problems::Problems* problems;
 	menu::Menu* theme_menu;
@@ -405,6 +408,15 @@ fn void run_command(commands::CommandId id, App* app)
 					return;
 				}
 				app.symbols.show();
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+				return;
+			}
+		case commands::CommandId.TOGGLE_SETTINGS:
+
+			{
+				app.settings_panel.show();
 				while (rl::get_char_pressed() != 0)
 				{
 				}
@@ -665,6 +677,10 @@ fn int main(String[] args)
 	problems::Problems problems;
 	problems.init(mem);
 
+	settings_panel::Panel settings_panel;
+	settings_panel.init(mem);
+	defer settings_panel.destroy();
+
 	search::Search search;
 	search.init(mem);
 	defer search.destroy();
@@ -730,10 +746,12 @@ fn int main(String[] args)
 	App app = {
 		.project = &project,
 		.canvas = &canvas,
+		.config = &config,
 		.browser = &browser,
 		.notifier = &notifier,
 		.name_prompt = &name_prompt,
 		.palette = &palette,
+		.settings_panel = &settings_panel,
 		.find_bar = &find_bar,
 		.problems = &problems,
 		.theme_menu = &theme_menu,
@@ -810,6 +828,10 @@ fn int main(String[] args)
 				palette.record((commands::CommandId)chosen);
 				run_command((commands::CommandId)chosen, &app);
 			}
+		}
+		else if (settings_panel.open)
+		{
+			settings_panel.update(&config, project_open, (String)project.root, &notifier);
 		}
 		else if (problems.open)
 		{
@@ -1541,7 +1563,7 @@ fn int main(String[] args)
 						.panel_text);
 				};
 			}
-			if (!problems.open && !palette.open && !opening)
+			if (!problems.open && !palette.open && !opening && !settings_panel.open)
 			{
 				if (import_index.hover.valid)
 				{
@@ -1599,6 +1621,7 @@ fn int main(String[] args)
 			context_menu.draw();
 			name_prompt.draw();
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
+			settings_panel.draw(font, project_open, &config);
 			problems.draw(editor_font);
 			search.draw(editor_font);
 			symbols.draw(editor_font);

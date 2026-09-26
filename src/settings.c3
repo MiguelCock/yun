@@ -48,6 +48,7 @@ struct SettingSpec
 	double min;
 	double max;
 	double step;
+	String[] options;
 }
 
 const SettingSpec[] SETTINGS = {
@@ -56,11 +57,22 @@ const SettingSpec[] SETTINGS = {
 		.key = "theme",
 		.label = "Theme",
 		.description = "Colour theme name.",
-		.kind = SettingKind.STRING,
+		.kind = SettingKind.ENUM,
 		.fallback = { .s = "dark" },
 		.min = 0.0,
 		.max = 0.0,
 		.step = 0.0,
+		.options = {
+			"yun_dark",
+			"yun_light",
+			"dracula",
+			"one_dark",
+			"gruvbox_dark",
+			"gruvbox_light",
+			"nord",
+			"catppuccin_mocha",
+			"catppuccin_latte",
+		},
 	},
 	{
 		.section = "editor",
@@ -287,6 +299,17 @@ fn void Settings.set_value(&self, SettingId id, SettingValue value, SettingLayer
 	{
 		list.push({ .id = id, .value = stored });
 	}
+	self.changed[(int)id] = true;
+}
+
+fn void Settings.clear(&self, SettingId id, SettingLayer layer)
+{
+	List{Override}* list = self.layer_list(layer);
+	if (list == null) return;
+	sz index = self.layer_index(list, id);
+	if (index < 0) return;
+	free_value(self.allocator, &list.get_ref(index).value);
+	list.remove_at(index);
 	self.changed[(int)id] = true;
 }
 

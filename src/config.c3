@@ -365,3 +365,14 @@ fn void Config.save_global(&self)
 	if (catch excuse = file) return;
 	self.save_path(file, settings::SettingLayer.GLOBAL);
 }
+
+fn void Config.save_project(&self, String project_root)
+{
+	if (project_root.len == 0) return;
+	Path? dir = ((Path)project_root).append(self.allocator, PROJECT_DIR);
+	if (catch excuse = dir) return;
+	Path? file = dir.append(self.allocator, CONFIG_FILE);
+	if (catch excuse = file) return;
+	if (catch excuse = path::mkdir(dir, recursive: true)) return;
+	self.save_path(file, settings::SettingLayer.PROJECT);
+}
