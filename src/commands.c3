@@ -19,12 +19,14 @@ enum CommandId
 	SELECT_THEME,
 	SEARCH_PROJECT,
 	SYMBOLS_PROJECT,
+	TOGGLE_SETTINGS,
 }
 
 struct CommandDef
 {
 	CommandId id;
 	String label;
+	String bar_label;
 	String shortcut;
 	bool in_top_bar;
 }
@@ -47,6 +49,13 @@ const CommandDef[] COMMAND_DEFS = {
 	{ .id = CommandId.SELECT_THEME, .label = "Theme", .shortcut = "Ctrl+Shift+T", .in_top_bar = false },
 	{ .id = CommandId.SEARCH_PROJECT, .label = "Search in Project", .shortcut = "Ctrl+Shift+F", .in_top_bar = false },
 	{ .id = CommandId.SYMBOLS_PROJECT, .label = "Go to Symbol", .shortcut = "Ctrl+Shift+O", .in_top_bar = false },
+	{
+		.id = CommandId.TOGGLE_SETTINGS,
+		.label = "Settings",
+		.bar_label = "Prefs",
+		.shortcut = "Ctrl+Shift+S",
+		.in_top_bar = true,
+	},
 };
 
 fn usz command_count()
@@ -97,6 +106,8 @@ fn String command_name(CommandId id)
 			return "search_project";
 		case CommandId.SYMBOLS_PROJECT:
 			return "symbols_project";
+		case CommandId.TOGGLE_SETTINGS:
+			return "toggle_settings";
 	}
 }
 
@@ -169,6 +180,8 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 			return has_project;
 		case CommandId.SYMBOLS_PROJECT:
 			return has_project;
+		case CommandId.TOGGLE_SETTINGS:
+			return true;
 	}
 }
 

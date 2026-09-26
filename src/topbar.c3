@@ -179,10 +179,11 @@ fn void TopBar.draw(
 		Rect r         = button_rect(i);
 		bool hovered   = mouse[0] >= r.x && mouse[0] <= r.x + r.width && mouse[1] >= r.y && mouse[1] <= r.y + r.height;
 		rl::draw_rectangle_rec(r, hovered && enabled ? theme::current().topbar_hover : theme::current().topbar_button);
-		RLVector2 size = rl::measure_text_ex(font, (ZString)def.label.ptr, 16.0f, 0.0f);
+		String label   = def.bar_label.len > 0 ? def.bar_label : def.label;
+		RLVector2 size = rl::measure_text_ex(font, (ZString)label.ptr, 16.0f, 0.0f);
 		rl::draw_text_ex(
 			font,
-			(ZString)def.label.ptr,
+			(ZString)label.ptr,
 			{ r.x + (r.width - size[0]) / 2.0f, r.y + (r.height - size[1]) / 2.0f },
 			16.0f,
 			0.0f,

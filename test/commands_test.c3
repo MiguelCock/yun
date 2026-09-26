@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 17);
+	assert(command_count() == 18);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -48,6 +48,12 @@ fn void test_command_defs()
 	assert(!command_def(CommandId.SEARCH_PROJECT).in_top_bar);
 	assert(command_def(CommandId.SYMBOLS_PROJECT).shortcut.compare_to("Ctrl+Shift+O") == 0);
 	assert(!command_def(CommandId.SYMBOLS_PROJECT).in_top_bar);
+
+	CommandDef settings = command_def(CommandId.TOGGLE_SETTINGS);
+	assert(settings.label.compare_to("Settings") == 0);
+	assert(settings.bar_label.compare_to("Prefs") == 0);
+	assert(settings.shortcut.compare_to("Ctrl+Shift+S") == 0);
+	assert(settings.in_top_bar);
 }
 
 fn void test_command_from_name()
@@ -67,15 +73,17 @@ fn void test_command_from_name()
 	assert(command_from_name("select_theme") == (int)CommandId.SELECT_THEME);
 	assert(command_from_name("search_project") == (int)CommandId.SEARCH_PROJECT);
 	assert(command_from_name("symbols_project") == (int)CommandId.SYMBOLS_PROJECT);
+	assert(command_from_name("toggle_settings") == (int)CommandId.TOGGLE_SETTINGS);
 	assert(command_from_name("nope") == -1);
 }
 
 fn void test_bar_commands()
 {
-	assert(bar_command_count() == 3);
+	assert(bar_command_count() == 4);
 	assert(bar_command(0).id == CommandId.NEW_FILE);
 	assert(bar_command(1).id == CommandId.OPEN);
 	assert(bar_command(2).id == CommandId.SAVE);
+	assert(bar_command(3).id == CommandId.TOGGLE_SETTINGS);
 }
 
 fn void test_command_enabled()
@@ -104,6 +112,8 @@ fn void test_command_enabled()
 	assert(!command_enabled(CommandId.SEARCH_PROJECT, false, false));
 	assert(command_enabled(CommandId.SYMBOLS_PROJECT, true, false));
 	assert(!command_enabled(CommandId.SYMBOLS_PROJECT, false, false));
+	assert(command_enabled(CommandId.TOGGLE_SETTINGS, false, false));
+	assert(command_enabled(CommandId.TOGGLE_SETTINGS, true, true));
 }
 
 fn void test_fuzzy_exact_and_case()

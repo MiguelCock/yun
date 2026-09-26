@@ -5,6 +5,7 @@ import std::collections::object;
 import std::core::dstring;
 import std::encoding::json;
 import yun::editor;
+import yun::theme;
 
 fn void test_defaults()
 {
@@ -265,4 +266,36 @@ fn void test_font_bounds_match_editor()
 	assert(SETTINGS[(int)SettingId.EDITOR_FONT_SIZE].min == (double)editor::FONT_SIZE_MIN);
 	assert(SETTINGS[(int)SettingId.EDITOR_FONT_SIZE].max == (double)editor::FONT_SIZE_MAX);
 	assert(SETTINGS[(int)SettingId.EDITOR_FONT_SIZE].fallback.i == editor::FONT_SIZE_DEFAULT);
+}
+
+fn void test_clear_falls_back()
+{
+	@pool()
+	{
+		Settings s;
+		s.init(tmem);
+		s.set_string(SettingId.APP_THEME, "nord", SettingLayer.GLOBAL);
+		s.set_int(SettingId.EDITOR_FONT_SIZE, 20, SettingLayer.PROJECT);
+		assert(s.source(SettingId.EDITOR_FONT_SIZE) == SettingLayer.PROJECT);
+
+		s.clear(SettingId.EDITOR_FONT_SIZE, SettingLayer.PROJECT);
+		assert(s.source(SettingId.EDITOR_FONT_SIZE) == SettingLayer.DEFAULT);
+		assert(s.get_int(SettingId.EDITOR_FONT_SIZE) == 16);
+
+		s.clear(SettingId.APP_THEME, SettingLayer.GLOBAL);
+		assert(s.source(SettingId.APP_THEME) == SettingLayer.DEFAULT);
+		assert(s.get_string(SettingId.APP_THEME).compare_to("dark") == 0);
+		s.destroy();
+	};
+}
+
+fn void test_theme_options_match_theme_module()
+{
+	assert(SETTINGS[(int)SettingId.APP_THEME].kind == SettingKind.ENUM);
+	String[] options = SETTINGS[(int)SettingId.APP_THEME].options;
+	assert(options.len == (usz)theme::count());
+	for (int i = 0; i < theme::count(); i++)
+	{
+		assert(options[(usz)i].compare_to(theme::name(i)) == 0);
+	}
 }
