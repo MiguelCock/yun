@@ -24,6 +24,17 @@ enum SettingId : int
 {
 	APP_THEME,
 	EDITOR_FONT_SIZE,
+	EDITOR_FONT_FAMILY,
+	EDITOR_LINE_HEIGHT,
+	EDITOR_PADDING_X,
+	EDITOR_PADDING_Y,
+	EDITOR_INDENT_STYLE,
+	EDITOR_INDENT_WIDTH,
+	EDITOR_AUTO_INDENT,
+	EDITOR_CARET_BLINK_MS,
+	EDITOR_SCROLL_MARGIN_LINES,
+	EDITOR_WHEEL_SCROLL_LINES,
+	EDITOR_SHOW_LINE_NUMBERS,
 	COUNT,
 }
 
@@ -85,6 +96,117 @@ const SettingSpec[] SETTINGS = {
 		.max = 48.0,
 		.step = 1.0,
 	},
+	{
+		.section = "editor",
+		.key = "font_family",
+		.label = "Font family",
+		.description = "Editor font (monospace fonts found on the system).",
+		.kind = SettingKind.ENUM,
+		.fallback = { .s = "JetBrains Mono" },
+		.options = { "JetBrains Mono" },
+	},
+	{
+		.section = "editor",
+		.key = "line_height",
+		.label = "Line height",
+		.description = "Line height multiplier.",
+		.kind = SettingKind.FLOAT,
+		.fallback = { .f = 1.25 },
+		.min = 1.0,
+		.max = 2.5,
+		.step = 0.05,
+	},
+	{
+		.section = "editor",
+		.key = "padding_x",
+		.label = "Padding X",
+		.description = "Horizontal editor padding in pixels.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 8 },
+		.min = 0.0,
+		.max = 40.0,
+		.step = 1.0,
+	},
+	{
+		.section = "editor",
+		.key = "padding_y",
+		.label = "Padding Y",
+		.description = "Vertical editor padding in pixels.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 6 },
+		.min = 0.0,
+		.max = 40.0,
+		.step = 1.0,
+	},
+	{
+		.section = "editor",
+		.key = "indent_style",
+		.label = "Indent style",
+		.description = "Indent with tabs or spaces.",
+		.kind = SettingKind.ENUM,
+		.fallback = { .s = "tabs" },
+		.options = { "tabs", "spaces" },
+	},
+	{
+		.section = "editor",
+		.key = "indent_width",
+		.label = "Indent width",
+		.description = "Columns per indent level (and spaces when using spaces).",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 4 },
+		.min = 1.0,
+		.max = 16.0,
+		.step = 1.0,
+	},
+	{
+		.section = "editor",
+		.key = "auto_indent",
+		.label = "Auto indent",
+		.description = "Match the previous line's indentation on Enter.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
+		.section = "editor",
+		.key = "caret_blink_ms",
+		.label = "Caret blink (ms)",
+		.description = "Caret blink interval in milliseconds (0 = steady).",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 500 },
+		.min = 0.0,
+		.max = 2000.0,
+		.step = 50.0,
+	},
+	{
+		.section = "editor",
+		.key = "scroll_margin_lines",
+		.label = "Scroll margin",
+		.description = "Lines kept visible around the caret.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 1 },
+		.min = 0.0,
+		.max = 10.0,
+		.step = 1.0,
+	},
+	{
+		.section = "editor",
+		.key = "wheel_scroll_lines",
+		.label = "Wheel scroll",
+		.description = "Lines scrolled per mouse-wheel notch.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 3 },
+		.min = 1.0,
+		.max = 20.0,
+		.step = 1.0,
+	},
+	{
+		.section = "editor",
+		.key = "show_line_numbers",
+		.label = "Line numbers",
+		.description = "Show the line-number gutter.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
 };
 
 struct Override
@@ -104,6 +226,19 @@ struct Settings
 fn SettingSpec spec(SettingId id)
 {
 	return SETTINGS[(int)id];
+}
+
+String[] g_font_options = { };
+
+fn void set_font_options(String[] options)
+{
+	g_font_options = options;
+}
+
+fn String[] setting_options(SettingId id)
+{
+	if (id == SettingId.EDITOR_FONT_FAMILY && g_font_options.len > 0) return g_font_options;
+	return spec(id).options;
 }
 
 fn bool is_section(String name)

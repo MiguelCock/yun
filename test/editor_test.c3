@@ -729,3 +729,78 @@ fn void test_clamp_font_size()
 	assert(clamp_font_size(FONT_SIZE_MAX + 100) == FONT_SIZE_MAX);
 	assert(clamp_font_size(FONT_SIZE_MAX) == FONT_SIZE_MAX);
 }
+
+fn void test_indent_unit()
+{
+	@pool()
+	{
+		assert(indent_unit(tmem, false, 4).compare_to("\t") == 0);
+		assert(indent_unit(tmem, true, 3).compare_to("   ") == 0);
+	};
+}
+
+fn void test_newline_auto_indent()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "  foo");
+		usz cursor = t.line_start(0) + line_length_bytes(&t, 0);
+		assert(newline_text(&t, cursor, true, false, 4, tmem).compare_to("\n  ") == 0);
+		assert(newline_text(&t, cursor, false, false, 4, tmem).compare_to("\n") == 0);
+		t.destroy();
+
+		PieceTable b;
+		b.init_from_buffer(tmem, "if (x) {");
+		usz bcursor = b.line_start(0) + line_length_bytes(&b, 0);
+		assert(newline_text(&b, bcursor, true, true, 4, tmem).compare_to("\n    ") == 0);
+		b.destroy();
+	};
+}
+
+fn void test_outdent_count()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "\tfoo");
+		assert(outdent_count(&t, 1, false, 4) == 1);
+		t.destroy();
+
+		PieceTable s;
+		s.init_from_buffer(tmem, "    foo");
+		assert(outdent_count(&s, 5, true, 4) == 4);
+		s.destroy();
+	};
+}
+
+fn void test_tab_columns()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "\tabc");
+		EditorSettings saved = settings();
+		EditorSettings s     = saved;
+		s.indent_width = 4;
+		set_settings(s);
+
+		assert(column_for_offset(&t, 0, t.line_start(0) + 1) == 4);
+		assert(column_for_offset(&t, 0, t.line_start(0) + 2) == 5);
+		assert(offset_for_column(&t, 0, 4) == t.line_start(0) + 1);
+		assert(offset_for_column(&t, 0, 2) == t.line_start(0));
+		assert(offset_for_column(&t, 0, 5) == t.line_start(0) + 2);
+
+		t.destroy();
+		set_settings(saved);
+	};
+}
+
+fn void test_expand_tabs()
+{
+	@pool()
+	{
+		assert(expand_tabs("\ta", 4, tmem).compare_to("    a") == 0);
+		assert(expand_tabs("ab", 4, tmem).compare_to("ab") == 0);
+	};
+}

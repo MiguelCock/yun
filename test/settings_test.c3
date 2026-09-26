@@ -299,3 +299,61 @@ fn void test_theme_options_match_theme_module()
 		assert(options[(usz)i].compare_to(theme::name(i)) == 0);
 	}
 }
+
+fn void test_editor_defaults()
+{
+	assert(SETTINGS[(int)SettingId.EDITOR_FONT_SIZE].fallback.i == 16);
+	assert(SETTINGS[(int)SettingId.EDITOR_FONT_FAMILY].fallback.s.compare_to("JetBrains Mono") == 0);
+	assert(SETTINGS[(int)SettingId.EDITOR_LINE_HEIGHT].fallback.f == 1.25);
+	assert(SETTINGS[(int)SettingId.EDITOR_PADDING_X].fallback.i == 8);
+	assert(SETTINGS[(int)SettingId.EDITOR_PADDING_Y].fallback.i == 6);
+	assert(SETTINGS[(int)SettingId.EDITOR_INDENT_STYLE].fallback.s.compare_to("tabs") == 0);
+	assert(SETTINGS[(int)SettingId.EDITOR_INDENT_WIDTH].fallback.i == 4);
+	assert(SETTINGS[(int)SettingId.EDITOR_AUTO_INDENT].fallback.b);
+	assert(SETTINGS[(int)SettingId.EDITOR_CARET_BLINK_MS].fallback.i == 500);
+	assert(SETTINGS[(int)SettingId.EDITOR_SCROLL_MARGIN_LINES].fallback.i == 1);
+	assert(SETTINGS[(int)SettingId.EDITOR_WHEEL_SCROLL_LINES].fallback.i == 3);
+	assert(SETTINGS[(int)SettingId.EDITOR_SHOW_LINE_NUMBERS].fallback.b);
+}
+
+fn void test_font_options_hook()
+{
+	String[] opts = { "A", "B" };
+	set_font_options(opts);
+	assert(setting_options(SettingId.EDITOR_FONT_FAMILY).len == 2);
+	assert(setting_options(SettingId.EDITOR_INDENT_STYLE).len == 2);
+	set_font_options({ });
+	assert(setting_options(SettingId.EDITOR_FONT_FAMILY).len == 1);
+}
+
+fn void test_editor_clamp()
+{
+	@pool()
+	{
+		Settings s;
+		s.init(tmem);
+		List{String} warnings;
+		warnings.init(tmem);
+		Object*? parsed = json::parse(tmem, "{\"editor\":{\"indent_width\":999}}");
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			Object* root  = parsed;
+			Object*? part = root.get("editor");
+			if (catch part_excuse = part)
+			{
+				assert(false);
+			}
+			else
+			{
+				s.apply_section("editor", part, SettingLayer.GLOBAL, &warnings);
+				assert(s.get_int(SettingId.EDITOR_INDENT_WIDTH) == 16);
+			}
+		}
+		s.destroy();
+		warnings.free();
+	};
+}

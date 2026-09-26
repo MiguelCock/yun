@@ -89,22 +89,22 @@ fn double step_float(settings::SettingSpec s, double value, int dir)
 	return next;
 }
 
-fn String enum_next(settings::SettingSpec s, String current, int dir)
+fn String enum_next(String[] options, String current, int dir)
 {
-	usz count = s.options.len;
+	usz count = options.len;
 	if (count == 0) return current;
 	usz index  = 0;
 	bool found = false;
 	for (usz i = 0; i < count; i++)
 	{
-		if (s.options[i].compare_to(current) == 0)
+		if (options[i].compare_to(current) == 0)
 		{
 			index = i;
 			found = true;
 			break;
 		}
 	}
-	if (!found) return dir > 0 ? s.options[0] : s.options[count - 1];
+	if (!found) return dir > 0 ? options[0] : options[count - 1];
 	if (dir < 0)
 	{
 		index = (index + count - 1) % count;
@@ -113,7 +113,7 @@ fn String enum_next(settings::SettingSpec s, String current, int dir)
 	{
 		index = (index + 1) % count;
 	}
-	return s.options[index];
+	return options[index];
 }
 
 fn void append_value(DString* out, settings::SettingValue value, settings::SettingKind kind)
@@ -382,7 +382,11 @@ fn void Panel.change_selected(&self, config::Config* config, int dir, bool proje
 			config.settings.set_bool(id, !config.settings.get_bool(id), self.scope);
 			self.persist(config, project_open, project_root);
 		case settings::SettingKind.ENUM:
-			config.settings.set_string(id, enum_next(spec, config.settings.get_string(id), dir), self.scope);
+			config.settings.set_string(
+				id,
+				enum_next(settings::setting_options(id), config.settings.get_string(id), dir),
+				self.scope
+			);
 			self.persist(config, project_open, project_root);
 		case settings::SettingKind.STRING:
 			break;
