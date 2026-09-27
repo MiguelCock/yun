@@ -108,8 +108,9 @@ The Linux path is verified; macOS and Windows are best-effort. Grammar `parser.c
 is self-contained (it exports `tree_sitter_<lang>()` and calls no runtime
 symbols), so a shared grammar needs no exported runtime symbols.
 
-Packaging (see #48) must ship the shared libraries next to the executable (e.g. a
-`grammars/` directory) or set `YUN_GRAMMAR_DIR`.
+Release archives bundle the shared libraries in a `grammars/` directory next to
+the executable (see `.github/workflows/release.yml`); set `YUN_GRAMMAR_DIR` to
+override the search location.
 
 ## Language ABI
 

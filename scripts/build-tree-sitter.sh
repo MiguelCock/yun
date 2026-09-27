@@ -43,6 +43,15 @@ CXX="${CXX:-c++}"
 AR="${AR:-ar}"
 CFLAGS="${CFLAGS:--O2 -fPIC}"
 
+SHARED_FLAG="-shared"
+SHARED_EXT="so"
+case "$TARGET" in
+	macos-*)
+		SHARED_FLAG="-dynamiclib"
+		SHARED_EXT="dylib"
+		;;
+esac
+
 RUNTIME_DIR="$ROOT/lib/tree_sitter.c3l/upstream"
 RUNTIME_INCLUDE="$RUNTIME_DIR/lib/include"
 
@@ -101,8 +110,8 @@ build_lib() {
 	popd >/dev/null
 
 	if [ "$MODE" = "shared" ]; then
-		"$CC" $CFLAGS -shared -o "$out/lib$name.so" "${objects[@]}"
-		echo "built $out/lib$name.so"
+		"$CC" $CFLAGS $SHARED_FLAG -o "$out/lib$name.$SHARED_EXT" "${objects[@]}"
+		echo "built $out/lib$name.$SHARED_EXT"
 	else
 		"$AR" rcs "$out/lib$name.a" "${objects[@]}"
 		echo "built $out/lib$name.a"

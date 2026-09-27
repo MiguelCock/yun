@@ -61,7 +61,7 @@ fn String stem_from_lib(Allocator allocator, String lib)
 fn void* open_lib(ZString path)
 {
 	$if env::WIN32:
-		return (void*)win32::loadLibraryA(path);
+		return (void*)win32::loadLibraryA((win32::Win32_LPCSTR)path);
 	$else
 		return libc::dlopen(path, libc::RTLD_NOW | libc::RTLD_LOCAL);
 	$endif
@@ -70,7 +70,7 @@ fn void* open_lib(ZString path)
 fn GrammarFn resolve_symbol(void* handle, ZString symbol)
 {
 	$if env::WIN32:
-		return (GrammarFn)win32::getProcAddress(handle, symbol);
+		return (GrammarFn)win32::getProcAddress(handle, (win32::Win32_LPCSTR)symbol);
 	$else
 		return (GrammarFn)libc::dlsym(handle, symbol);
 	$endif
