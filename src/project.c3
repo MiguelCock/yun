@@ -786,6 +786,27 @@ fn void Project.layout(&self)
 	self.invalidate_bounds();
 }
 
+fn void Project.scale_geometry(&self, float factor)
+{
+	if (factor == 1.0f) return;
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		self.cards[i].rect.x *= factor;
+		self.cards[i].rect.y *= factor;
+		self.cards[i].rect.width *= factor;
+		self.cards[i].rect.height *= factor;
+	}
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		self.folders[i].bounds.x *= factor;
+		self.folders[i].bounds.y *= factor;
+		self.folders[i].bounds.width *= factor;
+		self.folders[i].bounds.height *= factor;
+		self.folders[i].bounds_valid = false;
+	}
+	self.invalidate_bounds();
+}
+
 fn OpenJob* open_job_create(Allocator allocator, Project* project, String root)
 {
 	OpenJob* job = alloc::new(allocator, OpenJob);
@@ -2138,7 +2159,7 @@ fn void Project.draw_cluster(&self, int index)
 			ui::font(),
 			name.zstr_tcopy(),
 			{ bounds.x + (float)ui::px(10), bounds.y + (float)ui::px(5) },
-			(float)ui::px(16),
+			(float)ui::tpx(16),
 			0.0f,
 			theme::current()
 			.cluster_text);
@@ -2147,7 +2168,7 @@ fn void Project.draw_cluster(&self, int index)
 		ui::font(),
 		cluster.collapsed ? "+" : "-",
 		{ bounds.x + bounds.width - (float)ui::px(20), bounds.y + (float)ui::px(5) },
-		(float)ui::px(16),
+		(float)ui::tpx(16),
 		0.0f,
 		theme::current()
 		.cluster_text);

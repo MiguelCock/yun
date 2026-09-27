@@ -158,8 +158,8 @@ fn void Prompt.draw(&self, RLFont font)
 
 	Rect panel      = self.panel_rect();
 	float pad       = (float)ui::px(12);
-	float text_size = (float)ui::px(16);
-	float hint_size = (float)ui::px(14);
+	float text_size = (float)ui::tpx(16);
+	float hint_size = (float)ui::tpx(14);
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 

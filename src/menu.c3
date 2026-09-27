@@ -121,7 +121,7 @@ fn int Menu.width(&self)
 			int item_width = (int)rl::measure_text_ex(
 				ui::font(),
 				self.items[i].zstr_tcopy(),
-				(float)ui::px(16),
+				(float)ui::tpx(16),
 				0.0f
 			)[0] + ui::px(MENU_PADDING_X) * 2;
 			if (item_width > width) width = item_width;
@@ -221,7 +221,7 @@ fn void Menu.draw(&self)
 			ui::font(),
 			(ZString)self.items[(sz)i].ptr,
 			{ panel.x + (float)ui::px(MENU_PADDING_X), row_y + (float)ui::px(4) },
-			(float)ui::px(16),
+			(float)ui::tpx(16),
 			0.0f,
 			self.enabled[(sz)i] ? theme::current()
 			.panel_text : theme::current().panel_disabled);

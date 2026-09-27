@@ -169,7 +169,7 @@ fn void TopBar.draw(
 )
 {
 	Rect bar        = topbar_rect();
-	float text_size = (float)ui::px(16);
+	float text_size = (float)ui::tpx(16);
 	rl::draw_rectangle_rec(bar, theme::current().topbar_bg);
 	rl::draw_line(
 		0,

@@ -306,7 +306,7 @@ fn void draw_run(RLFont font, String text, float x, float y, RLColor color)
 	@pool()
 	{
 		ZString z = text.zstr_tcopy();
-		rl::draw_text_ex(font, z, { x, y }, (float)ui::px(16), 0.0f, color);
+		rl::draw_text_ex(font, z, { x, y }, (float)ui::tpx(16), 0.0f, color);
 	};
 }
 
@@ -316,7 +316,7 @@ fn float measure_width(RLFont font, String text)
 	float width;
 	@pool()
 	{
-		width = rl::measure_text_ex(font, text.zstr_tcopy(), (float)ui::px(16), 0.0f)[0];
+		width = rl::measure_text_ex(font, text.zstr_tcopy(), (float)ui::tpx(16), 0.0f)[0];
 	};
 	return width;
 }
@@ -411,12 +411,12 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 			@pool()
 			{
 				ZString z      = shortcut.zstr_tcopy();
-				RLVector2 size = rl::measure_text_ex(font, z, (float)ui::px(14), 0.0f);
+				RLVector2 size = rl::measure_text_ex(font, z, (float)ui::tpx(14), 0.0f);
 				rl::draw_text_ex(
 					font,
 					z,
 					{ panel.x + panel.width - (float)ui::px(PADDING) - size[0], row_y + (float)ui::px(6) },
-					(float)ui::px(14),
+					(float)ui::tpx(14),
 					0.0f,
 					theme::current()
 					.panel_dim);

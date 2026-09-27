@@ -21,7 +21,7 @@ The project is early and evolving quickly. The roadmap is the flat GitHub issue 
 
 ## Not yet
 
-Lua mods (#33–#36), large-file support (#14), very-large-project perf (#45), crash recovery (#47), HiDPI scaling (#44), and release packaging (#48–#49).
+Lua mods (#33–#36), large-file support (#14), very-large-project perf (#45), crash recovery (#47), and release packaging (#48–#49).
 
 ## Keyboard and modes
 
@@ -127,7 +127,7 @@ Values are grouped into sections, for example:
 
 Unknown top-level keys or section keys warn and are ignored, and a missing config is valid (built-in defaults apply).
 
-The `editor` section covers font size and family (monospace fonts found on the system), line height, padding, indentation (tabs or spaces + width), auto-indent, caret blink, scroll margin, wheel-scroll lines and the line-number gutter. The `app` section also sets the interface font (`ui_font_family`) and `ui_font_size`, which scale the whole UI (text and layout).
+The `editor` section covers font size and family (monospace fonts found on the system), line height, padding, indentation (tabs or spaces + width), auto-indent, caret blink, scroll margin, wheel-scroll lines and the line-number gutter. The `app` section also sets the interface font (`ui_font_family`) and text size (`ui_font_size`), and a global `ui_scale` factor that scales the whole interface (geometry and text). Text and layout scale automatically with the display's DPI.
 
 In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's *Settings* button, or the command palette. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value. The panel's **Keys** section lists every command's shortcut: `Enter` captures a new chord, `Del` unbinds, `Backspace` resets it (when the search is empty), `Esc` cancels, and a *Reset all* row clears the current scope.
 

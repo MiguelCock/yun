@@ -300,7 +300,7 @@ fn void draw_field(RLFont font, Rect field, String text, bool active)
 				font,
 				text.zstr_tcopy(),
 				{ field.x + (float)ui::px(4), field.y + (float)ui::px(3) },
-				(float)ui::px(15),
+				(float)ui::tpx(15),
 				0.0f,
 				theme::current()
 				.panel_text);
@@ -310,7 +310,7 @@ fn void draw_field(RLFont font, Rect field, String text, bool active)
 	{
 		@pool()
 		{
-			float width = text.len > 0 ? rl::measure_text_ex(font, text.zstr_tcopy(), (float)ui::px(15), 0.0f)[0]
+			float width = text.len > 0 ? rl::measure_text_ex(font, text.zstr_tcopy(), (float)ui::tpx(15), 0.0f)[0]
 				: 0.0f;
 			rl::draw_rectangle(
 				(int)(field.x + (float)ui::px(5) + width),
@@ -329,12 +329,12 @@ fn void draw_chip(RLFont font, Rect chip, String label, bool toggled)
 	@pool()
 	{
 		ZString z      = label.zstr_tcopy();
-		RLVector2 size = rl::measure_text_ex(font, z, (float)ui::px(13), 0.0f);
+		RLVector2 size = rl::measure_text_ex(font, z, (float)ui::tpx(13), 0.0f);
 		rl::draw_text_ex(
 			font,
 			z,
 			{ chip.x + (chip.width - size[0]) / 2.0f, chip.y + (chip.height - size[1]) / 2.0f },
-			(float)ui::px(13),
+			(float)ui::tpx(13),
 			0.0f,
 			theme::current()
 			.panel_text);
@@ -409,7 +409,7 @@ fn void FindBar.draw(&self, Rect card_rect, EditorMetrics metrics, RLFont font, 
 			font,
 			(ZString)count.ptr,
 			{ x, y + (float)ui::px(4) },
-			(float)ui::px(14),
+			(float)ui::tpx(14),
 			0.0f,
 			theme::current()
 			.panel_dim);

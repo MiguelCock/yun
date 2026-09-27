@@ -164,7 +164,7 @@ fn void Browser.draw(&self)
 		ui::font(),
 		(ZString)self.dir.ptr,
 		{ (float)(x + ui::px(10)), (float)(y + ui::px(6)) },
-		(float)ui::px(16),
+		(float)ui::tpx(16),
 		0.0f,
 		theme::current()
 		.panel_text);
@@ -187,7 +187,7 @@ fn void Browser.draw(&self)
 				ui::font(),
 				label.zstr_tcopy(),
 				{ (float)(x + ui::px(12)), (float)row_y },
-				(float)ui::px(16),
+				(float)ui::tpx(16),
 				0.0f,
 				theme::current()
 				.panel_text);
@@ -198,7 +198,7 @@ fn void Browser.draw(&self)
 		ui::font(),
 		"Enter: open/select    Backspace: up    Esc: cancel",
 		{ (float)(x + ui::px(10)), (float)(y + height - ui::px(24)) },
-		(float)ui::px(14),
+		(float)ui::tpx(14),
 		0.0f,
 		theme::current()
 		.panel_text);

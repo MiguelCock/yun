@@ -346,7 +346,7 @@ fn void Completion.draw(
 			kind_label(item.kind),
 			panel.x + (float)ui::px(6),
 			row_y + (float)ui::px(2),
-			(float)ui::px(13),
+			(float)ui::tpx(13),
 			theme::current()
 			.panel_header);
 		draw_text(
@@ -354,7 +354,7 @@ fn void Completion.draw(
 			item.label,
 			panel.x + (float)ui::px(KIND_WIDTH),
 			row_y + (float)ui::px(1),
-			(float)ui::px(15),
+			(float)ui::tpx(15),
 			theme::current()
 			.panel_text);
 		if (item.detail.len > 0)
@@ -367,7 +367,7 @@ fn void Completion.draw(
 					detail,
 					panel.x + (float)ui::px(KIND_WIDTH) + (float)ui::px(120),
 					row_y + (float)ui::px(3),
-					(float)ui::px(13),
+					(float)ui::tpx(13),
 					theme::current()
 					.panel_dim);
 			};

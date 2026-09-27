@@ -103,7 +103,7 @@ fn void FileCard.draw(&self, bool focused)
 			ui::font(),
 			self.name.zstr_tcopy(),
 			{ r.x + (float)ui::px(10), r.y + (float)ui::px(7) },
-			(float)ui::px(16),
+			(float)ui::tpx(16),
 			0.0f,
 			theme::current()
 			.card_text);
@@ -118,7 +118,7 @@ fn void FileCard.draw(&self, bool focused)
 		ui::font(),
 		"x",
 		{ r.x + r.width - (float)ui::px(40), r.y + (float)ui::px(7) },
-		(float)ui::px(16),
+		(float)ui::tpx(16),
 		0.0f,
 		theme::current()
 		.card_text);
@@ -126,7 +126,7 @@ fn void FileCard.draw(&self, bool focused)
 		ui::font(),
 		self.open ? "-" : "+",
 		{ r.x + r.width - (float)ui::px(18), r.y + (float)ui::px(7) },
-		(float)ui::px(16),
+		(float)ui::tpx(16),
 		0.0f,
 		theme::current()
 		.card_text);
