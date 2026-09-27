@@ -31,6 +31,7 @@ The `start-issue` and `finish-issue` opencode commands automate steps 1 and 3-4.
 
 ## Verify before pushing
 ```
+scripts/build-tree-sitter.sh linux-x64   # grammar shared libraries (not committed)
 c3c build
 c3c test
 c3fmt --check $(git ls-files '*.c3')
@@ -45,7 +46,9 @@ git clone --recurse-submodules https://github.com/MiguelCock/yun.git
 git submodule update --init --recursive
 ```
 Submodules include `lib/lua54.c3l` and the tree-sitter `upstream/` sources under `lib/tree_sitter*.c3l/`.
-- Build/link needs no submodules (prebuilt `linux-x64` static libs are committed), but rebuilding them or targeting another platform uses `scripts/build-tree-sitter.sh <target>`.
+- The runtime static library is committed, but grammar libraries are not: build
+  them once after cloning with `scripts/build-tree-sitter.sh linux-x64` (they are
+  loaded lazily at runtime, so `c3c test` needs them). See [`docs/tree-sitter.md`](docs/tree-sitter.md).
 - Lua mods (#33+) will additionally require a system Lua 5.4 (e.g. `liblua5.4-dev`).
 
 ## Ground rules

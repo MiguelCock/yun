@@ -9,13 +9,13 @@
 ## Build / verify
 - Language is C3 (not C/C++). Uses the external `c3c` (built/tested with 0.8.4); it is NOT pinned in the repo. `project.json`'s `langrev` is unrelated to the compiler version.
 - Build: `c3c build` (target `yun`). Run: `c3c run` (optionally `c3c run -- <dir>`). Clean: `c3c clean`.
-- Test: `c3c test` — `test/**` is wired as `test-sources` (e.g. `test/canvas_test.c3`). Tests use the `@test` attribute.
+- Test: `c3c test` — `test/**` is wired as `test-sources` (e.g. `test/canvas_test.c3`). Tests use the `@test` attribute. Grammar libraries are loaded lazily, so run `scripts/build-tree-sitter.sh linux-x64` once after cloning before `c3c test`.
 - Inspect resolved deps/project: `c3c project view`.
 - Format: `c3fmt --in-place <file...>` (`--check` to verify only). No repo `.c3fmt` config, so defaults apply.
 - No lint/typecheck step; a successful `c3c build` is the verification.
 
 ## Layout
-- `project.json` is the single source of build truth. Dependencies are `raylib6` plus the tree-sitter runtime and the C3/C/Python/JavaScript grammar libraries.
+- `project.json` is the single source of build truth. Dependencies are `raylib6` plus the tree-sitter runtime; grammars are loaded lazily from shared libraries (built with `scripts/build-tree-sitter.sh`, not committed).
 - `src/**` -> executable target `yun`; `test/**` -> tests; `build/` and `out/` are generated and gitignored.
 - `src/text/` holds the text engine (`piece_table.c3`, `history.c3`); other `src/*.c3` files are the app/UI modules.
 - `lib/*.c3l` are vendor libraries resolved via `"dependency-search-paths": ["lib"]`.
@@ -28,9 +28,10 @@
 - API is raylib snake_case (`rl::init_window`, `rl::close_window`, `rl::window_should_close`), plus a `rl::@drawing() { ... }` block macro that wraps `begin_drawing`/`end_drawing`. raygui is also bundled (`raygui::rg`).
 
 ## Syntax highlighting (tree-sitter)
-- `src/language.c3` (`yun::language`) is the language registry: the `Language` enum plus a `LanguageSpec` table (name, extensions, grammar function, highlights path, import/module/symbols queries). Adding a language is one table entry plus its grammar library.
+- `src/language.c3` (`yun::language`) is the language registry: the `Language` enum plus a `LanguageSpec` table (name, extensions, library name/symbol, highlights path, import/module/symbols queries). Adding a language is one table entry plus its grammar library.
 - `src/highlight.c3` (`yun::highlight`) uses the registry for lazy per-language `TSQuery` caches loaded from each grammar's `queries/highlights.scm`, and a per-card `Highlighter` (parser + tree + sorted `Span`s) that reparses the whole buffer when dirty.
-- `lib/tree_sitter*.c3l` are directories (not packed), with prebuilt `linux-x64` static libs committed; run `scripts/build-tree-sitter.sh <target> [grammar...]` to regenerate or cross-build. Their `upstream/` dirs are submodules. See `docs/tree-sitter.md` for the grammar pipeline (scaffold, build, ABI, licenses).
+- `src/grammar.c3` (`yun::grammar`) lazily loads grammar shared libraries (`dlopen`/`LoadLibraryA`) with a fallback to plain text when missing.
+- `lib/tree_sitter*.c3l` are directories (not packed); their `upstream/` dirs are submodules. Build grammar libraries with `scripts/build-tree-sitter.sh [--static] [target] [grammar...]`. See `docs/tree-sitter.md` for the grammar pipeline (scaffold, build, ABI, licenses).
 - Capture names map to `SyntaxRole`s and then to a dark palette in the same module, kept separate so the theme work (#41) can swap colors without reparsing.
 
 ## Lua mods (planned)

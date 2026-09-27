@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Verifies every vendored tree-sitter grammar C3L is well-formed: it has a c3i,
-# manifest, highlight query, README, LICENSE, and a committed linux-x64 library.
+# manifest, highlight query, README, and LICENSE. The compiled library is built
+# separately (scripts/build-tree-sitter.sh).
 #
 # Usage: scripts/check-tree-sitter-grammars.sh
 set -euo pipefail
@@ -19,7 +20,6 @@ for dep in "$ROOT"/lib/tree_sitter_*.c3l; do
 	[ -f "$dep/queries/highlights.scm" ] || missing+=("queries/highlights.scm")
 	[ -f "$dep/README.md" ] || missing+=("README.md")
 	[ -f "$dep/LICENSE" ] || missing+=("LICENSE")
-	compgen -G "$dep/linked-libs/linux-x64/lib*.a" >/dev/null || missing+=("linked-libs/linux-x64/lib*.a")
 
 	if [ "${#missing[@]}" -eq 0 ]; then
 		echo "ok: $base"

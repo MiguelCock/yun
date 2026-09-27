@@ -1,10 +1,8 @@
 module yun::language;
 
+import std::atomic::types;
 import tree_sitter;
-import tree_sitter_c;
-import tree_sitter_c3;
-import tree_sitter_javascript;
-import tree_sitter_python;
+import yun::grammar;
 
 enum Language : int
 {
@@ -18,13 +16,12 @@ enum Language : int
 
 const int LANGUAGE_COUNT = (int)Language.COUNT;
 
-alias GrammarFn = fn TSLanguage*();
-
 struct LanguageSpec
 {
 	String name;
 	String[] extensions;
-	GrammarFn grammar;
+	String lib;
+	String symbol;
 	String highlights_path;
 	String import_query;
 	String module_query;
@@ -36,7 +33,8 @@ const LanguageSpec[] LANGUAGES = {
 	{
 		.name = "c3",
 		.extensions = { ".c3", ".c3i" },
-		.grammar = &tree_sitter_c3::tree_sitter_c3,
+		.lib = "tree-sitter-c3",
+		.symbol = "tree_sitter_c3",
 		.highlights_path = "lib/tree_sitter_c3.c3l/queries/highlights.scm",
 		.import_query = "(import_declaration (import_path (path_ident) @path))",
 		.module_query = "(module_declaration) @module",
@@ -53,7 +51,8 @@ const LanguageSpec[] LANGUAGES = {
 	{
 		.name = "c",
 		.extensions = { ".c", ".h" },
-		.grammar = &tree_sitter_c::tree_sitter_c,
+		.lib = "tree-sitter-c",
+		.symbol = "tree_sitter_c",
 		.highlights_path = "lib/tree_sitter_c.c3l/queries/highlights.scm",
 		.import_query = "(preproc_include path: (_) @path)",
 		.module_query = "",
@@ -67,7 +66,8 @@ const LanguageSpec[] LANGUAGES = {
 	{
 		.name = "python",
 		.extensions = { ".py" },
-		.grammar = &tree_sitter_python::tree_sitter_python,
+		.lib = "tree-sitter-python",
+		.symbol = "tree_sitter_python",
 		.highlights_path = "lib/tree_sitter_python.c3l/queries/highlights.scm",
 		.import_query = "(import_statement name: (dotted_name) @path)\n"
 			"(import_statement name: (aliased_import (dotted_name) @path))\n"
@@ -80,7 +80,8 @@ const LanguageSpec[] LANGUAGES = {
 	{
 		.name = "javascript",
 		.extensions = { ".js", ".mjs", ".cjs" },
-		.grammar = &tree_sitter_javascript::tree_sitter_javascript,
+		.lib = "tree-sitter-javascript",
+		.symbol = "tree_sitter_javascript",
 		.highlights_path = "lib/tree_sitter_javascript.c3l/queries/highlights.scm",
 		.import_query = "(import_statement source: (string) @path)\n"
 			"(call_expression function: (identifier) @fn arguments: (arguments (string) @path))",
@@ -123,12 +124,20 @@ fn Language language_for_path(String path)
 	return Language.NONE;
 }
 
+TSLanguage*[LANGUAGE_COUNT] grammar_cache;
+void*[LANGUAGE_COUNT] grammar_handles;
+Atomic{bool}[LANGUAGE_COUNT] grammar_loaded;
+
 fn TSLanguage* grammar_language(Language language)
 {
 	int index = (int)language;
 	if (index <= 0 || index >= LANGUAGE_COUNT) return null;
-	if (!LANGUAGES[index].grammar) return null;
-	return LANGUAGES[index].grammar();
+	if (grammar_loaded[index].load()) return grammar_cache[index];
+	grammar::LoadedGrammar loaded = grammar::load(LANGUAGES[index].lib, LANGUAGES[index].symbol);
+	grammar_handles[index] = loaded.handle;
+	grammar_cache[index] = loaded.language;
+	grammar_loaded[index].store(true);
+	return grammar_cache[index];
 }
 
 fn String grammar_query_path(Language language)

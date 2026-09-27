@@ -231,15 +231,11 @@ fn void ImportIndex.destroy(&self)
 fn TSQuery* make_query(language::Language language, String text)
 {
 	if (text.len == 0) return null;
+	TSLanguage* lang = language::grammar_language(language);
+	if (!lang) return null;
 	uint offset        = 0;
 	TSQueryError error = TS_QUERY_ERROR_NONE;
-	TSQuery* query = tree_sitter::ts_query_new(
-		language::grammar_language(language),
-		(char*)text.ptr,
-		(uint)text.len,
-		&offset,
-		&error
-	);
+	TSQuery* query     = tree_sitter::ts_query_new(lang, (char*)text.ptr, (uint)text.len, &offset, &error);
 	if (!query || error != TS_QUERY_ERROR_NONE) return null;
 	return query;
 }

@@ -99,6 +99,11 @@ jobs:
             mkdir -p "$dist/$(dirname "$q")"
             cp -r "$q" "$dist/$(dirname "$q")/"
           done
+          shopt -s nullglob
+          mkdir -p "$dist/grammars"
+          for lib in lib/tree_sitter*.c3l/linked-libs/"$target"/*.so lib/tree_sitter*.c3l/linked-libs/"$target"/*.dylib; do
+            cp "$lib" "$dist/grammars/"
+          done
           cp LICENSE README.md "$dist/"
           tar -czf "$name.tar.gz" -C dist "$name"
           if command -v sha256sum >/dev/null 2>&1; then
@@ -125,6 +130,12 @@ jobs:
               New-Item -ItemType Directory -Force -Path $dest | Out-Null
               Copy-Item -Recurse "$queries/*" $dest
             }
+          }
+          $grammarDest = Join-Path $dist "grammars"
+          New-Item -ItemType Directory -Force -Path $grammarDest | Out-Null
+          Get-ChildItem -Path "lib" -Directory -Filter "tree_sitter*.c3l" | ForEach-Object {
+            $libs = Join-Path $_.FullName "linked-libs/$target/*.dll"
+            if (Test-Path $libs) { Copy-Item $libs $grammarDest }
           }
           Copy-Item "LICENSE", "README.md" $dist
           Compress-Archive -Path $dist -DestinationPath "$name.zip" -Force
