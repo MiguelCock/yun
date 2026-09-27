@@ -93,7 +93,7 @@ Already cloned without submodules? Run `git submodule update --init --recursive`
 ## Dependencies
 
 - **raylib 6** — `lib/raylib6.c3l` is a packed library; it ships prebuilt static libs for `linux-x64`, `macos-aarch64`, `windows-x64`, `windows-aarch64`, `emscripten`, and `wasm-32`.
-- **tree-sitter** — `lib/tree_sitter.c3l` (runtime) plus the `tree_sitter_c`, `tree_sitter_c3`, `tree_sitter_python`, and `tree_sitter_javascript` grammars. `linux-x64` static libraries are committed; regenerate them (or build another target with a matching toolchain) with `scripts/build-tree-sitter.sh <target>`.
+- **tree-sitter** — `lib/tree_sitter.c3l` (runtime) plus the `tree_sitter_c`, `tree_sitter_c3`, `tree_sitter_python`, and `tree_sitter_javascript` grammars. `linux-x64` static libraries are committed; regenerate them (or build another target with a matching toolchain) with `scripts/build-tree-sitter.sh <target> [grammar...]`. See [`docs/tree-sitter.md`](docs/tree-sitter.md) for adding a grammar.
 - **Lua 5.4** — `lib/lua54.c3l` is a submodule vendored ahead of the mods work (#33–#36); it is not wired into the build yet.
 
 ## Layout

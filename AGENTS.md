@@ -30,7 +30,7 @@
 ## Syntax highlighting (tree-sitter)
 - `src/language.c3` (`yun::language`) is the language registry: the `Language` enum plus a `LanguageSpec` table (name, extensions, grammar function, highlights path, import/module/symbols queries). Adding a language is one table entry plus its grammar library.
 - `src/highlight.c3` (`yun::highlight`) uses the registry for lazy per-language `TSQuery` caches loaded from each grammar's `queries/highlights.scm`, and a per-card `Highlighter` (parser + tree + sorted `Span`s) that reparses the whole buffer when dirty.
-- `lib/tree_sitter*.c3l` are directories (not packed), with prebuilt `linux-x64` static libs committed; run `scripts/build-tree-sitter.sh <target>` to regenerate or cross-build. Their `upstream/` dirs are submodules.
+- `lib/tree_sitter*.c3l` are directories (not packed), with prebuilt `linux-x64` static libs committed; run `scripts/build-tree-sitter.sh <target> [grammar...]` to regenerate or cross-build. Their `upstream/` dirs are submodules. See `docs/tree-sitter.md` for the grammar pipeline (scaffold, build, ABI, licenses).
 - Capture names map to `SyntaxRole`s and then to a dark palette in the same module, kept separate so the theme work (#41) can swap colors without reparsing.
 
 ## Lua mods (planned)
