@@ -236,6 +236,35 @@ fn void test_client_captures_notifications()
 	};
 }
 
+fn void test_client_answers_server_requests()
+{
+	@pool()
+	{
+		FakeTransport fake_ctx;
+		fake::fake_init(&fake_ctx, tmem);
+
+		LspClient client;
+		client.init(tmem, "c", "file:///root");
+		client.transport = fake::fake_transport(&fake_ctx);
+
+		client.handle_message("{\"id\":42,\"method\":\"client/registerCapability\",\"params\":{}}");
+		assert(fake_ctx.written.len() == 1);
+		assert(fake_ctx.written[0].contains("\"id\":42"));
+		assert(fake_ctx.written[0].contains("\"result\":null"));
+
+		client.handle_message("{\"id\":43,\"method\":\"workspace/configuration\",\"params\":{\"items\":[{},{}]}}");
+		assert(fake_ctx.written.len() == 2);
+		assert(fake_ctx.written[1].contains("\"result\":[null,null]"));
+
+		client.handle_message("{\"id\":44,\"method\":\"workspace/applyEdit\",\"params\":{}}");
+		assert(fake_ctx.written.len() == 3);
+		assert(fake_ctx.written[2].contains("\"applied\":false"));
+
+		client.destroy();
+		fake::fake_free(&fake_ctx);
+	};
+}
+
 fn void test_diagnostics_store()
 {
 	@pool()

@@ -5,6 +5,7 @@ import std::collections::object;
 import std::core::dstring;
 import std::core::mem::alloc;
 import std::encoding::json;
+import std::io;
 import std::os::process;
 import std::thread;
 import std::thread::channel;
@@ -195,6 +196,7 @@ fn bool LspClient.spawn(&self, String[] argv)
 	if (catch excuse = spawned)
 	{
 		self.status = LspStatus.ERROR;
+		io::eprintfn("LSP: failed to start %s server (%s)", self.language, argv.len > 0 ? argv[0] : "");
 		return false;
 	}
 	Process* proc = alloc::new(mem, Process);
@@ -207,6 +209,7 @@ fn bool LspClient.spawn(&self, String[] argv)
 		.is_alive = &lsp_process_alive,
 		.close = &lsp_process_close,
 	};
+	if (argv.len > 0) io::eprintfn("LSP: started %s server (%s)", self.language, argv[0]);
 	return true;
 }
 
@@ -409,6 +412,15 @@ fn void LspClient.send_notification(&self, String method, Object* params)
 	};
 }
 
+fn void LspClient.send_response(&self, long id, String result_json)
+{
+	@pool()
+	{
+		String json = lsp_response_message(tmem, id, result_json);
+		if (!self.send_raw(tmem, json)) self.status = LspStatus.ERROR;
+	};
+}
+
 fn void LspClient.pump(&self)
 {
 	if (self.incoming)
@@ -468,11 +480,68 @@ fn void LspClient.resolve_pending(&self, int id, Object* message)
 	message.free();
 }
 
+fn void LspClient.handle_server_request(&self, long id, String method, Object* message)
+{
+	@pool()
+	{
+		if (method.compare_to("workspace/configuration") == 0)
+		{
+			int count           = 0;
+			Object*? params_opt = message.get("params");
+			if (try params = params_opt)
+			{
+				Object*? items_opt = params.get("items");
+				if (try items = items_opt)
+				{
+					if (items.is_array()) count = (int)items.get_len();
+				}
+			}
+			DString out;
+			out.init(tmem, (usz)count * 5 + 3);
+			out.append_char('[');
+			for (int i = 0; i < count; i++)
+			{
+				if (i > 0) out.append_char(',');
+				out.append_string("null");
+			}
+			out.append_char(']');
+			self.send_response(id, out.str_view());
+			out.free();
+		}
+		else if (method.compare_to("workspace/applyEdit") == 0)
+		{
+			self.send_response(id, "{\"applied\":false}");
+		}
+		else
+		{
+			self.send_response(id, "null");
+		}
+	};
+	message.free();
+}
+
 fn void LspClient.handle_message(&self, String json)
 {
 	Object*? parsed = json::parse(self.allocator, json);
 	if (catch excuse = parsed) return;
 	Object* message = parsed;
+
+	Object*? method_opt = message.get("method");
+	if (try method = method_opt)
+	{
+		Object*? id_opt = message.get("id");
+		if (try id_obj = id_opt)
+		{
+			int? id = id_obj.to_value(int);
+			if (try value = id)
+			{
+				self.handle_server_request((long)value, method.s, message);
+				return;
+			}
+		}
+		self.notifications.push({ .method = method.s.copy(self.allocator), .message = message });
+		return;
+	}
 
 	Object*? id_opt = message.get("id");
 	if (try id_obj = id_opt)
@@ -483,13 +552,6 @@ fn void LspClient.handle_message(&self, String json)
 			self.resolve_pending(value, message);
 			return;
 		}
-	}
-
-	Object*? method_opt = message.get("method");
-	if (try method = method_opt)
-	{
-		self.notifications.push({ .method = method.s.copy(self.allocator), .message = message });
-		return;
 	}
 	message.free();
 }

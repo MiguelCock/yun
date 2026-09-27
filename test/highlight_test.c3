@@ -245,6 +245,14 @@ fn void test_highlights_path_for_name()
 	assert(language::highlights_path_for_name("nope").len == 0);
 }
 
+fn void test_all_highlight_queries_compile()
+{
+	for (int i = 1; i < language::LANGUAGE_COUNT; i++)
+	{
+		assert(query_for((language::Language)i) != null);
+	}
+}
+
 fn void test_cpp_inherits_c_highlights()
 {
 	@pool()
@@ -258,6 +266,24 @@ fn void test_cpp_inherits_c_highlights()
 
 		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.COMMENT));
 		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.NUMBER));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_parse_highlights_v()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "fn main() {\n\tprintln(\"hi\")\n}\n");
+
+		Highlighter* highlighter = create(tmem, &table, "sample.v");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.KEYWORD));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.STRING));
 
 		destroy(highlighter, tmem);
 	};

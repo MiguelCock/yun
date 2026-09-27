@@ -152,7 +152,7 @@ shipped alongside the binary.
 ## Licenses
 
 Vendored grammars and the runtime keep their own licenses (`LICENSE` in each
-C3L). Most are MIT; the V grammar is ISC and Nim is MPL-2.0.
+C3L). Most are MIT; the Nim grammar is MPL-2.0.
 
 | grammar | upstream | pinned | license |
 | --- | --- | --- | --- |
@@ -166,7 +166,7 @@ C3L). Most are MIT; the V grammar is ISC and Nim is MPL-2.0.
 | tree_sitter_odin | tree-sitter-grammars/tree-sitter-odin | `v1.3.0` | MIT |
 | tree_sitter_python | tree-sitter/tree-sitter-python | `293fdc0` | MIT |
 | tree_sitter_rust | tree-sitter/tree-sitter-rust | `v0.24.2` | MIT |
-| tree_sitter_v | undivisible/tree-sitter-v | `ed235d6` | ISC |
+| tree_sitter_v | nedpals/tree-sitter-v | `fee18d64a5` | MIT |
 | tree_sitter_zig | tree-sitter-grammars/tree-sitter-zig | `v1.1.2` | MIT |
 
 The scaffold copies the upstream license into the new C3L; add a row here.
