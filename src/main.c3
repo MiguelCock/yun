@@ -134,6 +134,32 @@ fn void apply_settings(
 	es.indent_spaces = config.settings.get_string(settings::SettingId.EDITOR_INDENT_STYLE).compare_to("spaces") == 0;
 	es.auto_indent = config.settings.get_bool(settings::SettingId.EDITOR_AUTO_INDENT);
 
+	canvas::CanvasSettings cs = canvas::settings();
+	cs.min_zoom = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_MIN);
+	cs.max_zoom = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_MAX);
+	cs.zoom_step = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_STEP);
+	cs.key_pan_step = (float)config.settings.get_float(settings::SettingId.CANVAS_KEY_PAN_STEP);
+	cs.pan_responsiveness = (float)config.settings.get_float(settings::SettingId.CANVAS_PAN_SMOOTHING);
+	cs.zoom_responsiveness = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_SMOOTHING);
+	cs.smoothing = config.settings.get_bool(settings::SettingId.CANVAS_SMOOTHING);
+	cs.inertia_friction = (float)config.settings.get_float(settings::SettingId.CANVAS_INERTIA_FRICTION);
+	cs.inertia_min_speed = (float)config.settings.get_float(settings::SettingId.CANVAS_INERTIA_MIN_SPEED);
+	cs.drag_threshold = (float)config.settings.get_float(settings::SettingId.CANVAS_DRAG_THRESHOLD);
+	cs.max_pan_delta = (float)config.settings.get_float(settings::SettingId.CANVAS_MAX_PAN_DELTA);
+	cs.grid = config.settings.get_bool(settings::SettingId.CANVAS_GRID);
+	cs.grid_cell = (float)config.settings.get_int(settings::SettingId.CANVAS_GRID_CELL);
+	cs.grid_min_px = (float)config.settings.get_float(settings::SettingId.CANVAS_GRID_MIN_PX);
+	cs.grid_max_px = (float)config.settings.get_float(settings::SettingId.CANVAS_GRID_MAX_PX);
+	cs.jump_zoom_min = (float)config.settings.get_float(settings::SettingId.CANVAS_JUMP_ZOOM_MIN);
+	cs.jump_zoom_target = (float)config.settings.get_float(settings::SettingId.CANVAS_JUMP_ZOOM_TARGET);
+	canvas::set_settings(cs);
+
+	minimap::MinimapSettings ms = minimap::settings();
+	ms.enabled = config.settings.get_bool(settings::SettingId.MINIMAP_ENABLED);
+	ms.size = (float)config.settings.get_float(settings::SettingId.MINIMAP_SIZE);
+	ms.zoom_threshold = (float)config.settings.get_float(settings::SettingId.MINIMAP_ZOOM_THRESHOLD);
+	minimap::set_settings(ms);
+
 	bool font_changed    = false;
 	bool metrics_changed = false;
 
@@ -790,16 +816,16 @@ fn void run_command(commands::CommandId id, App* app)
 			project.editor_exit();
 			return;
 		case commands::CommandId.PAN_LEFT:
-			app.canvas.key_pan({ -48.0f, 0.0f });
+			app.canvas.key_pan({ -canvas::settings().key_pan_step, 0.0f });
 			return;
 		case commands::CommandId.PAN_RIGHT:
-			app.canvas.key_pan({ 48.0f, 0.0f });
+			app.canvas.key_pan({ canvas::settings().key_pan_step, 0.0f });
 			return;
 		case commands::CommandId.PAN_UP:
-			app.canvas.key_pan({ 0.0f, -48.0f });
+			app.canvas.key_pan({ 0.0f, -canvas::settings().key_pan_step });
 			return;
 		case commands::CommandId.PAN_DOWN:
-			app.canvas.key_pan({ 0.0f, 48.0f });
+			app.canvas.key_pan({ 0.0f, canvas::settings().key_pan_step });
 			return;
 		case commands::CommandId.SELECT_LEFT:
 		case commands::CommandId.SELECT_RIGHT:
@@ -993,7 +1019,7 @@ fn void focus_camera_on_line(
 	float world_y    = text.y + editor::line_y(line, card.scroll, metrics) + metrics.line_height * 0.5f;
 	RLVector2 center = card.center();
 	canvas.target.target = { center[0], world_y };
-	if (canvas.target.zoom < JUMP_ZOOM_MIN) canvas.target.zoom = JUMP_ZOOM_TARGET;
+	if (canvas.target.zoom < canvas::settings().jump_zoom_min) canvas.target.zoom = canvas::settings().jump_zoom_target;
 	project.mark_jump((String)card.path, line, rl::get_time());
 }
 
@@ -1138,9 +1164,7 @@ fn void mark_buffer_changed(project::Project* project, findbar::FindBar* find_ba
 	find_bar.mark_dirty();
 }
 
-const String FONT_PATH       = "assets/fonts/JetBrainsMono-Regular.ttf";
-const float JUMP_ZOOM_MIN    = 0.6f;
-const float JUMP_ZOOM_TARGET = 1.0f;
+const String FONT_PATH = "assets/fonts/JetBrainsMono-Regular.ttf";
 
 fn RLFont finish_font(RLFont font)
 {

@@ -210,6 +210,7 @@ fn void test_write_sections_roundtrip()
 		s.init(tmem);
 		s.set_string(SettingId.APP_THEME, "nord", SettingLayer.GLOBAL);
 		s.set_int(SettingId.EDITOR_FONT_SIZE, 24, SettingLayer.GLOBAL);
+		s.set_int(SettingId.CANVAS_GRID_CELL, 128, SettingLayer.GLOBAL);
 
 		DString out;
 		out.init(tmem, 256);
@@ -251,6 +252,16 @@ fn void test_write_sections_roundtrip()
 
 			assert(s2.get_string(SettingId.APP_THEME).compare_to("nord") == 0);
 			assert(s2.get_int(SettingId.EDITOR_FONT_SIZE) == 24);
+			Object*? canvas_section = root.get("canvas");
+			if (catch canvas_excuse = canvas_section)
+			{
+				assert(false);
+			}
+			else
+			{
+				s2.apply_section("canvas", canvas_section, SettingLayer.GLOBAL, &warnings);
+			}
+			assert(s2.get_int(SettingId.CANVAS_GRID_CELL) == 128);
 			assert(warnings.len() == 0);
 			s2.destroy();
 			warnings.free();
@@ -360,6 +371,67 @@ fn void test_editor_clamp()
 			{
 				s.apply_section("editor", part, SettingLayer.GLOBAL, &warnings);
 				assert(s.get_int(SettingId.EDITOR_INDENT_WIDTH) == 16);
+			}
+		}
+		s.destroy();
+		warnings.free();
+	};
+}
+
+fn void test_canvas_defaults()
+{
+	assert(SETTINGS[(int)SettingId.CANVAS_ZOOM_MIN].fallback.f == 0.1);
+	assert(SETTINGS[(int)SettingId.CANVAS_ZOOM_MAX].fallback.f == 8.0);
+	assert(SETTINGS[(int)SettingId.CANVAS_ZOOM_STEP].fallback.f == 1.1);
+	assert(SETTINGS[(int)SettingId.CANVAS_KEY_PAN_STEP].fallback.f == 48.0);
+	assert(SETTINGS[(int)SettingId.CANVAS_PAN_SMOOTHING].fallback.f == 20.0);
+	assert(SETTINGS[(int)SettingId.CANVAS_ZOOM_SMOOTHING].fallback.f == 16.0);
+	assert(SETTINGS[(int)SettingId.CANVAS_SMOOTHING].fallback.b);
+	assert(SETTINGS[(int)SettingId.CANVAS_INERTIA_FRICTION].fallback.f == 0.9);
+	assert(SETTINGS[(int)SettingId.CANVAS_INERTIA_MIN_SPEED].fallback.f == 5.0);
+	assert(SETTINGS[(int)SettingId.CANVAS_DRAG_THRESHOLD].fallback.f == 4.0);
+	assert(SETTINGS[(int)SettingId.CANVAS_MAX_PAN_DELTA].fallback.f == 200.0);
+	assert(SETTINGS[(int)SettingId.CANVAS_GRID].fallback.b);
+	assert(SETTINGS[(int)SettingId.CANVAS_GRID_CELL].fallback.i == 64);
+	assert(SETTINGS[(int)SettingId.CANVAS_GRID_MIN_PX].fallback.f == 16.0);
+	assert(SETTINGS[(int)SettingId.CANVAS_GRID_MAX_PX].fallback.f == 64.0);
+	assert(SETTINGS[(int)SettingId.CANVAS_JUMP_ZOOM_MIN].fallback.f == 0.6);
+	assert(SETTINGS[(int)SettingId.CANVAS_JUMP_ZOOM_TARGET].fallback.f == 1.0);
+	assert(SETTINGS[(int)SettingId.MINIMAP_ENABLED].fallback.b);
+	assert(SETTINGS[(int)SettingId.MINIMAP_SIZE].fallback.f == 1.0);
+	assert(SETTINGS[(int)SettingId.MINIMAP_ZOOM_THRESHOLD].fallback.f == 0.4);
+}
+
+fn void test_canvas_clamp()
+{
+	@pool()
+	{
+		Settings s;
+		s.init(tmem);
+		List{String} warnings;
+		warnings.init(tmem);
+		Object*? parsed = json::parse(
+			tmem,
+			"{\"canvas\":{\"grid_cell\":9999,\"zoom_min\":0.0001,\"grid_min_px\":500}}"
+		);
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			Object* root  = parsed;
+			Object*? part = root.get("canvas");
+			if (catch part_excuse = part)
+			{
+				assert(false);
+			}
+			else
+			{
+				s.apply_section("canvas", part, SettingLayer.GLOBAL, &warnings);
+				assert(s.get_int(SettingId.CANVAS_GRID_CELL) == 512);
+				assert(s.get_float(SettingId.CANVAS_ZOOM_MIN) == 0.01);
+				assert(s.get_float(SettingId.CANVAS_GRID_MIN_PX) == 128.0);
 			}
 		}
 		s.destroy();

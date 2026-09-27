@@ -22,6 +22,80 @@ const float MAX_FRAME_DT               = 0.05f;
 const float CAMERA_SNAP_EPSILON        = 0.001f;
 const bool SMOOTHING_ENABLED           = true;
 
+struct CanvasSettings
+{
+	float min_zoom;
+	float max_zoom;
+	float zoom_step;
+	float key_pan_step;
+	float pan_responsiveness;
+	float zoom_responsiveness;
+	bool smoothing;
+	float inertia_friction;
+	float inertia_min_speed;
+	float drag_threshold;
+	float max_pan_delta;
+	bool grid;
+	float grid_cell;
+	float grid_min_px;
+	float grid_max_px;
+	float jump_zoom_min;
+	float jump_zoom_target;
+}
+
+CanvasSettings g_canvas_settings = {
+	.min_zoom = MIN_ZOOM,
+	.max_zoom = MAX_ZOOM,
+	.zoom_step = ZOOM_STEP,
+	.key_pan_step = 48.0f,
+	.pan_responsiveness = PAN_RESPONSIVENESS,
+	.zoom_responsiveness = ZOOM_RESPONSIVENESS,
+	.smoothing = SMOOTHING_ENABLED,
+	.inertia_friction = INERTIA_FRICTION_PER_FRAME,
+	.inertia_min_speed = INERTIA_MIN_SPEED,
+	.drag_threshold = DRAG_THRESHOLD_PX,
+	.max_pan_delta = MAX_PAN_DELTA_PX,
+	.grid = true,
+	.grid_cell = BASE_CELL,
+	.grid_min_px = MIN_GRID_PX,
+	.grid_max_px = MAX_GRID_PX,
+	.jump_zoom_min = 0.6f,
+	.jump_zoom_target = 1.0f,
+};
+
+fn CanvasSettings settings()
+{
+	return g_canvas_settings;
+}
+
+fn void set_settings(CanvasSettings value)
+{
+	if (value.zoom_step < 1.001f) value.zoom_step = 1.001f;
+	if (value.pan_responsiveness < 0.1f) value.pan_responsiveness = 0.1f;
+	if (value.zoom_responsiveness < 0.1f) value.zoom_responsiveness = 0.1f;
+	if (value.inertia_friction < 0.0f) value.inertia_friction = 0.0f;
+	if (value.inertia_friction > 0.99f) value.inertia_friction = 0.99f;
+	if (value.inertia_min_speed < 0.0f) value.inertia_min_speed = 0.0f;
+	if (value.drag_threshold < 0.0f) value.drag_threshold = 0.0f;
+	if (value.max_pan_delta < 1.0f) value.max_pan_delta = 1.0f;
+	if (value.grid_cell < 1.0f) value.grid_cell = 1.0f;
+
+	if (value.max_zoom < 0.02f) value.max_zoom = 0.02f;
+	if (value.max_zoom > 100.0f) value.max_zoom = 100.0f;
+	if (value.min_zoom < 0.001f) value.min_zoom = 0.001f;
+	if (value.min_zoom > value.max_zoom - 0.001f) value.min_zoom = value.max_zoom - 0.001f;
+
+	if (value.grid_max_px < 1.0f) value.grid_max_px = 1.0f;
+	if (value.grid_min_px < 0.5f) value.grid_min_px = 0.5f;
+	if (value.grid_min_px > value.grid_max_px - 0.5f) value.grid_min_px = value.grid_max_px - 0.5f;
+
+	if (value.jump_zoom_target < 0.01f) value.jump_zoom_target = 0.01f;
+	if (value.jump_zoom_min < 0.001f) value.jump_zoom_min = 0.001f;
+	if (value.jump_zoom_min > value.jump_zoom_target) value.jump_zoom_min = value.jump_zoom_target;
+
+	g_canvas_settings = value;
+}
+
 struct Canvas
 {
 	RLCamera2D camera;
@@ -87,7 +161,8 @@ fn void Canvas.update(&self)
 		{
 			float dx = mouse[0] - self.drag_start[0];
 			float dy = mouse[1] - self.drag_start[1];
-			if (self.drag_pending && dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX)
+			if (self.drag_pending
+				&& dx * dx + dy * dy > g_canvas_settings.drag_threshold * g_canvas_settings.drag_threshold)
 			{
 				self.dragging = true;
 			}
@@ -144,28 +219,28 @@ fn RLVector2 screen_to_world_camera(RLCamera2D camera, RLVector2 screen)
 fn void Canvas.apply_inertia(&self, float dt)
 {
 	float speed_sq = self.velocity[0] * self.velocity[0] + self.velocity[1] * self.velocity[1];
-	if (speed_sq <= INERTIA_MIN_SPEED * INERTIA_MIN_SPEED)
+	if (speed_sq <= g_canvas_settings.inertia_min_speed * g_canvas_settings.inertia_min_speed)
 	{
 		self.velocity = { 0.0f, 0.0f };
 		return;
 	}
 	self.target.target[0] -= self.velocity[0] * dt;
 	self.target.target[1] -= self.velocity[1] * dt;
-	float decay = math::pow(INERTIA_FRICTION_PER_FRAME, dt * 60.0f);
+	float decay = math::pow(g_canvas_settings.inertia_friction, dt * 60.0f);
 	self.velocity[0] *= decay;
 	self.velocity[1] *= decay;
 }
 
 fn void Canvas.ease_camera(&self, float dt)
 {
-	if (!SMOOTHING_ENABLED)
+	if (!g_canvas_settings.smoothing)
 	{
 		self.camera = self.target;
 		return;
 	}
 
-	float pan_t  = ease_factor(PAN_RESPONSIVENESS, dt);
-	float zoom_t = ease_factor(ZOOM_RESPONSIVENESS, dt);
+	float pan_t  = ease_factor(g_canvas_settings.pan_responsiveness, dt);
+	float zoom_t = ease_factor(g_canvas_settings.zoom_responsiveness, dt);
 
 	if (self.dragging)
 	{
@@ -194,7 +269,11 @@ fn void Canvas.zoom_at(&self, float wheel, RLVector2 screen_anchor)
 {
 	if (wheel == 0.0f || self.target.zoom <= 0.0f) return;
 	RLVector2 world_under_cursor = screen_to_world_camera(self.camera, screen_anchor);
-	float new_zoom               = math::clamp(self.target.zoom * math::pow(ZOOM_STEP, wheel), MIN_ZOOM, MAX_ZOOM);
+	float new_zoom = math::clamp(
+		self.target.zoom * math::pow(g_canvas_settings.zoom_step, wheel),
+		g_canvas_settings.min_zoom,
+		g_canvas_settings.max_zoom
+	);
 	self.target.zoom = new_zoom;
 	self.target.target[0] = world_under_cursor[0] - (screen_anchor[0] - self.target.offset[0]) / new_zoom;
 	self.target.target[1] = world_under_cursor[1] - (screen_anchor[1] - self.target.offset[1]) / new_zoom;
@@ -218,7 +297,11 @@ fn void Canvas.key_pan(&self, RLVector2 screen_delta)
 fn void Canvas.key_zoom(&self, float direction)
 {
 	float zoom = self.target.zoom > 0.0f ? self.target.zoom : 1.0f;
-	self.target.zoom = math::clamp(zoom * math::pow(ZOOM_STEP, direction), MIN_ZOOM, MAX_ZOOM);
+	self.target.zoom = math::clamp(
+		zoom * math::pow(g_canvas_settings.zoom_step, direction),
+		g_canvas_settings.min_zoom,
+		g_canvas_settings.max_zoom
+	);
 }
 
 fn void Canvas.reset_zoom(&self)
@@ -232,7 +315,7 @@ fn void Canvas.fit_zoom(&self, Rect content, int screen_w, int screen_h)
 	float margin = 40.0f;
 	float fit_x  = ((float)screen_w - margin * 2.0f) / content.width;
 	float fit_y  = ((float)screen_h - margin * 2.0f) / content.height;
-	self.target.zoom = math::clamp(math::min(fit_x, fit_y), MIN_ZOOM, MAX_ZOOM);
+	self.target.zoom = math::clamp(math::min(fit_x, fit_y), g_canvas_settings.min_zoom, g_canvas_settings.max_zoom);
 	self.target.target = {
 		content.x + content.width / 2.0f,
 		content.y + content.height / 2.0f,
@@ -242,8 +325,8 @@ fn void Canvas.fit_zoom(&self, Rect content, int screen_w, int screen_h)
 fn RLVector2 Canvas.clamp_delta(&self, RLVector2 delta)
 {
 	float len_sq = delta[0] * delta[0] + delta[1] * delta[1];
-	if (len_sq <= MAX_PAN_DELTA_PX * MAX_PAN_DELTA_PX) return delta;
-	float scale = MAX_PAN_DELTA_PX / math::sqrt(len_sq);
+	if (len_sq <= g_canvas_settings.max_pan_delta * g_canvas_settings.max_pan_delta) return delta;
+	float scale = g_canvas_settings.max_pan_delta / math::sqrt(len_sq);
 	return { delta[0] * scale, delta[1] * scale };
 }
 
@@ -266,15 +349,16 @@ fn Rect Canvas.visible_world_rect(&self)
 
 fn float grid_step(float zoom)
 {
-	if (zoom <= 0.0f) return BASE_CELL;
-	float step = BASE_CELL;
-	while (step * zoom < MIN_GRID_PX) step *= 2.0f;
-	while (step * zoom > MAX_GRID_PX) step *= 0.5f;
+	if (zoom <= 0.0f) return g_canvas_settings.grid_cell;
+	float step = g_canvas_settings.grid_cell;
+	while (step * zoom < g_canvas_settings.grid_min_px) step *= 2.0f;
+	while (step * zoom > g_canvas_settings.grid_max_px) step *= 0.5f;
 	return step;
 }
 
 fn void Canvas.draw_grid(&self)
 {
+	if (!g_canvas_settings.grid) return;
 	Rect world = self.visible_world_rect();
 	if (world.width <= 0.0f || world.height <= 0.0f) return;
 

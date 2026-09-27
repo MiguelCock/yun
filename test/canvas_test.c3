@@ -242,3 +242,57 @@ fn void test_key_zoom_clamps()
 	c.key_zoom(1.0f);
 	assert(c.target.zoom > 1.0f);
 }
+
+fn void test_settings_clamp_zoom()
+{
+	CanvasSettings saved = settings();
+	CanvasSettings cs    = saved;
+	cs.min_zoom = 5.0f;
+	cs.max_zoom = 2.0f;
+	set_settings(cs);
+	CanvasSettings got = settings();
+	assert(got.min_zoom < got.max_zoom);
+	assert(got.min_zoom <= 2.0f);
+	set_settings(saved);
+}
+
+fn void test_settings_clamp_grid_and_step()
+{
+	CanvasSettings saved = settings();
+	CanvasSettings cs    = saved;
+	cs.grid_cell = 0.0f;
+	cs.grid_min_px = 100.0f;
+	cs.grid_max_px = 50.0f;
+	cs.zoom_step = 0.5f;
+	set_settings(cs);
+	CanvasSettings got = settings();
+	assert(got.grid_cell >= 1.0f);
+	assert(got.grid_min_px < got.grid_max_px);
+	assert(got.zoom_step > 1.0f);
+	set_settings(saved);
+}
+
+fn void test_settings_clamp_jump_zoom()
+{
+	CanvasSettings saved = settings();
+	CanvasSettings cs    = saved;
+	cs.jump_zoom_min = 4.0f;
+	cs.jump_zoom_target = 1.0f;
+	set_settings(cs);
+	CanvasSettings got = settings();
+	assert(got.jump_zoom_min <= got.jump_zoom_target);
+	set_settings(saved);
+}
+
+fn void test_grid_step_uses_cell()
+{
+	CanvasSettings saved = settings();
+	CanvasSettings cs    = saved;
+	cs.grid_cell = 32.0f;
+	set_settings(cs);
+	float ratio = grid_step(1.0f) / 32.0f;
+	while (ratio >= 2.0f) ratio *= 0.5f;
+	while (ratio < 1.0f) ratio *= 2.0f;
+	assert(ratio == 1.0f);
+	set_settings(saved);
+}
