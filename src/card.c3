@@ -39,7 +39,7 @@ struct FileCard
 fn Rect FileCard.effective_rect(&self)
 {
 	Rect r = self.rect;
-	if (!self.open) r.height = CARD_TITLE_HEIGHT;
+	if (!self.open) r.height = ui::pxf(CARD_TITLE_HEIGHT);
 	return r;
 }
 
@@ -47,14 +47,18 @@ fn bool FileCard.marker_hit(&self, RLVector2 world)
 {
 	Rect r  = self.effective_rect();
 	float x = r.x + r.width - 24.0f;
-	return world[0] >= x && world[0] <= r.x + r.width && world[1] >= r.y && world[1] <= r.y + CARD_TITLE_HEIGHT;
+	return world[0] >= x && world[0] <= r.x + r.width && world[1] >= r.y && world[1] <= r.y + ui::pxf(
+		CARD_TITLE_HEIGHT
+	);
 }
 
 fn bool FileCard.close_marker_hit(&self, RLVector2 world)
 {
 	Rect r  = self.effective_rect();
 	float x = r.x + r.width - 44.0f;
-	return world[0] >= x && world[0] <= r.x + r.width - 24.0f && world[1] >= r.y && world[1] <= r.y + CARD_TITLE_HEIGHT;
+	return world[0] >= x && world[0] <= r.x + r.width - 24.0f && world[1] >= r.y && world[1] <= r.y + ui::pxf(
+		CARD_TITLE_HEIGHT
+	);
 }
 
 fn RLVector2 FileCard.center(&self)

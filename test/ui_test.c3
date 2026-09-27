@@ -19,3 +19,22 @@ fn void test_scale_and_px()
 	assert(scale() == 1.0f);
 	assert(size() == 16);
 }
+
+fn void test_dpi_scales()
+{
+	set_font((RLFont) { }, 16);
+	set_dpi(2.0f, 1.0f);
+	assert(scale() == 1.0f);
+	assert(font_scale() == 2.0f);
+	assert(px(20) == 20);
+
+	set_dpi(1.5f, 1.5f);
+	assert(font_scale() == 1.5f);
+	assert(px(20) == 30);
+	assert(pxf(20.0f) == 30.0f);
+
+	set_dpi(0.5f, 0.0f);
+	assert(scale() == 1.0f);
+	assert(font_scale() == 1.0f);
+	set_dpi(1.0f, 1.0f);
+}
