@@ -820,18 +820,18 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		"Settings",
 		panel.x + (float)ui::px(PADDING),
 		panel.y + (float)ui::px(12),
-		(float)ui::px(24),
+		(float)ui::tpx(24),
 		theme::current()
 		.panel_header);
 	@pool()
 	{
 		String label   = string::format(tmem, "Scope: %s%s", self.scope_label(), project_open ? "" : " (no project)");
-		RLVector2 size = rl::measure_text_ex(font, label.zstr_tcopy(), (float)ui::px(18), 0.0f);
+		RLVector2 size = rl::measure_text_ex(font, label.zstr_tcopy(), (float)ui::tpx(18), 0.0f);
 		rl::draw_text_ex(
 			font,
 			label.zstr_tcopy(),
 			{ panel.x + panel.width - (float)ui::px(PADDING) - size[0], panel.y + (float)ui::px(15) },
-			(float)ui::px(18),
+			(float)ui::tpx(18),
 			0.0f,
 			theme::current()
 			.panel_dim);
@@ -840,7 +840,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 	Rect field = self.field_rect();
 	rl::draw_rectangle_rec(field, theme::current().panel_field);
 	String query = self.query_view();
-	draw_text(font, query, field.x + (float)ui::px(8), field.y + (float)ui::px(8), (float)ui::px(20), theme::current()
+	draw_text(font, query, field.x + (float)ui::px(8), field.y + (float)ui::px(8), (float)ui::tpx(20), theme::current()
 		.panel_text);
 	if (query.len == 0)
 	{
@@ -849,7 +849,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 			"Search settings",
 			field.x + (float)ui::px(8),
 			field.y + (float)ui::px(8),
-			(float)ui::px(20),
+			(float)ui::tpx(20),
 			theme::current()
 			.panel_dim);
 	}
@@ -858,7 +858,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 	{
 		@pool()
 		{
-			query_width = rl::measure_text_ex(font, query.zstr_tcopy(), (float)ui::px(20), 0.0f)[0];
+			query_width = rl::measure_text_ex(font, query.zstr_tcopy(), (float)ui::tpx(20), 0.0f)[0];
 		};
 	}
 	rl::draw_rectangle(
@@ -882,7 +882,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 				row.section,
 				panel.x + (float)ui::px(PADDING),
 				y + (float)ui::px(7),
-				(float)ui::px(18),
+				(float)ui::tpx(18),
 				theme::current()
 				.panel_header);
 			y += (float)ui::px(HEADER_HEIGHT);
@@ -909,7 +909,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 				"Reset all keybindings (scope)",
 				panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
 				y + (float)ui::px(9),
-				(float)ui::px(20),
+				(float)ui::tpx(20),
 				theme::current()
 				.panel_text);
 		}
@@ -928,7 +928,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 			draw_text(font, settings::spec(row.setting)
 				.description, panel.x + (float)ui::px(
 					PADDING
-				), footer_y + (float)ui::px(10), (float)ui::px(18), theme::current()
+				), footer_y + (float)ui::px(10), (float)ui::tpx(18), theme::current()
 					.panel_dim);
 		}
 		else if (row.kind == RowKind.COMMAND)
@@ -938,7 +938,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 				"Enter: capture   Del: unbind   Backspace: reset (empty search)",
 				panel.x + (float)ui::px(PADDING),
 				footer_y + (float)ui::px(10),
-				(float)ui::px(18),
+				(float)ui::tpx(18),
 				theme::current()
 				.panel_dim);
 		}
@@ -949,7 +949,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 				"Enter: reset all keybindings in this scope",
 				panel.x + (float)ui::px(PADDING),
 				footer_y + (float)ui::px(10),
-				(float)ui::px(18),
+				(float)ui::tpx(18),
 				theme::current()
 				.panel_dim);
 		}
@@ -959,7 +959,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		self.capturing ? "Press a chord   Esc: cancel" : "Enter: activate   Tab: scope   Esc: close",
 		panel.x + (float)ui::px(PADDING),
 		footer_y + (float)ui::px(34),
-		(float)ui::px(15),
+		(float)ui::tpx(15),
 		theme::current()
 		.panel_dim);
 }
@@ -972,7 +972,7 @@ fn void Panel.draw_setting_row(&self, RLFont font, Rect panel, Row row, bool sel
 		spec.label,
 		panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
 		y + (float)ui::px(9),
-		(float)ui::px(20),
+		(float)ui::tpx(20),
 		theme::current()
 		.panel_text);
 
@@ -982,12 +982,12 @@ fn void Panel.draw_setting_row(&self, RLFont font, Rect panel, Row row, bool sel
 		settings::SettingLayer src = config.settings.source(row.setting);
 		if (src == settings::SettingLayer.GLOBAL) source = "global";
 		if (src == settings::SettingLayer.PROJECT) source = "project";
-		RLVector2 src_size = rl::measure_text_ex(font, source.zstr_tcopy(), (float)ui::px(15), 0.0f);
+		RLVector2 src_size = rl::measure_text_ex(font, source.zstr_tcopy(), (float)ui::tpx(15), 0.0f);
 		rl::draw_text_ex(
 			font,
 			source.zstr_tcopy(),
 			{ panel.x + panel.width - (float)ui::px(210) - src_size[0] - (float)ui::px(8), y + (float)ui::px(11) },
-			(float)ui::px(15),
+			(float)ui::tpx(15),
 			0.0f,
 			theme::current()
 			.panel_dim);
@@ -1003,12 +1003,12 @@ fn void Panel.draw_setting_row(&self, RLFont font, Rect panel, Row row, bool sel
 		{
 			append_value(&value_text, config.settings.effective(row.setting), spec.kind);
 		}
-		RLVector2 value_size = rl::measure_text_ex(font, value_text.str_view().zstr_tcopy(), (float)ui::px(20), 0.0f);
+		RLVector2 value_size = rl::measure_text_ex(font, value_text.str_view().zstr_tcopy(), (float)ui::tpx(20), 0.0f);
 		rl::draw_text_ex(font, value_text.str_view()
 			.zstr_tcopy(), {
 				panel.x + panel.width - (float)ui::px(PADDING) - value_size[0],
 				y + (float)ui::px(9)
-			}, (float)ui::px(20), 0.0f, selected ? theme::current()
+			}, (float)ui::tpx(20), 0.0f, selected ? theme::current()
 				.panel_text : theme::current().panel_dim);
 		value_text.free();
 	};
@@ -1029,7 +1029,7 @@ fn void Panel.draw_command_row(
 	draw_text(font, commands::command_def(id)
 		.label, panel.x + (float)ui::px(
 			PADDING
-		) + (float)ui::px(4), y + (float)ui::px(9), (float)ui::px(20), theme::current()
+		) + (float)ui::px(4), y + (float)ui::px(9), (float)ui::tpx(20), theme::current()
 			.panel_text);
 
 	bool capturing = self.capturing && (int)id == (int)self.capture_id;
@@ -1043,26 +1043,26 @@ fn void Panel.draw_command_row(
 		{
 			source = layer == settings::SettingLayer.PROJECT ? "project" : "global";
 		}
-		RLVector2 src_size = rl::measure_text_ex(font, source.zstr_tcopy(), (float)ui::px(15), 0.0f);
+		RLVector2 src_size = rl::measure_text_ex(font, source.zstr_tcopy(), (float)ui::tpx(15), 0.0f);
 		rl::draw_text_ex(
 			font,
 			source.zstr_tcopy(),
 			{ panel.x + panel.width - (float)ui::px(210) - src_size[0] - (float)ui::px(8), y + (float)ui::px(11) },
-			(float)ui::px(15),
+			(float)ui::tpx(15),
 			0.0f,
 			theme::current()
 			.panel_dim);
 
 		String text = capturing ? "Press a chord..." : keymap.shortcut(id);
 		if (text.len == 0) text = "(unbound)";
-		RLVector2 value_size = rl::measure_text_ex(font, text.zstr_tcopy(), (float)ui::px(20), 0.0f);
+		RLVector2 value_size = rl::measure_text_ex(font, text.zstr_tcopy(), (float)ui::tpx(20), 0.0f);
 		RLColor color        = selected ? theme::current().panel_text : theme::current().panel_dim;
 		if (conflict || capturing) color = theme::current().panel_match;
 		rl::draw_text_ex(
 			font,
 			text.zstr_tcopy(),
 			{ panel.x + panel.width - (float)ui::px(PADDING) - value_size[0], y + (float)ui::px(9) },
-			(float)ui::px(20),
+			(float)ui::tpx(20),
 			0.0f,
 			color
 		);

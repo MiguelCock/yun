@@ -58,8 +58,9 @@ fn void finish_open(
 	notify::Notifier* notifier
 )
 {
-	workspace::load(project, canvas);
 	config.load((String)project.root);
+	ui::set_ui_scale((float)config.settings.get_float(settings::SettingId.APP_UI_SCALE));
+	workspace::load(project, canvas);
 	set_project_title(project);
 	keymap.build(config);
 	push_config_warnings(config, notifier);
@@ -71,6 +72,7 @@ fn void apply_settings(
 	fonts::Fonts* fonts,
 	notify::Notifier* notifier,
 	project::Project* project,
+	canvas::Canvas* canvas,
 	int* font_size,
 	RLFont* editor_font,
 	editor::EditorMetrics* metrics,
@@ -83,6 +85,23 @@ fn void apply_settings(
 		if (!theme::set_by_name(config.settings.get_string(settings::SettingId.APP_THEME)))
 		{
 			notifier.push("Unknown theme in config; using default");
+		}
+	}
+
+	bool ui_scale_changed = false;
+	if (config.settings.consume_change(settings::SettingId.APP_UI_SCALE))
+	{
+		float next = (float)config.settings.get_float(settings::SettingId.APP_UI_SCALE);
+		if (next < 0.5f) next = 0.5f;
+		if (next > 2.0f) next = 2.0f;
+		float current = ui::ui_scale();
+		if (next != current)
+		{
+			float ratio = next / current;
+			ui::set_ui_scale(next);
+			project.scale_geometry(ratio);
+			canvas.camera.target = { canvas.camera.target[0] * ratio, canvas.camera.target[1] * ratio };
+			ui_scale_changed = true;
 		}
 	}
 
@@ -101,17 +120,6 @@ fn void apply_settings(
 	if (config.settings.consume_change(settings::SettingId.APP_UI_FONT_FAMILY))
 	{
 		ui_changed = true;
-	}
-	if (ui_changed)
-	{
-		String family = config.settings.get_string(settings::SettingId.APP_UI_FONT_FAMILY);
-		if (family.len > 0 && family.compare_to("JetBrains Mono") != 0 && fonts.path_for(family).len == 0)
-		{
-			notifier.push("Unknown font; using bundled font");
-		}
-		rl::unload_font(*ui_font);
-		*ui_font = load_editor_font(fonts, family, *ui_size * dpi_font_px());
-		ui::set_font(*ui_font, *ui_size);
 	}
 
 	editor::EditorSettings es = editor::settings();
@@ -156,7 +164,10 @@ fn void apply_settings(
 		metrics_changed = true;
 	}
 
-	if (!font_changed && !metrics_changed)
+	bool reload_editor = font_changed || ui_scale_changed;
+	bool reload_ui     = ui_changed || ui_scale_changed;
+
+	if (!reload_ui && !reload_editor && !metrics_changed)
 	{
 		editor::set_settings(es);
 		return;
@@ -165,25 +176,54 @@ fn void apply_settings(
 	float old_lh = metrics.line_height;
 	float old_cw = metrics.char_width;
 	editor::set_settings(es);
-	float draw_size = (float)*font_size * ui::layout_scale();
-	if (font_changed)
+
+	if (ui_changed)
+	{
+		String family = config.settings.get_string(settings::SettingId.APP_UI_FONT_FAMILY);
+		if (family.len > 0 && family.compare_to("JetBrains Mono") != 0 && fonts.path_for(family).len == 0)
+		{
+			notifier.push("Unknown font; using bundled font");
+		}
+	}
+	if (reload_ui)
+	{
+		rl::unload_font(*ui_font);
+		*ui_font = load_editor_font(
+			fonts,
+			config.settings.get_string(settings::SettingId.APP_UI_FONT_FAMILY),
+			ui::atlas_px(*ui_size)
+		);
+		ui::set_font(*ui_font, *ui_size);
+	}
+
+	float draw_size = (float)ui::draw_px(*font_size);
+	if (reload_editor)
 	{
 		String family = config.settings.get_string(settings::SettingId.EDITOR_FONT_FAMILY);
-		reload_editor_font(fonts, editor_font, *font_size * dpi_font_px(), draw_size, family, metrics);
+		reload_editor_font(fonts, editor_font, ui::atlas_px(*font_size), draw_size, family, metrics);
 	}
-	else
+	else if (metrics_changed)
 	{
 		*metrics = editor::metrics_for_font(*editor_font, draw_size);
 	}
 
-	float lh_ratio = old_lh > 0.0f ? metrics.line_height / old_lh : 1.0f;
-	float cw_ratio = old_cw > 0.0f ? metrics.char_width / old_cw : 1.0f;
-	for (sz i = 0; i < project.cards.len(); i++)
+	if (ui_scale_changed)
 	{
-		project.cards[i].scroll *= lh_ratio;
-		project.cards[i].scroll_x *= cw_ratio;
+		canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
+		canvas.camera.offset = { (float)rl::get_screen_width() / 2.0f, canvas.usable_offset_y() };
 	}
-	project.reveal_focused(*metrics);
+
+	if (reload_editor || metrics_changed)
+	{
+		float lh_ratio = old_lh > 0.0f ? metrics.line_height / old_lh : 1.0f;
+		float cw_ratio = old_cw > 0.0f ? metrics.char_width / old_cw : 1.0f;
+		for (sz i = 0; i < project.cards.len(); i++)
+		{
+			project.cards[i].scroll *= lh_ratio;
+			project.cards[i].scroll_x *= cw_ratio;
+		}
+		project.reveal_focused(*metrics);
+	}
 }
 
 fn String open_phase_label(project::OpenPhase phase)
@@ -233,13 +273,31 @@ fn void draw_loading(project::OpenJob* job, RLFont font)
 			(long)job.scanned_dirs,
 			(long)job.entries.len()
 		);
-		rl::draw_text_ex(font, title.zstr_tcopy(), { panel.x + 20.0f, panel.y + 20.0f }, 18.0f, 0.0f, theme::current()
+		rl::draw_text_ex(
+			font,
+			title.zstr_tcopy(),
+			{ panel.x + (float)ui::px(20), panel.y + (float)ui::px(20) },
+			(float)ui::tpx(18),
+			0.0f,
+			theme::current()
 			.loading_title);
-		rl::draw_text_ex(font, status.zstr_tcopy(), { panel.x + 20.0f, panel.y + 48.0f }, 14.0f, 0.0f, theme::current()
+		rl::draw_text_ex(
+			font,
+			status.zstr_tcopy(),
+			{ panel.x + (float)ui::px(20), panel.y + (float)ui::px(48) },
+			(float)ui::tpx(14),
+			0.0f,
+			theme::current()
 			.loading_status);
 		if (job.phase == project::OpenPhase.SCAN)
 		{
-			rl::draw_text_ex(font, "Esc to cancel", { panel.x + 20.0f, panel.y + 70.0f }, 14.0f, 0.0f, theme::current()
+			rl::draw_text_ex(
+				font,
+				"Esc to cancel",
+				{ panel.x + (float)ui::px(20), panel.y + (float)ui::px(70) },
+				(float)ui::tpx(14),
+				0.0f,
+				theme::current()
 				.loading_hint);
 		}
 	};
@@ -1084,16 +1142,26 @@ const String FONT_PATH       = "assets/fonts/JetBrainsMono-Regular.ttf";
 const float JUMP_ZOOM_MIN    = 0.6f;
 const float JUMP_ZOOM_TARGET = 1.0f;
 
+fn RLFont finish_font(RLFont font)
+{
+	if (font.texture.id > 0)
+	{
+		rl::gen_texture_mipmaps(&font.texture);
+		font.texture.set_filter(RLTextureFilter.TRILINEAR);
+	}
+	return font;
+}
+
 fn RLFont load_bundled_font(int size)
 {
-	if (file::exists(FONT_PATH)) return rl::load_font_ex(FONT_PATH, size, null, 0);
+	if (file::exists(FONT_PATH)) return finish_font(rl::load_font_ex(FONT_PATH, size, null, 0));
 	@pool()
 	{
 		String exe    = rl::get_application_directory().str_view();
 		String joined = string::format(tmem, "%s%s", exe, FONT_PATH);
-		if (file::exists(joined)) return rl::load_font_ex((ZString)joined.ptr, size, null, 0);
+		if (file::exists(joined)) return finish_font(rl::load_font_ex((ZString)joined.ptr, size, null, 0));
 	};
-	return rl::load_font_ex(FONT_PATH, size, null, 0);
+	return finish_font(rl::load_font_ex(FONT_PATH, size, null, 0));
 }
 
 fn RLFont load_editor_font(fonts::Fonts* fonts, String family, int size)
@@ -1105,17 +1173,11 @@ fn RLFont load_editor_font(fonts::Fonts* fonts, String family, int size)
 		{
 			@pool()
 			{
-				return rl::load_font_ex(path.zstr_tcopy(), size, null, 0);
+				return finish_font(rl::load_font_ex(path.zstr_tcopy(), size, null, 0));
 			};
 		}
 	}
 	return load_bundled_font(size);
-}
-
-fn int dpi_font_px()
-{
-	int s = (int)math::ceil(ui::font_scale());
-	return s < 1 ? 1 : s;
 }
 
 fn void reload_editor_font(
@@ -1175,20 +1237,16 @@ fn void update_dpi(
 	*last_layout_scale = layout_scale;
 	ui::set_dpi(font_scale, layout_scale);
 
-	int atlas = dpi_font_px();
+	int atlas = ui::atlas_px(ui_size);
 	rl::unload_font(*ui_font);
-	*ui_font = load_editor_font(
-		fonts,
-		config.settings.get_string(settings::SettingId.APP_UI_FONT_FAMILY),
-		ui_size * atlas
-	);
+	*ui_font = load_editor_font(fonts, config.settings.get_string(settings::SettingId.APP_UI_FONT_FAMILY), atlas);
 	ui::set_font(*ui_font, ui_size);
 
 	reload_editor_font(
 		fonts,
 		editor_font,
-		font_size * atlas,
-		(float)font_size * layout_scale,
+		ui::atlas_px(font_size),
+		(float)ui::draw_px(font_size),
 		config.settings.get_string(settings::SettingId.EDITOR_FONT_FAMILY),
 		metrics
 	);
@@ -1333,7 +1391,18 @@ fn int main(String[] args)
 	else
 	{
 		config.load("");
-		apply_settings(&config, &fonts, &notifier, &project, &font_size, &editor_font, &metrics, &ui_size, &font);
+		apply_settings(
+			&config,
+			&fonts,
+			&notifier,
+			&project,
+			&canvas,
+			&font_size,
+			&editor_font,
+			&metrics,
+			&ui_size,
+			&font
+		);
 	}
 	keymap.build(&config);
 	push_config_warnings(&config, &notifier);
@@ -1399,7 +1468,18 @@ fn int main(String[] args)
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
 
-		apply_settings(&config, &fonts, &notifier, &project, &font_size, &editor_font, &metrics, &ui_size, &font);
+		apply_settings(
+			&config,
+			&fonts,
+			&notifier,
+			&project,
+			&canvas,
+			&font_size,
+			&editor_font,
+			&metrics,
+			&ui_size,
+			&font
+		);
 
 		if (opening)
 		{
@@ -1426,6 +1506,7 @@ fn int main(String[] args)
 						&fonts,
 						&notifier,
 						&project,
+						&canvas,
 						&font_size,
 						&editor_font,
 						&metrics,
@@ -2094,7 +2175,7 @@ fn int main(String[] args)
 				@pool()
 				{
 					String label = string::format(tmem, "Font %d", (long)font_size);
-					float width  = rl::measure_text_ex(font, label.zstr_tcopy(), (float)ui::px(16), 0.0f)[0];
+					float width  = rl::measure_text_ex(font, label.zstr_tcopy(), (float)ui::tpx(16), 0.0f)[0];
 					Rect panel = {
 						.x = (float)rl::get_screen_width() / 2.0f - (width + (float)ui::px(24)) / 2.0f,
 						.y = ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(16),
@@ -2107,7 +2188,7 @@ fn int main(String[] args)
 						font,
 						label.zstr_tcopy(),
 						{ panel.x + (float)ui::px(12), panel.y + (float)ui::px(7) },
-						(float)ui::px(16),
+						(float)ui::tpx(16),
 						0.0f,
 						theme::current()
 						.panel_text);
@@ -2194,7 +2275,7 @@ fn int main(String[] args)
 					font,
 					(ZString)mode_label.ptr,
 					{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(34) },
-					(float)ui::px(15),
+					(float)ui::tpx(15),
 					0.0f,
 					theme::current()
 					.topbar_name);
@@ -2213,7 +2294,7 @@ fn int main(String[] args)
 						font,
 						counter.zstr_tcopy(),
 						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(54) },
-						(float)ui::px(14),
+						(float)ui::tpx(14),
 						0.0f,
 						theme::current()
 						.panel_dim);

@@ -53,7 +53,7 @@ fn void Notifier.draw(&self)
 	{
 		@pool()
 		{
-			float size  = (float)(height - ui::px(8));
+			float size  = (float)ui::tpx(NOTICE_HEIGHT - 8);
 			float width = rl::measure_text_ex(ui::font(), notice.text.zstr_tcopy(), size, 0.0f)[0] + (float)ui::px(16);
 			rl::draw_rectangle(ui::px(10), y, (int)width, height, theme::current().notice_bg);
 			rl::draw_text_ex(

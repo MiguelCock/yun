@@ -1194,9 +1194,10 @@ fn void draw_one(
 	RLColor label_color = hovered ? theme::current()
 		.import_external_hover : (related ? theme::current().import_label : theme::current().import_label_dim);
 	draw_dashed_bezier(p1, p2, thick, zoom, line_color);
-	float s = ui::scale();
+	float s  = ui::scale();
+	float ts = ui::text_scale();
 	rl::draw_circle_v(p2, 3.0f * s / zoom, line_color);
-	draw_label(font, ref.specifier, p2[0] + 8.0f * s / zoom, p2[1] - 6.0f * s / zoom, 14.0f * s, label_color);
+	draw_label(font, ref.specifier, p2[0] + 8.0f * s / zoom, p2[1] - 6.0f * s / zoom, 14.0f * ts, label_color);
 }
 
 fn void ImportIndex.clear_hover(&self)

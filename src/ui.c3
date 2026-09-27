@@ -9,6 +9,7 @@ RLFont g_font;
 int g_size           = BASE_SIZE;
 float g_layout_scale = 1.0f;
 float g_font_scale   = 1.0f;
+float g_ui_scale     = 1.0f;
 
 fn void set_font(RLFont font, int size)
 {
@@ -42,9 +43,24 @@ fn float layout_scale()
 	return g_layout_scale;
 }
 
+fn void set_ui_scale(float scale)
+{
+	g_ui_scale = scale > 0.1f ? scale : 1.0f;
+}
+
+fn float ui_scale()
+{
+	return g_ui_scale;
+}
+
 fn float scale()
 {
-	return ((float)g_size / (float)BASE_SIZE) * g_layout_scale;
+	return g_ui_scale * g_layout_scale;
+}
+
+fn float text_scale()
+{
+	return ((float)g_size / (float)BASE_SIZE) * scale();
 }
 
 fn int px(int base)
@@ -55,4 +71,26 @@ fn int px(int base)
 fn float pxf(float base)
 {
 	return base * scale();
+}
+
+fn int tpx(int base)
+{
+	return (int)math::round((float)base * text_scale());
+}
+
+fn float tpxf(float base)
+{
+	return base * text_scale();
+}
+
+fn int atlas_px(int logical)
+{
+	int s = (int)math::round((float)logical * g_ui_scale * g_font_scale);
+	return s < 1 ? 1 : s;
+}
+
+fn int draw_px(int logical)
+{
+	int s = (int)math::round((float)logical * g_ui_scale * g_layout_scale);
+	return s < 1 ? 1 : s;
 }

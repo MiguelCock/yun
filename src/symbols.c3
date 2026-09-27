@@ -787,6 +787,7 @@ fn void Symbols.draw(&self, RLFont font)
 	if (!self.open) return;
 
 	float s    = ui::scale();
+	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
@@ -798,11 +799,11 @@ fn void Symbols.draw(&self, RLFont font)
 	rl::draw_rectangle_lines_ex(field, 1.0f, theme::current().panel_border);
 
 	String query  = self.query_view();
-	float query_w = text_width(font, query, 15.0f * s);
-	draw_text(font, query, field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * s, theme::current().panel_text);
+	float query_w = text_width(font, query, 15.0f * ts);
+	draw_text(font, query, field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * ts, theme::current().panel_text);
 	if (query.len == 0)
 	{
-		draw_text(font, "Go to symbol...", field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * s, theme::current()
+		draw_text(font, "Go to symbol...", field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * ts, theme::current()
 			.panel_dim);
 	}
 	else
@@ -819,7 +820,7 @@ fn void Symbols.draw(&self, RLFont font)
 	@pool()
 	{
 		String status = string::format(tmem, "%d symbols", (long)self.matches.len());
-		draw_text(font, status, panel.x + pad, field.y + field_h + 6.0f * s, 13.0f * s, theme::current().panel_dim);
+		draw_text(font, status, panel.x + pad, field.y + field_h + 6.0f * s, 13.0f * ts, theme::current().panel_dim);
 	};
 
 	float list_y = panel.y + 62.0f * s;
@@ -842,7 +843,7 @@ fn void Symbols.draw(&self, RLFont font)
 		}
 
 		float x = panel.x + pad;
-		draw_text(font, symbol.name, x, y + 3.0f * s, 15.0f * s, theme::current().panel_text);
+		draw_text(font, symbol.name, x, y + 3.0f * s, 15.0f * ts, theme::current().panel_text);
 
 		if (query.len > 0)
 		{
@@ -854,8 +855,8 @@ fn void Symbols.draw(&self, RLFont font)
 				{
 					usz pos = positions[p];
 					if (pos >= symbol.name.len) break;
-					float mx = x + text_width(font, symbol.name[0:pos], 15.0f * s);
-					draw_text(font, symbol.name[pos:1], mx, y + 3.0f * s, 15.0f * s, theme::current().panel_match);
+					float mx = x + text_width(font, symbol.name[0:pos], 15.0f * ts);
+					draw_text(font, symbol.name[pos:1], mx, y + 3.0f * s, 15.0f * ts, theme::current().panel_match);
 				}
 			}
 		}
@@ -863,8 +864,8 @@ fn void Symbols.draw(&self, RLFont font)
 		@pool()
 		{
 			String right  = string::format(tmem, "%s  %s", kind_label(symbol.kind), self.relative(file.path));
-			float right_w = text_width(font, right, 13.0f * s);
-			draw_text(font, right, panel.x + panel.width - pad - right_w, y + 4.0f * s, 13.0f * s, theme::current()
+			float right_w = text_width(font, right, 13.0f * ts);
+			draw_text(font, right, panel.x + panel.width - pad - right_w, y + 4.0f * s, 13.0f * ts, theme::current()
 				.panel_dim);
 		};
 	}

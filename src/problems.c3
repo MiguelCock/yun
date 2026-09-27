@@ -326,6 +326,7 @@ fn void Problems.draw(&self, RLFont font)
 	if (!self.open) return;
 
 	float s    = ui::scale();
+	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
@@ -333,14 +334,14 @@ fn void Problems.draw(&self, RLFont font)
 	@pool()
 	{
 		String title = string::format(tmem, "Problems (%d)", (long)self.entries.len());
-		draw_text(font, title, panel.x + (float)PADDING * s, panel.y + (float)PADDING * s, 18.0f * s, theme::current()
+		draw_text(font, title, panel.x + (float)PADDING * s, panel.y + (float)PADDING * s, 18.0f * ts, theme::current()
 			.panel_text);
 	};
 
 	float list_y = self.list_y();
 	if (self.rows.len() == 0)
 	{
-		draw_text(font, "No problems", panel.x + (float)PADDING * s, list_y + 4.0f * s, 16.0f * s, theme::current()
+		draw_text(font, "No problems", panel.x + (float)PADDING * s, list_y + 4.0f * s, 16.0f * ts, theme::current()
 			.panel_dim);
 		return;
 	}
@@ -360,7 +361,7 @@ fn void Problems.draw(&self, RLFont font)
 
 		if (row.header)
 		{
-			draw_text(font, row.label, panel.x + (float)PADDING * s, row_y + 3.0f * s, 15.0f * s, theme::current()
+			draw_text(font, row.label, panel.x + (float)PADDING * s, row_y + 3.0f * s, 15.0f * ts, theme::current()
 				.panel_header);
 			continue;
 		}
@@ -387,7 +388,7 @@ fn void Problems.draw(&self, RLFont font)
 				label,
 				panel.x + (float)PADDING * s + 16.0f * s,
 				row_y + 3.0f * s,
-				16.0f * s,
+				16.0f * ts,
 				theme::current()
 				.panel_text);
 		};
@@ -401,7 +402,7 @@ fn float text_width(RLFont font, String text)
 	float width = 0.0f;
 	@pool()
 	{
-		width = rl::measure_text_ex(font, text.zstr_tcopy(), 14.0f * ui::scale(), 0.0f)[0];
+		width = rl::measure_text_ex(font, text.zstr_tcopy(), 14.0f * ui::text_scale(), 0.0f)[0];
 	};
 	return width;
 }
@@ -463,7 +464,8 @@ fn void draw_tooltip(String message, RLVector2 screen_pos, RLFont font)
 	@pool()
 	{
 		float s      = ui::scale();
-		float line_h = 18.0f * s;
+		float ts     = ui::text_scale();
+		float line_h = 18.0f * ts;
 		List{String} lines;
 		lines.init(tmem);
 		wrap_text(tmem, font, 420.0f * s, message, &lines);
@@ -497,7 +499,7 @@ fn void draw_tooltip(String message, RLVector2 screen_pos, RLFont font)
 				lines[(sz)i],
 				panel.x + 8.0f * s,
 				panel.y + 6.0f * s + (float)i * line_h,
-				14.0f * s,
+				14.0f * ts,
 				theme::current()
 				.panel_text);
 		}

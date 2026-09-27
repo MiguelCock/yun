@@ -783,6 +783,7 @@ fn void Search.draw(&self, RLFont font)
 	if (!self.open) return;
 
 	float s    = ui::scale();
+	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
@@ -794,11 +795,11 @@ fn void Search.draw(&self, RLFont font)
 	rl::draw_rectangle_lines_ex(field, 1.0f, theme::current().panel_border);
 
 	String query  = self.query_view();
-	float query_w = text_width(font, query, 15.0f * s);
-	draw_text(font, query, field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * s, theme::current().panel_text);
+	float query_w = text_width(font, query, 15.0f * ts);
+	draw_text(font, query, field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * ts, theme::current().panel_text);
 	if (query.len == 0)
 	{
-		draw_text(font, "Search in project...", field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * s, theme::current()
+		draw_text(font, "Search in project...", field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * ts, theme::current()
 			.panel_dim);
 	}
 	else
@@ -839,7 +840,7 @@ fn void Search.draw(&self, RLFont font)
 		{
 			status = string::format(tmem, "%d matches in %d files", (long)self.total_matches, (long)self.groups.len());
 		}
-		draw_text(font, status, panel.x + pad, status_y, 14.0f * s, theme::current().panel_dim);
+		draw_text(font, status, panel.x + pad, status_y, 14.0f * ts, theme::current().panel_dim);
 	};
 
 	float list_y = self.list_y();
@@ -857,7 +858,13 @@ fn void Search.draw(&self, RLFont font)
 	{
 		if (ordinal >= self.scroll)
 		{
-			draw_text(font, self.relative(self.groups[g].path), panel.x + pad, y + 3.0f * s, 14.0f * s, theme::current()
+			draw_text(
+				font,
+				self.relative(self.groups[g].path),
+				panel.x + pad,
+				y + 3.0f * s,
+				14.0f * ts,
+				theme::current()
 				.panel_header);
 			y += header_h;
 			if (y > panel.y + panel.height) break;
@@ -882,7 +889,7 @@ fn void Search.draw(&self, RLFont font)
 						(long)(match.column + 1),
 						match.preview
 					);
-					draw_text(font, label, panel.x + pad + 12.0f * s, y + 2.0f * s, 14.0f * s, theme::current()
+					draw_text(font, label, panel.x + pad + 12.0f * s, y + 2.0f * s, 14.0f * ts, theme::current()
 						.panel_text);
 				};
 				y += row_h;
@@ -901,11 +908,12 @@ fn void Search.draw(&self, RLFont font)
 
 fn void draw_chip(RLFont font, Rect r, String label, bool on, float s)
 {
+	float ts = ui::text_scale();
 	rl::draw_rectangle_rec(r, on ? theme::current().panel_selected : theme::current().findbar_chip);
 	rl::draw_rectangle_lines_ex(r, 1.0f, theme::current().panel_border);
 	@pool()
 	{
-		float w = text_width(font, label, 14.0f * s);
-		draw_text(font, label, r.x + (r.width - w) / 2.0f, r.y + 4.0f * s, 14.0f * s, theme::current().panel_text);
+		float w = text_width(font, label, 14.0f * ts);
+		draw_text(font, label, r.x + (r.width - w) / 2.0f, r.y + 4.0f * s, 14.0f * ts, theme::current().panel_text);
 	};
 }
