@@ -3,6 +3,7 @@ module yun::highlight;
 import libc;
 import raylib6::rl;
 import std::collections::list;
+import std::core::dstring;
 import std::core::mem::alloc;
 import std::io::file;
 import std::io::path;
@@ -91,6 +92,47 @@ fn char[] load_query_text(Allocator allocator, String rel)
 	return { };
 }
 
+fn String query_first_line(String text)
+{
+	usz i = 0;
+	while (i < text.len && (text[i] == '\n' || text[i] == '\r' || text[i] == ' ' || text[i] == '\t')) i++;
+	usz start = i;
+	while (i < text.len && text[i] != '\n' && text[i] != '\r') i++;
+	return text[start:i - start];
+}
+
+fn void append_query_with_inherits(Allocator allocator, DString* out, String text, int depth)
+{
+	if (depth > 4) return;
+	String first = query_first_line(text);
+	if (first.starts_with("; inherits:"))
+	{
+		String rest = first[11:first.len - 11];
+		usz i       = 0;
+		while (i < rest.len)
+		{
+			while (i < rest.len && (rest[i] == ' ' || rest[i] == '\t' || rest[i] == ',')) i++;
+			usz start = i;
+			while (i < rest.len && rest[i] != ',' && rest[i] != ' ' && rest[i] != '\t') i++;
+			if (i > start)
+			{
+				String name = rest[start:i - start];
+				String path = language::highlights_path_for_name(name);
+				if (path.len > 0)
+				{
+					char[] parent = load_query_text(allocator, path);
+					if (parent.len > 0)
+					{
+						append_query_with_inherits(allocator, out, (String)parent, depth + 1);
+					}
+				}
+			}
+		}
+	}
+	out.append_string(text);
+	out.append_char('\n');
+}
+
 fn TSQuery* build_query(language::Language language)
 {
 	String rel = language::grammar_query_path(language);
@@ -104,10 +146,16 @@ fn TSQuery* build_query(language::Language language)
 		char[] text = load_query_text(tmem, rel);
 		if (text.len != 0)
 		{
+			DString combined;
+			combined.init(tmem, text.len + 512);
+			append_query_with_inherits(tmem, &combined, (String)text, 0);
+			String query_text = combined.str_view();
+
 			uint offset        = 0;
 			TSQueryError error = TS_QUERY_ERROR_NONE;
-			result = tree_sitter::ts_query_new(lang, (char*)text.ptr, (uint)text.len, &offset, &error);
+			result = tree_sitter::ts_query_new(lang, (char*)query_text.ptr, (uint)query_text.len, &offset, &error);
 			if (result && error != TS_QUERY_ERROR_NONE) result = null;
+			combined.free();
 		}
 	};
 	return result;

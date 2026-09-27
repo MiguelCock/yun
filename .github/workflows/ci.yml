@@ -31,6 +31,9 @@ jobs:
       - name: Check tree-sitter grammars
         run: scripts/check-tree-sitter-grammars.sh
 
+      - name: Check tree-sitter grammar ABI
+        run: scripts/check-tree-sitter-abi.sh
+
       - name: Build
         run: c3c build
 

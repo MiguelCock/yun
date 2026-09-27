@@ -19,10 +19,16 @@ The id is also the key used to override the command in config.
 | --- | --- | --- |
 | `c3` | `.c3` `.c3i` | `c3lsp` |
 | `c` | `.c` `.h` | `clangd` |
-| `cpp` | `.cpp` `.cc` `.cxx` `.hpp` `.hh` | `clangd` |
+| `cpp` | `.cpp` `.cc` `.cxx` `.hpp` `.hh` `.hxx` | `clangd` |
 | `python` | `.py` | `pyright-langserver --stdio` |
 | `javascript` | `.js` `.mjs` `.cjs` `.jsx` | `typescript-language-server --stdio` |
 | `typescript` | `.ts` `.tsx` | `typescript-language-server --stdio` |
+| `go` | `.go` | `gopls` |
+| `rust` | `.rs` | `rust-analyzer` |
+| `zig` | `.zig` `.zon` | `zls` |
+| `odin` | `.odin` | `ols` |
+| `v` | `.v` | `v-analyzer` |
+| `nim` | `.nim` `.nims` | `nimlangserver` |
 
 The defaults are best-effort. A language with no entry (and no override) is
 ignored by the LSP.

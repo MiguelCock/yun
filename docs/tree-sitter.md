@@ -152,17 +152,32 @@ shipped alongside the binary.
 ## Licenses
 
 Vendored grammars and the runtime keep their own licenses (`LICENSE` in each
-C3L). The current set is MIT:
+C3L). Most are MIT; the V grammar is ISC and Nim is MPL-2.0.
 
 | grammar | upstream | pinned | license |
 | --- | --- | --- | --- |
 | tree_sitter (runtime) | tree-sitter/tree-sitter | `d97971e` | MIT |
 | tree_sitter_c3 | c3lang/tree-sitter-c3 | `56d7388` | MIT |
 | tree_sitter_c | tree-sitter/tree-sitter-c | `v0.24.2` | MIT |
+| tree_sitter_cpp | tree-sitter/tree-sitter-cpp | `v0.23.4` | MIT |
+| tree_sitter_go | tree-sitter/tree-sitter-go | `v0.25.0` | MIT |
 | tree_sitter_javascript | tree-sitter/tree-sitter-javascript | `44c892e` | MIT |
+| tree_sitter_nim | alaviss/tree-sitter-nim | `0.6.2` | MPL-2.0 |
+| tree_sitter_odin | tree-sitter-grammars/tree-sitter-odin | `v1.3.0` | MIT |
 | tree_sitter_python | tree-sitter/tree-sitter-python | `293fdc0` | MIT |
+| tree_sitter_rust | tree-sitter/tree-sitter-rust | `v0.24.2` | MIT |
+| tree_sitter_v | undivisible/tree-sitter-v | `ed235d6` | ISC |
+| tree_sitter_zig | tree-sitter-grammars/tree-sitter-zig | `v1.1.2` | MIT |
 
 The scaffold copies the upstream license into the new C3L; add a row here.
+
+### Inherited queries
+
+A grammar's `queries/highlights.scm` may begin with `; inherits: <lang>[,<lang>]`
+(e.g. C++ inherits C). `yun::highlight` resolves each name via the registry and
+prepends the parent query before compiling, so inherited captures apply. The
+C++ vendored query carries this directive even though the upstream 0.23.4 tree
+declares the inheritance in `tree-sitter.json` instead.
 
 ## Checks
 

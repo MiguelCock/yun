@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_odin",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-odin"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-odin"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-odin"
+      ]
+    }
+  }
+}
