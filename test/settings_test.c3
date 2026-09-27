@@ -438,3 +438,54 @@ fn void test_canvas_clamp()
 		warnings.free();
 	};
 }
+
+fn void test_arrows_defaults()
+{
+	assert(SETTINGS[(int)SettingId.ARROWS_ENABLED].fallback.b);
+	assert(SETTINGS[(int)SettingId.ARROWS_SHOW_INTERNAL].fallback.b);
+	assert(SETTINGS[(int)SettingId.ARROWS_SHOW_EXTERNAL].fallback.b);
+	assert(SETTINGS[(int)SettingId.ARROWS_LABELS].fallback.b);
+	assert(SETTINGS[(int)SettingId.ARROWS_LINE_THICKNESS].fallback.f == 2.0);
+	assert(SETTINGS[(int)SettingId.ARROWS_HOVER_THICKNESS].fallback.f == 3.6);
+	assert(SETTINGS[(int)SettingId.ARROWS_ARROWHEAD_SIZE].fallback.f == 10.0);
+	assert(SETTINGS[(int)SettingId.ARROWS_HIT_TOLERANCE].fallback.f == 6.0);
+	assert(SETTINGS[(int)SettingId.ARROWS_RESCAN_DEBOUNCE].fallback.f == 0.15);
+	assert(SETTINGS[(int)SettingId.ARROWS_SCAN_WORKERS].fallback.i == 0);
+}
+
+fn void test_arrows_clamp()
+{
+	@pool()
+	{
+		Settings s;
+		s.init(tmem);
+		List{String} warnings;
+		warnings.init(tmem);
+		Object*? parsed = json::parse(
+			tmem,
+			"{\"arrows\":{\"scan_workers\":99,\"line_thickness\":0.0,\"arrowhead_size\":999}}"
+		);
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			Object* root  = parsed;
+			Object*? part = root.get("arrows");
+			if (catch part_excuse = part)
+			{
+				assert(false);
+			}
+			else
+			{
+				s.apply_section("arrows", part, SettingLayer.GLOBAL, &warnings);
+				assert(s.get_int(SettingId.ARROWS_SCAN_WORKERS) == 8);
+				assert(s.get_float(SettingId.ARROWS_LINE_THICKNESS) == 0.5);
+				assert(s.get_float(SettingId.ARROWS_ARROWHEAD_SIZE) == 40.0);
+			}
+		}
+		s.destroy();
+		warnings.free();
+	};
+}

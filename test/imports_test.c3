@@ -215,8 +215,65 @@ fn void test_bezier_min_distance()
 
 fn void test_edit_debounce_elapsed()
 {
+	ImportSettings saved = settings();
+	ImportSettings s     = saved;
+	s.rescan_debounce = 0.25f;
+	set_settings(s);
 	assert(!edit_debounce_elapsed(10.0, 10.0));
-	assert(!edit_debounce_elapsed(10.0, 10.1));
-	assert(edit_debounce_elapsed(10.0, 10.0 + EDIT_DEBOUNCE_SECONDS));
+	assert(!edit_debounce_elapsed(10.0, 10.2));
+	assert(edit_debounce_elapsed(10.0, 10.25));
 	assert(edit_debounce_elapsed(10.0, 11.0));
+
+	s.rescan_debounce = 0.0f;
+	set_settings(s);
+	assert(edit_debounce_elapsed(10.0, 10.0));
+	set_settings(saved);
+}
+
+fn void test_settings_clamps()
+{
+	ImportSettings saved = settings();
+	ImportSettings s     = saved;
+	s.line_thickness = -1.0f;
+	s.hover_thickness = -2.0f;
+	s.arrowhead_size = -3.0f;
+	s.hit_tolerance = -4.0f;
+	s.rescan_debounce = -1.0f;
+	s.scan_workers = 99;
+	set_settings(s);
+	ImportSettings got = settings();
+	assert(got.line_thickness >= 0.0f);
+	assert(got.hover_thickness >= 0.0f);
+	assert(got.arrowhead_size >= 0.0f);
+	assert(got.hit_tolerance >= 0.0f);
+	assert(got.rescan_debounce >= 0.0f);
+	assert(got.scan_workers <= MAX_SCAN_WORKERS);
+	set_settings(saved);
+}
+
+fn void test_resolve_scan_workers()
+{
+	ImportSettings saved = settings();
+	ImportSettings s     = saved;
+	s.scan_workers = 0;
+	set_settings(s);
+	assert(resolve_scan_workers() >= 1);
+	assert(resolve_scan_workers() <= MAX_SCAN_WORKERS);
+
+	s.scan_workers = 3;
+	set_settings(s);
+	assert(resolve_scan_workers() == 3);
+	set_settings(saved);
+}
+
+fn void test_hit_test_disabled_gate()
+{
+	ImportSettings saved = settings();
+	ImportSettings s     = saved;
+	s.enabled = false;
+	set_settings(s);
+	ImportIndex index;
+	RLCamera2D camera = { };
+	assert(!index.hit_test(null, camera, { 0.0f, 0.0f }));
+	set_settings(saved);
 }

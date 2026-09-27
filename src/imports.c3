@@ -26,6 +26,50 @@ const float ARROW_HIT_PX           = 6.0f;
 const int BEZIER_HIT_STEPS         = 20;
 const double EDIT_DEBOUNCE_SECONDS = 0.15;
 
+struct ImportSettings
+{
+	bool enabled;
+	bool show_internal;
+	bool show_external;
+	bool labels;
+	float line_thickness;
+	float hover_thickness;
+	float arrowhead_size;
+	float hit_tolerance;
+	float rescan_debounce;
+	int scan_workers;
+}
+
+ImportSettings g_import_settings = {
+	.enabled = true,
+	.show_internal = true,
+	.show_external = true,
+	.labels = true,
+	.line_thickness = 2.0f,
+	.hover_thickness = 3.6f,
+	.arrowhead_size = 10.0f,
+	.hit_tolerance = ARROW_HIT_PX,
+	.rescan_debounce = (float)EDIT_DEBOUNCE_SECONDS,
+	.scan_workers = 0,
+};
+
+fn ImportSettings settings()
+{
+	return g_import_settings;
+}
+
+fn void set_settings(ImportSettings value)
+{
+	if (value.line_thickness < 0.0f) value.line_thickness = 0.0f;
+	if (value.hover_thickness < 0.0f) value.hover_thickness = 0.0f;
+	if (value.arrowhead_size < 0.0f) value.arrowhead_size = 0.0f;
+	if (value.hit_tolerance < 0.0f) value.hit_tolerance = 0.0f;
+	if (value.rescan_debounce < 0.0f) value.rescan_debounce = 0.0f;
+	if (value.scan_workers < 0) value.scan_workers = 0;
+	if (value.scan_workers > MAX_SCAN_WORKERS) value.scan_workers = MAX_SCAN_WORKERS;
+	g_import_settings = value;
+}
+
 struct ImportRef
 {
 	String specifier;
@@ -78,6 +122,7 @@ struct ImportIndex
 	HashMap{String, int} card_paths;
 	ThreadPool pool;
 	bool pool_ready;
+	int workers;
 	UnboundedChannel{ScanResult}* results;
 	uint generation;
 	usz pending;
@@ -120,11 +165,19 @@ fn void ImportIndex.init(&self, Allocator allocator)
 	self.init_pool();
 }
 
+fn int resolve_scan_workers()
+{
+	int workers = g_import_settings.scan_workers;
+	if (workers <= 0) workers = os::num_cpu();
+	if (workers < 1) workers = 1;
+	if (workers > MAX_SCAN_WORKERS) workers = MAX_SCAN_WORKERS;
+	return workers;
+}
+
 fn void ImportIndex.init_pool(&self)
 {
-	int workers = os::num_cpu();
-	if (workers < 2) workers = 2;
-	if (workers > MAX_SCAN_WORKERS) workers = MAX_SCAN_WORKERS;
+	int workers = resolve_scan_workers();
+	self.workers = workers;
 	if (catch excuse = self.pool.init(self.allocator, workers))
 	{
 		self.pool_ready = false;
@@ -142,7 +195,16 @@ fn void ImportIndex.init_pool(&self)
 	(void)self.pool.prewarm(workers);
 }
 
-fn void ImportIndex.destroy(&self)
+fn void ImportIndex.apply_settings(&self)
+{
+	int want = resolve_scan_workers();
+	if (want == self.workers) return;
+	if (self.scanning) return;
+	self.destroy_pool();
+	self.init_pool();
+}
+
+fn void ImportIndex.destroy_pool(&self)
 {
 	if (self.pool_ready)
 	{
@@ -154,6 +216,11 @@ fn void ImportIndex.destroy(&self)
 		self.results.destroy();
 		self.results = null;
 	}
+}
+
+fn void ImportIndex.destroy(&self)
+{
+	self.destroy_pool();
 	self.free_files();
 	self.files.free();
 	self.file_index.free();
@@ -821,6 +888,7 @@ fn bool ImportIndex.scan_step(&self, project::Project* project, usz budget)
 
 fn void ImportIndex.pump(&self, project::Project* project)
 {
+	self.apply_settings();
 	if (!self.pool_ready)
 	{
 		(void)self.scan_step(project, 16);
@@ -923,7 +991,7 @@ fn void ImportIndex.note_edit(&self, String path, double now)
 
 fn bool edit_debounce_elapsed(double since, double now)
 {
-	return now - since >= EDIT_DEBOUNCE_SECONDS;
+	return now - since >= (double)g_import_settings.rescan_debounce;
 }
 
 fn void ImportIndex.flush_edits(&self, project::Project* project, double now)
@@ -1030,8 +1098,8 @@ fn void draw_arrowhead(RLVector2 p1, RLVector2 c2, RLVector2 c3, RLVector2 p2, f
 	if (len <= 0.0001f) return;
 	float ux        = dx / len;
 	float uy        = dy / len;
-	float size      = 10.0f / zoom;
-	float half      = 5.0f / zoom;
+	float size      = g_import_settings.arrowhead_size / zoom;
+	float half      = size * 0.5f;
 	RLVector2 base  = { p2[0] - ux * size, p2[1] - uy * size };
 	RLVector2 perp  = { -uy, ux };
 	RLVector2 left  = { base[0] + perp[0] * half, base[1] + perp[1] * half };
@@ -1159,13 +1227,15 @@ fn void draw_one(
 	ImportRef ref,
 	RLCamera2D camera,
 	RLFont font,
-	float thick,
 	int active,
 	int slot,
 	bool hovered
 )
 {
-	float zoom =  camera.zoom > 0.0f ? camera.zoom : 1.0f;
+	float zoom = camera.zoom > 0.0f ? camera.zoom : 1.0f;
+	if (ref.resolved && !g_import_settings.show_internal) return;
+	if (!ref.resolved && !g_import_settings.show_external) return;
+
 	int target = -1;
 	RLVector2 p1;
 	RLVector2 c2;
@@ -1174,10 +1244,10 @@ fn void draw_one(
 	if (!arrow_geometry(index, project, card, ref, slot, &target, &p1, &c2, &c3, &p2)) return;
 
 	bool related = active < 0 || source_index == active || target == active;
+	float thick  = (hovered ? g_import_settings.hover_thickness : g_import_settings.line_thickness) / zoom;
 	if (hovered)
 	{
 		related = true;
-		thick *= 1.8f;
 	}
 
 	if (ref.resolved)
@@ -1197,7 +1267,10 @@ fn void draw_one(
 	float s  = ui::scale();
 	float ts = ui::text_scale();
 	rl::draw_circle_v(p2, 3.0f * s / zoom, line_color);
-	draw_label(font, ref.specifier, p2[0] + 8.0f * s / zoom, p2[1] - 6.0f * s / zoom, 14.0f * ts, label_color);
+	if (g_import_settings.labels)
+	{
+		draw_label(font, ref.specifier, p2[0] + 8.0f * s / zoom, p2[1] - 6.0f * s / zoom, 14.0f * ts, label_color);
+	}
 }
 
 fn void ImportIndex.clear_hover(&self)
@@ -1205,18 +1278,13 @@ fn void ImportIndex.clear_hover(&self)
 	self.hover.valid = false;
 }
 
-fn bool ImportIndex.hit_test(
-	&self,
-	project::Project* project,
-	RLCamera2D camera,
-	RLVector2 world,
-	float screen_threshold
-)
+fn bool ImportIndex.hit_test(&self, project::Project* project, RLCamera2D camera, RLVector2 world)
 {
 	self.hover.valid = false;
+	if (!g_import_settings.enabled) return false;
 	self.refresh_card_paths(project);
 	float zoom      = camera.zoom > 0.0f ? camera.zoom : 1.0f;
-	float threshold = screen_threshold / zoom;
+	float threshold = g_import_settings.hit_tolerance / zoom;
 	Rect visible    = project::expand_rect(project::visible_world_rect(camera), 64.0f);
 	float best      = threshold;
 
@@ -1239,6 +1307,8 @@ fn bool ImportIndex.hit_test(
 				slot = (int)external_slot;
 				external_slot++;
 			}
+			if (ref.resolved && !g_import_settings.show_internal) continue;
+			if (!ref.resolved && !g_import_settings.show_external) continue;
 			int target = -1;
 			RLVector2 p1;
 			RLVector2 c2;
@@ -1262,10 +1332,10 @@ fn bool ImportIndex.hit_test(
 
 fn void ImportIndex.draw(&self, project::Project* project, RLCamera2D camera, RLFont font)
 {
+	if (!g_import_settings.enabled) return;
 	self.refresh_card_paths(project);
 	int active   = project.focused;
 	Rect visible = project::expand_rect(project::visible_world_rect(camera), 64.0f);
-	float thick  = 2.0f / (camera.zoom > 0.0f ? camera.zoom : 1.0f);
 
 	for (sz i = 0; i < project.cards.len(); i++)
 	{
@@ -1287,13 +1357,14 @@ fn void ImportIndex.draw(&self, project::Project* project, RLCamera2D camera, RL
 				external_slot++;
 			}
 			bool hovered = self.hover.valid && self.hover.source == (int)i && self.hover.ref_index == r;
-			draw_one(self, project, (int)i, card, ref, camera, font, thick, active, slot, hovered);
+			draw_one(self, project, (int)i, card, ref, camera, font, active, slot, hovered);
 		}
 	}
 }
 
 fn void ImportIndex.draw_tooltip(&self, project::Project* project, RLFont font)
 {
+	if (!g_import_settings.enabled) return;
 	if (!self.hover.valid) return;
 	if (self.hover.source < 0 || self.hover.source >= (int)project.cards.len()) return;
 	FileCard* card   = &project.cards[self.hover.source];
