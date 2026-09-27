@@ -11,13 +11,41 @@ const int MINIMAP_HEIGHT           = 160;
 const int MINIMAP_MARGIN           = 16;
 const float MINIMAP_ZOOM_THRESHOLD = 0.4f;
 
+struct MinimapSettings
+{
+	bool enabled;
+	float size;
+	float zoom_threshold;
+}
+
+MinimapSettings g_minimap_settings = {
+	.enabled = true,
+	.size = 1.0f,
+	.zoom_threshold = MINIMAP_ZOOM_THRESHOLD,
+};
+
+fn MinimapSettings settings()
+{
+	return g_minimap_settings;
+}
+
+fn void set_settings(MinimapSettings value)
+{
+	if (value.size < 0.25f) value.size = 0.25f;
+	if (value.size > 4.0f) value.size = 4.0f;
+	if (value.zoom_threshold < 0.0f) value.zoom_threshold = 0.0f;
+	g_minimap_settings = value;
+}
+
 fn Rect minimap_panel(int screen_w, int screen_h)
 {
+	int width  = (int)math::round((float)MINIMAP_WIDTH * g_minimap_settings.size);
+	int height = (int)math::round((float)MINIMAP_HEIGHT * g_minimap_settings.size);
 	return {
-		.x = (float)(screen_w - MINIMAP_WIDTH - MINIMAP_MARGIN),
-		.y = (float)(screen_h - MINIMAP_HEIGHT - MINIMAP_MARGIN),
-		.width = (float)MINIMAP_WIDTH,
-		.height = (float)MINIMAP_HEIGHT,
+		.x = (float)(screen_w - width - MINIMAP_MARGIN),
+		.y = (float)(screen_h - height - MINIMAP_MARGIN),
+		.width = (float)width,
+		.height = (float)height,
 	};
 }
 
@@ -56,7 +84,8 @@ fn RLVector2 minimap_to_world(RLVector2 point, Rect content, Rect panel)
 
 fn bool visible(project::Project* project, canvas::Canvas* canvas)
 {
-	if (canvas.camera.zoom >= MINIMAP_ZOOM_THRESHOLD) return false;
+	if (!g_minimap_settings.enabled) return false;
+	if (canvas.camera.zoom >= g_minimap_settings.zoom_threshold) return false;
 	Rect bounds;
 	return project.content_bounds(&bounds);
 }
