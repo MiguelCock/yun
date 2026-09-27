@@ -160,6 +160,19 @@ fn void apply_settings(
 	ms.zoom_threshold = (float)config.settings.get_float(settings::SettingId.MINIMAP_ZOOM_THRESHOLD);
 	minimap::set_settings(ms);
 
+	imports::ImportSettings is = imports::settings();
+	is.enabled = config.settings.get_bool(settings::SettingId.ARROWS_ENABLED);
+	is.show_internal = config.settings.get_bool(settings::SettingId.ARROWS_SHOW_INTERNAL);
+	is.show_external = config.settings.get_bool(settings::SettingId.ARROWS_SHOW_EXTERNAL);
+	is.labels = config.settings.get_bool(settings::SettingId.ARROWS_LABELS);
+	is.line_thickness = (float)config.settings.get_float(settings::SettingId.ARROWS_LINE_THICKNESS);
+	is.hover_thickness = (float)config.settings.get_float(settings::SettingId.ARROWS_HOVER_THICKNESS);
+	is.arrowhead_size = (float)config.settings.get_float(settings::SettingId.ARROWS_ARROWHEAD_SIZE);
+	is.hit_tolerance = (float)config.settings.get_float(settings::SettingId.ARROWS_HIT_TOLERANCE);
+	is.rescan_debounce = (float)config.settings.get_float(settings::SettingId.ARROWS_RESCAN_DEBOUNCE);
+	is.scan_workers = (int)config.settings.get_int(settings::SettingId.ARROWS_SCAN_WORKERS);
+	imports::set_settings(is);
+
 	bool font_changed    = false;
 	bool metrics_changed = false;
 
@@ -1993,7 +2006,7 @@ fn int main(String[] args)
 			bool over_minimap = minimap::contains_screen(&project, &canvas, mouse);
 			if (!over_top && !over_minimap && project.hit_test(world) < 0)
 			{
-				arrow_hovered = import_index.hit_test(&project, canvas.camera, world, imports::ARROW_HIT_PX);
+				arrow_hovered = import_index.hit_test(&project, canvas.camera, world);
 			}
 			else
 			{
