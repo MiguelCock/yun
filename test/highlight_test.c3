@@ -1,6 +1,7 @@
 module yun::highlight @test;
 
 import std::collections::list;
+import yun::language;
 import yun::text;
 
 macro bool runs_have_role(highlighter, table, line, want)
@@ -22,16 +23,16 @@ macro bool runs_have_role(highlighter, table, line, want)
 
 fn void test_language_for_path()
 {
-	assert(language_for_path("src/main.c3") == Language.C3);
-	assert(language_for_path("lib/foo.c3i") == Language.C3);
-	assert(language_for_path("src/main.c") == Language.C);
-	assert(language_for_path("include/foo.h") == Language.C);
-	assert(language_for_path("script.py") == Language.PYTHON);
-	assert(language_for_path("app.js") == Language.JAVASCRIPT);
-	assert(language_for_path("app.mjs") == Language.JAVASCRIPT);
-	assert(language_for_path("notes.txt") == Language.NONE);
-	assert(language_for_path("Makefile") == Language.NONE);
-	assert(language_for_path("dir.with.dots/file") == Language.NONE);
+	assert(language::language_for_path("src/main.c3") == language::Language.C3);
+	assert(language::language_for_path("lib/foo.c3i") == language::Language.C3);
+	assert(language::language_for_path("src/main.c") == language::Language.C);
+	assert(language::language_for_path("include/foo.h") == language::Language.C);
+	assert(language::language_for_path("script.py") == language::Language.PYTHON);
+	assert(language::language_for_path("app.js") == language::Language.JAVASCRIPT);
+	assert(language::language_for_path("app.mjs") == language::Language.JAVASCRIPT);
+	assert(language::language_for_path("notes.txt") == language::Language.NONE);
+	assert(language::language_for_path("Makefile") == language::Language.NONE);
+	assert(language::language_for_path("dir.with.dots/file") == language::Language.NONE);
 }
 
 fn void test_role_for_name()
@@ -206,4 +207,19 @@ fn void test_mark_dirty_reparses()
 
 		destroy(highlighter, tmem);
 	};
+}
+
+fn void test_registry_is_well_formed()
+{
+	assert(language::LANGUAGES.len == (usz)language::LANGUAGE_COUNT);
+	assert(language::LANGUAGES[0].grammar == null);
+	for (int i = 1; i < language::LANGUAGE_COUNT; i++)
+	{
+		language::LanguageSpec spec = language::LANGUAGES[i];
+		assert(spec.name.len > 0);
+		assert(spec.extensions.len > 0);
+		assert(spec.grammar != null);
+		assert(spec.highlights_path.len > 0);
+		assert(language::language_for_path(spec.extensions[0]) == (language::Language)i);
+	}
 }

@@ -3,7 +3,7 @@ module yun::symbols @test;
 import std::collections::list;
 import std::io::file;
 import std::io::path;
-import yun::highlight;
+import yun::language;
 
 macro bool has_symbol(list, name)
 {
@@ -38,7 +38,7 @@ fn void test_extract_c3()
 
 		List{Symbol} out;
 		out.init(mem);
-		extract_file(mem, (String)f, highlight::Language.C3, &out);
+		extract_file(mem, (String)f, language::Language.C3, &out);
 		assert(has_symbol(&out, "Foo"));
 		assert(has_symbol(&out, "Bar"));
 		assert(has_symbol(&out, "add"));
@@ -65,7 +65,7 @@ fn void test_extract_c()
 
 		List{Symbol} out;
 		out.init(mem);
-		extract_file(mem, (String)f, highlight::Language.C, &out);
+		extract_file(mem, (String)f, language::Language.C, &out);
 		assert(has_symbol(&out, "add"));
 		assert(has_symbol(&out, "Foo"));
 		assert(has_symbol(&out, "Bar"));
@@ -92,7 +92,7 @@ fn void test_extract_python()
 
 		List{Symbol} out;
 		out.init(mem);
-		extract_file(mem, (String)f, highlight::Language.PYTHON, &out);
+		extract_file(mem, (String)f, language::Language.PYTHON, &out);
 		assert(has_symbol(&out, "add"));
 		assert(has_symbol(&out, "Foo"));
 		free_symbols(&out);
@@ -117,7 +117,7 @@ fn void test_extract_javascript()
 
 		List{Symbol} out;
 		out.init(mem);
-		extract_file(mem, (String)f, highlight::Language.JAVASCRIPT, &out);
+		extract_file(mem, (String)f, language::Language.JAVASCRIPT, &out);
 		assert(has_symbol(&out, "add"));
 		assert(has_symbol(&out, "Foo"));
 		assert(has_symbol(&out, "g"));

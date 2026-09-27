@@ -28,7 +28,8 @@
 - API is raylib snake_case (`rl::init_window`, `rl::close_window`, `rl::window_should_close`), plus a `rl::@drawing() { ... }` block macro that wraps `begin_drawing`/`end_drawing`. raygui is also bundled (`raygui::rg`).
 
 ## Syntax highlighting (tree-sitter)
-- `src/highlight.c3` (`yun::highlight`) owns parsing and colors: language detection by extension, lazy per-language `TSQuery` caches loaded from each grammar's `queries/highlights.scm`, and a per-card `Highlighter` (parser + tree + sorted `Span`s) that reparses the whole buffer when dirty.
+- `src/language.c3` (`yun::language`) is the language registry: the `Language` enum plus a `LanguageSpec` table (name, extensions, grammar function, highlights path, import/module/symbols queries). Adding a language is one table entry plus its grammar library.
+- `src/highlight.c3` (`yun::highlight`) uses the registry for lazy per-language `TSQuery` caches loaded from each grammar's `queries/highlights.scm`, and a per-card `Highlighter` (parser + tree + sorted `Span`s) that reparses the whole buffer when dirty.
 - `lib/tree_sitter*.c3l` are directories (not packed), with prebuilt `linux-x64` static libs committed; run `scripts/build-tree-sitter.sh <target>` to regenerate or cross-build. Their `upstream/` dirs are submodules.
 - Capture names map to `SyntaxRole`s and then to a dark palette in the same module, kept separate so the theme work (#41) can swap colors without reparsing.
 

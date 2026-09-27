@@ -7,7 +7,7 @@ import std::math;
 import raylib6::rl;
 import tree_sitter;
 import tree_sitter_c3;
-import yun::highlight;
+import yun::language;
 
 fn void test_extract_c3_module_and_imports()
 {
@@ -15,8 +15,8 @@ fn void test_extract_c3_module_and_imports()
 	defer tree_sitter::ts_parser_delete(parser);
 	assert(tree_sitter::ts_parser_set_language(parser, tree_sitter_c3::tree_sitter_c3()));
 
-	TSQuery* import_query = make_query(highlight::Language.C3, import_query_text(highlight::Language.C3));
-	TSQuery* module_query = make_query(highlight::Language.C3, module_query_text(highlight::Language.C3));
+	TSQuery* import_query = make_query(language::Language.C3, language::import_query_text(language::Language.C3));
+	TSQuery* module_query = make_query(language::Language.C3, language::module_query_text(language::Language.C3));
 	assert(import_query != null);
 	assert(module_query != null);
 	defer tree_sitter::ts_query_delete(import_query);
@@ -49,8 +49,8 @@ fn void test_extract_c3_test_module()
 	defer tree_sitter::ts_parser_delete(parser);
 	assert(tree_sitter::ts_parser_set_language(parser, tree_sitter_c3::tree_sitter_c3()));
 
-	TSQuery* import_query = make_query(highlight::Language.C3, import_query_text(highlight::Language.C3));
-	TSQuery* module_query = make_query(highlight::Language.C3, module_query_text(highlight::Language.C3));
+	TSQuery* import_query = make_query(language::Language.C3, language::import_query_text(language::Language.C3));
+	TSQuery* module_query = make_query(language::Language.C3, language::module_query_text(language::Language.C3));
 	defer tree_sitter::ts_query_delete(import_query);
 	defer tree_sitter::ts_query_delete(module_query);
 

@@ -13,7 +13,7 @@ import std::thread::channel;
 import tree_sitter;
 import yun::commands;
 import yun::editor;
-import yun::highlight;
+import yun::language;
 import yun::keymap;
 import yun::project;
 import yun::theme;
@@ -55,7 +55,7 @@ struct SymbolWork
 {
 	Symbols* owner;
 	String path;
-	highlight::Language language;
+	language::Language language;
 	uint generation;
 }
 
@@ -109,47 +109,13 @@ struct Symbols
 	bool consumed;
 }
 
-fn String def_query_text(highlight::Language language)
-{
-	switch (language)
-	{
-		case highlight::Language.C3:
-			return "(func_definition (func_header name: (ident) @function))\n"
-				"(func_declaration (func_header name: (ident) @function))\n"
-				"(macro_declaration (macro_header name: (_) @function))\n"
-				"(struct_declaration name: (type_ident) @type)\n"
-				"(interface_declaration name: (type_ident) @type)\n"
-				"(bitstruct_declaration name: (type_ident) @type)\n"
-				"(typedef_declaration name: (type_ident) @type)\n"
-				"(enum_declaration name: (type_ident) @enum)\n"
-				"(constdef_declaration name: (type_ident) @const)";
-		case highlight::Language.C:
-			return "(function_definition declarator: (function_declarator declarator: (identifier) @function))\n"
-				"(struct_specifier name: (type_identifier) @type)\n"
-				"(enum_specifier name: (type_identifier) @enum)\n"
-				"(type_definition declarator: (type_identifier) @type)\n"
-				"(declaration declarator: (init_declarator declarator: (identifier) @variable))\n"
-				"(declaration declarator: (identifier) @variable)";
-		case highlight::Language.PYTHON:
-			return "(function_definition name: (identifier) @function)\n"
-				"(class_definition name: (identifier) @class)";
-		case highlight::Language.JAVASCRIPT:
-			return "(function_declaration name: (identifier) @function)\n"
-				"(class_declaration name: (identifier) @class)\n"
-				"(method_definition name: (property_identifier) @method)\n"
-				"(variable_declarator name: (identifier) @variable)";
-		case highlight::Language.NONE:
-			return "";
-	}
-}
-
-fn TSQuery* make_query(highlight::Language language, String text)
+fn TSQuery* make_query(language::Language language, String text)
 {
 	if (text.len == 0) return null;
 	uint offset        = 0;
 	TSQueryError error = TS_QUERY_ERROR_NONE;
 	TSQuery* query = tree_sitter::ts_query_new(
-		highlight::grammar_language(language),
+		language::grammar_language(language),
 		(char*)text.ptr,
 		(uint)text.len,
 		&offset,
@@ -220,9 +186,9 @@ fn String kind_label(SymbolKind kind)
 	}
 }
 
-fn void extract_file(Allocator allocator, String path, highlight::Language language, List{Symbol}* out)
+fn void extract_file(Allocator allocator, String path, language::Language language, List{Symbol}* out)
 {
-	if (language == highlight::Language.NONE) return;
+	if (language == language::Language.NONE) return;
 	@pool()
 	{
 		char[]? data = file::load(tmem, path);
@@ -231,12 +197,12 @@ fn void extract_file(Allocator allocator, String path, highlight::Language langu
 
 		TSParser* parser = tree_sitter::ts_parser_new();
 		if (!parser) return;
-		if (!tree_sitter::ts_parser_set_language(parser, highlight::grammar_language(language)))
+		if (!tree_sitter::ts_parser_set_language(parser, language::grammar_language(language)))
 		{
 			tree_sitter::ts_parser_delete(parser);
 			return;
 		}
-		TSQuery* query = make_query(language, def_query_text(language));
+		TSQuery* query = make_query(language, language::symbols_query_text(language));
 		if (!query)
 		{
 			tree_sitter::ts_parser_delete(parser);
@@ -294,11 +260,11 @@ fn void extract_file(Allocator allocator, String path, highlight::Language langu
 
 fn void symbol_worker(void* arg)
 {
-	SymbolWork* work             = (SymbolWork*)arg;
-	Symbols* symbols             = work.owner;
-	String path                  = work.path;
-	highlight::Language language = work.language;
-	uint generation              = work.generation;
+	SymbolWork* work            = (SymbolWork*)arg;
+	Symbols* symbols            = work.owner;
+	String path                 = work.path;
+	language::Language language = work.language;
+	uint generation             = work.generation;
 
 	List{Symbol} out;
 	out.init(symbols.allocator);
@@ -449,8 +415,8 @@ fn void Symbols.start_scan(&self, project::Project* project)
 			String path = (String)project.cards[i].path;
 			if (seen.has_key(path)) continue;
 			seen.set(path, 0);
-			highlight::Language language = highlight::language_for_path(path);
-			if (language == highlight::Language.NONE) continue;
+			language::Language language = language::language_for_path(path);
+			if (language == language::Language.NONE) continue;
 
 			SymbolWork* work = alloc::new(self.allocator, SymbolWork);
 			work.owner = self;
@@ -515,7 +481,7 @@ fn void Symbols.flush_edits(&self, project::Project* project, double now)
 	int index = project.find_card(path);
 	if (index >= 0)
 	{
-		highlight::Language language = highlight::language_for_path(path);
+		language::Language language = language::language_for_path(path);
 		List{Symbol} out;
 		out.init(self.allocator);
 		extract_file(self.allocator, path, language, &out);
