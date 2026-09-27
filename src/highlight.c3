@@ -95,6 +95,8 @@ fn TSQuery* build_query(language::Language language)
 {
 	String rel = language::grammar_query_path(language);
 	if (rel.len == 0) return null;
+	TSLanguage* lang = language::grammar_language(language);
+	if (!lang) return null;
 
 	TSQuery* result = null;
 	@pool()
@@ -104,13 +106,7 @@ fn TSQuery* build_query(language::Language language)
 		{
 			uint offset        = 0;
 			TSQueryError error = TS_QUERY_ERROR_NONE;
-			result = tree_sitter::ts_query_new(
-				language::grammar_language(language),
-				(char*)text.ptr,
-				(uint)text.len,
-				&offset,
-				&error
-			);
+			result = tree_sitter::ts_query_new(lang, (char*)text.ptr, (uint)text.len, &offset, &error);
 			if (result && error != TS_QUERY_ERROR_NONE) result = null;
 		}
 	};

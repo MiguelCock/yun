@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the tree-sitter runtime and grammar static libraries for one target.
+# Builds the tree-sitter runtime and grammar libraries for one target.
 #
 # Grammars are discovered from lib/tree_sitter_*.c3l (each with an upstream/
 # submodule). Optional per-grammar options live in that directory's
@@ -7,7 +7,11 @@
 # lib=tree-sitter-<stem>.
 #
 # Usage:
-#   scripts/build-tree-sitter.sh [target] [grammar...]
+#   scripts/build-tree-sitter.sh [--static] [target] [grammar...]
+#
+# The runtime is always built as a static library (linked into the executable).
+# Grammars build as shared libraries by default (loaded lazily at runtime);
+# --static builds grammar .a libraries instead (for static linking).
 #
 # target defaults to linux-x64. The remaining args filter by grammar stem
 # (e.g. `python c3`); with none, every grammar is built.
@@ -17,9 +21,22 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET="${1:-linux-x64}"
-if [ "$#" -gt 0 ]; then shift; fi
-FILTER=("$@")
+
+MODE="shared"
+POSITIONAL=()
+for arg in "$@"; do
+	case "$arg" in
+		--static) MODE="static" ;;
+		--shared) MODE="shared" ;;
+		*) POSITIONAL+=("$arg") ;;
+	esac
+done
+
+TARGET="${POSITIONAL[0]:-linux-x64}"
+FILTER=()
+if [ "${#POSITIONAL[@]}" -gt 1 ]; then
+	FILTER=("${POSITIONAL[@]:1}")
+fi
 
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
@@ -83,9 +100,14 @@ build_lib() {
 	done
 	popd >/dev/null
 
-	"$AR" rcs "$out/lib$name.a" "${objects[@]}"
+	if [ "$MODE" = "shared" ]; then
+		"$CC" $CFLAGS -shared -o "$out/lib$name.so" "${objects[@]}"
+		echo "built $out/lib$name.so"
+	else
+		"$AR" rcs "$out/lib$name.a" "${objects[@]}"
+		echo "built $out/lib$name.a"
+	fi
 	rm -f "${objects[@]}"
-	echo "built $out/lib$name.a"
 }
 
 runtime_out="$ROOT/lib/tree_sitter.c3l/linked-libs/$TARGET"
@@ -113,7 +135,7 @@ for dep in "$ROOT"/lib/tree_sitter_*.c3l; do
 
 	out="$dep/linked-libs/$TARGET"
 	mkdir -p "$out"
-	echo "building $lib for $TARGET"
+	echo "building $lib for $TARGET ($MODE)"
 	build_lib "$lib" "$dep/upstream" "$src_root" "$out"
 done
 

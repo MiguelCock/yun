@@ -1,16 +1,20 @@
-# Builds the tree-sitter runtime and grammar static libraries for one Windows
-# target using MSVC (cl + lib). Run from a "Developer Command Prompt" / after
-# `ilammy/msvc-dev-cmd`, so that cl and lib are on PATH.
+# Builds the tree-sitter runtime and grammar libraries for one Windows target
+# using MSVC (cl + link). Run from a "Developer Command Prompt" / after
+# `ilammy/msvc-dev-cmd`, so that cl and link are on PATH.
 #
 # Grammars are discovered from lib/tree_sitter_*.c3l (each with an upstream/
 # submodule). Optional per-grammar options live in that directory's
 # grammar.conf (key=value): src, queries, lib.
 #
-# Usage: scripts/build-tree-sitter-windows.ps1 [-Target windows-x64] [-Grammar python,c3]
+# The runtime is always static; grammars build as DLLs by default (loaded lazily
+# at runtime) or static .lib with -Static.
+#
+# Usage: scripts/build-tree-sitter-windows.ps1 [-Target windows-x64] [-Grammar python,c3] [-Static]
 
 param(
     [string]$Target = "windows-x64",
-    [string[]]$Grammar = @()
+    [string[]]$Grammar = @(),
+    [switch]$Static
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,7 +39,8 @@ function Build-TreeSitterLib {
         [string]$Name,
         [string]$SourceDir,
         [string]$SrcRoot,
-        [string]$OutDir
+        [string]$OutDir,
+        [string]$ExportSymbol
     )
 
     New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -60,10 +65,22 @@ function Build-TreeSitterLib {
         $index++
     }
 
-    $libPath = Join-Path $OutDir "$Name.lib"
-    lib /nologo /OUT:"$libPath" @objects
+    if ($Static) {
+        $libPath = Join-Path $OutDir "$Name.lib"
+        lib /nologo /OUT:"$libPath" @objects
+        Write-Host "built $libPath"
+    }
+    else {
+        $dllPath = Join-Path $OutDir "$Name.dll"
+        if ($ExportSymbol) {
+            link /nologo /DLL /OUT:"$dllPath" "/EXPORT:$ExportSymbol" @objects
+        }
+        else {
+            link /nologo /DLL /OUT:"$dllPath" @objects
+        }
+        Write-Host "built $dllPath"
+    }
     Remove-Item $objects -Force
-    Write-Host "built $libPath"
 }
 
 $runtimeOut = Join-Path $root "lib/tree_sitter.c3l/linked-libs/$Target"
@@ -84,9 +101,17 @@ foreach ($dep in Get-ChildItem (Join-Path $root "lib") -Directory -Filter "tree_
     $srcRoot = Read-GrammarConf $conf "src" "src"
     $lib = Read-GrammarConf $conf "lib" "tree-sitter-$stem"
 
+    $export = ""
+    $c3i = Get-ChildItem (Join-Path $dep.FullName "*.c3i") -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($c3i) {
+        $match = Select-String -Path $c3i.FullName -Pattern 'extern fn TSLanguage\*\s+(\w+)\('
+        if ($match) { $export = $match.Matches[0].Groups[1].Value }
+    }
+
     $out = Join-Path $dep.FullName "linked-libs/$Target"
-    Write-Host "building $lib for $Target"
-    Build-TreeSitterLib $lib (Join-Path $dep.FullName "upstream") $srcRoot $out
+    $mode = if ($Static) { "static" } else { "shared" }
+    Write-Host "building $lib for $Target ($mode)"
+    Build-TreeSitterLib $lib (Join-Path $dep.FullName "upstream") $srcRoot $out $export
 }
 
 Write-Host "done ($Target)"

@@ -6,14 +6,13 @@ import std::io::path;
 import std::math;
 import raylib6::rl;
 import tree_sitter;
-import tree_sitter_c3;
 import yun::language;
 
 fn void test_extract_c3_module_and_imports()
 {
 	TSParser* parser = tree_sitter::ts_parser_new();
 	defer tree_sitter::ts_parser_delete(parser);
-	assert(tree_sitter::ts_parser_set_language(parser, tree_sitter_c3::tree_sitter_c3()));
+	assert(tree_sitter::ts_parser_set_language(parser, language::grammar_language(language::Language.C3)));
 
 	TSQuery* import_query = make_query(language::Language.C3, language::import_query_text(language::Language.C3));
 	TSQuery* module_query = make_query(language::Language.C3, language::module_query_text(language::Language.C3));
@@ -47,7 +46,7 @@ fn void test_extract_c3_test_module()
 {
 	TSParser* parser = tree_sitter::ts_parser_new();
 	defer tree_sitter::ts_parser_delete(parser);
-	assert(tree_sitter::ts_parser_set_language(parser, tree_sitter_c3::tree_sitter_c3()));
+	assert(tree_sitter::ts_parser_set_language(parser, language::grammar_language(language::Language.C3)));
 
 	TSQuery* import_query = make_query(language::Language.C3, language::import_query_text(language::Language.C3));
 	TSQuery* module_query = make_query(language::Language.C3, language::module_query_text(language::Language.C3));

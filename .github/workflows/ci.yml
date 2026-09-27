@@ -25,6 +25,9 @@ jobs:
           tar -xzf c3.tar.gz
           echo "$PWD/c3" >> "$GITHUB_PATH"
 
+      - name: Build tree-sitter grammars
+        run: scripts/build-tree-sitter.sh linux-x64
+
       - name: Check tree-sitter grammars
         run: scripts/check-tree-sitter-grammars.sh
 

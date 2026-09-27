@@ -2,8 +2,8 @@
 # Scaffolds a vendored tree-sitter grammar C3L from an upstream repository.
 #
 # Creates lib/tree_sitter_<name>.c3l/ (submodule + c3i + manifest + grammar.conf
-# + queries + LICENSE + README), then wires it into project.json and
-# src/language.c3. Finish by building the grammar library and running c3c build.
+# + queries + LICENSE + README), then adds the enum member and LanguageSpec entry
+# in src/language.c3. Finish by building the grammar library and running c3c build.
 #
 # Usage:
 #   scripts/add-tree-sitter-grammar.sh <name> --url <git-url> --module <mod> \
@@ -156,19 +156,13 @@ scripts/build-tree-sitter.sh <target> $STEM
 \`\`\`
 EOF
 
-# Wire project.json: append to the dependencies array.
-NEWDEP="$MODULE" perl -i -pe 's/("dependencies":\s*\[[^\]]*?)\s*\]/$1, "$ENV{NEWDEP}"]/ if /"dependencies"/' "$ROOT/project.json"
-
-# Wire src/language.c3: import, enum member, and a LanguageSpec stub.
-export YUN_IMPORT="import $MODULE;"
+# Wire src/language.c3: enum member and a LanguageSpec stub (lazy-loaded).
 export YUN_ENUM="$ENUM"
 export YUN_STEM="$STEM"
-export YUN_MODULE="$MODULE"
 export YUN_FUNCTION="$FUNCTION"
 export YUN_NAME="$NAME"
 export YUN_EXTS="$EXTENSIONS"
 
-perl -0777 -i -pe 's/(import tree_sitter_[a-z0-9_]+;\n)(?!.*import tree_sitter_)/$1$ENV{YUN_IMPORT}\n/s' "$ROOT/src/language.c3"
 perl -0777 -i -pe 's/\n(\tCOUNT,\n)/\n\t$ENV{YUN_ENUM},\n$1/' "$ROOT/src/language.c3"
 
 SNIPPET_FILE="$(mktemp)"
@@ -183,7 +177,8 @@ SNIPPET_FILE="$(mktemp)"
 	done
 	exts="${exts%, }"
 	echo "		.extensions = { $exts },"
-	echo "		.grammar = &$MODULE::$FUNCTION,"
+	echo "		.lib = \"$LIBNAME\","
+	echo "		.symbol = \"$FUNCTION\","
 	echo "		.highlights_path = \"lib/tree_sitter_$NAME.c3l/queries/highlights.scm\","
 	echo "		.import_query = \"\","
 	echo "		.module_query = \"\","
