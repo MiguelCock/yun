@@ -446,3 +446,63 @@ fn void test_normalize_completion()
 		out.free();
 	};
 }
+
+fn void test_lsp_language_detection()
+{
+	assert(lsp_language_for_path("src/main.c3").compare_to("c3") == 0);
+	assert(lsp_language_for_path("lib/foo.c3i").compare_to("c3") == 0);
+	assert(lsp_language_for_path("src/main.c").compare_to("c") == 0);
+	assert(lsp_language_for_path("include/foo.h").compare_to("c") == 0);
+	assert(lsp_language_for_path("src/main.cpp").compare_to("cpp") == 0);
+	assert(lsp_language_for_path("src/main.cc").compare_to("cpp") == 0);
+	assert(lsp_language_for_path("src/main.cxx").compare_to("cpp") == 0);
+	assert(lsp_language_for_path("include/foo.hpp").compare_to("cpp") == 0);
+	assert(lsp_language_for_path("include/foo.hh").compare_to("cpp") == 0);
+	assert(lsp_language_for_path("script.py").compare_to("python") == 0);
+	assert(lsp_language_for_path("app.js").compare_to("javascript") == 0);
+	assert(lsp_language_for_path("app.mjs").compare_to("javascript") == 0);
+	assert(lsp_language_for_path("app.cjs").compare_to("javascript") == 0);
+	assert(lsp_language_for_path("app.jsx").compare_to("javascript") == 0);
+	assert(lsp_language_for_path("app.ts").compare_to("typescript") == 0);
+	assert(lsp_language_for_path("app.tsx").compare_to("typescript") == 0);
+	assert(lsp_language_for_path("notes.txt").len == 0);
+	assert(lsp_language_for_path("Makefile").len == 0);
+	assert(lsp_language_for_path("dir.with.dots/file").len == 0);
+}
+
+fn void test_lsp_default_commands()
+{
+	assert(lsp_default_command("c3").compare_to("c3lsp") == 0);
+	assert(lsp_default_command("c").compare_to("clangd") == 0);
+	assert(lsp_default_command("cpp").compare_to("clangd") == 0);
+	assert(lsp_default_command("python").compare_to("pyright-langserver --stdio") == 0);
+	assert(lsp_default_command("javascript").compare_to("typescript-language-server --stdio") == 0);
+	assert(lsp_default_command("typescript").compare_to("typescript-language-server --stdio") == 0);
+	assert(lsp_default_command("unknown").len == 0);
+}
+
+fn void test_did_open_language_id()
+{
+	@pool()
+	{
+		Object* params   = lsp_did_open_params(tmem, "file:///proj/a.c3", "c3", 1, "fn int main() {}");
+		Object*? doc_opt = params.get("textDocument");
+		if (catch excuse = doc_opt)
+		{
+			assert(false);
+		}
+		else
+		{
+			Object* doc  = doc_opt;
+			String? lang = doc.get_string("languageId");
+			if (catch lang_excuse = lang)
+			{
+				assert(false);
+			}
+			else
+			{
+				assert(lang.compare_to("c3") == 0);
+			}
+		}
+	};
+}
