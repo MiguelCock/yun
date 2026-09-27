@@ -167,3 +167,66 @@ fn String symbols_query_text(Language language)
 	if (index <= 0 || index >= LANGUAGE_COUNT) return "";
 	return LANGUAGES[index].symbols_query;
 }
+
+struct LspSpec
+{
+	String id;
+	String[] extensions;
+	String command;
+}
+
+const LspSpec[] LSP_LANGUAGES = {
+	{
+		.id = "c3",
+		.extensions = { ".c3", ".c3i" },
+		.command = "c3lsp",
+	},
+	{
+		.id = "c",
+		.extensions = { ".c", ".h" },
+		.command = "clangd",
+	},
+	{
+		.id = "cpp",
+		.extensions = { ".cpp", ".cc", ".cxx", ".hpp", ".hh" },
+		.command = "clangd",
+	},
+	{
+		.id = "python",
+		.extensions = { ".py" },
+		.command = "pyright-langserver --stdio",
+	},
+	{
+		.id = "javascript",
+		.extensions = { ".js", ".mjs", ".cjs", ".jsx" },
+		.command = "typescript-language-server --stdio",
+	},
+	{
+		.id = "typescript",
+		.extensions = { ".ts", ".tsx" },
+		.command = "typescript-language-server --stdio",
+	},
+};
+
+fn String lsp_for_path(String path)
+{
+	String ext = path_extension(path);
+	if (ext.len == 0) return "";
+	foreach (LspSpec spec : LSP_LANGUAGES)
+	{
+		foreach (String candidate : spec.extensions)
+		{
+			if (ext.compare_to(candidate) == 0) return spec.id;
+		}
+	}
+	return "";
+}
+
+fn String lsp_command(String id)
+{
+	foreach (LspSpec spec : LSP_LANGUAGES)
+	{
+		if (spec.id.compare_to(id) == 0) return spec.command;
+	}
+	return "";
+}

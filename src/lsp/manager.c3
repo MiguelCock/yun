@@ -6,6 +6,7 @@ import std::collections::object;
 import std::core::mem::alloc;
 import std::math;
 import yun::config;
+import yun::language;
 import yun::text;
 
 struct LspDoc
@@ -407,53 +408,14 @@ fn void Lsp.handle_notification(&self, String method, Object* params)
 	};
 }
 
-fn String lsp_extension(String path)
-{
-	sz dot = -1;
-	for (sz i = (sz)path.len; i > 0; i--)
-	{
-		char c = path[(usz)(i - 1)];
-		if (c == '.')
-		{
-			dot = i - 1;
-			break;
-		}
-		if (c == '/' || c == '\\') break;
-	}
-	if (dot < 0) return "";
-	return path[(usz)dot:path.len - (usz)dot];
-}
-
 fn String lsp_language_for_path(String path)
 {
-	String ext = lsp_extension(path);
-	if (ext.compare_to(".c3") == 0 || ext.compare_to(".c3i") == 0) return "c3";
-	if (ext.compare_to(".c") == 0 || ext.compare_to(".h") == 0) return "c";
-	if (ext.compare_to(
-		".cpp"
-	) == 0 || ext.compare_to(
-		".cc"
-	) == 0 || ext.compare_to(".cxx") == 0 || ext.compare_to(".hpp") == 0 || ext.compare_to(".hh") == 0) return "cpp";
-	if (ext.compare_to(".py") == 0) return "python";
-	if (ext.compare_to(
-		".js"
-	) == 0 || ext.compare_to(
-		".mjs"
-	) == 0 || ext.compare_to(".cjs") == 0 || ext.compare_to(".jsx") == 0) return "javascript";
-	if (ext.compare_to(".ts") == 0 || ext.compare_to(".tsx") == 0) return "typescript";
-	return "";
+	return language::lsp_for_path(path);
 }
 
 fn String lsp_default_command(String language)
 {
-	if (language.compare_to("c3") == 0) return "c3lsp";
-	if (language.compare_to("c") == 0 || language.compare_to("cpp") == 0) return "clangd";
-	if (language.compare_to("python") == 0) return "pyright-langserver --stdio";
-	if (language.compare_to("javascript") == 0 || language.compare_to("typescript") == 0)
-	{
-		return "typescript-language-server --stdio";
-	}
-	return "";
+	return language::lsp_command(language);
 }
 
 fn void lsp_split_command(Allocator allocator, String command, List{String}* out)
