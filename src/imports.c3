@@ -14,7 +14,7 @@ import std::thread::channel;
 import tree_sitter;
 import yun::card;
 import yun::editor;
-import yun::highlight;
+import yun::language;
 import yun::hover;
 import yun::project;
 import yun::text;
@@ -101,7 +101,7 @@ struct ScanWork
 {
 	ImportIndex* index;
 	String path;
-	highlight::Language language;
+	language::Language language;
 	uint generation;
 }
 
@@ -136,11 +136,11 @@ struct ImportIndex
 	double pending_since;
 }
 
-TSQuery*[5] import_query_cache;
-bool[5] import_query_loaded;
-TSParser*[5] import_parser_cache;
-TSQuery*[5] module_query_cache;
-bool[5] module_query_loaded;
+TSQuery*[language::LANGUAGE_COUNT] import_query_cache;
+bool[language::LANGUAGE_COUNT] import_query_loaded;
+TSParser*[language::LANGUAGE_COUNT] import_parser_cache;
+TSQuery*[language::LANGUAGE_COUNT] module_query_cache;
+bool[language::LANGUAGE_COUNT] module_query_loaded;
 
 const ImportRef[] NO_IMPORTS = { };
 
@@ -228,40 +228,13 @@ fn void ImportIndex.destroy(&self)
 	self.clear_pending_edit();
 }
 
-fn String import_query_text(highlight::Language language)
-{
-	switch (language)
-	{
-		case highlight::Language.C:
-			return "(preproc_include path: (_) @path)";
-		case highlight::Language.C3:
-			return "(import_declaration (import_path (path_ident) @path))";
-		case highlight::Language.PYTHON:
-			return "(import_statement name: (dotted_name) @path)\n"
-				"(import_statement name: (aliased_import (dotted_name) @path))\n"
-				"(import_from_statement module_name: (dotted_name) @path)\n"
-				"(import_from_statement module_name: (relative_import) @path)";
-		case highlight::Language.JAVASCRIPT:
-			return "(import_statement source: (string) @path)\n"
-				"(call_expression function: (identifier) @fn arguments: (arguments (string) @path))";
-		case highlight::Language.NONE:
-			return "";
-	}
-}
-
-fn String module_query_text(highlight::Language language)
-{
-	if (language == highlight::Language.C3) return "(module_declaration) @module";
-	return "";
-}
-
-fn TSQuery* make_query(highlight::Language language, String text)
+fn TSQuery* make_query(language::Language language, String text)
 {
 	if (text.len == 0) return null;
 	uint offset        = 0;
 	TSQueryError error = TS_QUERY_ERROR_NONE;
 	TSQuery* query = tree_sitter::ts_query_new(
-		highlight::grammar_language(language),
+		language::grammar_language(language),
 		(char*)text.ptr,
 		(uint)text.len,
 		&offset,
@@ -271,15 +244,15 @@ fn TSQuery* make_query(highlight::Language language, String text)
 	return query;
 }
 
-fn TSParser* import_parser_for(highlight::Language language)
+fn TSParser* import_parser_for(language::Language language)
 {
 	int index = (int)language;
-	if (index <= 0 || index >= 5) return null;
+	if (index <= 0 || index >= language::LANGUAGE_COUNT) return null;
 	if (import_parser_cache[index]) return import_parser_cache[index];
 
 	TSParser* parser = tree_sitter::ts_parser_new();
 	if (!parser) return null;
-	if (!tree_sitter::ts_parser_set_language(parser, highlight::grammar_language(language)))
+	if (!tree_sitter::ts_parser_set_language(parser, language::grammar_language(language)))
 	{
 		tree_sitter::ts_parser_delete(parser);
 		return null;
@@ -288,23 +261,23 @@ fn TSParser* import_parser_for(highlight::Language language)
 	return parser;
 }
 
-fn TSQuery* import_query_for(highlight::Language language)
+fn TSQuery* import_query_for(language::Language language)
 {
 	int index = (int)language;
-	if (index <= 0 || index >= 5) return null;
+	if (index <= 0 || index >= language::LANGUAGE_COUNT) return null;
 	if (import_query_loaded[index]) return import_query_cache[index];
 	import_query_loaded[index] = true;
-	import_query_cache[index] = make_query(language, import_query_text(language));
+	import_query_cache[index] = make_query(language, language::import_query_text(language));
 	return import_query_cache[index];
 }
 
-fn TSQuery* module_query_for(highlight::Language language)
+fn TSQuery* module_query_for(language::Language language)
 {
 	int index = (int)language;
-	if (index <= 0 || index >= 5) return null;
+	if (index <= 0 || index >= language::LANGUAGE_COUNT) return null;
 	if (module_query_loaded[index]) return module_query_cache[index];
 	module_query_loaded[index] = true;
-	module_query_cache[index] = make_query(language, module_query_text(language));
+	module_query_cache[index] = make_query(language, language::module_query_text(language));
 	return module_query_cache[index];
 }
 
@@ -531,12 +504,12 @@ fn bool resolve_import(
 {
 	if (angled || specifier.len == 0) return false;
 
-	highlight::Language language = highlight::language_for_path(source_path);
-	String dir                   = dir_of(allocator, source_path);
+	language::Language language = language::language_for_path(source_path);
+	String dir                  = dir_of(allocator, source_path);
 
 	switch (language)
 	{
-		case highlight::Language.C:
+		case language::Language.C:
 
 			{
 				String candidate = string::format(allocator, "%s/%s", dir, specifier);
@@ -547,7 +520,7 @@ fn bool resolve_import(
 				}
 				return false;
 			}
-		case highlight::Language.JAVASCRIPT:
+		case language::Language.JAVASCRIPT:
 
 			{
 				if (specifier[0] != '.') return false;
@@ -568,7 +541,7 @@ fn bool resolve_import(
 				}
 				return false;
 			}
-		case highlight::Language.PYTHON:
+		case language::Language.PYTHON:
 
 			{
 				String spec = specifier;
@@ -619,7 +592,7 @@ fn bool resolve_import(
 				}
 				return false;
 			}
-		case highlight::Language.C3:
+		case language::Language.C3:
 
 			{
 				for (sz i = 0; i < files.len; i++)
@@ -642,7 +615,9 @@ fn bool resolve_import(
 				}
 				return false;
 			}
-		case highlight::Language.NONE:
+		case language::Language.NONE:
+			return false;
+		default:
 			return false;
 	}
 }
@@ -776,9 +751,9 @@ fn void ImportIndex.start_scan(&self, project::Project* project)
 
 	for (sz i = 0; i < project.cards.len(); i++)
 	{
-		FileCard* card               = &project.cards[i];
-		highlight::Language language = highlight::language_for_path((String)card.path);
-		if (language == highlight::Language.NONE) continue;
+		FileCard* card              = &project.cards[i];
+		language::Language language = language::language_for_path((String)card.path);
+		if (language == language::Language.NONE) continue;
 		if (card.buffer)
 		{
 			self.scan_one(project, (int)i);
@@ -830,8 +805,8 @@ fn void ImportIndex.store(&self, String path, List{ImportRef}* refs, String modu
 
 fn void ImportIndex.scan_one(&self, project::Project* project, int card_index)
 {
-	FileCard* card               = &project.cards[card_index];
-	highlight::Language language = highlight::language_for_path((String)card.path);
+	FileCard* card              = &project.cards[card_index];
+	language::Language language = language::language_for_path((String)card.path);
 	@pool()
 	{
 		String text = "";
@@ -850,7 +825,7 @@ fn void ImportIndex.scan_one(&self, project::Project* project, int card_index)
 		refs.init(self.allocator);
 		String module_name = "";
 		bool is_test       = false;
-		if (language != highlight::Language.NONE)
+		if (language != language::Language.NONE)
 		{
 			extract_imports(
 				self.allocator,
@@ -941,7 +916,7 @@ fn void ImportIndex.rescan(&self, project::Project* project, int card_index)
 {
 	if (card_index < 0 || card_index >= (int)project.cards.len()) return;
 	FileCard* card = &project.cards[card_index];
-	if (highlight::language_for_path((String)card.path) == highlight::Language.NONE) return;
+	if (language::language_for_path((String)card.path) == language::Language.NONE) return;
 	String path = (String)card.path;
 
 	@pool()
@@ -1010,7 +985,7 @@ fn void ImportIndex.flush_edits(&self, project::Project* project, double now)
 fn void import_extract_file(
 	Allocator allocator,
 	String path,
-	highlight::Language language,
+	language::Language language,
 	List{ImportRef}* out,
 	String* out_module,
 	bool* out_is_test
@@ -1026,13 +1001,13 @@ fn void import_extract_file(
 
 		TSParser* parser = tree_sitter::ts_parser_new();
 		if (!parser) return;
-		if (!tree_sitter::ts_parser_set_language(parser, highlight::grammar_language(language)))
+		if (!tree_sitter::ts_parser_set_language(parser, language::grammar_language(language)))
 		{
 			tree_sitter::ts_parser_delete(parser);
 			return;
 		}
-		TSQuery* import_query = make_query(language, import_query_text(language));
-		TSQuery* module_query = make_query(language, module_query_text(language));
+		TSQuery* import_query = make_query(language, language::import_query_text(language));
+		TSQuery* module_query = make_query(language, language::module_query_text(language));
 		extract_imports(allocator, parser, import_query, module_query, text, out, out_module, out_is_test);
 		if (import_query) tree_sitter::ts_query_delete(import_query);
 		if (module_query) tree_sitter::ts_query_delete(module_query);
@@ -1042,11 +1017,11 @@ fn void import_extract_file(
 
 fn void import_scan_worker(void* arg)
 {
-	ScanWork* work               = (ScanWork*)arg;
-	ImportIndex* index           = work.index;
-	String path                  = work.path;
-	highlight::Language language = work.language;
-	uint generation              = work.generation;
+	ScanWork* work              = (ScanWork*)arg;
+	ImportIndex* index          = work.index;
+	String path                 = work.path;
+	language::Language language = work.language;
+	uint generation             = work.generation;
 
 	List{ImportRef} refs;
 	refs.init(index.allocator);
@@ -1375,7 +1350,7 @@ fn void ImportIndex.draw_tooltip(&self, project::Project* project, RLFont font)
 	@pool()
 	{
 		String source_name = rl::get_file_name((ZString)card.path.ptr).str_view();
-		String keyword     = highlight::language_for_path((String)card.path) == highlight::Language.C ? "#include"
+		String keyword     = language::language_for_path((String)card.path) == language::Language.C ? "#include"
 			: "import";
 		String markdown;
 		if (ref.resolved)

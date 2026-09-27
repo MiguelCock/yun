@@ -8,20 +8,8 @@ import std::io::file;
 import std::io::path;
 import yun::text;
 import yun::theme;
+import yun::language;
 import tree_sitter;
-import tree_sitter_c;
-import tree_sitter_c3;
-import tree_sitter_javascript;
-import tree_sitter_python;
-
-enum Language : int
-{
-	NONE,
-	C3,
-	C,
-	PYTHON,
-	JAVASCRIPT,
-}
 
 enum SyntaxRole : int
 {
@@ -57,7 +45,7 @@ struct Span
 
 struct Highlighter
 {
-	Language language;
+	language::Language language;
 	TSParser* parser;
 	TSTree* tree;
 	TSQuery* query;
@@ -69,8 +57,8 @@ struct Highlighter
 	Allocator allocator;
 }
 
-TSQuery*[5] query_cache;
-bool[5] query_loaded;
+TSQuery*[language::LANGUAGE_COUNT] query_cache;
+bool[language::LANGUAGE_COUNT] query_loaded;
 
 fn int span_compare(void* a, void* b)
 {
@@ -79,69 +67,6 @@ fn int span_compare(void* a, void* b)
 	if (sa.start != sb.start) return sa.start < sb.start ? -1 : 1;
 	if (sa.end != sb.end) return sa.end > sb.end ? -1 : 1;
 	return 0;
-}
-
-fn String path_extension(String path)
-{
-	sz dot = -1;
-	for (sz i = (sz)path.len; i > 0; i--)
-	{
-		char c = path[(usz)(i - 1)];
-		if (c == '.')
-		{
-			dot = i - 1;
-			break;
-		}
-		if (c == '/' || c == '\\') break;
-	}
-	if (dot < 0) return "";
-	return path[(usz)dot:path.len - (usz)dot];
-}
-
-fn Language language_for_path(String path)
-{
-	String ext = path_extension(path);
-	if (ext.compare_to(".c3") == 0 || ext.compare_to(".c3i") == 0) return Language.C3;
-	if (ext.compare_to(".c") == 0 || ext.compare_to(".h") == 0) return Language.C;
-	if (ext.compare_to(".py") == 0) return Language.PYTHON;
-	if (ext.compare_to(".js") == 0) return Language.JAVASCRIPT;
-	if (ext.compare_to(".mjs") == 0) return Language.JAVASCRIPT;
-	if (ext.compare_to(".cjs") == 0) return Language.JAVASCRIPT;
-	return Language.NONE;
-}
-
-fn TSLanguage* grammar_language(Language language)
-{
-	switch (language)
-	{
-		case Language.C3:
-			return tree_sitter_c3::tree_sitter_c3();
-		case Language.C:
-			return tree_sitter_c::tree_sitter_c();
-		case Language.PYTHON:
-			return tree_sitter_python::tree_sitter_python();
-		case Language.JAVASCRIPT:
-			return tree_sitter_javascript::tree_sitter_javascript();
-		case Language.NONE:
-			return null;
-	}
-}
-
-fn String grammar_query_path(Language language)
-{
-	switch (language)
-	{
-		case Language.C3:
-			return "lib/tree_sitter_c3.c3l/queries/highlights.scm";
-		case Language.C:
-			return "lib/tree_sitter_c.c3l/queries/highlights.scm";
-		case Language.PYTHON:
-			return "lib/tree_sitter_python.c3l/queries/highlights.scm";
-		case Language.JAVASCRIPT:
-			return "lib/tree_sitter_javascript.c3l/queries/highlights.scm";
-		case Language.NONE:
-			return "";
-	}
 }
 
 fn char[] load_query_text(Allocator allocator, String rel)
@@ -166,9 +91,9 @@ fn char[] load_query_text(Allocator allocator, String rel)
 	return { };
 }
 
-fn TSQuery* build_query(Language language)
+fn TSQuery* build_query(language::Language language)
 {
-	String rel = grammar_query_path(language);
+	String rel = language::grammar_query_path(language);
 	if (rel.len == 0) return null;
 
 	TSQuery* result = null;
@@ -180,7 +105,7 @@ fn TSQuery* build_query(Language language)
 			uint offset        = 0;
 			TSQueryError error = TS_QUERY_ERROR_NONE;
 			result = tree_sitter::ts_query_new(
-				grammar_language(language),
+				language::grammar_language(language),
 				(char*)text.ptr,
 				(uint)text.len,
 				&offset,
@@ -192,10 +117,10 @@ fn TSQuery* build_query(Language language)
 	return result;
 }
 
-fn TSQuery* query_for(Language language)
+fn TSQuery* query_for(language::Language language)
 {
 	int index = (int)language;
-	if (index <= 0 || index >= 5) return null;
+	if (index <= 0 || index >= language::LANGUAGE_COUNT) return null;
 	if (query_loaded[index]) return query_cache[index];
 	query_loaded[index] = true;
 	query_cache[index] = build_query(language);
@@ -296,8 +221,8 @@ fn RLColor role_color(SyntaxRole role)
 
 fn Highlighter* create(Allocator allocator, PieceTable* table, String path)
 {
-	Language language = language_for_path(path);
-	if (language == Language.NONE) return null;
+	language::Language language = language::language_for_path(path);
+	if (language == language::Language.NONE) return null;
 
 	TSQuery* query = query_for(language);
 	if (!query) return null;
@@ -319,7 +244,7 @@ fn Highlighter* create(Allocator allocator, PieceTable* table, String path)
 		alloc::free(allocator, highlighter);
 		return null;
 	}
-	if (!tree_sitter::ts_parser_set_language(highlighter.parser, grammar_language(language)))
+	if (!tree_sitter::ts_parser_set_language(highlighter.parser, language::grammar_language(language)))
 	{
 		tree_sitter::ts_parser_delete(highlighter.parser);
 		highlighter.spans.free();
