@@ -1524,6 +1524,11 @@ fn int main(String[] args)
 		.pending_world = &pending_world,
 	};
 
+	RLVector2 last_arrow_mouse  =  { -1.0f, -1.0f };
+	RLVector2 last_arrow_target =  { 0.0f, 0.0f };
+	float last_arrow_zoom       = -1.0f;
+	bool arrow_hovered_cache    =  false;
+
 	while (!rl::window_should_close())
 	{
 		float dt = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
@@ -1541,8 +1546,7 @@ fn int main(String[] args)
 			&dpi_layout_scale
 		);
 		HoverInfo hover    = { };
-		bool arrow_hovered = false;
-		import_index.clear_hover();
+		bool arrow_hovered = arrow_hovered_cache;
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
 
@@ -2045,14 +2049,30 @@ fn int main(String[] args)
 			}
 
 			bool over_minimap = minimap::contains_screen(&project, &canvas, mouse);
-			if (!over_top && !over_minimap && project.hit_test(world) < 0)
+			if (over_top || over_minimap || project.hit_test(world) >= 0)
 			{
-				arrow_hovered = import_index.hit_test(&project, canvas.camera, world);
+				import_index.clear_hover();
+				arrow_hovered = false;
 			}
 			else
 			{
-				import_index.clear_hover();
+				bool moved          = mouse[0] != last_arrow_mouse[0] || mouse[1] != last_arrow_mouse[1];
+				bool camera_changed = canvas.camera.zoom != last_arrow_zoom
+					|| canvas.camera.target[0] != last_arrow_target[0]
+					|| canvas.camera.target[1] != last_arrow_target[1];
+				if (moved || camera_changed)
+				{
+					arrow_hovered = import_index.hit_test(&project, canvas.camera, world);
+					last_arrow_mouse = mouse;
+					last_arrow_zoom = canvas.camera.zoom;
+					last_arrow_target = canvas.camera.target;
+				}
+				else
+				{
+					arrow_hovered = import_index.hover.valid;
+				}
 			}
+			arrow_hovered_cache = arrow_hovered;
 			canvas.pointer_over_ui = over_top || project.pointer_over_ui(world) || over_minimap || arrow_hovered;
 			minimap::update(&project, &canvas);
 

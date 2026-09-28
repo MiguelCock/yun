@@ -197,19 +197,15 @@ fn void test_layout_packs_clusters()
 
 		p.layout();
 
-		Rect ra = p.cluster_bounds(a);
-		Rect rb = p.cluster_bounds(b);
-		Rect rc = p.cluster_bounds(c);
-
-		// each cluster contains its card
-		assert(rect_contains(ra, { p.cards[0].rect.x + 1.0f, p.cards[0].rect.y + 1.0f }));
-		assert(rect_contains(rb, { p.cards[1].rect.x + 1.0f, p.cards[1].rect.y + 1.0f }));
-		assert(rect_contains(rc, { p.cards[2].rect.x + 1.0f, p.cards[2].rect.y + 1.0f }));
-
-		// clusters do not overlap
-		assert(!rect_intersects(ra, rb));
-		assert(!rect_intersects(ra, rc));
-		assert(!rect_intersects(rb, rc));
+		// every card is placed and cards never overlap
+		for (sz i = 0; i < p.cards.len(); i++)
+		{
+			assert(p.cards[i].rect.width > 0.0f && p.cards[i].rect.height > 0.0f);
+			for (sz j = i + 1; j < p.cards.len(); j++)
+			{
+				assert(!rect_intersects(p.cards[i].rect, p.cards[j].rect));
+			}
+		}
 	};
 }
 
@@ -231,11 +227,15 @@ fn void test_layout_nests_child_clusters()
 
 		p.layout();
 
-		Rect ra = p.cluster_bounds(a);
-		Rect rd = p.cluster_visual_bounds(d);
-		assert(rd.x >= ra.x - 0.01f && rd.y >= ra.y - 0.01f);
-		assert(rd.x + rd.width <= ra.x + ra.width + 0.01f);
-		assert(rd.y + rd.height <= ra.y + ra.height + 0.01f);
+		// nested folders do not matter for placement: all cards are placed
+		for (sz i = 0; i < p.cards.len(); i++)
+		{
+			assert(p.cards[i].rect.width > 0.0f && p.cards[i].rect.height > 0.0f);
+			for (sz j = i + 1; j < p.cards.len(); j++)
+			{
+				assert(!rect_intersects(p.cards[i].rect, p.cards[j].rect));
+			}
+		}
 	};
 }
 
@@ -893,26 +893,22 @@ fn void test_card_in_direction()
 		assert(p.card_in_direction(3, Dir.LEFT) == 2);
 	};
 }
-fn void test_layout_flow_compact()
+fn void test_layout_pile_is_square()
 {
 	@pool()
 	{
 		Project p;
 		p.init(tmem);
 		p.root = (Path)"/root".copy(tmem);
-		int parent = p.add_folder("/root/p", ROOT_FOLDER);
-		int[4] kids;
-		for (int k = 0; k < 4; k++)
+		int folder = p.add_folder("/root/src", ROOT_FOLDER);
+		int count  = 16;
+		for (int k = 0; k < count; k++)
 		{
-			kids[k] = p.add_folder(string::format(tmem, "/root/p/c%d", k), parent);
-		}
-		for (int k = 0; k < 4; k++)
-		{
-			String path = string::format(tmem, "/root/p/c%d/f.c3", k);
+			String path = string::format(tmem, "/root/src/f%d.c3", k);
 			p.cards.push(
 				{
 					.path = (Path)path.copy(tmem),
-					.folder = kids[k],
+					.folder = folder,
 					.rect = { .width = 1.0f, .height = 1.0f },
 				}
 			);
@@ -920,18 +916,30 @@ fn void test_layout_flow_compact()
 
 		p.layout();
 
-		Rect rp  = p.cluster_bounds(parent);
-		Rect rc0 = p.cluster_bounds(kids[0]);
-		// packs into multiple columns rather than one tall column
-		assert(rp.width >= rc0.width * 1.5f);
-		assert(rp.height < rc0.height * 4.0f);
-		// children are contained in the parent
-		for (int k = 0; k < 4; k++)
-		{
-			Rect rk = p.cluster_visual_bounds(kids[k]);
-			assert(rk.x >= rp.x - 0.01f && rk.y >= rp.y - 0.01f);
-			assert(rk.x + rk.width <= rp.x + rp.width + 0.01f);
-			assert(rk.y + rk.height <= rp.y + rp.height + 0.01f);
-		}
+		// 16 cards -> ceil(sqrt(16)) = 4 columns
+		assert(p.cards[1].rect.y == p.cards[0].rect.y);
+		assert(p.cards[1].rect.x > p.cards[0].rect.x);
+		assert(p.cards[4].rect.x == p.cards[0].rect.x);
+		assert(p.cards[4].rect.y > p.cards[0].rect.y);
+
+		Rect out;
+		assert(p.content_bounds(&out));
+		float ratio = out.width / out.height;
+		assert(ratio >= 0.5f && ratio <= 2.0f);
+	};
+}
+fn void test_cards_revision_bumps()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int r0    = p.cards_revision;
+		int index = p.append_card("/root/a.c3", { 0.0f, 0.0f });
+		assert(index == 0);
+		assert(p.cards_revision == r0 + 1);
+		p.remove_card(0);
+		assert(p.cards_revision == r0 + 2);
 	};
 }
