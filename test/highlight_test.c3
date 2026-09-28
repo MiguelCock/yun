@@ -274,6 +274,150 @@ fn void test_all_highlight_queries_compile()
 	}
 }
 
+fn void test_language_for_name()
+{
+	assert(language::language_for_name("javascript") == language::Language.JAVASCRIPT);
+	assert(language::language_for_name("JS") == language::Language.JAVASCRIPT);
+	assert(language::language_for_name("  HTML \n") == language::Language.HTML);
+	assert(language::language_for_name("ts") == language::Language.TYPESCRIPT);
+	assert(language::language_for_name("c++") == language::Language.CPP);
+	assert(language::language_for_name("csharp") == language::Language.C_SHARP);
+	assert(language::language_for_name("c-sharp") == language::Language.C_SHARP);
+	assert(language::language_for_name("rs") == language::Language.RUST);
+	assert(language::language_for_name("sql") == language::Language.NONE);
+	assert(language::language_for_name("comment") == language::Language.NONE);
+	assert(language::language_for_name("") == language::Language.NONE);
+}
+
+fn void test_all_injection_queries_compile()
+{
+	for (int i = 1; i < language::LANGUAGE_COUNT; i++)
+	{
+		String path = language::injections_query_path((language::Language)i);
+		if (path.len == 0) continue;
+		assert(injection_query_for((language::Language)i) != null);
+	}
+}
+
+fn void test_php_injects_html()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "<?php echo 1; ?>\n<div class=\"x\">hi</div>\n");
+
+		Highlighter* highlighter = create(tmem, &table, "index.php");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.TYPE));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.ATTRIBUTE));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_php_injects_html_across_blocks()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(
+			tmem,
+			"<!DOCTYPE html>\n<html>\n<body>\n\n<h1>My First PHP Page</h1>\n\n<?php\necho \"Hello World!\";\n?>\n\n<div></div>\n\n</body>\n</html>\n"
+		);
+
+		Highlighter* highlighter = create(tmem, &table, "index.php");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 4, SyntaxRole.TYPE));
+		assert(runs_have_role(highlighter, &table, 10, SyntaxRole.TYPE));
+		assert(runs_have_role(highlighter, &table, 12, SyntaxRole.TYPE));
+		assert(runs_have_role(highlighter, &table, 13, SyntaxRole.TYPE));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_html_injects_script_and_style()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "<script>let x = 1;</script>\n<style>.a { color: red; }</style>\n");
+
+		Highlighter* highlighter = create(tmem, &table, "index.html");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.KEYWORD));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.PROPERTY));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_cpp_raw_string_injects_html()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "auto s = R\"html(<div></div>)html\";\n");
+
+		Highlighter* highlighter = create(tmem, &table, "sample.cpp");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.TYPE));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_javascript_tagged_template_combined()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "const x = html`<div>${y}</div>`;\n");
+
+		Highlighter* highlighter = create(tmem, &table, "sample.js");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.TYPE));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_lua_cdef_predicate_guard()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "cdef([[int x;]])\n");
+
+		Highlighter* highlighter = create(tmem, &table, "sample.lua");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.TYPE));
+		destroy(highlighter, tmem);
+	};
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "foo([[int x;]])\n");
+
+		Highlighter* highlighter = create(tmem, &table, "sample.lua");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+		assert(!runs_have_role(highlighter, &table, 0, SyntaxRole.TYPE));
+		destroy(highlighter, tmem);
+	};
+}
+
 fn void test_cpp_inherits_c_highlights()
 {
 	@pool()

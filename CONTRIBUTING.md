@@ -52,7 +52,7 @@ Submodules include `lib/lua54.c3l` and the tree-sitter `upstream/` sources under
 - Lua mods (#33+) will additionally require a system Lua 5.4 (e.g. `liblua5.4-dev`).
 
 ## Ground rules
-- Do not hand-edit vendored libraries (`lib/*.c3l`, `lib/lua54.c3l`); they are packed or submodules.
+- Do not hand-edit vendored libraries (`lib/*.c3l`, `lib/lua54.c3l`); they are packed or submodules. The exception is the hand-maintained runtime binding `lib/tree_sitter.c3l/tree-sitter.c3i`, which may be extended when the runtime API is needed.
 - Keep a successful `c3c build` free of `no-unused` warnings.
 - Match the C3 style in `.opencode/skills/yun-development/SKILL.md`.
 

@@ -121,6 +121,12 @@ else
 	echo "warning: $UPSTREAM/$QUERIES/highlights.scm not found; add queries/highlights.scm manually" >&2
 fi
 
+INJECTIONS_PATH=""
+if [ -f "$UPSTREAM/$QUERIES/injections.scm" ]; then
+	cp "$UPSTREAM/$QUERIES/injections.scm" "$LIB/queries/injections.scm"
+	INJECTIONS_PATH="lib/tree_sitter_$NAME.c3l/queries/injections.scm"
+fi
+
 if [ -n "$LICENSE_FILE" ]; then
 	cp "$LICENSE_FILE" "$LIB/LICENSE"
 else
@@ -152,6 +158,7 @@ Grammar for the [tree-sitter](https://github.com/tree-sitter/tree-sitter) runtim
 
 - \`tree-sitter-$NAME.c3i\` — declares \`$FUNCTION()\` returning the \`TSLanguage*\`.
 - \`queries/highlights.scm\` — bundled highlight query, consumed by the editor.
+- \`queries/injections.scm\` — optional embedded-language query (when upstream ships one).
 - \`linked-libs/<target>/\` — built grammar library (shared by default; \`.a\` with \`--static\`).
 - \`grammar.conf\` — build options (src/queries/lib) read by the build scripts.
 - \`upstream/\` — the pinned grammar source (git submodule).
@@ -187,6 +194,7 @@ SNIPPET_FILE="$(mktemp)"
 	echo "		.lib = \"$LIBNAME\","
 	echo "		.symbol = \"$FUNCTION\","
 	echo "		.highlights_path = \"lib/tree_sitter_$NAME.c3l/queries/highlights.scm\","
+	echo "		.injections_path = \"$INJECTIONS_PATH\","
 	echo "		.import_query = \"\","
 	echo "		.module_query = \"\","
 	echo "		.symbols_query = \"\","

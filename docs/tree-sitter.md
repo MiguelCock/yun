@@ -15,6 +15,7 @@ lib/tree_sitter_<name>.c3l/
 ├── manifest.json            # provides, linklib-dir, linked-libraries per target (static builds)
 ├── grammar.conf             # src/queries/lib options for the build scripts
 ├── queries/highlights.scm   # bundled highlight query
+├── queries/injections.scm   # optional embedded-language query
 ├── README.md
 ├── LICENSE
 ├── linked-libs/<target>/    # built artifacts (not committed)
@@ -52,9 +53,9 @@ Options:
 | `--license` | license file to copy (default: upstream `LICENSE`) |
 
 It creates the C3L directory, registers the submodule (`.gitmodules`), copies the
-highlight query and license, generates the README/manifest/`grammar.conf`, and
-adds the enum member + `LanguageSpec` stub (`lib`/`symbol`) in `src/language.c3`.
-Then:
+highlight (and, when present, injections) query and license, generates the
+README/manifest/`grammar.conf`, and adds the enum member + `LanguageSpec` stub
+(`lib`/`symbol`/`injections_path`) in `src/language.c3`. Then:
 
 1. `scripts/build-tree-sitter.sh linux-x64 rust` — build the shared library.
 2. Review the `LanguageSpec` entry (fill `import_query` / `module_query` /
@@ -191,6 +192,44 @@ A grammar's `queries/highlights.scm` may begin with `; inherits: <lang>[,<lang>]
 prepends the parent query before compiling, so inherited captures apply. The
 C++ vendored query carries this directive even though the upstream 0.23.4 tree
 declares the inheritance in `tree-sitter.json` instead.
+
+### Injections
+
+A grammar may ship `queries/injections.scm` to highlight embedded languages
+(PHP's HTML body, HTML `<script>`/`<style>`, C++ raw string literals, JavaScript
+tagged templates, ...). When a language's `injections_path` is set,
+`yun::highlight` runs the query and re-parses each `@injection.content` capture
+with the injected grammar, merging the resulting spans into the parent buffer
+(nested/inner spans win). `LanguageSpec.injections_path` is empty for grammars
+without one.
+
+Supported query features:
+
+- **Static language**: `(#set! injection.language "html")`.
+- **Dynamic language**: a capture named `@injection.language` (or a `#set!`
+  value that is a capture). The capture text is resolved through
+  `language::language_for_name` with aliases (`js`→javascript, `ts`→typescript,
+  `sh`/`md`/`regex`/`comment`/... resolve to nothing). Unresolved names fall back
+  to plain text.
+- **Combined**: `(#set! injection.combined)` concatenates all content ranges
+  captured for the same injected language (across every match, in document
+  order) into one parse and maps spans back to the original ranges. PHP needs
+  this: its markup is split into one `(text)` node per PHP block, so the stray
+  closing tags only resolve when the fragments are parsed together.
+- **Predicates**: `#eq?`, `#not-eq?`, `#any-of?`, `#not-any-of?` are evaluated
+  (used by Lua's `cdef` and Julia's prefixed strings); `#set!` is treated as a
+  property, and any other predicate (`#offset!`, `#match?`) makes the match be
+  skipped rather than mis-inject.
+- `(#set! injection.include-children)` needs no handling: the content node's
+  byte range already includes its children.
+
+Injections recurse with a depth limit of 3 and reuse a cached parser per
+language. Rust's self-injection (`macro token_tree → rust`) is intentionally not
+enabled; a few upstream rules resolve to languages that are not vendored yet
+(`markdown`, `sql`, `regex`, `comment`, ...) and are therefore no-ops. PHP's
+vendored `injections.scm` adds a Yun-specific `(text) → html` rule because the
+PHP grammar exposes markup outside `<?php ?>` as opaque `(text)` nodes (one per
+PHP block), which upstream does not inject.
 
 ## Checks
 
