@@ -71,67 +71,7 @@ fn void test_language_abi()
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.PYTHON)) > 0);
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.JAVASCRIPT)) > 0);
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.C3)) > 0);
-	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.GO)) > 0);
-	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.RUST)) > 0);
-	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.ZIG)) > 0);
-	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.ODIN)) > 0);
-	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.V)) > 0);
-	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.NIM)) > 0);
-	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.CPP)) > 0);
 	assert(tree_sitter::TS_MIN_COMPATIBLE_LANGUAGE_VERSION <= tree_sitter::TS_LANGUAGE_VERSION);
-}
-
-fn void test_parse_go()
-{
-	TSParser* parser = tree_sitter::ts_parser_new();
-	defer tree_sitter::ts_parser_delete(parser);
-	assert(parses_ok(parser, language::grammar_language(language::Language.GO), "package main\n\nfunc main() {}\n"));
-}
-
-fn void test_parse_rust()
-{
-	TSParser* parser = tree_sitter::ts_parser_new();
-	defer tree_sitter::ts_parser_delete(parser);
-	assert(parses_ok(parser, language::grammar_language(language::Language.RUST), "fn main() {}\n"));
-}
-
-fn void test_parse_zig()
-{
-	TSParser* parser = tree_sitter::ts_parser_new();
-	defer tree_sitter::ts_parser_delete(parser);
-	assert(parses_ok(parser, language::grammar_language(language::Language.ZIG), "pub fn main() void {}\n"));
-}
-
-fn void test_parse_odin()
-{
-	TSParser* parser = tree_sitter::ts_parser_new();
-	defer tree_sitter::ts_parser_delete(parser);
-	assert(parses_ok(
-		parser,
-		language::grammar_language(language::Language.ODIN),
-		"package main\n\nmain :: proc() {}\n"
-	));
-}
-
-fn void test_parse_v()
-{
-	TSParser* parser = tree_sitter::ts_parser_new();
-	defer tree_sitter::ts_parser_delete(parser);
-	assert(parses_ok(parser, language::grammar_language(language::Language.V), "fn main() {}\n"));
-}
-
-fn void test_parse_nim()
-{
-	TSParser* parser = tree_sitter::ts_parser_new();
-	defer tree_sitter::ts_parser_delete(parser);
-	assert(parses_ok(parser, language::grammar_language(language::Language.NIM), "proc main() =\n  discard\n"));
-}
-
-fn void test_parse_cpp()
-{
-	TSParser* parser = tree_sitter::ts_parser_new();
-	defer tree_sitter::ts_parser_delete(parser);
-	assert(parses_ok(parser, language::grammar_language(language::Language.CPP), "int main() { return 0; }\n"));
 }
 
 fn void test_highlights_query_loads()

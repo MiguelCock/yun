@@ -8,8 +8,7 @@
 # Usage:
 #   scripts/add-tree-sitter-grammar.sh <name> --url <git-url> --module <mod> \
 #       --function <fn> --extensions .a,.b [--rev <tag>] [--src <sub>] \
-#       [--queries <sub>] [--license <file>] [--lsp-id <id>] \
-#       [--lsp-command <cmd>] [--no-lsp]
+#       [--queries <sub>] [--license <file>]
 #
 # Example:
 #   scripts/add-tree-sitter-grammar.sh rust \
@@ -28,12 +27,9 @@ REV=""
 SRC="src"
 QUERIES="queries"
 LICENSE_FILE=""
-LSP_ID=""
-LSP_COMMAND=""
-NO_LSP=0
 
 if [ "$#" -lt 1 ]; then
-	echo "usage: $0 <name> --url <git-url> --module <mod> --function <fn> --extensions .a,.b [--rev <tag>] [--src <sub>] [--queries <sub>] [--license <file>] [--lsp-id <id>] [--lsp-command <cmd>] [--no-lsp]" >&2
+	echo "usage: $0 <name> --url <git-url> --module <mod> --function <fn> --extensions .a,.b [--rev <tag>] [--src <sub>] [--queries <sub>] [--license <file>]" >&2
 	exit 2
 fi
 
@@ -50,9 +46,6 @@ while [ "$#" -gt 0 ]; do
 		--src) SRC="$2"; shift 2 ;;
 		--queries) QUERIES="$2"; shift 2 ;;
 		--license) LICENSE_FILE="$2"; shift 2 ;;
-		--lsp-id) LSP_ID="$2"; shift 2 ;;
-		--lsp-command) LSP_COMMAND="$2"; shift 2 ;;
-		--no-lsp) NO_LSP=1; shift ;;
 		*) echo "unknown argument: $1" >&2; exit 2 ;;
 	esac
 done
@@ -152,7 +145,7 @@ Grammar for the [tree-sitter](https://github.com/tree-sitter/tree-sitter) runtim
 
 - \`tree-sitter-$NAME.c3i\` — declares \`$FUNCTION()\` returning the \`TSLanguage*\`.
 - \`queries/highlights.scm\` — bundled highlight query, consumed by the editor.
-- \`linked-libs/<target>/\` — built grammar library (shared by default; \`.a\` with \`--static\`).
+- \`linked-libs/<target>/lib$LIBNAME.a\` — prebuilt grammar static library.
 - \`grammar.conf\` — build options (src/queries/lib) read by the build scripts.
 - \`upstream/\` — the pinned grammar source (git submodule).
 
@@ -195,26 +188,6 @@ SNIPPET_FILE="$(mktemp)"
 
 SNIP="$SNIPPET_FILE" perl -0777 -i -pe 'BEGIN { open my $f, "<", $ENV{SNIP}; local $/; $s = <$f>; close $f; } s/(\n\};\n\nfn String path_extension)/$s . $1/e' "$ROOT/src/language.c3"
 rm -f "$SNIPPET_FILE"
-
-# Wire the LSP table (unless disabled or the id already exists).
-if [ "$NO_LSP" -eq 0 ] && [ -n "$LSP_COMMAND" ]; then
-	[ -z "$LSP_ID" ] && LSP_ID="$STEM"
-	if grep -q "\.id = \"$LSP_ID\"" "$ROOT/src/language.c3"; then
-		echo "note: LSP id \"$LSP_ID\" already present; skipping LSP entry"
-	else
-		LSP_SNIPPET_FILE="$(mktemp)"
-		{
-			echo ""
-			echo "	{"
-			echo "		.id = \"$LSP_ID\","
-			echo "		.extensions = { $exts },"
-			echo "		.command = \"$LSP_COMMAND\","
-			echo "	},"
-		} >"$LSP_SNIPPET_FILE"
-		SNIP="$LSP_SNIPPET_FILE" perl -0777 -i -pe 'BEGIN { open my $f, "<", $ENV{SNIP}; local $/; $s = <$f>; close $f; } s/(\n\};\n\nfn String lsp_for_path)/$s . $1/e' "$ROOT/src/language.c3"
-		rm -f "$LSP_SNIPPET_FILE"
-	fi
-fi
 
 echo "created $LIB"
 echo "next:"

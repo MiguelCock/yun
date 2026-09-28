@@ -19,40 +19,13 @@ The id is also the key used to override the command in config.
 | --- | --- | --- |
 | `c3` | `.c3` `.c3i` | `c3lsp` |
 | `c` | `.c` `.h` | `clangd` |
-| `cpp` | `.cpp` `.cc` `.cxx` `.hpp` `.hh` `.hxx` | `clangd` |
+| `cpp` | `.cpp` `.cc` `.cxx` `.hpp` `.hh` | `clangd` |
 | `python` | `.py` | `pyright-langserver --stdio` |
 | `javascript` | `.js` `.mjs` `.cjs` `.jsx` | `typescript-language-server --stdio` |
 | `typescript` | `.ts` `.tsx` | `typescript-language-server --stdio` |
-| `go` | `.go` | `gopls` |
-| `rust` | `.rs` | `rust-analyzer` |
-| `zig` | `.zig` `.zon` | `zls` |
-| `odin` | `.odin` | `ols` |
-| `v` | `.v` | `v-analyzer` |
-| `nim` | `.nim` `.nims` | `nimlangserver` |
 
 The defaults are best-effort. A language with no entry (and no override) is
 ignored by the LSP.
-
-## Requirements
-
-A server only provides features when its toolchain is present and set up. A
-server that starts but returns no completions is usually missing its toolchain,
-a project file, or a matching version.
-
-| language | needs |
-| --- | --- |
-| C / C++ | `clangd` with compile flags (a `compile_commands.json` gives the best results). |
-| Python | `pyright-langserver` (or another server via config). |
-| JavaScript / TypeScript | `typescript-language-server` (needs Node). |
-| Go | `gopls` and a Go module (`go.mod`) in the project. |
-| Rust | `rust-analyzer` and a Cargo project (`Cargo.toml`). |
-| Zig | `zls` **matching your `zig` version**, plus `build.zig` / `build.zig.zon` for project-wide results. |
-| Odin | `ols` and the Odin toolchain. |
-| V | `v-analyzer` and the V compiler; a `v.mod` for project analysis. |
-| Nim | `nimlangserver` and the Nim toolchain. |
-
-In particular, **zls must be the release that matches your Zig compiler** — a
-version mismatch starts the server but yields no completions.
 
 ## Configuration
 
@@ -84,6 +57,3 @@ Override the command for a language id under the `lsp` section of the config
   problems panel and as squiggles in the editor.
 - The language id sent in `didOpen` matches the table id, so servers that key
   behavior on `languageId` (e.g. `clangd` for `c` vs `cpp`) work as expected.
-- Set `YUN_LSP_DEBUG=1` to log LSP requests/responses and the server's stderr to
-  the terminal (useful when a server starts but returns nothing). Yun also logs
-  each server's start/exit and its negotiated capabilities by default.

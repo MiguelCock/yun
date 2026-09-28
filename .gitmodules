@@ -16,24 +16,3 @@
 [submodule "lib/tree_sitter_c.c3l/upstream"]
 	path = lib/tree_sitter_c.c3l/upstream
 	url = https://github.com/tree-sitter/tree-sitter-c.git
-[submodule "lib/tree_sitter_go.c3l/upstream"]
-	path = lib/tree_sitter_go.c3l/upstream
-	url = https://github.com/tree-sitter/tree-sitter-go
-[submodule "lib/tree_sitter_rust.c3l/upstream"]
-	path = lib/tree_sitter_rust.c3l/upstream
-	url = https://github.com/tree-sitter/tree-sitter-rust
-[submodule "lib/tree_sitter_zig.c3l/upstream"]
-	path = lib/tree_sitter_zig.c3l/upstream
-	url = https://github.com/tree-sitter-grammars/tree-sitter-zig
-[submodule "lib/tree_sitter_odin.c3l/upstream"]
-	path = lib/tree_sitter_odin.c3l/upstream
-	url = https://github.com/tree-sitter-grammars/tree-sitter-odin
-[submodule "lib/tree_sitter_nim.c3l/upstream"]
-	path = lib/tree_sitter_nim.c3l/upstream
-	url = https://github.com/alaviss/tree-sitter-nim
-[submodule "lib/tree_sitter_cpp.c3l/upstream"]
-	path = lib/tree_sitter_cpp.c3l/upstream
-	url = https://github.com/tree-sitter/tree-sitter-cpp
-[submodule "lib/tree_sitter_v.c3l/upstream"]
-	path = lib/tree_sitter_v.c3l/upstream
-	url = https://github.com/nedpals/tree-sitter-v
