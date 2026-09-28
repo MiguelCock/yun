@@ -80,7 +80,8 @@ fn void finish_open(
 			Rect bounds;
 			if (project.content_bounds(&bounds))
 			{
-				canvas.fit_zoom(bounds, rl::get_screen_width(), rl::get_screen_height());
+				float floor = (float)config.settings.get_float(settings::SettingId.CANVAS_FIT_MIN_ZOOM);
+				canvas.fit_zoom_floor(bounds, rl::get_screen_width(), rl::get_screen_height(), floor);
 			}
 		}
 	}

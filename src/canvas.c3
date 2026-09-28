@@ -322,6 +322,17 @@ fn void Canvas.fit_zoom(&self, Rect content, int screen_w, int screen_h)
 	};
 }
 
+fn void Canvas.fit_zoom_floor(&self, Rect content, int screen_w, int screen_h, float floor)
+{
+	self.fit_zoom(content, screen_w, screen_h);
+	if (floor <= 0.0f || self.target.zoom >= floor) return;
+	self.target.zoom = floor;
+	self.target.target = {
+		content.x + (float)screen_w / (2.0f * floor),
+		content.y + (float)screen_h / (2.0f * floor),
+	};
+}
+
 fn RLVector2 Canvas.clamp_delta(&self, RLVector2 delta)
 {
 	float len_sq = delta[0] * delta[0] + delta[1] * delta[1];

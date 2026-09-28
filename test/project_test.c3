@@ -792,7 +792,7 @@ fn void test_refresh_sleep()
 		p.toggle_collapse(folder);
 
 		Rect visible = { .x = 0.0f, .y = 0.0f, .width = 200.0f, .height = 200.0f };
-		p.refresh_sleep(visible);
+		p.refresh_sleep(visible, 1.0f);
 		assert(!p.cards[0].sleeping);
 		assert(p.cards[1].sleeping);
 		assert(p.cards[2].sleeping);
@@ -800,7 +800,7 @@ fn void test_refresh_sleep()
 		assert(p.asleep_count == 2);
 
 		p.focused = 1;
-		p.refresh_sleep(visible);
+		p.refresh_sleep(visible, 1.0f);
 		assert(!p.cards[1].sleeping);
 		assert(p.awake_count == 2);
 	};
@@ -891,5 +891,47 @@ fn void test_card_in_direction()
 		assert(p.card_in_direction(1, Dir.LEFT) == 0);
 		assert(p.card_in_direction(3, Dir.UP) == 1);
 		assert(p.card_in_direction(3, Dir.LEFT) == 2);
+	};
+}
+fn void test_layout_flow_compact()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int parent = p.add_folder("/root/p", ROOT_FOLDER);
+		int[4] kids;
+		for (int k = 0; k < 4; k++)
+		{
+			kids[k] = p.add_folder(string::format(tmem, "/root/p/c%d", k), parent);
+		}
+		for (int k = 0; k < 4; k++)
+		{
+			String path = string::format(tmem, "/root/p/c%d/f.c3", k);
+			p.cards.push(
+				{
+					.path = (Path)path.copy(tmem),
+					.folder = kids[k],
+					.rect = { .width = 1.0f, .height = 1.0f },
+				}
+			);
+		}
+
+		p.layout();
+
+		Rect rp  = p.cluster_bounds(parent);
+		Rect rc0 = p.cluster_bounds(kids[0]);
+		// packs into multiple columns rather than one tall column
+		assert(rp.width >= rc0.width * 1.5f);
+		assert(rp.height < rc0.height * 4.0f);
+		// children are contained in the parent
+		for (int k = 0; k < 4; k++)
+		{
+			Rect rk = p.cluster_visual_bounds(kids[k]);
+			assert(rk.x >= rp.x - 0.01f && rk.y >= rp.y - 0.01f);
+			assert(rk.x + rk.width <= rp.x + rp.width + 0.01f);
+			assert(rk.y + rk.height <= rp.y + rp.height + 0.01f);
+		}
 	};
 }
