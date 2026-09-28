@@ -124,7 +124,7 @@ fi
 if [ -n "$LICENSE_FILE" ]; then
 	cp "$LICENSE_FILE" "$LIB/LICENSE"
 else
-	for candidate in LICENSE LICENSE.txt COPYING COPYING.txt; do
+	for candidate in LICENSE LICENSE.md LICENSE.txt COPYING COPYING.txt COPYING.md; do
 		if [ -f "$UPSTREAM/$candidate" ]; then
 			cp "$UPSTREAM/$candidate" "$LIB/LICENSE"
 			break
