@@ -51,6 +51,7 @@ fn void test_workspace_save_load_roundtrip()
 		int card = p.append_card((String)f, { 0.0f, 0.0f });
 		p.cards[card].rect = { .x = 10.0f, .y = 20.0f, .width = 240.0f, .height = 160.0f };
 		p.cards[card].open = true;
+		p.cards[card].preview = true;
 		int folder = p.add_folder((String)sub, project::ROOT_FOLDER);
 		p.folders[folder].collapsed = false;
 
@@ -64,6 +65,7 @@ fn void test_workspace_save_load_roundtrip()
 		// scramble the in-memory state, then load it back
 		p.cards[card].rect = { .x = 0.0f, .y = 0.0f, .width = 1.0f, .height = 1.0f };
 		p.cards[card].open = false;
+		p.cards[card].preview = false;
 		p.folders[folder].collapsed = true;
 		canvas.camera.target = { 0.0f, 0.0f };
 		canvas.camera.zoom = 1.0f;
@@ -72,6 +74,7 @@ fn void test_workspace_save_load_roundtrip()
 		assert(p.cards[card].rect.x == 10.0f && p.cards[card].rect.y == 20.0f);
 		assert(p.cards[card].rect.width == 240.0f && p.cards[card].rect.height == 160.0f);
 		assert(p.cards[card].open);
+		assert(p.cards[card].preview);
 		assert(!p.folders[folder].collapsed);
 		assert(canvas.camera.zoom == 2.0f);
 		assert(canvas.camera.target[0] == 5.0f && canvas.camera.target[1] == -3.0f);

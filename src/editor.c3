@@ -10,6 +10,7 @@ import std::math;
 import yun::card;
 import yun::highlight;
 import yun::lsp;
+import yun::markdown;
 import yun::text;
 import yun::theme;
 import yun::ui;
@@ -87,6 +88,7 @@ enum CardRegion
 	HANDLE,
 	MARKER,
 	CLOSE,
+	PREVIEW,
 	TITLE,
 	BODY,
 }
@@ -429,6 +431,7 @@ fn CardRegion region_at(FileCard* card, RLVector2 world, EditorMetrics metrics, 
 {
 	if (!card.contains(world)) return CardRegion.NONE;
 	if (card.resize_handle_at(world, camera) >= 0) return CardRegion.HANDLE;
+	if (card.preview_marker_hit(world)) return CardRegion.PREVIEW;
 	if (card.close_marker_hit(world)) return CardRegion.CLOSE;
 	if (card.marker_hit(world)) return CardRegion.MARKER;
 	if (card.open && world[1] >= card.rect.y + ui::pxf(card::CARD_TITLE_HEIGHT)) return CardRegion.BODY;
@@ -454,6 +457,10 @@ fn void ensure_buffer(FileCard* card, Allocator allocator)
 	if (!card.highlight && card.buffer)
 	{
 		card.highlight = highlight::create(allocator, card.buffer, (String)card.path);
+	}
+	if (!card.view && card.buffer && markdown::is_markdown_path((String)card.path))
+	{
+		card.view = markdown::view_create(allocator);
 	}
 	if (created && card.buffer) lsp::lsp_did_open((String)card.path, card.buffer);
 	stamp_file(card);
@@ -510,6 +517,12 @@ fn void destroy_buffer(FileCard* card, Allocator allocator)
 		card.highlight = null;
 	}
 
+	if (card.view)
+	{
+		markdown::view_destroy(card.view, allocator);
+		card.view = null;
+	}
+
 	card.cursor = 0;
 	card.selection_anchor = 0;
 	card.preferred_column = 0;
@@ -542,6 +555,7 @@ fn void reload_buffer(FileCard* card, Allocator allocator)
 	(void)card.buffer.init_from_file(allocator, (String)card.path);
 	if (card.history) card.history.reset();
 	if (card.highlight) card.highlight.mark_dirty();
+	if (card.view) markdown::view_mark_dirty(card.view);
 	if (card.buffer) lsp::lsp_did_change((String)card.path, card.buffer);
 	card.cursor = 0;
 	card.selection_anchor = 0;

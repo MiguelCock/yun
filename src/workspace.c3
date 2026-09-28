@@ -9,7 +9,7 @@ import yun::canvas;
 import yun::card;
 import yun::project;
 
-const String WORKSPACE_VERSION = "1";
+const String WORKSPACE_VERSION = "2";
 const String WORKSPACE_DIR     = ".yun";
 const String WORKSPACE_FILE    = "workspace.json";
 const String WORKSPACE_TMP     = "workspace.tmp";
@@ -29,6 +29,7 @@ struct CardState
 	float w;
 	float h;
 	bool open;
+	bool preview;
 }
 
 struct FolderState
@@ -85,6 +86,7 @@ fn bool save(project::Project* project, canvas::Canvas* canvas)
 					.w = card.rect.width,
 					.h = card.rect.height,
 					.open = card.open,
+					.preview = card.preview,
 				}
 			);
 		}
@@ -153,6 +155,7 @@ fn bool load(project::Project* project, canvas::Canvas* canvas)
 				.height = state.cards[i].h,
 			};
 			project.cards[index].open = state.cards[i].open;
+			project.cards[index].preview = state.cards[i].preview;
 		}
 
 		for (usz i = 0; i < state.folders.len; i++)

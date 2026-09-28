@@ -20,6 +20,7 @@ import yun::hover;
 import yun::imports;
 import yun::keymap;
 import yun::lsp;
+import yun::markdown;
 import yun::menu;
 import yun::minimap;
 import yun::notify;
@@ -929,6 +930,14 @@ fn void run_command(commands::CommandId id, App* app)
 				project.cards[index].open = !project.cards[index].open;
 				return;
 			}
+		case commands::CommandId.TOGGLE_PREVIEW:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				project.toggle_preview(index);
+				return;
+			}
 		case commands::CommandId.RENAME_CARD:
 
 			{
@@ -1173,6 +1182,7 @@ fn void mark_buffer_changed(project::Project* project, findbar::FindBar* find_ba
 	if (!card) return;
 	card.dirty = true;
 	if (card.highlight) card.highlight.mark_dirty();
+	if (card.view) markdown::view_mark_dirty(card.view);
 	project.reveal_focused(metrics);
 	find_bar.mark_dirty();
 }
