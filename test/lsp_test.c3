@@ -526,6 +526,12 @@ fn void test_lsp_language_detection()
 	assert(lsp_language_for_path("build.sc").compare_to("scala") == 0);
 	assert(lsp_language_for_path("build.sbt").compare_to("scala") == 0);
 	assert(lsp_language_for_path("Program.cs").compare_to("csharp") == 0);
+	assert(lsp_language_for_path("app.ts").compare_to("typescript") == 0);
+	assert(lsp_language_for_path("app.mts").compare_to("typescript") == 0);
+	assert(lsp_language_for_path("app.cts").compare_to("typescript") == 0);
+	assert(lsp_language_for_path("style.css").compare_to("css") == 0);
+	assert(lsp_language_for_path("index.html").compare_to("html") == 0);
+	assert(lsp_language_for_path("index.htm").compare_to("html") == 0);
 	assert(lsp_language_for_path("notes.txt").len == 0);
 	assert(lsp_language_for_path("Makefile").len == 0);
 	assert(lsp_language_for_path("dir.with.dots/file").len == 0);
@@ -549,6 +555,8 @@ fn void test_lsp_default_commands()
 	assert(lsp_default_command("kotlin").compare_to("kotlin-language-server") == 0);
 	assert(lsp_default_command("scala").compare_to("metals") == 0);
 	assert(lsp_default_command("csharp").compare_to("csharp-ls") == 0);
+	assert(lsp_default_command("css").compare_to("vscode-css-language-server --stdio") == 0);
+	assert(lsp_default_command("html").compare_to("vscode-html-language-server --stdio") == 0);
 	assert(lsp_default_command("unknown").len == 0);
 }
 

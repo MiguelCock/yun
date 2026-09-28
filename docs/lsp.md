@@ -22,7 +22,9 @@ The id is also the key used to override the command in config.
 | `cpp` | `.cpp` `.cc` `.cxx` `.hpp` `.hh` `.hxx` | `clangd` |
 | `python` | `.py` | `pyright-langserver --stdio` |
 | `javascript` | `.js` `.mjs` `.cjs` `.jsx` | `typescript-language-server --stdio` |
-| `typescript` | `.ts` `.tsx` | `typescript-language-server --stdio` |
+| `typescript` | `.ts` `.tsx` `.mts` `.cts` | `typescript-language-server --stdio` |
+| `css` | `.css` | `vscode-css-language-server --stdio` |
+| `html` | `.html` `.htm` | `vscode-html-language-server --stdio` |
 | `java` | `.java` | `jdtls` |
 | `kotlin` | `.kt` `.kts` | `kotlin-language-server` |
 | `scala` | `.scala` `.sc` `.sbt` | `metals` |
@@ -48,6 +50,7 @@ a project file, or a matching version.
 | C / C++ | `clangd` with compile flags (a `compile_commands.json` gives the best results). |
 | Python | `pyright-langserver` (or another server via config). |
 | JavaScript / TypeScript | `typescript-language-server` (needs Node). |
+| CSS / HTML | `vscode-css-language-server` / `vscode-html-language-server` (from `vscode-langservers-extracted`). |
 | Java | `jdtls` (needs a JDK); a build file (`pom.xml`/`build.gradle`) for project analysis. |
 | Kotlin | `kotlin-language-server` (needs a JDK) and a Gradle/Maven project. |
 | Scala | `metals` (needs a JDK) and a `build.sbt`/`build.sc` project. |

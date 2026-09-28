@@ -161,7 +161,9 @@ C3L). Most are MIT; the Nim grammar is MPL-2.0.
 | tree_sitter_c | tree-sitter/tree-sitter-c | `v0.24.2` | MIT |
 | tree_sitter_c_sharp | tree-sitter/tree-sitter-c-sharp | `v0.23.5` | MIT |
 | tree_sitter_cpp | tree-sitter/tree-sitter-cpp | `v0.23.4` | MIT |
+| tree_sitter_css | tree-sitter/tree-sitter-css | `v0.25.0` | MIT |
 | tree_sitter_go | tree-sitter/tree-sitter-go | `v0.25.0` | MIT |
+| tree_sitter_html | tree-sitter/tree-sitter-html | `v0.23.2` | MIT |
 | tree_sitter_java | tree-sitter/tree-sitter-java | `v0.23.5` | MIT |
 | tree_sitter_javascript | tree-sitter/tree-sitter-javascript | `44c892e` | MIT |
 | tree_sitter_kotlin | fwcd/tree-sitter-kotlin | `0.3.8` | MIT |
@@ -170,6 +172,8 @@ C3L). Most are MIT; the Nim grammar is MPL-2.0.
 | tree_sitter_python | tree-sitter/tree-sitter-python | `293fdc0` | MIT |
 | tree_sitter_rust | tree-sitter/tree-sitter-rust | `v0.24.2` | MIT |
 | tree_sitter_scala | tree-sitter/tree-sitter-scala | `v0.26.2` | MIT |
+| tree_sitter_tsx | tree-sitter/tree-sitter-typescript | `v0.23.2` | MIT |
+| tree_sitter_typescript | tree-sitter/tree-sitter-typescript | `v0.23.2` | MIT |
 | tree_sitter_v | nedpals/tree-sitter-v | `fee18d64a5` | MIT |
 | tree_sitter_zig | tree-sitter-grammars/tree-sitter-zig | `v1.1.2` | MIT |
 

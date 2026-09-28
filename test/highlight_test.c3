@@ -50,6 +50,14 @@ fn void test_language_for_path()
 	assert(language::language_for_path("build.sc") == language::Language.SCALA);
 	assert(language::language_for_path("build.sbt") == language::Language.SCALA);
 	assert(language::language_for_path("Program.cs") == language::Language.C_SHARP);
+	assert(language::language_for_path("app.ts") == language::Language.TYPESCRIPT);
+	assert(language::language_for_path("app.mts") == language::Language.TYPESCRIPT);
+	assert(language::language_for_path("app.cts") == language::Language.TYPESCRIPT);
+	assert(language::language_for_path("app.tsx") == language::Language.TSX);
+	assert(language::language_for_path("app.jsx") == language::Language.JAVASCRIPT);
+	assert(language::language_for_path("style.css") == language::Language.CSS);
+	assert(language::language_for_path("index.html") == language::Language.HTML);
+	assert(language::language_for_path("index.htm") == language::Language.HTML);
 	assert(language::language_for_path("notes.txt") == language::Language.NONE);
 	assert(language::language_for_path("Makefile") == language::Language.NONE);
 	assert(language::language_for_path("dir.with.dots/file") == language::Language.NONE);
@@ -291,6 +299,42 @@ fn void test_parse_highlights_v()
 
 		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.KEYWORD));
 		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.STRING));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_parse_highlights_typescript()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "const x = \"hi\";\n");
+
+		Highlighter* highlighter = create(tmem, &table, "sample.ts");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.KEYWORD));
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.STRING));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_parse_highlights_tsx()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "const el = <div>hi</div>;\n");
+
+		Highlighter* highlighter = create(tmem, &table, "sample.tsx");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.KEYWORD));
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.TYPE));
 
 		destroy(highlighter, tmem);
 	};

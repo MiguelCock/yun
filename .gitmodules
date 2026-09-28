@@ -49,3 +49,15 @@
 [submodule "lib/tree_sitter_c_sharp.c3l/upstream"]
 	path = lib/tree_sitter_c_sharp.c3l/upstream
 	url = https://github.com/tree-sitter/tree-sitter-c-sharp
+[submodule "lib/tree_sitter_typescript.c3l/upstream"]
+	path = lib/tree_sitter_typescript.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-typescript
+[submodule "lib/tree_sitter_tsx.c3l/upstream"]
+	path = lib/tree_sitter_tsx.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-typescript
+[submodule "lib/tree_sitter_css.c3l/upstream"]
+	path = lib/tree_sitter_css.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-css
+[submodule "lib/tree_sitter_html.c3l/upstream"]
+	path = lib/tree_sitter_html.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-html
