@@ -172,6 +172,14 @@ fn void apply_settings(
 	is.hit_tolerance = (float)config.settings.get_float(settings::SettingId.ARROWS_HIT_TOLERANCE);
 	is.rescan_debounce = (float)config.settings.get_float(settings::SettingId.ARROWS_RESCAN_DEBOUNCE);
 	is.scan_workers = (int)config.settings.get_int(settings::SettingId.ARROWS_SCAN_WORKERS);
+	is.internal_style = imports::parse_arrow_style(
+		config.settings.get_string(settings::SettingId.ARROWS_INTERNAL_STYLE)
+	);
+	is.external_style = imports::parse_arrow_style(
+		config.settings.get_string(settings::SettingId.ARROWS_EXTERNAL_STYLE)
+	);
+	is.dash_length = (float)config.settings.get_float(settings::SettingId.ARROWS_DASH_LENGTH);
+	is.dash_gap = (float)config.settings.get_float(settings::SettingId.ARROWS_DASH_GAP);
 	imports::set_settings(is);
 
 	bool font_changed    = false;

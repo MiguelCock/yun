@@ -91,7 +91,15 @@ fn void FileCard.move_by(&self, RLVector2 world_delta)
 	self.rect.y += world_delta[1];
 }
 
-fn void FileCard.draw(&self, bool focused)
+fn float screen_thickness(float px, float zoom)
+{
+	if (zoom <= 0.0f) return px;
+	float t = px / zoom;
+	if (t < 0.01f) t = 0.01f;
+	return t;
+}
+
+fn void FileCard.draw(&self, bool focused, float zoom)
 {
 	Rect r = self.effective_rect();
 	rl::draw_rectangle_rec(r, theme::current().card_body);
@@ -104,11 +112,11 @@ fn void FileCard.draw(&self, bool focused)
 	rl::draw_rectangle_rec(title, theme::current().card_title);
 	if (focused)
 	{
-		rl::draw_rectangle_lines_ex(r, 1.0f, theme::current().card_focus);
+		rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_focus);
 	}
 	else
 	{
-		rl::draw_rectangle_lines_ex(r, 1.0f, theme::current().card_border);
+		rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_border);
 	}
 	@pool()
 	{

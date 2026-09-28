@@ -26,6 +26,15 @@ const float ARROW_HIT_PX           = 6.0f;
 const int BEZIER_HIT_STEPS         = 20;
 const double EDIT_DEBOUNCE_SECONDS = 0.15;
 
+enum ArrowStyle : int
+{
+	SOLID,
+	DASHED,
+	DOTTED,
+	LONG_DASH,
+	DASH_DOT,
+}
+
 struct ImportSettings
 {
 	bool enabled;
@@ -38,6 +47,19 @@ struct ImportSettings
 	float hit_tolerance;
 	float rescan_debounce;
 	int scan_workers;
+	ArrowStyle internal_style;
+	ArrowStyle external_style;
+	float dash_length;
+	float dash_gap;
+}
+
+fn ArrowStyle parse_arrow_style(String value)
+{
+	if (value.compare_to("dashed") == 0) return ArrowStyle.DASHED;
+	if (value.compare_to("dotted") == 0) return ArrowStyle.DOTTED;
+	if (value.compare_to("long-dash") == 0) return ArrowStyle.LONG_DASH;
+	if (value.compare_to("dash-dot") == 0) return ArrowStyle.DASH_DOT;
+	return ArrowStyle.SOLID;
 }
 
 ImportSettings g_import_settings = {
@@ -51,6 +73,10 @@ ImportSettings g_import_settings = {
 	.hit_tolerance = ARROW_HIT_PX,
 	.rescan_debounce = (float)EDIT_DEBOUNCE_SECONDS,
 	.scan_workers = 0,
+	.internal_style = ArrowStyle.SOLID,
+	.external_style = ArrowStyle.DASHED,
+	.dash_length = 8.0f,
+	.dash_gap = 6.0f,
 };
 
 fn ImportSettings settings()
@@ -67,6 +93,8 @@ fn void set_settings(ImportSettings value)
 	if (value.rescan_debounce < 0.0f) value.rescan_debounce = 0.0f;
 	if (value.scan_workers < 0) value.scan_workers = 0;
 	if (value.scan_workers > MAX_SCAN_WORKERS) value.scan_workers = MAX_SCAN_WORKERS;
+	if (value.dash_length < 1.0f) value.dash_length = 1.0f;
+	if (value.dash_gap < 1.0f) value.dash_gap = 1.0f;
 	g_import_settings = value;
 }
 
@@ -2092,24 +2120,65 @@ fn void draw_bezier(RLVector2 p1, RLVector2 p2, float thick, RLColor color)
 	rl::draw_spline_segment_bezier_cubic(p1, c2, c3, p2, thick, color);
 }
 
-fn void draw_dashed_bezier(RLVector2 p1, RLVector2 p2, float thick, float zoom, RLColor color)
+fn void draw_styled_bezier(RLVector2 p1, RLVector2 p2, float thick, float zoom, ArrowStyle style, RLColor color)
 {
+	if (style == ArrowStyle.SOLID)
+	{
+		draw_bezier(p1, p2, thick, color);
+		return;
+	}
+
 	RLVector2 c2;
 	RLVector2 c3;
 	bezier_controls(p1, p2, &c2, &c3);
 
-	int steps      = 26;
-	bool on        = true;
-	RLVector2 prev = p1;
+	float dash = g_import_settings.dash_length / zoom;
+	float gap  = g_import_settings.dash_gap / zoom;
+	if (style == ArrowStyle.DOTTED)
+	{
+		dash = 1.0f / zoom;
+	}
+	else if (style == ArrowStyle.LONG_DASH)
+	{
+		dash = (g_import_settings.dash_length * 2.0f) / zoom;
+	}
+	float small = 1.0f / zoom;
+
+	int steps       = 128;
+	bool on         = true;
+	bool short_dash = false;
+	float remaining = dash;
+	RLVector2 prev  = p1;
 	for (int s = 1; s <= steps; s++)
 	{
 		float t         = (float)s / (float)steps;
 		RLVector2 point = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, t);
 		if (on) rl::draw_line_ex(prev, point, thick, color);
+		float dx = point[0] - prev[0];
+		float dy = point[1] - prev[1];
+		remaining -= math::sqrt(dx * dx + dy * dy);
+		if (remaining <= 0.0f)
+		{
+			if (on)
+			{
+				on = false;
+				remaining = gap;
+			}
+			else if (style == ArrowStyle.DASH_DOT && !short_dash)
+			{
+				on = true;
+				short_dash = true;
+				remaining = small;
+			}
+			else
+			{
+				on = true;
+				short_dash = false;
+				remaining = dash;
+			}
+		}
 		prev = point;
-		on = !on;
 	}
-	draw_arrowhead(p1, c2, c3, p2, zoom, color);
 }
 
 fn void draw_label(RLFont font, String text, float x, float y, float size, RLColor color)
@@ -2231,7 +2300,7 @@ fn void draw_one(
 	{
 		RLColor color = hovered ? theme::current()
 			.import_solid_hover : (related ? theme::current().import_solid : theme::current().import_solid_dim);
-		draw_bezier(p1, p2, thick, color);
+		draw_styled_bezier(p1, p2, thick, zoom, g_import_settings.internal_style, color);
 		draw_arrowhead(p1, c2, c3, p2, zoom, color);
 		return;
 	}
@@ -2240,7 +2309,8 @@ fn void draw_one(
 		.import_external_hover : (related ? theme::current().import_external : theme::current().import_external_dim);
 	RLColor label_color = hovered ? theme::current()
 		.import_external_hover : (related ? theme::current().import_label : theme::current().import_label_dim);
-	draw_dashed_bezier(p1, p2, thick, zoom, line_color);
+	draw_styled_bezier(p1, p2, thick, zoom, g_import_settings.external_style, line_color);
+	draw_arrowhead(p1, c2, c3, p2, zoom, line_color);
 	float s  = ui::scale();
 	float ts = ui::text_scale();
 	rl::draw_circle_v(p2, 3.0f * s / zoom, line_color);
