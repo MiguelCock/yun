@@ -31,9 +31,10 @@ LICENSE_FILE=""
 LSP_ID=""
 LSP_COMMAND=""
 NO_LSP=0
+NO_EXTENSIONS=0
 
 if [ "$#" -lt 1 ]; then
-	echo "usage: $0 <name> --url <git-url> --module <mod> --function <fn> --extensions .a,.b [--rev <tag>] [--src <sub>] [--queries <sub>] [--license <file>] [--lsp-id <id>] [--lsp-command <cmd>] [--no-lsp]" >&2
+	echo "usage: $0 <name> --url <git-url> --module <mod> --function <fn> [--extensions .a,.b | --no-extensions] [--rev <tag>] [--src <sub>] [--queries <sub>] [--license <file>] [--lsp-id <id>] [--lsp-command <cmd>] [--no-lsp]" >&2
 	exit 2
 fi
 
@@ -53,16 +54,21 @@ while [ "$#" -gt 0 ]; do
 		--lsp-id) LSP_ID="$2"; shift 2 ;;
 		--lsp-command) LSP_COMMAND="$2"; shift 2 ;;
 		--no-lsp) NO_LSP=1; shift ;;
+		--no-extensions) NO_EXTENSIONS=1; NO_LSP=1; shift ;;
 		*) echo "unknown argument: $1" >&2; exit 2 ;;
 	esac
 done
 
-for required in URL MODULE FUNCTION EXTENSIONS; do
+for required in URL MODULE FUNCTION; do
 	if [ -z "${!required}" ]; then
 		echo "missing --$(echo "$required" | tr '[:upper:]_' '[:lower:]-')" >&2
 		exit 2
 	fi
 done
+if [ "$NO_EXTENSIONS" -eq 0 ] && [ -z "$EXTENSIONS" ]; then
+	echo "missing --extensions (or pass --no-extensions for an injection-only grammar)" >&2
+	exit 2
+fi
 
 LIB="$ROOT/lib/tree_sitter_$NAME.c3l"
 UPSTREAM="$LIB/upstream"
@@ -185,11 +191,13 @@ SNIPPET_FILE="$(mktemp)"
 	echo "	{"
 	echo "		.name = \"$STEM\","
 	exts=""
-	IFS=',' read -ra EXTS <<<"$EXTENSIONS"
-	for ext in "${EXTS[@]}"; do
-		exts="$exts\"$ext\", "
-	done
-	exts="${exts%, }"
+	if [ "$NO_EXTENSIONS" -eq 0 ]; then
+		IFS=',' read -ra EXTS <<<"$EXTENSIONS"
+		for ext in "${EXTS[@]}"; do
+			exts="$exts\"$ext\", "
+		done
+		exts="${exts%, }"
+	fi
 	echo "		.extensions = { $exts },"
 	echo "		.lib = \"$LIBNAME\","
 	echo "		.symbol = \"$FUNCTION\","

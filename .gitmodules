@@ -91,3 +91,9 @@
 [submodule "lib/tree_sitter_dart.c3l/upstream"]
 	path = lib/tree_sitter_dart.c3l/upstream
 	url = https://github.com/UserNobody14/tree-sitter-dart
+[submodule "lib/tree_sitter_markdown.c3l/upstream"]
+	path = lib/tree_sitter_markdown.c3l/upstream
+	url = https://github.com/tree-sitter-grammars/tree-sitter-markdown
+[submodule "lib/tree_sitter_markdown_inline.c3l/upstream"]
+	path = lib/tree_sitter_markdown_inline.c3l/upstream
+	url = https://github.com/tree-sitter-grammars/tree-sitter-markdown

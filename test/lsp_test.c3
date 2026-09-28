@@ -573,6 +573,8 @@ fn void test_lsp_language_detection()
 	assert(lsp_language_for_path("lib.ex").compare_to("elixir") == 0);
 	assert(lsp_language_for_path("test.exs").compare_to("elixir") == 0);
 	assert(lsp_language_for_path("main.dart").compare_to("dart") == 0);
+	assert(lsp_language_for_path("README.md").compare_to("markdown") == 0);
+	assert(lsp_language_for_path("doc.markdown").compare_to("markdown") == 0);
 	assert(lsp_language_for_path("notes.txt").len == 0);
 	assert(lsp_language_for_path("Makefile").len == 0);
 	assert(lsp_language_for_path("dir.with.dots/file").len == 0);
@@ -611,6 +613,7 @@ fn void test_lsp_default_commands()
 	assert(lsp_default_command("erlang").compare_to("elp server") == 0);
 	assert(lsp_default_command("elixir").compare_to("elixir-ls") == 0);
 	assert(lsp_default_command("dart").compare_to("dart language-server --protocol=lsp") == 0);
+	assert(lsp_default_command("markdown").compare_to("marksman server") == 0);
 	assert(lsp_default_command("unknown").len == 0);
 }
 
