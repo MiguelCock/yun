@@ -31,6 +31,10 @@ enum Language : int
 	RUBY,
 	R,
 	JULIA,
+	HASKELL,
+	GLEAM,
+	ERLANG,
+	ELIXIR,
 	COUNT,
 }
 
@@ -321,6 +325,50 @@ const LanguageSpec[] LANGUAGES = {
 		.module_query = "",
 		.symbols_query = "",
 	},
+	{
+		.name = "haskell",
+		.extensions = { ".hs" },
+		.lib = "tree-sitter-haskell",
+		.symbol = "tree_sitter_haskell",
+		.highlights_path = "lib/tree_sitter_haskell.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_haskell.c3l/queries/injections.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "gleam",
+		.extensions = { ".gleam" },
+		.lib = "tree-sitter-gleam",
+		.symbol = "tree_sitter_gleam",
+		.highlights_path = "lib/tree_sitter_gleam.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_gleam.c3l/queries/injections.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "erlang",
+		.extensions = { ".erl", ".hrl" },
+		.lib = "tree-sitter-erlang",
+		.symbol = "tree_sitter_erlang",
+		.highlights_path = "lib/tree_sitter_erlang.c3l/queries/highlights.scm",
+		.injections_path = "",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "elixir",
+		.extensions = { ".ex", ".exs" },
+		.lib = "tree-sitter-elixir",
+		.symbol = "tree_sitter_elixir",
+		.highlights_path = "lib/tree_sitter_elixir.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_elixir.c3l/queries/injections.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
 };
 
 fn String path_extension(String path)
@@ -435,6 +483,9 @@ fn Language language_for_name(String name)
 	) || name_equals(trimmed, "c#") || name_equals(trimmed, "csharp")) return Language.C_SHARP;
 	if (name_equals(trimmed, "c++")) return Language.CPP;
 	if (name_equals(trimmed, "golang")) return Language.GO;
+	if (name_equals(trimmed, "hs")) return Language.HASKELL;
+	if (name_equals(trimmed, "erl")) return Language.ERLANG;
+	if (name_equals(trimmed, "ex") || name_equals(trimmed, "exs")) return Language.ELIXIR;
 	return Language.NONE;
 }
 
@@ -581,6 +632,26 @@ const LspSpec[] LSP_LANGUAGES = {
 		.id = "julia",
 		.extensions = { ".jl" },
 		.command = "julia --startup-file=no --history-file=no -e \"using LanguageServer; LanguageServer.runserver()\"",
+	},
+	{
+		.id = "haskell",
+		.extensions = { ".hs" },
+		.command = "haskell-language-server-wrapper --lsp",
+	},
+	{
+		.id = "gleam",
+		.extensions = { ".gleam" },
+		.command = "gleam lsp",
+	},
+	{
+		.id = "erlang",
+		.extensions = { ".erl", ".hrl" },
+		.command = "elp server",
+	},
+	{
+		.id = "elixir",
+		.extensions = { ".ex", ".exs" },
+		.command = "elixir-ls",
 	},
 };
 

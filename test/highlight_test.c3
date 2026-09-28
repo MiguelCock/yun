@@ -64,6 +64,12 @@ fn void test_language_for_path()
 	assert(language::language_for_path("analysis.r") == language::Language.R);
 	assert(language::language_for_path("analysis.R") == language::Language.R);
 	assert(language::language_for_path("main.jl") == language::Language.JULIA);
+	assert(language::language_for_path("Main.hs") == language::Language.HASKELL);
+	assert(language::language_for_path("app.gleam") == language::Language.GLEAM);
+	assert(language::language_for_path("server.erl") == language::Language.ERLANG);
+	assert(language::language_for_path("server.hrl") == language::Language.ERLANG);
+	assert(language::language_for_path("lib.ex") == language::Language.ELIXIR);
+	assert(language::language_for_path("test.exs") == language::Language.ELIXIR);
 	assert(language::language_for_path("notes.txt") == language::Language.NONE);
 	assert(language::language_for_path("Makefile") == language::Language.NONE);
 	assert(language::language_for_path("dir.with.dots/file") == language::Language.NONE);
@@ -284,6 +290,10 @@ fn void test_language_for_name()
 	assert(language::language_for_name("csharp") == language::Language.C_SHARP);
 	assert(language::language_for_name("c-sharp") == language::Language.C_SHARP);
 	assert(language::language_for_name("rs") == language::Language.RUST);
+	assert(language::language_for_name("hs") == language::Language.HASKELL);
+	assert(language::language_for_name("erl") == language::Language.ERLANG);
+	assert(language::language_for_name("ex") == language::Language.ELIXIR);
+	assert(language::language_for_name("exs") == language::Language.ELIXIR);
 	assert(language::language_for_name("sql") == language::Language.NONE);
 	assert(language::language_for_name("comment") == language::Language.NONE);
 	assert(language::language_for_name("") == language::Language.NONE);
@@ -485,6 +495,115 @@ fn void test_parse_highlights_tsx()
 
 		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.KEYWORD));
 		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.TYPE));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_parse_highlights_haskell()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "-- note\nx = 42\ns = \"hi\"\n");
+
+		Highlighter* highlighter = create(tmem, &table, "Main.hs");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.COMMENT));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.NUMBER));
+		assert(runs_have_role(highlighter, &table, 2, SyntaxRole.STRING));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_parse_highlights_gleam()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "// note\npub fn main() { 42 }\n");
+
+		Highlighter* highlighter = create(tmem, &table, "app.gleam");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.COMMENT));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.KEYWORD));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.NUMBER));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_parse_highlights_erlang()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "%% note\nmain() -> \"hi\".\n");
+
+		Highlighter* highlighter = create(tmem, &table, "server.erl");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.COMMENT));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.STRING));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_parse_highlights_elixir()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "# note\ndefmodule Foo do\n  def bar, do: \"hi\"\nend\n");
+
+		Highlighter* highlighter = create(tmem, &table, "lib.ex");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.COMMENT));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.KEYWORD));
+		assert(runs_have_role(highlighter, &table, 2, SyntaxRole.STRING));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_haskell_quasiquote_injects_html()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "x = [hamlet|<div></div>|]\n");
+
+		Highlighter* highlighter = create(tmem, &table, "Main.hs");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.TYPE));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_elixir_sigil_injects_javascript()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "x = ~JS[let y = 1]\n");
+
+		Highlighter* highlighter = create(tmem, &table, "lib.ex");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.KEYWORD));
 
 		destroy(highlighter, tmem);
 	};

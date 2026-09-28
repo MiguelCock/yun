@@ -538,6 +538,12 @@ fn void test_lsp_language_detection()
 	assert(lsp_language_for_path("analysis.r").compare_to("r") == 0);
 	assert(lsp_language_for_path("analysis.R").compare_to("r") == 0);
 	assert(lsp_language_for_path("main.jl").compare_to("julia") == 0);
+	assert(lsp_language_for_path("Main.hs").compare_to("haskell") == 0);
+	assert(lsp_language_for_path("app.gleam").compare_to("gleam") == 0);
+	assert(lsp_language_for_path("server.erl").compare_to("erlang") == 0);
+	assert(lsp_language_for_path("server.hrl").compare_to("erlang") == 0);
+	assert(lsp_language_for_path("lib.ex").compare_to("elixir") == 0);
+	assert(lsp_language_for_path("test.exs").compare_to("elixir") == 0);
 	assert(lsp_language_for_path("notes.txt").len == 0);
 	assert(lsp_language_for_path("Makefile").len == 0);
 	assert(lsp_language_for_path("dir.with.dots/file").len == 0);
@@ -571,6 +577,10 @@ fn void test_lsp_default_commands()
 		.compare_to(
 			"julia --startup-file=no --history-file=no -e \"using LanguageServer; LanguageServer.runserver()\""
 		) == 0);
+	assert(lsp_default_command("haskell").compare_to("haskell-language-server-wrapper --lsp") == 0);
+	assert(lsp_default_command("gleam").compare_to("gleam lsp") == 0);
+	assert(lsp_default_command("erlang").compare_to("elp server") == 0);
+	assert(lsp_default_command("elixir").compare_to("elixir-ls") == 0);
 	assert(lsp_default_command("unknown").len == 0);
 }
 
