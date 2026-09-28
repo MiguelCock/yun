@@ -74,6 +74,7 @@ struct ImportRef
 {
 	String specifier;
 	String target_path;
+	String kind;
 	bool resolved;
 	bool angled;
 	usz line;
@@ -134,6 +135,9 @@ struct ImportIndex
 	bool pending_edit;
 	String pending_path;
 	double pending_since;
+	ImportContext context;
+	bool context_ready;
+	String context_root;
 }
 
 TSQuery*[language::LANGUAGE_COUNT] import_query_cache;
@@ -162,7 +166,23 @@ fn void ImportIndex.init(&self, Allocator allocator)
 	self.pending_edit = false;
 	self.pending_path = "";
 	self.pending_since = 0.0;
+	self.context_ready = false;
+	self.context_root = "";
 	self.init_pool();
+}
+
+fn void ImportIndex.ensure_context(&self, project::Project* project)
+{
+	String root = (String)project.root;
+	if (self.context_ready && self.context_root.compare_to(root) == 0) return;
+	if (self.context_ready)
+	{
+		context_destroy(&self.context);
+		if (self.context_root.len) self.context_root.free(self.allocator);
+	}
+	context_build(&self.context, self.allocator, root);
+	self.context_root = root.copy(self.allocator);
+	self.context_ready = true;
 }
 
 fn int resolve_scan_workers()
@@ -226,6 +246,11 @@ fn void ImportIndex.destroy(&self)
 	self.file_index.free();
 	self.card_paths.free();
 	self.clear_pending_edit();
+	if (self.context_ready)
+	{
+		context_destroy(&self.context);
+		if (self.context_root.len) self.context_root.free(self.allocator);
+	}
 }
 
 fn TSQuery* make_query(language::Language language, String text)
@@ -402,7 +427,7 @@ fn void extract_imports(
 				if (end <= start || end > text.len) continue;
 				String raw = text[start:end - start];
 
-				if (capture_name.compare_to("fn") == 0)
+				if (capture_name.compare_to("fn") == 0 || capture_name.compare_to("kind") == 0)
 				{
 					fn_name = raw;
 				}
@@ -414,20 +439,24 @@ fn void extract_imports(
 					line = point.row;
 					column = point.column;
 					char* node_type = tree_sitter::ts_node_type(capture.node);
-					if (node_type && cstr_to_string(node_type).compare_to("system_lib_string") == 0)
+					if (node_type)
 					{
-						angled = true;
+						String nt = cstr_to_string(node_type);
+						if (nt.compare_to("system_lib_string") == 0)
+						{
+							angled = true;
+						}
 					}
 				}
 			}
 			if (!has_path) continue;
-			if (fn_name.len > 0 && fn_name.compare_to("require") != 0) continue;
 
 			String specifier = strip_quotes(path_text).copy(allocator);
 			out.push(
 				{
 					.specifier = specifier,
 					.target_path = "",
+					.kind = fn_name.len > 0 ? fn_name.copy(allocator) : "",
 					.resolved = false,
 					.angled = angled,
 					.line = line,
@@ -487,105 +516,626 @@ fn bool any_candidate(
 	return false;
 }
 
+// ---------------------------------------------------------------------------
+// Import resolution context (project manifests + conventional source roots)
+// ---------------------------------------------------------------------------
+
+struct TsAlias
+{
+	String prefix;
+	String target;
+}
+
+struct Psr4
+{
+	String prefix;
+	String dir;
+}
+
+struct ImportContext
+{
+	Allocator allocator;
+	String root;
+	String go_module;
+	String crate_name;
+	String package_name;
+	String ts_base;
+	List{TsAlias} ts_paths;
+	List{Psr4} psr4;
+	List{String} hs_sources;
+}
+
+const String[] TS_EXTS    = { "", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs" };
+const String[] JS_EXTS    = { "", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx" };
+const String[] INDEX_EXTS = { ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".index", "" };
+
+fn String read_text(Allocator allocator, String path)
+{
+	char[]? data = file::load(allocator, path);
+	if (catch excuse = data) return "";
+	return (String)data;
+}
+
+fn String trim_spaces(String s)
+{
+	usz start = 0;
+	usz end   = s.len;
+	while (start < end && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r')) start++;
+	while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t' || s[end - 1] == '\r')) end--;
+	return s[start:end - start];
+}
+
+fn bool line_starts(String line, String prefix)
+{
+	return line.len >= prefix.len && line[0:prefix.len].compare_to(prefix) == 0;
+}
+
+fn String strip_assignment(String value)
+{
+	usz i = 0;
+	while (i < value.len && (value[i] == ' ' || value[i] == '\t' || value[i] == '=' || value[i] == ':')) i++;
+	String v = trim_spaces(value[i:value.len - i]);
+	if (v.len > 0 && v[v.len - 1] == ',') v = trim_spaces(v[0:v.len - 1]);
+	if (v.len >= 2 && ((v[0] == '"' && v[v.len - 1] == '"') || (v[0] == '\'' && v[v.len - 1] == '\'')))
+	{
+		return v[1:v.len - 2];
+	}
+	return v;
+}
+
+fn String manifest_value(Allocator allocator, String file_path, String key)
+{
+	@pool()
+	{
+		String text = read_text(tmem, file_path);
+		usz i       = 0;
+		while (i < text.len)
+		{
+			usz e = i;
+			while (e < text.len && text[e] != '\n') e++;
+			String line = trim_spaces(text[i:e - i]);
+			if (line_starts(line, key))
+			{
+				String value = strip_assignment(line[key.len:line.len - key.len]);
+				return value.copy(allocator);
+			}
+			i = e + 1;
+		}
+	};
+	return "";
+}
+
+fn void context_build(ImportContext* ctx, Allocator allocator, String root)
+{
+	ctx.allocator = allocator;
+	ctx.root = root.copy(allocator);
+	ctx.go_module = manifest_value(allocator, string::format(tmem, "%s/go.mod", root), "module");
+	ctx.crate_name = manifest_value(allocator, string::format(tmem, "%s/Cargo.toml", root), "name");
+	ctx.package_name = manifest_value(allocator, string::format(tmem, "%s/pubspec.yaml", root), "name");
+	ctx.ts_paths.init(allocator);
+	ctx.psr4.init(allocator);
+	ctx.hs_sources.init(allocator);
+
+	// TypeScript / JavaScript baseUrl
+	String tsconfig = string::format(tmem, "%s/tsconfig.json", root);
+	if (!path::exists((Path)tsconfig)) tsconfig = string::format(tmem, "%s/jsconfig.json", root);
+	String base = manifest_value(allocator, tsconfig, "\"baseUrl\"");
+	if (base.len == 0) base = manifest_value(allocator, tsconfig, "baseUrl");
+	if (base.len > 0 && base.compare_to(".") != 0)
+	{
+		ctx.ts_base = string::format(allocator, "%s/%s", root, base);
+	}
+	else if (base.len > 0)
+	{
+		ctx.ts_base = root.copy(allocator);
+	}
+	else
+	{
+		ctx.ts_base = "";
+	}
+
+	// TypeScript path aliases
+	if (path::exists((Path)tsconfig))
+	{
+		String tstext     = read_text(tmem, tsconfig);
+		String alias_base = ctx.ts_base.len > 0 ? ctx.ts_base : root;
+		ctx_read_ts_paths(ctx, tstext, alias_base);
+	}
+
+	// composer.json PSR-4 prefixes
+	String composer = string::format(tmem, "%s/composer.json", root);
+	if (path::exists((Path)composer))
+	{
+		String text = read_text(tmem, composer);
+		usz psr     = find_substr(text, 0, "psr-4");
+		if (psr < text.len) ctx_read_psr4(ctx, text, psr);
+	}
+
+	// cabal hs-source-dirs
+	@pool()
+	{
+		RLFilePathList files = rl::load_directory_files_ex(root.zstr_tcopy(), ".cabal".zstr_tcopy(), false);
+		for (uint i = 0; i < files.count; i++)
+		{
+			String cpath = files.paths[i].str_view();
+			String dirs  = manifest_value(allocator, string::format(tmem, "%s", cpath), "hs-source-dirs");
+			if (dirs.len == 0) continue;
+			ctx.hs_sources.push(string::format(allocator, "%s/%s", root, dirs));
+		}
+	};
+	if (ctx.hs_sources.len() == 0)
+	{
+		ctx.hs_sources.push(string::format(allocator, "%s/src", root));
+	}
+}
+
+fn void ctx_read_psr4(ImportContext* ctx, String text, usz start)
+{
+	// scan "Prefix\\": "dir/" pairs until the braces of the psr-4 block close
+	usz i = start;
+	while (i < text.len && text[i] != '{') i++;
+	if (i >= text.len) return;
+	i++;
+	int depth = 1;
+	while (i < text.len && depth > 0)
+	{
+		char c = text[i];
+		if (c == '{')
+		{
+			depth++;
+		}
+		else if (c == '}')
+		{
+			depth--;
+			i++;
+			continue;
+		}
+		else if (c == '"')
+		{
+			usz ks = i + 1;
+			usz ke = ks;
+			while (ke < text.len && text[ke] != '"') ke++;
+			String key = text[ks:ke - ks];
+			usz j      = ke + 1;
+			while (j < text.len && text[j] != '"') j++;
+			usz vs = j + 1;
+			usz ve = vs;
+			while (ve < text.len && text[ve] != '"') ve++;
+			if (j < text.len && ve < text.len)
+			{
+				String val = text[vs:ve - vs];
+				while (val.len > 0 && (val[val.len - 1] == '/' || val[val.len - 1] == '\\')) val = val[0:val.len - 1];
+				ctx.psr4.push(
+					{
+						.prefix = unescape_backslash(ctx.allocator, key),
+						.dir = string::format(ctx.allocator, "%s/%s", ctx.root, val),
+					}
+				);
+				i = ve + 1;
+				continue;
+			}
+		}
+		i++;
+	}
+}
+
+fn void ctx_read_ts_paths(ImportContext* ctx, String text, String base_dir)
+{
+	usz start = find_substr(text, 0, "\"paths\"");
+	if (start >= text.len) return;
+	usz i = start;
+	while (i < text.len && text[i] != '{') i++;
+	if (i >= text.len) return;
+	i++;
+	int depth = 1;
+	while (i < text.len && depth > 0)
+	{
+		char c = text[i];
+		if (c == '{')
+		{
+			depth++;
+			i++;
+			continue;
+		}
+		if (c == '}')
+		{
+			depth--;
+			i++;
+			continue;
+		}
+		if (c == '"')
+		{
+			usz ks = i + 1;
+			usz ke = ks;
+			while (ke < text.len && text[ke] != '"') ke++;
+			String key = text[ks:ke - ks];
+			usz j      = ke + 1;
+			while (j < text.len && text[j] != '[') j++;
+			usz vs = j + 1;
+			while (vs < text.len && text[vs] != '"') vs++;
+			usz ve = vs + 1;
+			while (ve < text.len && text[ve] != '"') ve++;
+			if (ve < text.len)
+			{
+				String val = text[vs + 1:ve - vs - 1];
+				ctx.ts_paths.push(
+					{
+						.prefix = key.copy(ctx.allocator),
+						.target = string::format(ctx.allocator, "%s/%s", base_dir, val),
+					}
+				);
+				i = ve + 1;
+				continue;
+			}
+		}
+		i++;
+	}
+}
+
+fn void context_destroy(ImportContext* ctx)
+{
+	if (ctx.root.len) ctx.root.free(ctx.allocator);
+	if (ctx.go_module.len) ctx.go_module.free(ctx.allocator);
+	if (ctx.crate_name.len) ctx.crate_name.free(ctx.allocator);
+	if (ctx.package_name.len) ctx.package_name.free(ctx.allocator);
+	if (ctx.ts_base.len) ctx.ts_base.free(ctx.allocator);
+	for (sz i = 0; i < ctx.ts_paths.len(); i++)
+	{
+		ctx.ts_paths[i].prefix.free(ctx.allocator);
+		ctx.ts_paths[i].target.free(ctx.allocator);
+	}
+	ctx.ts_paths.free();
+	for (sz i = 0; i < ctx.psr4.len(); i++)
+	{
+		ctx.psr4[i].prefix.free(ctx.allocator);
+		ctx.psr4[i].dir.free(ctx.allocator);
+	}
+	ctx.psr4.free();
+	for (sz i = 0; i < ctx.hs_sources.len(); i++) ctx.hs_sources[i].free(ctx.allocator);
+	ctx.hs_sources.free();
+}
+
+fn usz find_substr(String haystack, usz from, String needle)
+{
+	if (needle.len == 0 || haystack.len < needle.len) return haystack.len;
+	usz i = from;
+	while (i + needle.len <= haystack.len)
+	{
+		if (haystack[i:needle.len].compare_to(needle) == 0) return i;
+		i++;
+	}
+	return haystack.len;
+}
+
+fn bool push_if(HashMap{String, int}* paths, Allocator allocator, String candidate, List{String}* out)
+{
+	if (candidate.len == 0) return false;
+	if (!paths.has_key(candidate)) return false;
+	out.push(candidate.copy(allocator));
+	return true;
+}
+
+fn bool try_dir(HashMap{String, int}* paths, Allocator allocator, String dir, String[] names, List{String}* out)
+{
+	for (usz i = 0; i < names.len; i++)
+	{
+		String candidate = string::format(allocator, "%s/%s", dir, names[i]);
+		if (push_if(paths, allocator, candidate, out)) return true;
+	}
+	return false;
+}
+
+fn bool try_root(
+	HashMap{String, int}* paths,
+	Allocator allocator,
+	String root,
+	String rel,
+	String[] exts,
+	String index_name,
+	List{String}* out
+)
+{
+	String base = root.len > 0 ? string::format(allocator, "%s/%s", root, rel) : rel;
+	for (usz e = 0; e < exts.len; e++)
+	{
+		String candidate = string::format(allocator, "%s%s", base, exts[e]);
+		if (push_if(paths, allocator, candidate, out)) return true;
+	}
+	if (index_name.len > 0)
+	{
+		String candidate = string::format(allocator, "%s/%s", base, index_name);
+		if (push_if(paths, allocator, candidate, out)) return true;
+	}
+	return false;
+}
+
+fn bool try_base(
+	HashMap{String, int}* paths,
+	Allocator allocator,
+	String base,
+	String[] exts,
+	String index_name,
+	List{String}* out
+)
+{
+	for (usz e = 0; e < exts.len; e++)
+	{
+		String candidate = string::format(allocator, "%s%s", base, exts[e]);
+		if (push_if(paths, allocator, candidate, out)) return true;
+	}
+	if (index_name.len > 0)
+	{
+		String candidate = string::format(allocator, "%s/%s", base, index_name);
+		if (push_if(paths, allocator, candidate, out)) return true;
+	}
+	return false;
+}
+
+fn bool try_roots(
+	HashMap{String, int}* paths,
+	Allocator allocator,
+	String[] roots,
+	String rel,
+	String[] exts,
+	String index_name,
+	List{String}* out
+)
+{
+	for (usz r = 0; r < roots.len; r++)
+	{
+		if (try_root(paths, allocator, roots[r], rel, exts, index_name, out)) return true;
+	}
+	return false;
+}
+
+fn bool try_module_drop(
+	HashMap{String, int}* paths,
+	Allocator allocator,
+	String[] roots,
+	String rel,
+	String[] exts,
+	String index_name,
+	List{String}* out
+)
+{
+	String cur = rel;
+	while (cur.len > 0)
+	{
+		if (try_roots(paths, allocator, roots, cur, exts, index_name, out)) return true;
+		usz slash = cur.len;
+		while (slash > 0 && cur[slash - 1] != '/') slash--;
+		if (slash == 0) break;
+		cur = cur[0:slash - 1];
+	}
+	return false;
+}
+
+fn String unescape_backslash(Allocator allocator, String s)
+{
+	DString out;
+	out.init(allocator, s.len);
+	usz i = 0;
+	while (i < s.len)
+	{
+		if (s[i] == '\\' && i + 1 < s.len && s[i + 1] == '\\')
+		{
+			out.append_char('\\');
+			i += 2;
+			continue;
+		}
+		out.append_char(s[i]);
+		i++;
+	}
+	String r = out.str_view().copy(allocator);
+	out.free();
+	return r;
+}
+
+fn String snake_path(Allocator allocator, String s)
+{
+	DString out;
+	out.init(allocator, s.len + 8);
+	for (usz i = 0; i < s.len; i++)
+	{
+		char c = s[i];
+		if (c == '/')
+		{
+			out.append_char('/');
+			continue;
+		}
+		if (c >= 'A' && c <= 'Z')
+		{
+			bool prev_lower = i > 0 && ((s[i - 1] >= 'a' && s[i - 1] <= 'z') || (s[i - 1] >= '0' && s[i - 1] <= '9'));
+			bool prev_upper = i > 0 && s[i - 1] >= 'A' && s[i - 1] <= 'Z';
+			bool next_lower = i + 1 < s.len && s[i + 1] >= 'a' && s[i + 1] <= 'z';
+			if (prev_lower || (prev_upper && next_lower)) out.append_char('_');
+			out.append_char((char)(c + 32));
+		}
+		else
+		{
+			out.append_char(c);
+		}
+	}
+	String r = out.str_view().copy(allocator);
+	out.free();
+	return r;
+}
+
+fn bool any_file_under(HashMap{String, int}* paths, Allocator allocator, String dir_base, String ext, List{String}* out)
+{
+	String prefix = string::format(allocator, "%s/", dir_base);
+	String[] keys = paths.keys(allocator);
+	for (usz i = 0; i < keys.len; i++)
+	{
+		String key = keys[i];
+		if (key.len > prefix.len && key[0:prefix.len].compare_to(prefix) == 0 && (ext.len == 0 || key.ends_with(ext)))
+		{
+			out.push(key.copy(allocator));
+			return true;
+		}
+	}
+	return false;
+}
+
+fn String replace_seps(Allocator allocator, String s, char from_a, char from_b, char to)
+{
+	DString out;
+	out.init(allocator, s.len);
+	for (usz i = 0; i < s.len; i++)
+	{
+		char c = s[i];
+		if (c == from_a || c == from_b)
+		{
+			out.append_char(to);
+		}
+		else
+		{
+			out.append_char(c);
+		}
+	}
+	String result = out.str_view().copy(allocator);
+	out.free();
+	return result;
+}
+
+fn String strip_dotted(Allocator allocator, String s, String prefix)
+{
+	if (s.len >= prefix.len && s[0:prefix.len].compare_to(prefix) == 0)
+	{
+		String rest = s[prefix.len:s.len - prefix.len];
+		while (rest.len > 0
+			&& (rest[0] == '/' || rest[0] == '.' || rest[0] == ':' || rest[0] == '\\')) rest = rest[1:rest.len - 1];
+		return rest;
+	}
+	return s;
+}
+
+fn void local_roots(Allocator allocator, String root, List{String}* out)
+{
+	out.push(string::format(allocator, "%s/src", root));
+	out.push(root.copy(allocator));
+	out.push(string::format(allocator, "%s/lib", root));
+}
+
 fn bool resolve_import(
+	ImportContext* ctx,
 	HashMap{String, int}* paths,
 	CardImports[] files,
 	Allocator allocator,
-	String root,
 	String source_path,
 	String specifier,
+	String kind,
 	bool angled,
 	List{String}* out_targets
 )
 {
-	if (angled || specifier.len == 0) return false;
-
+	if (specifier.len == 0) return false;
 	language::Language language = language::language_for_path(source_path);
+	String root                 = ctx.root;
 	String dir                  = dir_of(allocator, source_path);
+	List{String} roots;
+	roots.init(tmem);
+	local_roots(allocator, root, &roots);
+	// extra conventional roots
+	roots.push(string::format(allocator, "%s/src/main/java", root));
+	roots.push(string::format(allocator, "%s/src/main/kotlin", root));
+	roots.push(string::format(allocator, "%s/src/main/scala", root));
+	roots.push(string::format(allocator, "%s/test", root));
+	roots.push(string::format(allocator, "%s/app", root));
+	roots.push(string::format(allocator, "%s/include", root));
 
 	switch (language)
 	{
 		case language::Language.C:
+		case language::Language.CPP:
 
 			{
-				String candidate = string::format(allocator, "%s/%s", dir, specifier);
-				if (paths.has_key(candidate))
+				if (angled) return false;
+				if (push_if(
+					paths,
+					allocator,
+					string::format(allocator, "%s/%s", dir, specifier),
+					out_targets
+				)) return true;
+				for (sz r = 0; r < roots.len(); r++)
 				{
-					out_targets.push(candidate);
-					return true;
+					if (push_if(
+						paths,
+						allocator,
+						string::format(allocator, "%s/%s", roots[r], specifier),
+						out_targets
+					)) return true;
 				}
 				return false;
 			}
 		case language::Language.JAVASCRIPT:
+		case language::Language.TYPESCRIPT:
+		case language::Language.TSX:
 
 			{
-				if (specifier[0] != '.') return false;
-				String base    = string::format(allocator, "%s/%s", dir, specifier);
-				String[7] exts = { "", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx" };
-				String found   = "";
-				if (any_candidate(paths, allocator, base, exts[0:7], &found))
+				if (kind.len > 0 && kind.compare_to("require") != 0 && kind.compare_to("import") != 0) return false;
+				if (specifier[0] == '.')
 				{
-					out_targets.push(found);
-					return true;
+					String rel = specifier;
+					if (line_starts(rel, "./")) rel = rel[2:rel.len - 2];
+					String base = string::format(allocator, "%s/%s", dir, rel);
+					if (try_base(paths, allocator, base, JS_EXTS, "", out_targets)) return true;
+					if (try_root(paths, allocator, base, "index", JS_EXTS, "", out_targets)) return true;
+					return false;
 				}
-				String index_base    = string::format(allocator, "%s/index", base);
-				String[6] index_exts = { ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx" };
-				if (any_candidate(paths, allocator, index_base, index_exts[0:6], &found))
+				for (sz a = 0; a < ctx.ts_paths.len(); a++)
 				{
-					out_targets.push(found);
-					return true;
+					String p = ctx.ts_paths[a].prefix;
+					String t = ctx.ts_paths[a].target;
+					if (p.len > 0 && p[p.len - 1] == '*') p = p[0:p.len - 1];
+					if (t.len > 0 && t[t.len - 1] == '*') t = t[0:t.len - 1];
+					if (specifier.len < p.len || p.len == 0 || specifier[0:p.len].compare_to(p) != 0) continue;
+					String rest = specifier[p.len:specifier.len - p.len];
+					String base = string::format(allocator, "%s%s", t, rest);
+					if (try_base(paths, allocator, base, TS_EXTS, "", out_targets)) return true;
+				}
+				if (ctx.ts_base.len > 0)
+				{
+					String base = string::format(allocator, "%s/%s", ctx.ts_base, specifier);
+					if (try_base(paths, allocator, base, TS_EXTS, "", out_targets)) return true;
+				}
+				for (sz r = 0; r < roots.len(); r++)
+				{
+					String base = string::format(allocator, "%s/%s", roots[r], specifier);
+					if (try_base(paths, allocator, base, TS_EXTS, "", out_targets)) return true;
 				}
 				return false;
 			}
 		case language::Language.PYTHON:
 
 			{
-				String spec = specifier;
-				String base = dir;
-				if (spec[0] == '.')
+				if (specifier[0] == '.')
 				{
 					usz dots = 0;
-					while (dots < spec.len && spec[dots] == '.') dots++;
-					usz back = 1;
+					while (dots < specifier.len && specifier[dots] == '.') dots++;
+					String base = dir;
+					usz back    = 1;
 					while (back < dots)
 					{
 						base = dir_of(allocator, base);
 						back++;
 					}
-					String rest = spec[dots:spec.len - dots];
+					String rest = specifier[dots:specifier.len - dots];
 					if (rest.len == 0) return false;
-					String rel       = module_rel(allocator, rest);
-					String candidate = string::format(allocator, "%s/%s", base, rel);
-					String[1] py     = { ".py" };
-					String found     = "";
-					if (any_candidate(paths, allocator, candidate, py[0:1], &found))
-					{
-						out_targets.push(found);
-						return true;
-					}
-					String pkg = string::format(allocator, "%s/%s/__init__.py", base, rel);
-					if (paths.has_key(pkg))
-					{
-						out_targets.push(pkg);
-						return true;
-					}
+					String rel = module_rel(allocator, rest);
+					if (try_root(paths, allocator, base, rel, { ".py" }, "__init__.py", out_targets)) return true;
 					return false;
 				}
-				String rel       = module_rel(allocator, spec);
-				String candidate = string::format(allocator, "%s/%s", root, rel);
-				String[1] py     = { ".py" };
-				String found     = "";
-				if (any_candidate(paths, allocator, candidate, py[0:1], &found))
-				{
-					out_targets.push(found);
-					return true;
-				}
-				String pkg = string::format(allocator, "%s/%s/__init__.py", root, rel);
-				if (paths.has_key(pkg))
-				{
-					out_targets.push(pkg);
-					return true;
-				}
+				String rel = module_rel(allocator, specifier);
+				if (try_roots(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					rel,
+					{ ".py" },
+					"__init__.py",
+					out_targets
+				)) return true;
 				return false;
 			}
 		case language::Language.C3:
@@ -599,18 +1149,408 @@ fn bool resolve_import(
 					out_targets.push(((String)files[i].path).copy(allocator));
 				}
 				if (out_targets.len() > 0) return true;
+				String rel = module_rel(allocator, specifier);
+				if (try_roots(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					rel,
+					{ ".c3", ".c3i" },
+					"",
+					out_targets
+				)) return true;
+				return false;
+			}
+		case language::Language.GO:
 
-				String rel       = module_rel(allocator, specifier);
-				String candidate = string::format(allocator, "%s/%s", root, rel);
-				String[2] exts   = { ".c3", ".c3i" };
-				String found     = "";
-				if (any_candidate(paths, allocator, candidate, exts[0:2], &found))
+			{
+				String rel = specifier;
+				if (ctx.go_module.len > 0 && specifier.len >= ctx.go_module.len
+					&& specifier[0:ctx.go_module.len].compare_to(
+					ctx.go_module
+				) == 0)
 				{
-					out_targets.push(found);
-					return true;
+					rel = specifier[ctx.go_module.len:specifier.len - ctx.go_module.len];
+				}
+				rel = strip_dotted(allocator, rel, "");
+				// any .go file inside the directory
+				String dir_base = string::format(allocator, "%s/%s", root, rel);
+				String prefix   = string::format(allocator, "%s/", dir_base);
+				String[] keys   = paths.keys(allocator);
+				for (usz i = 0; i < keys.len; i++)
+				{
+					String key = keys[i];
+					if (key.len > prefix.len && key[0:prefix.len].compare_to(prefix) == 0 && key.ends_with(".go"))
+					{
+						out_targets.push(key.copy(allocator));
+						return true;
+					}
 				}
 				return false;
 			}
+		case language::Language.RUST:
+
+			{
+				if (specifier.contains("::"))
+				{
+					String rel = replace_seps(allocator, specifier, ':', ':', '/');
+					rel = strip_dotted(allocator, rel, "crate");
+					rel = strip_dotted(allocator, rel, "self");
+					String[1] src_root = { string::format(allocator, "%s/src", root) };
+					if (try_module_drop(
+						paths,
+						allocator,
+						src_root[0:1],
+						rel,
+						{ ".rs" },
+						"mod.rs",
+						out_targets
+					)) return true;
+					return false;
+				}
+				String base = string::format(allocator, "%s/%s", dir, specifier);
+				if (push_if(paths, allocator, string::format(allocator, "%s.rs", base), out_targets)) return true;
+				if (push_if(paths, allocator, string::format(allocator, "%s/mod.rs", base), out_targets)) return true;
+				return false;
+			}
+		case language::Language.ZIG:
+
+			{
+				if (kind.len > 0 && kind.compare_to("@import") != 0 && kind.compare_to("import") != 0) return false;
+				if (push_if(
+					paths,
+					allocator,
+					string::format(allocator, "%s/%s", dir, specifier),
+					out_targets
+				)) return true;
+				for (sz r = 0; r < roots.len(); r++)
+				{
+					if (push_if(
+						paths,
+						allocator,
+						string::format(allocator, "%s/%s", roots[r], specifier),
+						out_targets
+					)) return true;
+				}
+				return false;
+			}
+		case language::Language.ODIN:
+
+			{
+				if (specifier.contains(":")) return false;
+				return try_root(
+					paths,
+					allocator,
+					dir,
+					specifier,
+					{ ".odin" },
+					"",
+					out_targets
+				) || try_roots(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					specifier,
+					{ ".odin" },
+					"",
+					out_targets
+				) || any_file_under(
+					paths,
+					allocator,
+					string::format(allocator, "%s/%s", root, specifier),
+					".odin",
+					out_targets
+				);
+			}
+		case language::Language.V:
+
+			{
+				if (!specifier.contains(".") && !specifier.contains("/")) return false;
+				String rel = replace_seps(allocator, specifier, '.', '.', '/');
+				return try_roots(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					rel,
+					{ ".v" },
+					"",
+					out_targets
+				) || any_file_under(paths, allocator, string::format(allocator, "%s/%s", root, rel), ".v", out_targets);
+			}
+		case language::Language.NIM:
+
+			{
+				if (line_starts(specifier, "std/")) return false;
+				String rel = replace_seps(allocator, specifier, '/', '.', '/');
+				rel = strip_dotted(allocator, rel, "./");
+				return try_roots(paths, allocator, roots.entries[0:roots.len()], rel, { ".nim" }, "", out_targets);
+			}
+		case language::Language.JAVA:
+
+			{
+				if (specifier.starts_with("java.") || specifier.starts_with("javax.")) return false;
+				String rel = replace_seps(allocator, specifier, '.', '.', '/');
+				return try_module_drop(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					rel,
+					{ ".java" },
+					"",
+					out_targets
+				);
+			}
+		case language::Language.KOTLIN:
+
+			{
+				if (specifier.starts_with("kotlin.")) return false;
+				String rel = replace_seps(allocator, specifier, '.', '.', '/');
+				return try_module_drop(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					rel,
+					{ ".kt", ".kts" },
+					"",
+					out_targets
+				);
+			}
+		case language::Language.SCALA:
+
+			{
+				String spec = trim_spaces(specifier);
+				if (line_starts(spec, "import ")) spec = trim_spaces(spec[7:spec.len - 7]);
+				if (spec.starts_with("scala.") || spec.starts_with("java.")) return false;
+				String rel = replace_seps(allocator, spec, '.', '.', '/');
+				return try_module_drop(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					rel,
+					{ ".scala", ".sc" },
+					"",
+					out_targets
+				);
+			}
+		case language::Language.C_SHARP:
+
+			{
+				if (specifier.starts_with("System")) return false;
+				String rel = replace_seps(allocator, specifier, '.', '.', '/');
+				return try_module_drop(paths, allocator, roots.entries[0:roots.len()], rel, { ".cs" }, "", out_targets);
+			}
+		case language::Language.CSS:
+
+			{
+				return try_root(
+					paths,
+					allocator,
+					dir,
+					specifier,
+					{ "", ".css" },
+					"",
+					out_targets
+				) || try_roots(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					specifier,
+					{ "", ".css" },
+					"",
+					out_targets
+				);
+			}
+		case language::Language.HTML:
+
+			{
+				if (kind.len > 0 && kind.compare_to("src") != 0 && kind.compare_to("href") != 0) return false;
+				if (specifier.starts_with("http") || specifier.starts_with("//")) return false;
+				return try_root(paths, allocator, dir, specifier, { "" }, "", out_targets);
+			}
+		case language::Language.LUA:
+
+			{
+				if (kind.len > 0 && kind.compare_to("require") != 0) return false;
+				String rel = module_rel(allocator, specifier);
+				if (push_if(
+					paths,
+					allocator,
+					string::format(allocator, "%s/%s.lua", dir, rel),
+					out_targets
+				)) return true;
+				if (push_if(
+					paths,
+					allocator,
+					string::format(allocator, "%s/%s/init.lua", dir, rel),
+					out_targets
+				)) return true;
+				return try_roots(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					rel,
+					{ ".lua" },
+					"init.lua",
+					out_targets
+				);
+			}
+		case language::Language.PHP:
+
+			{
+				if (specifier.contains("\\"))
+				{
+					for (sz p = 0; p < ctx.psr4.len(); p++)
+					{
+						String prefix = ctx.psr4[p].prefix;
+						if (specifier.len < prefix.len || specifier[0:prefix.len].compare_to(prefix) != 0) continue;
+						String rest = specifier[prefix.len:specifier.len - prefix.len];
+						String rel  = replace_seps(allocator, rest, '\\', '\\', '/');
+						if (try_roots(
+							paths,
+							allocator,
+							{ ctx.psr4[p].dir },
+							rel,
+							{ ".php" },
+							"",
+							out_targets
+						)) return true;
+					}
+					String rel = replace_seps(allocator, specifier, '\\', '\\', '/');
+					return try_roots(paths, allocator, roots.entries[0:roots.len()], rel, { ".php" }, "", out_targets);
+				}
+				return try_root(paths, allocator, dir, specifier, { "" }, "", out_targets);
+			}
+		case language::Language.RUBY:
+
+			{
+				String rel = specifier;
+				if (kind.compare_to("require_relative") == 0)
+				{
+					return try_root(paths, allocator, dir, rel, { ".rb" }, "", out_targets);
+				}
+				if (kind.len > 0 && kind.compare_to("require") != 0 && kind.compare_to("load") != 0) return false;
+				return try_roots(paths, allocator, roots.entries[0:roots.len()], rel, { ".rb" }, "", out_targets);
+			}
+		case language::Language.R:
+
+			{
+				if (kind.len > 0 && kind.compare_to("source") != 0 && kind.compare_to("sys.source") != 0) return false;
+				return try_root(paths, allocator, dir, specifier, { ".R", ".r", "" }, "", out_targets);
+			}
+		case language::Language.JULIA:
+
+			{
+				if (kind.len > 0)
+				{
+					if (kind.compare_to("include") != 0) return false;
+					return try_root(paths, allocator, dir, specifier, { "", ".jl" }, "", out_targets);
+				}
+				// using/import: package or relative file
+				if (try_roots(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					specifier,
+					{ "", ".jl" },
+					"",
+					out_targets
+				)) return true;
+				return try_roots(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					string::format(allocator, "%s/src/%s", specifier, specifier),
+					{ "", ".jl" },
+					"",
+					out_targets
+				);
+			}
+		case language::Language.HASKELL:
+
+			{
+				String rel = replace_seps(allocator, specifier, '.', '.', '/');
+				List{String} hs;
+				hs.init(tmem);
+				for (sz i = 0; i < ctx.hs_sources.len(); i++) hs.push(ctx.hs_sources[i]);
+				for (sz r = 0; r < roots.len(); r++) hs.push(roots[r]);
+				return try_roots(paths, allocator, hs.entries[0:hs.len()], rel, { ".hs", ".lhs" }, "", out_targets);
+			}
+		case language::Language.GLEAM:
+
+			{
+				if (specifier.starts_with("gleam/")) return false;
+				String rel = module_rel(allocator, specifier);
+				return try_root(
+					paths,
+					allocator,
+					string::format(allocator, "%s/src", root),
+					rel,
+					{ ".gleam" },
+					"",
+					out_targets
+				);
+			}
+		case language::Language.ERLANG:
+
+			{
+				if (kind.compare_to("include_lib") == 0) return false;
+				return try_root(
+					paths,
+					allocator,
+					dir,
+					specifier,
+					{ "" },
+					"",
+					out_targets
+				) || try_roots(paths, allocator, roots.entries[0:roots.len()], specifier, { "" }, "", out_targets);
+			}
+		case language::Language.ELIXIR:
+
+			{
+				if (kind.len > 0 && kind.compare_to(
+					"alias"
+				) != 0 && kind.compare_to(
+					"import"
+				) != 0 && kind.compare_to("require") != 0 && kind.compare_to("use") != 0) return false;
+				String rel = replace_seps(allocator, specifier, '.', '.', '/');
+				rel = snake_path(allocator, rel);
+				return try_module_drop(
+					paths,
+					allocator,
+					roots.entries[0:roots.len()],
+					rel,
+					{ ".ex", ".exs" },
+					"",
+					out_targets
+				);
+			}
+		case language::Language.DART:
+
+			{
+				if (specifier.starts_with("dart:")) return false;
+				if (specifier.starts_with("package:"))
+				{
+					String rest = specifier[8:specifier.len - 8];
+					usz slash   = 0;
+					while (slash < rest.len && rest[slash] != '/') slash++;
+					if (slash >= rest.len) return false;
+					String pkg = rest[0:slash];
+					String rel = rest[slash + 1:rest.len - slash - 1];
+					if (ctx.package_name.len == 0 || pkg.compare_to(ctx.package_name) != 0) return false;
+					return try_root(
+						paths,
+						allocator,
+						string::format(allocator, "%s/lib", root),
+						rel,
+						{ "", ".dart" },
+						"",
+						out_targets
+					);
+				}
+				return try_root(paths, allocator, dir, specifier, { "", ".dart" }, "", out_targets);
+			}
+		case language::Language.MARKDOWN:
+		case language::Language.MARKDOWN_INLINE:
 		case language::Language.NONE:
 			return false;
 		default:
@@ -625,6 +1565,7 @@ fn void free_refs(Allocator allocator, List{ImportRef}* refs)
 		ImportRef* ref = refs.get_ref(i);
 		if (ref.specifier.len) ref.specifier.free(allocator);
 		if (ref.target_path.len) ref.target_path.free(allocator);
+		if (ref.kind.len) ref.kind.free(allocator);
 	}
 }
 
@@ -660,12 +1601,13 @@ fn void ImportIndex.resolve_file(&self, project::Project* project, CardImports[]
 		List{String} targets;
 		targets.init(tmem);
 		bool ok = resolve_import(
+			&self.context,
 			&self.card_paths,
 			all_files,
 			tmem,
-			(String)project.root,
 			(String)file.path,
 			ref.specifier,
+			ref.kind,
 			ref.angled,
 			&targets
 		);
@@ -675,6 +1617,7 @@ fn void ImportIndex.resolve_file(&self, project::Project* project, CardImports[]
 				{
 					.specifier = ref.specifier.copy(self.allocator),
 					.target_path = "",
+					.kind = ref.kind.len > 0 ? ref.kind.copy(self.allocator) : "",
 					.resolved = false,
 					.angled = ref.angled,
 					.line = ref.line,
@@ -690,6 +1633,7 @@ fn void ImportIndex.resolve_file(&self, project::Project* project, CardImports[]
 					{
 						.specifier = ref.specifier.copy(self.allocator),
 						.target_path = targets[(sz)t].copy(self.allocator),
+						.kind = ref.kind.len > 0 ? ref.kind.copy(self.allocator) : "",
 						.resolved = true,
 						.angled = ref.angled,
 						.line = ref.line,
@@ -733,6 +1677,7 @@ fn void ImportIndex.start_scan(&self, project::Project* project)
 	self.free_files();
 	self.clear_pending_edit();
 	self.refresh_card_paths(project);
+	self.ensure_context(project);
 	self.known_cards = (usz)project.cards.len();
 	self.generation++;
 	self.pending = 0;

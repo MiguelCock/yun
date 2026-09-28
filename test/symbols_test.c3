@@ -3,6 +3,8 @@ module yun::symbols @test;
 import std::collections::list;
 import std::io::file;
 import std::io::path;
+import std::io;
+import tree_sitter;
 import yun::language;
 
 macro bool has_symbol(list, name)
@@ -148,4 +150,57 @@ fn void test_refilter_filters()
 		assert(symbol.name.compare_to("beta") == 0);
 		s.destroy();
 	};
+}
+
+struct SymCase
+{
+	language::Language lang;
+	String path;
+}
+
+fn void test_fixture_symbols()
+{
+	SymCase[] cases = {
+		{ .lang = language::Language.C3, .path = "fixtures/imports/c3/app/util.c3" },
+		{ .lang = language::Language.GO, .path = "fixtures/imports/go/pkg/util/util.go" },
+		{ .lang = language::Language.RUST, .path = "fixtures/imports/rust/src/foo.rs" },
+		{ .lang = language::Language.ZIG, .path = "fixtures/imports/zig/foo.zig" },
+		{ .lang = language::Language.NIM, .path = "fixtures/imports/nim/util.nim" },
+		{ .lang = language::Language.JAVA, .path = "fixtures/imports/java/src/main/java/com/example/App.java" },
+		{
+			.lang = language::Language.SCALA,
+			.path = "fixtures/imports/scala/src/main/scala/com/example/util/Util.scala"
+		},
+		{ .lang = language::Language.PHP, .path = "fixtures/imports/php/src/Util/Helper.php" },
+		{ .lang = language::Language.RUBY, .path = "fixtures/imports/ruby/lib/util.rb" },
+		{ .lang = language::Language.R, .path = "fixtures/imports/r/util.R" },
+		{ .lang = language::Language.GLEAM, .path = "fixtures/imports/gleam/src/my/mod.gleam" },
+		{ .lang = language::Language.ELIXIR, .path = "fixtures/imports/elixir/lib/demo/util.ex" },
+		{ .lang = language::Language.DART, .path = "fixtures/imports/dart/lib/src/util.dart" },
+		{ .lang = language::Language.TYPESCRIPT, .path = "fixtures/imports/typescript/src/lib/a.ts" },
+	};
+	for (usz i = 0; i < cases.len; i++)
+	{
+		@pool()
+		{
+			List{Symbol} out;
+			out.init(tmem);
+			extract_file(tmem, cases[i].path, cases[i].lang, &out);
+			if (out.len() == 0) io::eprintfn("no symbols: %s", cases[i].path);
+			assert(out.len() > 0);
+			out.free();
+		};
+	}
+}
+
+fn void test_all_symbols_queries_compile()
+{
+	for (int i = 1; i < language::LANGUAGE_COUNT; i++)
+	{
+		String text = language::symbols_query_text((language::Language)i);
+		if (text.len == 0) continue;
+		TSQuery* q = make_query((language::Language)i, text);
+		assert(q != null);
+		if (q) tree_sitter::ts_query_delete(q);
+	}
 }
