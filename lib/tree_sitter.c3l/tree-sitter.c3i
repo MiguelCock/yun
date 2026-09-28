@@ -47,6 +47,13 @@ enum TSQueryError : int
 	TS_QUERY_ERROR_LANGUAGE,
 }
 
+enum TSQueryPredicateStepType : int
+{
+	TS_PREDICATE_STEP_TYPE_DONE,
+	TS_PREDICATE_STEP_TYPE_CAPTURE,
+	TS_PREDICATE_STEP_TYPE_STRING,
+}
+
 struct TSPoint
 {
 	uint row;
@@ -99,6 +106,12 @@ struct TSQueryMatch
 	TSQueryCapture* captures;
 }
 
+struct TSQueryPredicateStep
+{
+	TSQueryPredicateStepType type;
+	uint value_id;
+}
+
 extern fn TSParser* ts_parser_new();
 extern fn void ts_parser_delete(TSParser* self);
 extern fn bool ts_parser_set_language(TSParser* self, TSLanguage* language);
@@ -136,10 +149,13 @@ extern fn uint ts_query_pattern_count(TSQuery* self);
 extern fn uint ts_query_capture_count(TSQuery* self);
 extern fn uint ts_query_string_count(TSQuery* self);
 extern fn char* ts_query_capture_name_for_id(TSQuery* self, uint index, uint* length);
+extern fn TSQueryPredicateStep* ts_query_predicates_for_pattern(TSQuery* self, uint pattern_index, uint* step_count);
+extern fn char* ts_query_string_value_for_id(TSQuery* self, uint index, uint* length);
 
 extern fn TSQueryCursor* ts_query_cursor_new();
 extern fn void ts_query_cursor_delete(TSQueryCursor* self);
 extern fn void ts_query_cursor_exec(TSQueryCursor* self, TSQuery* query, TSNode node);
+extern fn bool ts_query_cursor_next_match(TSQueryCursor* self, TSQueryMatch* match);
 extern fn bool ts_query_cursor_next_capture(TSQueryCursor* self, TSQueryMatch* match, uint* capture_index);
 
 extern fn uint ts_language_symbol_count(TSLanguage* self);

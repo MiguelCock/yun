@@ -43,6 +43,7 @@ struct LanguageSpec
 	String lib;
 	String symbol;
 	String highlights_path;
+	String injections_path;
 	String import_query;
 	String module_query;
 	String symbols_query;
@@ -56,6 +57,7 @@ const LanguageSpec[] LANGUAGES = {
 		.lib = "tree-sitter-c3",
 		.symbol = "tree_sitter_c3",
 		.highlights_path = "lib/tree_sitter_c3.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_c3.c3l/queries/injections.scm",
 		.import_query = "(import_declaration (import_path (path_ident) @path))",
 		.module_query = "(module_declaration) @module",
 		.symbols_query = "(func_definition (func_header name: (ident) @function))\n"
@@ -103,6 +105,7 @@ const LanguageSpec[] LANGUAGES = {
 		.lib = "tree-sitter-javascript",
 		.symbol = "tree_sitter_javascript",
 		.highlights_path = "lib/tree_sitter_javascript.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_javascript.c3l/queries/injections.scm",
 		.import_query = "(import_statement source: (string) @path)\n"
 			"(call_expression function: (identifier) @fn arguments: (arguments (string) @path))",
 		.module_query = "",
@@ -137,6 +140,7 @@ const LanguageSpec[] LANGUAGES = {
 		.lib = "tree-sitter-zig",
 		.symbol = "tree_sitter_zig",
 		.highlights_path = "lib/tree_sitter_zig.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_zig.c3l/queries/injections.scm",
 		.import_query = "",
 		.module_query = "",
 		.symbols_query = "",
@@ -147,6 +151,7 @@ const LanguageSpec[] LANGUAGES = {
 		.lib = "tree-sitter-odin",
 		.symbol = "tree_sitter_odin",
 		.highlights_path = "lib/tree_sitter_odin.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_odin.c3l/queries/injections.scm",
 		.import_query = "",
 		.module_query = "",
 		.symbols_query = "",
@@ -177,6 +182,7 @@ const LanguageSpec[] LANGUAGES = {
 		.lib = "tree-sitter-cpp",
 		.symbol = "tree_sitter_cpp",
 		.highlights_path = "lib/tree_sitter_cpp.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_cpp.c3l/queries/injections.scm",
 		.import_query = "",
 		.module_query = "",
 		.symbols_query = "",
@@ -257,6 +263,7 @@ const LanguageSpec[] LANGUAGES = {
 		.lib = "tree-sitter-html",
 		.symbol = "tree_sitter_html",
 		.highlights_path = "lib/tree_sitter_html.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_html.c3l/queries/injections.scm",
 		.import_query = "",
 		.module_query = "",
 		.symbols_query = "",
@@ -267,6 +274,7 @@ const LanguageSpec[] LANGUAGES = {
 		.lib = "tree-sitter-lua",
 		.symbol = "tree_sitter_lua",
 		.highlights_path = "lib/tree_sitter_lua.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_lua.c3l/queries/injections.scm",
 		.import_query = "",
 		.module_query = "",
 		.symbols_query = "",
@@ -277,6 +285,7 @@ const LanguageSpec[] LANGUAGES = {
 		.lib = "tree-sitter-php",
 		.symbol = "tree_sitter_php",
 		.highlights_path = "lib/tree_sitter_php.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_php.c3l/queries/injections.scm",
 		.import_query = "",
 		.module_query = "",
 		.symbols_query = "",
@@ -307,6 +316,7 @@ const LanguageSpec[] LANGUAGES = {
 		.lib = "tree-sitter-julia",
 		.symbol = "tree_sitter_julia",
 		.highlights_path = "lib/tree_sitter_julia.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_julia.c3l/queries/injections.scm",
 		.import_query = "",
 		.module_query = "",
 		.symbols_query = "",
@@ -374,6 +384,58 @@ fn String highlights_path_for_name(String name)
 		if (spec.name.compare_to(name) == 0) return spec.highlights_path;
 	}
 	return "";
+}
+
+fn String injections_query_path(Language language)
+{
+	int index = (int)language;
+	if (index <= 0 || index >= LANGUAGE_COUNT) return "";
+	return LANGUAGES[index].injections_path;
+}
+
+fn char lower_ascii(char c)
+{
+	if (c >= 'A' && c <= 'Z') return (char)(c + 32);
+	return c;
+}
+
+fn bool name_equals(String a, String b)
+{
+	if (a.len != b.len) return false;
+	for (usz i = 0; i < a.len; i++)
+	{
+		if (lower_ascii(a[i]) != lower_ascii(b[i])) return false;
+	}
+	return true;
+}
+
+fn Language language_for_name(String name)
+{
+	usz start = 0;
+	usz end   = name.len;
+	while (start < end
+		&& (name[start] == ' ' || name[start] == '\t' || name[start] == '\n' || name[start] == '\r')) start++;
+	while (end > start
+		&& (name[end - 1] == ' ' || name[end - 1] == '\t' || name[end - 1] == '\n' || name[end - 1] == '\r')) end--;
+	String trimmed = name[start:end - start];
+	if (trimmed.len == 0) return Language.NONE;
+
+	for (int i = 1; i < LANGUAGE_COUNT; i++)
+	{
+		if (name_equals(LANGUAGES[i].name, trimmed)) return (Language)i;
+	}
+	if (name_equals(trimmed, "js")) return Language.JAVASCRIPT;
+	if (name_equals(trimmed, "ts")) return Language.TYPESCRIPT;
+	if (name_equals(trimmed, "py")) return Language.PYTHON;
+	if (name_equals(trimmed, "rs")) return Language.RUST;
+	if (name_equals(trimmed, "rb")) return Language.RUBY;
+	if (name_equals(
+		trimmed,
+		"cs"
+	) || name_equals(trimmed, "c#") || name_equals(trimmed, "csharp")) return Language.C_SHARP;
+	if (name_equals(trimmed, "c++")) return Language.CPP;
+	if (name_equals(trimmed, "golang")) return Language.GO;
+	return Language.NONE;
 }
 
 fn String import_query_text(Language language)

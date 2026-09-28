@@ -171,6 +171,406 @@ fn TSQuery* query_for(language::Language language)
 	return query_cache[index];
 }
 
+TSQuery*[language::LANGUAGE_COUNT] injection_cache;
+bool[language::LANGUAGE_COUNT] injection_loaded;
+TSParser*[language::LANGUAGE_COUNT] injection_parsers;
+
+const int MAX_INJECTION_DEPTH = 3;
+
+fn TSQuery* build_injection_query(language::Language language)
+{
+	String rel = language::injections_query_path(language);
+	if (rel.len == 0) return null;
+	TSLanguage* lang = language::grammar_language(language);
+	if (!lang) return null;
+
+	TSQuery* result = null;
+	@pool()
+	{
+		char[] text = load_query_text(tmem, rel);
+		if (text.len != 0)
+		{
+			uint offset        = 0;
+			TSQueryError error = TS_QUERY_ERROR_NONE;
+			result = tree_sitter::ts_query_new(lang, (char*)text.ptr, (uint)text.len, &offset, &error);
+			if (result && error != TS_QUERY_ERROR_NONE) result = null;
+		}
+	};
+	return result;
+}
+
+fn TSQuery* injection_query_for(language::Language language)
+{
+	int index = (int)language;
+	if (index <= 0 || index >= language::LANGUAGE_COUNT) return null;
+	if (injection_loaded[index]) return injection_cache[index];
+	injection_loaded[index] = true;
+	injection_cache[index] = build_injection_query(language);
+	return injection_cache[index];
+}
+
+fn TSParser* injection_parser_for(language::Language language)
+{
+	int index = (int)language;
+	if (index <= 0 || index >= language::LANGUAGE_COUNT) return null;
+	if (injection_parsers[index]) return injection_parsers[index];
+	TSLanguage* ts = language::grammar_language(language);
+	if (!ts) return null;
+	TSParser* parser = tree_sitter::ts_parser_new();
+	if (!parser) return null;
+	if (!tree_sitter::ts_parser_set_language(parser, ts))
+	{
+		tree_sitter::ts_parser_delete(parser);
+		return null;
+	}
+	injection_parsers[index] = parser;
+	return parser;
+}
+
+fn String query_capture_name(TSQuery* query, uint index)
+{
+	uint length = 0;
+	char* name  = tree_sitter::ts_query_capture_name_for_id(query, index, &length);
+	if (!name || length == 0) return "";
+	return (String)name[0:length];
+}
+
+fn String query_string_value(TSQuery* query, uint index)
+{
+	uint length = 0;
+	char* value = tree_sitter::ts_query_string_value_for_id(query, index, &length);
+	if (!value || length == 0) return "";
+	return (String)value[0:length];
+}
+
+fn String capture_text(TSQueryMatch* match, uint capture_id, String source)
+{
+	for (ushort i = 0; i < match.capture_count; i++)
+	{
+		TSQueryCapture capture = match.captures[i];
+		if (capture.index != capture_id) continue;
+		uint start = tree_sitter::ts_node_start_byte(capture.node);
+		uint end   = tree_sitter::ts_node_end_byte(capture.node);
+		if (end <= start || (usz)end > source.len) return "";
+		return source[start:end - start];
+	}
+	return "";
+}
+
+fn bool eval_predicate(
+	TSQuery* query,
+	String name,
+	TSQueryPredicateStep* steps,
+	uint start,
+	uint end,
+	TSQueryMatch* match,
+	String source
+)
+{
+	if (name.compare_to("set!") == 0) return true;
+	bool positive = name.compare_to("eq?") == 0 || name.compare_to("any-of?") == 0;
+	bool negative = name.compare_to("not-eq?") == 0 || name.compare_to("not-any-of?") == 0;
+	if (!positive && !negative) return false;
+	if (start >= end) return false;
+	if (steps[start].type != TSQueryPredicateStepType.TS_PREDICATE_STEP_TYPE_CAPTURE) return false;
+
+	String value = capture_text(match, steps[start].value_id, source);
+	bool matched = false;
+	for (uint i = start + 1; i < end; i++)
+	{
+		String arg = "";
+		if (steps[i].type == TSQueryPredicateStepType.TS_PREDICATE_STEP_TYPE_STRING)
+		{
+			arg = query_string_value(query, steps[i].value_id);
+		}
+		else if (steps[i].type == TSQueryPredicateStepType.TS_PREDICATE_STEP_TYPE_CAPTURE)
+		{
+			arg = capture_text(match, steps[i].value_id, source);
+		}
+		if (arg.len > 0 && value.compare_to(arg) == 0)
+		{
+			matched = true;
+			break;
+		}
+	}
+	return positive ? matched : !matched;
+}
+
+fn bool eval_predicates(TSQuery* query, TSQueryMatch* match, String source)
+{
+	uint step_count             = 0;
+	TSQueryPredicateStep* steps = tree_sitter::ts_query_predicates_for_pattern(query, match.pattern_index, &step_count);
+	if (!steps || step_count == 0) return true;
+
+	uint i = 0;
+	while (i < step_count)
+	{
+		if (steps[i].type != TSQueryPredicateStepType.TS_PREDICATE_STEP_TYPE_STRING)
+		{
+			i++;
+			continue;
+		}
+		String name = query_string_value(query, steps[i].value_id);
+		i++;
+		uint args_start = i;
+		while (i < step_count && steps[i].type != TSQueryPredicateStepType.TS_PREDICATE_STEP_TYPE_DONE) i++;
+		if (!eval_predicate(query, name, steps, args_start, i, match, source)) return false;
+		if (i < step_count) i++;
+	}
+	return true;
+}
+
+struct InjectionProps
+{
+	bool combined;
+	bool dynamic_language;
+	uint language_capture;
+	language::Language language;
+}
+
+fn InjectionProps injection_props(TSQuery* query, TSQueryMatch* match)
+{
+	InjectionProps props;
+	uint step_count             = 0;
+	TSQueryPredicateStep* steps = tree_sitter::ts_query_predicates_for_pattern(query, match.pattern_index, &step_count);
+	uint i                      = 0;
+	while (i < step_count)
+	{
+		if (steps[i].type != TSQueryPredicateStepType.TS_PREDICATE_STEP_TYPE_STRING)
+		{
+			i++;
+			continue;
+		}
+		String name = query_string_value(query, steps[i].value_id);
+		i++;
+		uint args_start = i;
+		while (i < step_count && steps[i].type != TSQueryPredicateStepType.TS_PREDICATE_STEP_TYPE_DONE) i++;
+		if (name.compare_to(
+			"set!"
+		) == 0 && args_start < i && steps[args_start].type == TSQueryPredicateStepType.TS_PREDICATE_STEP_TYPE_STRING)
+		{
+			String key = query_string_value(query, steps[args_start].value_id);
+			if (key.compare_to("injection.language") == 0 && args_start + 1 < i)
+			{
+				if (steps[args_start + 1].type == TSQueryPredicateStepType.TS_PREDICATE_STEP_TYPE_STRING)
+				{
+					props.language = language::language_for_name(
+						query_string_value(query, steps[args_start + 1].value_id)
+					);
+				}
+				else if (steps[args_start + 1].type == TSQueryPredicateStepType.TS_PREDICATE_STEP_TYPE_CAPTURE)
+				{
+					props.dynamic_language = true;
+					props.language_capture = steps[args_start + 1].value_id;
+				}
+			}
+			else if (key.compare_to("injection.combined") == 0)
+			{
+				props.combined = true;
+			}
+		}
+		if (i < step_count) i++;
+	}
+	return props;
+}
+
+struct InjectionSegment
+{
+	uint combined_start;
+	uint combined_end;
+	uint original_start;
+}
+
+fn void collect_highlights(TSQuery* query, TSNode root, String source, uint base_offset, List{Span}* out)
+{
+	if (!query) return;
+	TSQueryCursor* cursor = tree_sitter::ts_query_cursor_new();
+	if (!cursor) return;
+	tree_sitter::ts_query_cursor_exec(cursor, query, root);
+
+	TSQueryMatch match;
+	while (tree_sitter::ts_query_cursor_next_match(cursor, &match))
+	{
+		for (ushort i = 0; i < match.capture_count; i++)
+		{
+			TSQueryCapture capture = match.captures[i];
+			SyntaxRole role        = role_for_capture(query, capture.index);
+			if (role == SyntaxRole.NONE) continue;
+			uint start = tree_sitter::ts_node_start_byte(capture.node) + base_offset;
+			uint end   = tree_sitter::ts_node_end_byte(capture.node) + base_offset;
+			if (end <= start) continue;
+			out.push({ .start = start, .end = end, .role = role });
+		}
+	}
+	tree_sitter::ts_query_cursor_delete(cursor);
+}
+
+fn void collect_spans(
+	Allocator allocator,
+	language::Language language,
+	TSTree* tree,
+	String source,
+	uint base_offset,
+	List{Span}* out,
+	int depth
+)
+{
+	TSNode root = tree_sitter::ts_tree_root_node(tree);
+	collect_highlights(query_for(language), root, source, base_offset, out);
+
+	if (depth >= MAX_INJECTION_DEPTH) return;
+	TSQuery* injections = injection_query_for(language);
+	if (!injections) return;
+
+	TSQueryCursor* cursor = tree_sitter::ts_query_cursor_new();
+	if (!cursor) return;
+	tree_sitter::ts_query_cursor_exec(cursor, injections, root);
+
+	TSQueryMatch match;
+	while (tree_sitter::ts_query_cursor_next_match(cursor, &match))
+	{
+		if (!eval_predicates(injections, &match, source)) continue;
+
+		InjectionProps props = injection_props(injections, &match);
+
+		bool dynamic          = props.dynamic_language;
+		uint language_capture = props.language_capture;
+		if (!dynamic)
+		{
+			for (ushort i = 0; i < match.capture_count; i++)
+			{
+				TSQueryCapture capture = match.captures[i];
+				if (query_capture_name(injections, capture.index).compare_to("injection.language") == 0)
+				{
+					dynamic = true;
+					language_capture = capture.index;
+					break;
+				}
+			}
+		}
+
+		language::Language target = props.language;
+		if (dynamic)
+		{
+			target = language::language_for_name(capture_text(&match, language_capture, source));
+		}
+		if (target == language::Language.NONE) continue;
+
+		List{TSNode} content;
+		content.init(allocator);
+		for (ushort i = 0; i < match.capture_count; i++)
+		{
+			TSQueryCapture capture = match.captures[i];
+			if (query_capture_name(injections, capture.index).compare_to("injection.content") == 0)
+			{
+				content.push(capture.node);
+			}
+		}
+		if (content.len() == 0)
+		{
+			content.free();
+			continue;
+		}
+
+		if (props.combined)
+		{
+			DString combined;
+			combined.init(allocator, 256);
+			List{InjectionSegment} segments;
+			segments.init(allocator);
+			foreach (TSNode node : content)
+			{
+				uint start = tree_sitter::ts_node_start_byte(node);
+				uint end   = tree_sitter::ts_node_end_byte(node);
+				if (end <= start || (usz)end > source.len) continue;
+				uint combined_start = (uint)combined.len();
+				combined.append_string(source[start:end - start]);
+				combined.append_char('\n');
+				segments.push(
+					{
+						.combined_start = combined_start,
+						.combined_end = (uint)combined.len() - 1,
+						.original_start = start
+					}
+				);
+			}
+			String combined_text = combined.str_view();
+			TSParser* parser     = injection_parser_for(target);
+			if (parser && combined_text.len > 0)
+			{
+				TSTree* child = tree_sitter::ts_parser_parse_string(
+					parser,
+					null,
+					(char*)combined_text.ptr,
+					(uint)combined_text.len
+				);
+				if (child)
+				{
+					List{Span} child_spans;
+					child_spans.init(allocator);
+					collect_spans(allocator, target, child, combined_text, 0, &child_spans, depth + 1);
+					foreach (Span span : child_spans)
+					{
+						foreach (InjectionSegment segment : segments)
+						{
+							uint start = span.start > segment.combined_start ? span.start : segment.combined_start;
+							uint end   = span.end < segment.combined_end ? span.end : segment.combined_end;
+							if (end > start)
+							{
+								out.push(
+									{
+										.start = segment.original_start + (start - segment.combined_start),
+										.end = segment.original_start + (end - segment.combined_start),
+										.role = span.role,
+									}
+								);
+							}
+						}
+					}
+					child_spans.free();
+					tree_sitter::ts_tree_delete(child);
+				}
+			}
+			combined.free();
+			segments.free();
+			content.free();
+			continue;
+		}
+
+		TSParser* parser = injection_parser_for(target);
+		if (parser)
+		{
+			foreach (TSNode node : content)
+			{
+				uint start = tree_sitter::ts_node_start_byte(node);
+				uint end   = tree_sitter::ts_node_end_byte(node);
+				if (end <= start || (usz)end > source.len) continue;
+				TSTree* child = tree_sitter::ts_parser_parse_string(
+					parser,
+					null,
+					(char*)source.ptr + start,
+					end - start
+				);
+				if (child)
+				{
+					collect_spans(
+						allocator,
+						target,
+						child,
+						source[start:end - start],
+						base_offset + start,
+						out,
+						depth + 1
+					);
+					tree_sitter::ts_tree_delete(child);
+				}
+			}
+		}
+		content.free();
+	}
+	tree_sitter::ts_query_cursor_delete(cursor);
+}
+
 fn SyntaxRole role_for_name(String name)
 {
 	if (name.starts_with("keyword")) return SyntaxRole.KEYWORD;
@@ -207,10 +607,9 @@ fn SyntaxRole role_for_name(String name)
 
 fn SyntaxRole role_for_capture(TSQuery* query, uint index)
 {
-	uint length = 0;
-	char* name  = tree_sitter::ts_query_capture_name_for_id(query, index, &length);
-	if (!name || length == 0) return SyntaxRole.NONE;
-	return role_for_name((String)name[0:length]);
+	String name = query_capture_name(query, index);
+	if (name.len == 0) return SyntaxRole.NONE;
+	return role_for_name(name);
 }
 
 fn RLColor role_color(SyntaxRole role)
@@ -318,26 +717,7 @@ fn void Highlighter.rebuild_spans(&self)
 	self.spans.clear();
 	if (!self.has_tree || !self.query) return;
 
-	TSQueryCursor* cursor = tree_sitter::ts_query_cursor_new();
-	if (!cursor) return;
-
-	TSNode root = tree_sitter::ts_tree_root_node(self.tree);
-	tree_sitter::ts_query_cursor_exec(cursor, self.query, root);
-
-	TSQueryMatch match;
-	uint capture_index = 0;
-	while (tree_sitter::ts_query_cursor_next_capture(cursor, &match, &capture_index))
-	{
-		if (match.capture_count == 0) continue;
-		TSQueryCapture capture = match.captures[0];
-		SyntaxRole role        = role_for_capture(self.query, capture.index);
-		if (role == SyntaxRole.NONE) continue;
-		uint start = tree_sitter::ts_node_start_byte(capture.node);
-		uint end   = tree_sitter::ts_node_end_byte(capture.node);
-		if (end <= start) continue;
-		self.spans.push({ .start = start, .end = end, .role = role });
-	}
-	tree_sitter::ts_query_cursor_delete(cursor);
+	collect_spans(self.allocator, self.language, self.tree, self.source, 0, &self.spans, 0);
 
 	if (self.spans.len() > 1)
 	{
