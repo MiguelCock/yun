@@ -78,6 +78,10 @@ fn void test_language_abi()
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.V)) > 0);
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.NIM)) > 0);
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.CPP)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.JAVA)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.KOTLIN)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.SCALA)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.C_SHARP)) > 0);
 	assert(tree_sitter::TS_MIN_COMPATIBLE_LANGUAGE_VERSION <= tree_sitter::TS_LANGUAGE_VERSION);
 }
 
@@ -132,6 +136,42 @@ fn void test_parse_cpp()
 	TSParser* parser = tree_sitter::ts_parser_new();
 	defer tree_sitter::ts_parser_delete(parser);
 	assert(parses_ok(parser, language::grammar_language(language::Language.CPP), "int main() { return 0; }\n"));
+}
+
+fn void test_parse_java()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(
+		parser,
+		language::grammar_language(language::Language.JAVA),
+		"class Main { public static void main(String[] args) {} }\n"
+	));
+}
+
+fn void test_parse_kotlin()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(parser, language::grammar_language(language::Language.KOTLIN), "fun main() {}\n"));
+}
+
+fn void test_parse_scala()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(parser, language::grammar_language(language::Language.SCALA), "object Main extends App {}\n"));
+}
+
+fn void test_parse_c_sharp()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(
+		parser,
+		language::grammar_language(language::Language.C_SHARP),
+		"class Main { static void Main() {} }\n"
+	));
 }
 
 fn void test_highlights_query_loads()

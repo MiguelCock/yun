@@ -12,7 +12,7 @@ The project is early and evolving quickly. The roadmap is the flat GitHub issue 
 - **Project** — open a folder from the CLI (`c3c run -- <dir>`) or the in-app browser; folder clusters mirror disk folders.
 - **Files** — drop files onto the canvas, create new file cards and folders, resize cards, and use right-click context menus.
 - **Editor** — a piece-table text buffer with undo/redo, line numbers and gutter, caret navigation and scrolling, UTF-8 input, in-file find (and replace), adjustable font size, and external-edit reload.
-- **Syntax highlighting** — tree-sitter grammars for C3, C, C++, Go, Rust, Zig, Odin, V, Nim, Python, and JavaScript, loaded lazily from shared libraries.
+- **Syntax highlighting** — tree-sitter grammars for C3, C, C++, Java, Kotlin, Scala, C#, Go, Rust, Zig, Odin, V, Nim, Python, and JavaScript, loaded lazily from shared libraries.
 - **Search** — in-file find/replace, project-wide search, and a fuzzy symbol palette.
 - **Dependencies** — import arrows between cards, with animated, line-highlighted jumps to results, definitions, and symbols.
 - **LSP** — hover, go-to-definition, completion, and a problems panel, driven by per-language servers configured in the config.

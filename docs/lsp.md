@@ -23,6 +23,10 @@ The id is also the key used to override the command in config.
 | `python` | `.py` | `pyright-langserver --stdio` |
 | `javascript` | `.js` `.mjs` `.cjs` `.jsx` | `typescript-language-server --stdio` |
 | `typescript` | `.ts` `.tsx` | `typescript-language-server --stdio` |
+| `java` | `.java` | `jdtls` |
+| `kotlin` | `.kt` `.kts` | `kotlin-language-server` |
+| `scala` | `.scala` `.sc` `.sbt` | `metals` |
+| `csharp` | `.cs` | `csharp-ls` |
 | `go` | `.go` | `gopls` |
 | `rust` | `.rs` | `rust-analyzer` |
 | `zig` | `.zig` `.zon` | `zls` |
@@ -44,6 +48,10 @@ a project file, or a matching version.
 | C / C++ | `clangd` with compile flags (a `compile_commands.json` gives the best results). |
 | Python | `pyright-langserver` (or another server via config). |
 | JavaScript / TypeScript | `typescript-language-server` (needs Node). |
+| Java | `jdtls` (needs a JDK); a build file (`pom.xml`/`build.gradle`) for project analysis. |
+| Kotlin | `kotlin-language-server` (needs a JDK) and a Gradle/Maven project. |
+| Scala | `metals` (needs a JDK) and a `build.sbt`/`build.sc` project. |
+| C# | `csharp-ls` (needs the .NET SDK) and a project (`.csproj`/`.sln`). |
 | Go | `gopls` and a Go module (`go.mod`) in the project. |
 | Rust | `rust-analyzer` and a Cargo project (`Cargo.toml`). |
 | Zig | `zls` **matching your `zig` version**, plus `build.zig` / `build.zig.zon` for project-wide results. |
