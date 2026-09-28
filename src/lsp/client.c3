@@ -6,6 +6,7 @@ import std::core::dstring;
 import std::core::mem::alloc;
 import std::encoding::json;
 import std::io;
+import std::os::env;
 import std::os::process;
 import std::thread;
 import std::thread::channel;
@@ -76,6 +77,24 @@ struct LspClient
 	String last_error;
 	double backoff;
 	double restart_at;
+}
+
+bool g_lsp_debug_checked = false;
+bool g_lsp_debug         = false;
+
+fn bool lsp_debug()
+{
+	if (!g_lsp_debug_checked)
+	{
+		g_lsp_debug_checked = true;
+		String? value = env::get_var(mem, "YUN_LSP_DEBUG");
+		if (try v = value)
+		{
+			g_lsp_debug = v.len > 0 && v.compare_to("0") != 0;
+			v.free(mem);
+		}
+	}
+	return g_lsp_debug;
 }
 
 fn void LspClient.init(&self, Allocator allocator, String language, String root_uri)
@@ -394,6 +413,7 @@ fn int LspClient.send_request(&self, String method, Object* params)
 {
 	int id = self.next_id;
 	self.next_id++;
+	if (lsp_debug()) io::eprintfn("LSP[%s] -> %s (#%d)", self.language, method, id);
 	@pool()
 	{
 		String json = lsp_message(tmem, true, id, method, params);
@@ -405,6 +425,7 @@ fn int LspClient.send_request(&self, String method, Object* params)
 
 fn void LspClient.send_notification(&self, String method, Object* params)
 {
+	if (lsp_debug()) io::eprintfn("LSP[%s] -> %s", self.language, method);
 	@pool()
 	{
 		String json = lsp_message(tmem, false, 0, method, params);
@@ -439,6 +460,7 @@ fn void LspClient.pump(&self)
 		{
 			String? line = self.errors.try_pop();
 			if (catch excuse = line) break;
+			if (lsp_debug()) io::eprintfn("LSP[%s] %s", self.language, line);
 			if (self.last_error.len) self.last_error.free(self.allocator);
 			self.last_error = line.copy(self.allocator);
 			line.free(mem);
@@ -455,6 +477,17 @@ fn void LspClient.resolve_pending(&self, int id, Object* message)
 
 		if (message.has_key("error"))
 		{
+			String msg       = "";
+			Object*? err_opt = message.get("error");
+			if (try err = err_opt)
+			{
+				Object*? m_opt = err.get("message");
+				if (try m = m_opt)
+				{
+					if (m.is_string()) msg = m.s;
+				}
+			}
+			io::eprintfn("LSP: %s %s error: %s", self.language, method, msg);
 			if (method.compare_to("initialize") == 0) self.status = LspStatus.ERROR;
 			message.free();
 		}
@@ -465,6 +498,13 @@ fn void LspClient.resolve_pending(&self, int id, Object* message)
 			{
 				lsp_parse_capabilities(self.allocator, result, &self.caps);
 			}
+			io::eprintfn(
+				"LSP: %s ready (hover=%b definition=%b completion=%b)",
+				self.language,
+				self.caps.hover,
+				self.caps.definition,
+				self.caps.completion
+			);
 			self.handshake_done = true;
 			message.free();
 		}
@@ -502,7 +542,7 @@ fn void LspClient.handle_server_request(&self, long id, String method, Object* m
 			for (int i = 0; i < count; i++)
 			{
 				if (i > 0) out.append_char(',');
-				out.append_string("null");
+				out.append_string("{}");
 			}
 			out.append_char(']');
 			self.send_response(id, out.str_view());
@@ -525,6 +565,24 @@ fn void LspClient.handle_message(&self, String json)
 	Object*? parsed = json::parse(self.allocator, json);
 	if (catch excuse = parsed) return;
 	Object* message = parsed;
+
+	if (lsp_debug())
+	{
+		Object*? method_opt = message.get("method");
+		if (try method = method_opt)
+		{
+			io::eprintfn("LSP[%s] <- %s", self.language, method.s);
+		}
+		else
+		{
+			Object*? id_opt = message.get("id");
+			if (try id_obj = id_opt)
+			{
+				int? id = id_obj.to_value(int);
+				if (try value = id) io::eprintfn("LSP[%s] <- response #%d", self.language, value);
+			}
+		}
+	}
 
 	Object*? method_opt = message.get("method");
 	if (try method = method_opt)

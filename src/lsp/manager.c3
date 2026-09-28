@@ -641,6 +641,10 @@ fn void Lsp.update(&self, double now)
 						&self.completion_incomplete
 					);
 				}
+				if (self.completion_items.len() == 0)
+				{
+					io::eprintfn("LSP: %s completion returned no items", client.language);
+				}
 				self.completion_ready = true;
 				self.completion_request_id = -1;
 			}

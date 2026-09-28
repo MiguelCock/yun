@@ -254,7 +254,7 @@ fn void test_client_answers_server_requests()
 
 		client.handle_message("{\"id\":43,\"method\":\"workspace/configuration\",\"params\":{\"items\":[{},{}]}}");
 		assert(fake_ctx.written.len() == 2);
-		assert(fake_ctx.written[1].contains("\"result\":[null,null]"));
+		assert(fake_ctx.written[1].contains("\"result\":[{},{}]"));
 
 		client.handle_message("{\"id\":44,\"method\":\"workspace/applyEdit\",\"params\":{}}");
 		assert(fake_ctx.written.len() == 3);
@@ -262,6 +262,22 @@ fn void test_client_answers_server_requests()
 
 		client.destroy();
 		fake::fake_free(&fake_ctx);
+	};
+}
+
+fn void test_client_handles_request_error()
+{
+	@pool()
+	{
+		LspClient client;
+		client.init(tmem, "zig", "file:///root");
+		client.pending.push({ .id = 7, .method = "textDocument/completion".copy(tmem) });
+
+		client.handle_message("{\"id\":7,\"error\":{\"code\":-32601,\"message\":\"nope\"}}");
+		assert(client.pending.len() == 0);
+		assert(client.responses.len() == 0);
+
+		client.destroy();
 	};
 }
 
