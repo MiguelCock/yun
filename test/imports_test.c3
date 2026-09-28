@@ -111,10 +111,15 @@ fn void test_resolve_c3_by_module_name()
 			.is_test = false,
 		};
 
+		List{String} roots;
+		roots.init(tmem);
+		roots_for(tmem, ctx.root, "/proj/src/card.c3", &roots);
+
 		List{String} targets;
 		targets.init(tmem);
 		bool ok = resolve_import(
 			&ctx,
+			roots.entries[0:roots.len()],
 			&paths,
 			files[0:1],
 			tmem,
@@ -130,7 +135,18 @@ fn void test_resolve_c3_by_module_name()
 
 		List{String} miss;
 		miss.init(tmem);
-		assert(!resolve_import(&ctx, &paths, files[0:1], tmem, "/proj/src/card.c3", "std::io::file", "", false, &miss));
+		assert(!resolve_import(
+			&ctx,
+			roots.entries[0:roots.len()],
+			&paths,
+			files[0:1],
+			tmem,
+			"/proj/src/card.c3",
+			"std::io::file",
+			"",
+			false,
+			&miss
+		));
 		assert(miss.len() == 0);
 		paths.free();
 	};
@@ -149,9 +165,24 @@ fn void test_resolve_c3_multiple_files_skips_tests()
 		files[1] = { .path = (Path)"/proj/test/text_test.c3", .module_name = "yun::text", .is_test = true };
 		files[2] = { .path = (Path)"/proj/src/text/piece_table.c3", .module_name = "yun::text" };
 
+		List{String} roots;
+		roots.init(tmem);
+		roots_for(tmem, ctx.root, "/proj/src/main.c3", &roots);
+
 		List{String} targets;
 		targets.init(tmem);
-		bool ok = resolve_import(&ctx, &paths, files[0:3], tmem, "/proj/src/main.c3", "yun::text", "", false, &targets);
+		bool ok = resolve_import(
+			&ctx,
+			roots.entries[0:roots.len()],
+			&paths,
+			files[0:3],
+			tmem,
+			"/proj/src/main.c3",
+			"yun::text",
+			"",
+			false,
+			&targets
+		);
 		assert(ok);
 		assert(targets.len() == 2);
 		assert(targets[0].compare_to("/proj/src/text/history.c3") == 0);
@@ -171,9 +202,24 @@ fn void test_resolve_c3_path_fallback()
 		paths.set("/proj/src/util.c3", 0);
 		CardImports[1] files;
 
+		List{String} roots;
+		roots.init(tmem);
+		roots_for(tmem, ctx.root, "/proj/src/main.c3", &roots);
+
 		List{String} targets;
 		targets.init(tmem);
-		bool ok = resolve_import(&ctx, &paths, files[0:1], tmem, "/proj/src/main.c3", "util", "", false, &targets);
+		bool ok = resolve_import(
+			&ctx,
+			roots.entries[0:roots.len()],
+			&paths,
+			files[0:1],
+			tmem,
+			"/proj/src/main.c3",
+			"util",
+			"",
+			false,
+			&targets
+		);
 		assert(ok);
 		assert(targets.len() == 1);
 		assert(targets[0].compare_to("/proj/src/util.c3") == 0);
@@ -191,9 +237,24 @@ fn void test_resolve_c_include_external_is_angled()
 		paths.init(tmem);
 		CardImports[1] files;
 
+		List{String} roots;
+		roots.init(tmem);
+		roots_for(tmem, ctx.root, "/proj/a.c", &roots);
+
 		List{String} targets;
 		targets.init(tmem);
-		assert(!resolve_import(&ctx, &paths, files[0:1], tmem, "/proj/a.c", "stdio.h", "include", true, &targets));
+		assert(!resolve_import(
+			&ctx,
+			roots.entries[0:roots.len()],
+			&paths,
+			files[0:1],
+			tmem,
+			"/proj/a.c",
+			"stdio.h",
+			"include",
+			true,
+			&targets
+		));
 		assert(targets.len() == 0);
 		paths.free();
 	};
@@ -285,6 +346,52 @@ fn void test_hit_test_disabled_gate()
 	RLCamera2D camera = { };
 	assert(!index.hit_test(null, camera, { 0.0f, 0.0f }));
 	set_settings(saved);
+}
+
+fn void test_find_module_root()
+{
+	@pool()
+	{
+		String root = "fixtures/imports";
+		assert(find_module_root(tmem, root, "fixtures/imports/go/main.go", language::Language.GO)
+			.compare_to("fixtures/imports/go") == 0);
+		assert(find_module_root(tmem, root, "fixtures/imports/rust/src/main.rs", language::Language.RUST)
+			.compare_to("fixtures/imports/rust") == 0);
+		assert(find_module_root(tmem, root, "fixtures/imports/typescript/src/index.ts", language::Language.TYPESCRIPT)
+			.compare_to("fixtures/imports/typescript") == 0);
+		assert(find_module_root(
+			tmem,
+			root,
+			"fixtures/imports/java/src/main/java/com/example/App.java",
+			language::Language.JAVA
+		)
+			.compare_to("fixtures/imports/java") == 0);
+		// no manifest for C3 -> project root
+		assert(find_module_root(tmem, root, "fixtures/imports/c3/main.c3", language::Language.C3)
+			.compare_to(root) == 0);
+	};
+}
+
+fn void test_roots_for_ancestors()
+{
+	@pool()
+	{
+		List{String} roots;
+		roots.init(tmem);
+		roots_for(tmem, "fixtures/imports", "fixtures/imports/java/src/main/java/com/example/App.java", &roots);
+		bool has_file_dir = false;
+		bool has_root     = false;
+		bool has_java     = false;
+		for (sz i = 0; i < roots.len(); i++)
+		{
+			if (roots[i].compare_to("fixtures/imports/java") == 0) has_file_dir = true;
+			if (roots[i].compare_to("fixtures/imports") == 0) has_root = true;
+			if (roots[i].compare_to("fixtures/imports/java/src/main/java") == 0) has_java = true;
+		}
+		assert(has_file_dir);
+		assert(has_root);
+		assert(has_java);
+	};
 }
 
 fn void test_all_import_queries_compile()
@@ -517,19 +624,24 @@ fn void test_fixture_resolution()
 		FixtureCase c = cases[i];
 		@pool()
 		{
-			String root = string::format(tmem, "fixtures/imports/%s", c.dir);
+			String project_root = "fixtures/imports";
+			String source       = string::format(tmem, "%s/%s/%s", project_root, c.dir, c.source);
+			String module_root  = find_module_root(tmem, project_root, source, c.lang);
 			ImportContext ctx;
-			context_build(&ctx, tmem, root);
+			context_build(&ctx, tmem, module_root);
+			List{String} roots;
+			roots.init(tmem);
+			roots_for(tmem, ctx.root, source, &roots);
 
 			HashMap{String, int} paths;
 			paths.init(tmem);
-			RLFilePathList fl = rl::load_directory_files_ex(root.zstr_tcopy(), "".zstr_tcopy(), true);
+			RLFilePathList fl = rl::load_directory_files_ex(project_root.zstr_tcopy(), "".zstr_tcopy(), true);
 			for (uint f = 0; f < fl.count; f++)
 			{
 				paths.set(fl.paths[f].str_view().copy(tmem), (int)f);
 			}
 
-			char[]? data = file::load(tmem, string::format(tmem, "%s/%s", root, c.source));
+			char[]? data = file::load(tmem, source);
 			if (catch excuse = data) continue;
 			String text = (String)data;
 
@@ -557,16 +669,17 @@ fn void test_fixture_resolution()
 				targets.init(tmem);
 				bool ok = resolve_import(
 					&ctx,
+					roots.entries[0:roots.len()],
 					&paths,
 					files[0:0],
 					tmem,
-					string::format(tmem, "%s/%s", root, c.source),
+					source,
 					refs[r].specifier,
 					refs[r].kind,
 					refs[r].angled,
 					&targets
 				);
-				String want = string::format(tmem, "%s/%s", root, c.target);
+				String want = string::format(tmem, "%s/%s/%s", project_root, c.dir, c.target);
 				bool found  = false;
 				for (sz t = 0; t < targets.len(); t++)
 				{
