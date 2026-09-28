@@ -78,7 +78,7 @@
 	url = https://github.com/tree-sitter/tree-sitter-julia
 [submodule "lib/tree_sitter_haskell.c3l/upstream"]
 	path = lib/tree_sitter_haskell.c3l/upstream
-	url = https://github.com/tree-sitter/tree-sitter-haskell
+	url = https://github.com/tree-sitter-grammars/tree-sitter-haskell
 [submodule "lib/tree_sitter_gleam.c3l/upstream"]
 	path = lib/tree_sitter_gleam.c3l/upstream
 	url = https://github.com/gleam-lang/tree-sitter-gleam

@@ -505,7 +505,7 @@ fn void test_parse_highlights_haskell()
 	@pool()
 	{
 		PieceTable table;
-		table.init_from_buffer(tmem, "-- note\nx = 42\ns = \"hi\"\n");
+		table.init_from_buffer(tmem, "-- Quicksort implementation\nx = 42\ns = \"hi\"\n");
 
 		Highlighter* highlighter = create(tmem, &table, "Main.hs");
 		assert(highlighter != null);

@@ -2,8 +2,8 @@
 
 Grammar for the [tree-sitter](https://github.com/tree-sitter/tree-sitter) runtime.
 
-- **Upstream:** `https://github.com/tree-sitter/tree-sitter-haskell`, pinned to `v0.23.1`
-- **Language ABI:** 14
+- **Upstream:** `https://github.com/tree-sitter-grammars/tree-sitter-haskell`, pinned to `98aedbd`
+- **Language ABI:** 15
 - **Module:** `tree_sitter_haskell`
 - **License:** see `LICENSE`
 
