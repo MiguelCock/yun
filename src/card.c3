@@ -4,6 +4,7 @@ import raylib6::rl;
 import std::io::path;
 import std::math;
 import yun::highlight;
+import yun::markdown;
 import yun::text;
 import yun::theme;
 import yun::ui;
@@ -34,6 +35,9 @@ struct FileCard
 	bool missing;
 	bool ephemeral;
 	bool sleeping;
+	bool preview;
+	float preview_scroll;
+	markdown::View* view;
 }
 
 fn Rect FileCard.effective_rect(&self)
@@ -48,6 +52,15 @@ fn bool FileCard.marker_hit(&self, RLVector2 world)
 	Rect r  = self.effective_rect();
 	float x = r.x + r.width - 24.0f;
 	return world[0] >= x && world[0] <= r.x + r.width && world[1] >= r.y && world[1] <= r.y + ui::pxf(
+		CARD_TITLE_HEIGHT
+	);
+}
+
+fn bool FileCard.preview_marker_hit(&self, RLVector2 world)
+{
+	Rect r  = self.effective_rect();
+	float x = r.x + r.width - 74.0f;
+	return world[0] >= x && world[0] <= r.x + r.width - 56.0f && world[1] >= r.y && world[1] <= r.y + ui::pxf(
 		CARD_TITLE_HEIGHT
 	);
 }
@@ -108,6 +121,17 @@ fn void FileCard.draw(&self, bool focused)
 			theme::current()
 			.card_text);
 	};
+	if (markdown::is_markdown_path((String)self.path))
+	{
+		rl::draw_text_ex(
+			ui::font(),
+			"M",
+			{ r.x + r.width - (float)ui::px(67), r.y + (float)ui::px(7) },
+			(float)ui::tpx(16),
+			0.0f,
+			self.preview ? theme::current()
+			.card_focus : theme::current().card_text);
+	}
 	if (self.dirty) rl::draw_circle(
 		(int)(r.x + r.width - (float)ui::px(52)),
 		(int)(r.y + (float)ui::px(14)),

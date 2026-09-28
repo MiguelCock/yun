@@ -112,6 +112,7 @@ enum CommandId
 	MINIMAP_FOCUS,
 	ZOOM_RESET,
 	ZOOM_FIT,
+	TOGGLE_PREVIEW,
 }
 
 struct CommandDef
@@ -597,6 +598,13 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{ .id = CommandId.ZOOM_RESET, .label = "Reset Zoom", .shortcut = "0", .in_top_bar = false, .contexts = CTX_MOVE },
 	{ .id = CommandId.ZOOM_FIT, .label = "Fit Content", .shortcut = "F", .in_top_bar = false, .contexts = CTX_MOVE },
+	{
+		.id = CommandId.TOGGLE_PREVIEW,
+		.label = "Toggle Preview",
+		.shortcut = "Ctrl+Shift+V",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE | CTX_EDIT,
+	},
 };
 
 fn usz command_count()
@@ -781,6 +789,8 @@ fn String command_name(CommandId id)
 			return "zoom_reset";
 		case CommandId.ZOOM_FIT:
 			return "zoom_fit";
+		case CommandId.TOGGLE_PREVIEW:
+			return "toggle_preview";
 	}
 }
 
@@ -925,6 +935,8 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.MINIMAP_FOCUS:
 		case CommandId.ZOOM_FIT:
 			return has_project;
+		case CommandId.TOGGLE_PREVIEW:
+			return has_buffer;
 	}
 }
 

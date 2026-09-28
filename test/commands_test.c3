@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 84);
+	assert(command_count() == 85);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -88,6 +88,8 @@ fn void test_contexts()
 	assert(command_def(CommandId.MINIMAP_FOCUS).contexts == CTX_MOVE);
 	assert(command_def(CommandId.ZOOM_RESET).contexts == CTX_MOVE);
 	assert(command_def(CommandId.ZOOM_FIT).contexts == CTX_MOVE);
+	assert(command_def(CommandId.TOGGLE_PREVIEW).contexts == (CTX_MOVE | CTX_EDIT));
+	assert(command_def(CommandId.TOGGLE_PREVIEW).shortcut.compare_to("Ctrl+Shift+V") == 0);
 }
 
 fn void test_repeat_flags()
@@ -120,6 +122,7 @@ fn void test_command_from_name()
 	assert(command_from_name("search_project") == (int)CommandId.SEARCH_PROJECT);
 	assert(command_from_name("symbols_project") == (int)CommandId.SYMBOLS_PROJECT);
 	assert(command_from_name("toggle_settings") == (int)CommandId.TOGGLE_SETTINGS);
+	assert(command_from_name("toggle_preview") == (int)CommandId.TOGGLE_PREVIEW);
 	assert(command_from_name("nope") == -1);
 }
 
@@ -162,6 +165,8 @@ fn void test_command_enabled()
 	assert(command_enabled(CommandId.TOGGLE_SETTINGS, true, true));
 	assert(command_enabled(CommandId.CLOSE_CARD, true, false));
 	assert(!command_enabled(CommandId.DELETE_CARD, false, false));
+	assert(command_enabled(CommandId.TOGGLE_PREVIEW, true, true));
+	assert(!command_enabled(CommandId.TOGGLE_PREVIEW, true, false));
 }
 
 fn void test_fuzzy_exact_and_case()

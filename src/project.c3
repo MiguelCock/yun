@@ -18,6 +18,7 @@ import yun::gitignore;
 import yun::highlight;
 import yun::keymap;
 import yun::lsp;
+import yun::markdown;
 import yun::text;
 import yun::theme;
 import yun::ui;
@@ -1462,7 +1463,26 @@ fn void Project.update(
 		{
 			int index = self.focus(wheel_hit);
 			editor::ensure_buffer(&self.cards[index], self.allocator);
-			if (self.cards[index].buffer)
+			if (self.cards[index].preview && markdown::is_markdown_path((String)self.cards[index].path))
+			{
+				Rect area = editor::inner_rect(self.cards[index].rect, metrics);
+				float height = markdown::view_content_height(
+					self.cards[index].view,
+					self.cards[index].buffer,
+					area.width,
+					metrics.char_width,
+					metrics.font_size,
+					metrics.line_height
+				);
+				float max = height - area.height;
+				if (max < 0.0f) max = 0.0f;
+				float value = self.cards[index].preview_scroll - wheel * metrics.line_height * (float)editor::settings()
+					.wheel_scroll_lines;
+				if (value < 0.0f) value = 0.0f;
+				if (value > max) value = max;
+				self.cards[index].preview_scroll = value;
+			}
+			else if (self.cards[index].buffer)
 			{
 				usz line_count = self.cards[index].buffer.line_count();
 				Rect text      = editor::text_rect(self.cards[index].rect, metrics, line_count);
@@ -1516,12 +1536,52 @@ fn void Project.update(
 			{
 				self.cards[card_hit].open = !self.cards[card_hit].open;
 			}
+			else if (region == editor::CardRegion.PREVIEW)
+			{
+				self.toggle_preview(card_hit);
+			}
 			else if (region == editor::CardRegion.BODY)
 			{
 				int index      = self.focus(card_hit);
 				FileCard* card = &self.cards[index];
 				editor::ensure_buffer(card, self.allocator);
-				if (card.buffer)
+				if (card.preview)
+				{
+					if (card.buffer && card.view)
+					{
+						Rect area     = editor::inner_rect(card.rect, metrics);
+						float local_y = world[1] - area.y + card.preview_scroll;
+						usz offset    = markdown::view_block_offset_at(card.view, local_y);
+						if (offset > card.buffer.length()) offset = card.buffer.length();
+						card.preview = false;
+						card.cursor = offset;
+						card.selection_anchor = offset;
+						usz line = card.buffer.line_of(card.cursor);
+						card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
+						Rect text = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+						card.scroll = editor::scroll_to_reveal(
+							card.buffer,
+							metrics,
+							text.height,
+							card.cursor,
+							card.scroll
+						);
+						card.scroll_x = editor::scroll_x_to_reveal(
+							card.buffer,
+							metrics,
+							text.width,
+							card.cursor,
+							card.scroll_x
+						);
+						if (card.history) card.history.break_coalescing();
+						self.last_input_time = rl::get_time();
+					}
+					else
+					{
+						card.preview = false;
+					}
+				}
+				else if (card.buffer)
 				{
 					Rect text       = editor::text_rect(card.rect, metrics, card.buffer.line_count());
 					RLVector2 local = { world[0] - text.x, world[1] - text.y };
@@ -1554,8 +1614,12 @@ fn void Project.update(
 					{
 						lsp::lsp_request_definition((String)card.path, card.buffer, offset);
 					}
+					if (!ctrl_down()) self.selecting = true;
 				}
-				if (!ctrl_down()) self.selecting = true;
+				else
+				{
+					if (!ctrl_down()) self.selecting = true;
+				}
 			}
 			else
 			{
@@ -1755,6 +1819,7 @@ fn void Project.finish_edit(&self, EditorMetrics metrics)
 	if (!card) return;
 	card.dirty = true;
 	if (card.highlight) card.highlight.mark_dirty();
+	if (card.view) markdown::view_mark_dirty(card.view);
 	lsp::lsp_did_change((String)card.path, card.buffer);
 	self.last_input_time = rl::get_time();
 	self.reveal_focused(metrics);
@@ -2219,6 +2284,33 @@ fn void Project.draw_cards(
 		}
 		if (!card.open) continue;
 
+		if (card.preview && markdown::is_markdown_path((String)card.path))
+		{
+			editor::ensure_buffer(card, self.allocator);
+			Rect area = editor::inner_rect(card.rect, metrics);
+			float max = 0.0f;
+			if (card.buffer && card.view)
+			{
+				max = markdown::view_draw(
+					card.view,
+					card.buffer,
+					area,
+					card.preview_scroll,
+					camera,
+					editor_font,
+					metrics.font_size,
+					metrics.char_width,
+					metrics.line_height,
+					card.highlight
+				);
+				if (card.preview_scroll > max) card.preview_scroll = max;
+				editor::draw_scrollbar(area, area.height + max, card.preview_scroll, camera, theme::current()
+					.editor_scrollbar);
+			}
+			if (is_focused) card.draw_handles(camera, theme::current().editor_handle);
+			continue;
+		}
+
 		if (!card.buffer)
 		{
 			editor::draw_placeholder(editor::inner_rect(card.rect, metrics), metrics, camera, theme::current()
@@ -2333,5 +2425,17 @@ fn void Project.draw_cards(
 		editor::draw_scrollbar(text, content_height, card.scroll, camera, theme::current().editor_scrollbar);
 		if (is_focused && find_bar) find_bar.draw(card.rect, metrics, font, null);
 		if (is_focused) card.draw_handles(camera, theme::current().editor_handle);
+	}
+}
+fn void Project.toggle_preview(&self, int index)
+{
+	if (index < 0 || index >= (int)self.cards.len()) return;
+	FileCard* card = &self.cards[index];
+	if (!markdown::is_markdown_path((String)card.path)) return;
+	card.preview = !card.preview;
+	if (card.preview)
+	{
+		editor::ensure_buffer(card, self.allocator);
+		card.preview_scroll = 0.0f;
 	}
 }
