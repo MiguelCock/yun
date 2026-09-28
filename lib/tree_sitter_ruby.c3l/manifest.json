@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_ruby",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-ruby"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-ruby"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-ruby"
+      ]
+    }
+  }
+}

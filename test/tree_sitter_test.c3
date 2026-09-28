@@ -86,6 +86,11 @@ fn void test_language_abi()
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.TSX)) > 0);
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.CSS)) > 0);
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.HTML)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.LUA)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.PHP)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.RUBY)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.R)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.JULIA)) > 0);
 	assert(tree_sitter::TS_MIN_COMPATIBLE_LANGUAGE_VERSION <= tree_sitter::TS_LANGUAGE_VERSION);
 }
 
@@ -208,6 +213,41 @@ fn void test_parse_html()
 	TSParser* parser = tree_sitter::ts_parser_new();
 	defer tree_sitter::ts_parser_delete(parser);
 	assert(parses_ok(parser, language::grammar_language(language::Language.HTML), "<html><body>hi</body></html>\n"));
+}
+
+fn void test_parse_lua()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(parser, language::grammar_language(language::Language.LUA), "local x = 1\nprint(x)\n"));
+}
+
+fn void test_parse_php()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(parser, language::grammar_language(language::Language.PHP), "<?php echo 1; ?>\n"));
+}
+
+fn void test_parse_ruby()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(parser, language::grammar_language(language::Language.RUBY), "puts \"hi\"\n"));
+}
+
+fn void test_parse_r()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(parser, language::grammar_language(language::Language.R), "x <- 1\nprint(x)\n"));
+}
+
+fn void test_parse_julia()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(parser, language::grammar_language(language::Language.JULIA), "function main()\n    1\nend\n"));
 }
 
 fn void test_highlights_query_loads()

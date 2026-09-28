@@ -532,6 +532,12 @@ fn void test_lsp_language_detection()
 	assert(lsp_language_for_path("style.css").compare_to("css") == 0);
 	assert(lsp_language_for_path("index.html").compare_to("html") == 0);
 	assert(lsp_language_for_path("index.htm").compare_to("html") == 0);
+	assert(lsp_language_for_path("init.lua").compare_to("lua") == 0);
+	assert(lsp_language_for_path("index.php").compare_to("php") == 0);
+	assert(lsp_language_for_path("app.rb").compare_to("ruby") == 0);
+	assert(lsp_language_for_path("analysis.r").compare_to("r") == 0);
+	assert(lsp_language_for_path("analysis.R").compare_to("r") == 0);
+	assert(lsp_language_for_path("main.jl").compare_to("julia") == 0);
 	assert(lsp_language_for_path("notes.txt").len == 0);
 	assert(lsp_language_for_path("Makefile").len == 0);
 	assert(lsp_language_for_path("dir.with.dots/file").len == 0);
@@ -557,6 +563,14 @@ fn void test_lsp_default_commands()
 	assert(lsp_default_command("csharp").compare_to("csharp-ls") == 0);
 	assert(lsp_default_command("css").compare_to("vscode-css-language-server --stdio") == 0);
 	assert(lsp_default_command("html").compare_to("vscode-html-language-server --stdio") == 0);
+	assert(lsp_default_command("lua").compare_to("lua-language-server") == 0);
+	assert(lsp_default_command("php").compare_to("intelephense --stdio") == 0);
+	assert(lsp_default_command("ruby").compare_to("ruby-lsp") == 0);
+	assert(lsp_default_command("r").compare_to("R --no-echo -e \"languageserver::run()\"") == 0);
+	assert(lsp_default_command("julia")
+		.compare_to(
+			"julia --startup-file=no --history-file=no -e \"using LanguageServer; LanguageServer.runserver()\""
+		) == 0);
 	assert(lsp_default_command("unknown").len == 0);
 }
 
@@ -583,5 +597,43 @@ fn void test_did_open_language_id()
 				assert(lang.compare_to("c3") == 0);
 			}
 		}
+	};
+}
+fn void test_split_command()
+{
+	@pool()
+	{
+		List{String} out;
+		out.init(tmem);
+
+		lsp_split_command(tmem, "c3lsp", &out);
+		assert(out.len() == 1 && out[0].compare_to("c3lsp") == 0);
+		out.clear();
+
+		lsp_split_command(tmem, "intelephense --stdio", &out);
+		assert(out.len() == 2);
+		assert(out[0].compare_to("intelephense") == 0 && out[1].compare_to("--stdio") == 0);
+		out.clear();
+
+		lsp_split_command(tmem, "R --no-echo -e \"languageserver::run()\"", &out);
+		assert(out.len() == 4);
+		assert(out[0].compare_to("R") == 0);
+		assert(out[3].compare_to("languageserver::run()") == 0);
+		out.clear();
+
+		lsp_split_command(tmem, "julia -e 'using LanguageServer; run()'", &out);
+		assert(out.len() == 3);
+		assert(out[2].compare_to("using LanguageServer; run()") == 0);
+		out.clear();
+
+		lsp_split_command(tmem, "sh -c \"echo \\\"hi\\\"\"", &out);
+		assert(out.len() == 3);
+		assert(out[2].compare_to("echo \"hi\"") == 0);
+		out.clear();
+
+		lsp_split_command(tmem, "  a\tb  c  ", &out);
+		assert(out.len() == 3);
+		assert(out[0].compare_to("a") == 0 && out[2].compare_to("c") == 0);
+		out.free();
 	};
 }

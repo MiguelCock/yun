@@ -124,7 +124,7 @@ fi
 if [ -n "$LICENSE_FILE" ]; then
 	cp "$LICENSE_FILE" "$LIB/LICENSE"
 else
-	for candidate in LICENSE LICENSE.txt COPYING COPYING.txt; do
+	for candidate in LICENSE LICENSE.md LICENSE.txt COPYING COPYING.txt COPYING.md; do
 		if [ -f "$UPSTREAM/$candidate" ]; then
 			cp "$UPSTREAM/$candidate" "$LIB/LICENSE"
 			break
@@ -203,12 +203,13 @@ if [ "$NO_LSP" -eq 0 ] && [ -n "$LSP_COMMAND" ]; then
 		echo "note: LSP id \"$LSP_ID\" already present; skipping LSP entry"
 	else
 		LSP_SNIPPET_FILE="$(mktemp)"
+		LSP_COMMAND_ESC="$(printf '%s' "$LSP_COMMAND" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 		{
 			echo ""
 			echo "	{"
 			echo "		.id = \"$LSP_ID\","
 			echo "		.extensions = { $exts },"
-			echo "		.command = \"$LSP_COMMAND\","
+			echo "		.command = \"$LSP_COMMAND_ESC\","
 			echo "	},"
 		} >"$LSP_SNIPPET_FILE"
 		SNIP="$LSP_SNIPPET_FILE" perl -0777 -i -pe 'BEGIN { open my $f, "<", $ENV{SNIP}; local $/; $s = <$f>; close $f; } s/(\n\};\n\nfn String lsp_for_path)/$s . $1/e' "$ROOT/src/language.c3"

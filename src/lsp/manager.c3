@@ -3,6 +3,7 @@ module yun::lsp;
 import std::collections::list;
 import std::collections::map;
 import std::collections::object;
+import std::core::dstring;
 import std::core::mem::alloc;
 import std::io;
 import std::math;
@@ -421,14 +422,54 @@ fn String lsp_default_command(String language)
 
 fn void lsp_split_command(Allocator allocator, String command, List{String}* out)
 {
+	DString current;
+	current.init(allocator, command.len);
+	bool has_current = false;
+
 	usz i = 0;
 	while (i < command.len)
 	{
-		while (i < command.len && (command[i] == ' ' || command[i] == '\t')) i++;
-		usz start = i;
-		while (i < command.len && command[i] != ' ' && command[i] != '\t') i++;
-		if (i > start) out.push(command[start:i - start].copy(allocator));
+		char c = command[i];
+		if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+		{
+			if (has_current)
+			{
+				out.push(current.str_view().copy(allocator));
+				current.clear();
+				has_current = false;
+			}
+			i++;
+			continue;
+		}
+		if (c == '"' || c == '\'')
+		{
+			char quote = c;
+			has_current = true;
+			i++;
+			while (i < command.len && command[i] != quote)
+			{
+				char ch = command[i];
+				if (ch == '\\' && quote == '"' && i + 1 < command.len)
+				{
+					i++;
+					ch = command[i];
+				}
+				current.append_char(ch);
+				i++;
+			}
+			if (i < command.len) i++;
+			continue;
+		}
+		has_current = true;
+		current.append_char(c);
+		i++;
 	}
+
+	if (has_current)
+	{
+		out.push(current.str_view().copy(allocator));
+	}
+	current.free();
 }
 
 fn LspClient* Lsp.client_for(&self, String language)

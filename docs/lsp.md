@@ -35,6 +35,11 @@ The id is also the key used to override the command in config.
 | `odin` | `.odin` | `ols` |
 | `v` | `.v` | `v-analyzer` |
 | `nim` | `.nim` `.nims` | `nimlangserver` |
+| `lua` | `.lua` | `lua-language-server` |
+| `php` | `.php` | `intelephense --stdio` |
+| `ruby` | `.rb` | `ruby-lsp` |
+| `r` | `.r` `.R` | `R --no-echo -e "languageserver::run()"` |
+| `julia` | `.jl` | `julia --startup-file=no --history-file=no -e "using LanguageServer; LanguageServer.runserver()"` |
 
 The defaults are best-effort. A language with no entry (and no override) is
 ignored by the LSP.
@@ -61,6 +66,14 @@ a project file, or a matching version.
 | Odin | `ols` and the Odin toolchain. |
 | V | `v-analyzer` and the V compiler; a `v.mod` for project analysis. |
 | Nim | `nimlangserver` and the Nim toolchain. |
+| Lua | `lua-language-server` (`lua-lsp`). |
+| PHP | `intelephense` (or another server via config). |
+| Ruby | `ruby-lsp` (or `solargraph`). |
+| R | `R` with the `languageserver` package (`install.packages("languageserver")`). |
+| Julia | `julia` with `LanguageServer.jl` installed in a Julia environment. |
+
+Command values are split on whitespace, honoring single/double quotes, so
+commands with arguments (R, Julia) work as written.
 
 In particular, **zls must be the release that matches your Zig compiler** — a
 version mismatch starts the server but yields no completions.

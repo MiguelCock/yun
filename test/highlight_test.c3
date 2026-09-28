@@ -58,6 +58,12 @@ fn void test_language_for_path()
 	assert(language::language_for_path("style.css") == language::Language.CSS);
 	assert(language::language_for_path("index.html") == language::Language.HTML);
 	assert(language::language_for_path("index.htm") == language::Language.HTML);
+	assert(language::language_for_path("init.lua") == language::Language.LUA);
+	assert(language::language_for_path("index.php") == language::Language.PHP);
+	assert(language::language_for_path("app.rb") == language::Language.RUBY);
+	assert(language::language_for_path("analysis.r") == language::Language.R);
+	assert(language::language_for_path("analysis.R") == language::Language.R);
+	assert(language::language_for_path("main.jl") == language::Language.JULIA);
 	assert(language::language_for_path("notes.txt") == language::Language.NONE);
 	assert(language::language_for_path("Makefile") == language::Language.NONE);
 	assert(language::language_for_path("dir.with.dots/file") == language::Language.NONE);
