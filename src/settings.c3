@@ -55,6 +55,7 @@ enum SettingId : int
 	CANVAS_GRID_MAX_PX,
 	CANVAS_JUMP_ZOOM_MIN,
 	CANVAS_JUMP_ZOOM_TARGET,
+	CANVAS_FIT_ON_OPEN,
 	MINIMAP_ENABLED,
 	MINIMAP_SIZE,
 	MINIMAP_ZOOM_THRESHOLD,
@@ -455,6 +456,14 @@ const SettingSpec[] SETTINGS = {
 		.min = 0.01,
 		.max = 8.0,
 		.step = 0.05,
+	},
+	{
+		.section = "canvas",
+		.key = "fit_on_open",
+		.label = "Fit on open",
+		.description = "Zoom to fit the whole project when a project is first opened (no saved layout).",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
 	},
 	{
 		.section = "minimap",

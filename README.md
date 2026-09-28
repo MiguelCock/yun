@@ -18,7 +18,7 @@ The project is early and evolving quickly. The roadmap is the flat GitHub issue 
 - **LSP** — hover, go-to-definition, completion, and a problems panel, driven by per-language servers configured in the config.
 - **Markdown preview** — toggle a rendered view of a Markdown card (headings, lists, fenced code, blockquotes, links, inline emphasis) with `Ctrl+Shift+V`, the command palette, or the card-title `M` marker; click the preview to jump back to the source.
 - **Themes** — nine built-in palettes with a picker.
-- **App** — top bar actions, Vim-like keyboard modes (see [Keyboard and modes](#keyboard-and-modes)), command palette, customizable keybindings, notifications, layered config (global + project), and `.yun/workspace.json` persistence.
+- **App** — top bar actions, Vim-like keyboard modes (see [Keyboard and modes](#keyboard-and-modes)), command palette, customizable keybindings, notifications, layered config (global + project), and `.yun/workspace.json` persistence. A freshly opened project is packed compactly (nested folders contained in their parent) and the camera fits everything (`canvas.fit_on_open`); folder positions and the camera are restored unchanged on reopen.
 
 ## Not yet
 

@@ -175,53 +175,67 @@ fn void test_ensure_folder_chain()
 	};
 }
 
-fn void test_layout_columns()
-{
-	assert(layout_columns(0) == 1);
-	assert(layout_columns(1) == 1);
-	assert(layout_columns(4) >= 1);
-	assert(layout_columns(100) >= 1);
-	assert(layout_columns(100) <= 100);
-	assert(layout_columns(1000) <= 1000);
-}
-
-fn void test_layout_slot()
-{
-	RLVector2 first = layout_slot(0, 4);
-	assert(first[0] == 0.0f && first[1] == 0.0f);
-
-	RLVector2 next_col = layout_slot(1, 4);
-	assert(next_col[0] == CLUSTER_COLLAPSED_WIDTH + CLUSTER_GAP);
-	assert(next_col[1] == 0.0f);
-
-	RLVector2 next_row = layout_slot(4, 4);
-	assert(next_row[0] == 0.0f);
-	assert(next_row[1] == CLUSTER_TITLE_HEIGHT + CLUSTER_GAP);
-}
-
 fn void test_layout_packs_clusters()
 {
 	@pool()
 	{
 		Project p;
 		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
 		int a = p.add_folder("/root/a", ROOT_FOLDER);
 		int b = p.add_folder("/root/b", ROOT_FOLDER);
 		int c = p.add_folder("/root/c", ROOT_FOLDER);
-		p.cards.push({ .path = (Path)"/root/a/x.c3".copy(tmem), .folder = a });
+		p.cards.push(
+			{ .path = (Path)"/root/a/x.c3".copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f } }
+		);
+		p.cards.push(
+			{ .path = (Path)"/root/b/y.c3".copy(tmem), .folder = b, .rect = { .width = 1.0f, .height = 1.0f } }
+		);
+		p.cards.push(
+			{ .path = (Path)"/root/c/z.c3".copy(tmem), .folder = c, .rect = { .width = 1.0f, .height = 1.0f } }
+		);
 
 		p.layout();
 
-		int columns  = layout_columns((int)p.folders.len() + 1);
-		RLVector2 pa = layout_slot(a, columns);
-		RLVector2 pb = layout_slot(b, columns);
-		RLVector2 pc = layout_slot(c, columns);
-		assert(p.folders[a].bounds.x == pa[0] && p.folders[a].bounds.y == pa[1]);
-		assert(p.folders[b].bounds.x == pb[0] && p.folders[b].bounds.y == pb[1]);
-		assert(p.folders[c].bounds.x == pc[0] && p.folders[c].bounds.y == pc[1]);
+		Rect ra = p.cluster_bounds(a);
+		Rect rb = p.cluster_bounds(b);
+		Rect rc = p.cluster_bounds(c);
 
-		assert(p.cards[0].rect.x == pa[0] + CLUSTER_PADDING);
-		assert(p.cards[0].rect.y == pa[1] + CLUSTER_TITLE_HEIGHT + CLUSTER_PADDING);
+		// each cluster contains its card
+		assert(rect_contains(ra, { p.cards[0].rect.x + 1.0f, p.cards[0].rect.y + 1.0f }));
+		assert(rect_contains(rb, { p.cards[1].rect.x + 1.0f, p.cards[1].rect.y + 1.0f }));
+		assert(rect_contains(rc, { p.cards[2].rect.x + 1.0f, p.cards[2].rect.y + 1.0f }));
+
+		// clusters do not overlap
+		assert(!rect_intersects(ra, rb));
+		assert(!rect_intersects(ra, rc));
+		assert(!rect_intersects(rb, rc));
+	};
+}
+
+fn void test_layout_nests_child_clusters()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int d = p.add_folder("/root/a/d", a);
+		p.cards.push(
+			{ .path = (Path)"/root/a/x.c3".copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f } }
+		);
+		p.cards.push(
+			{ .path = (Path)"/root/a/d/y.c3".copy(tmem), .folder = d, .rect = { .width = 1.0f, .height = 1.0f } }
+		);
+
+		p.layout();
+
+		Rect ra = p.cluster_bounds(a);
+		Rect rd = p.cluster_visual_bounds(d);
+		assert(rd.x >= ra.x - 0.01f && rd.y >= ra.y - 0.01f);
+		assert(rd.x + rd.width <= ra.x + ra.width + 0.01f);
+		assert(rd.y + rd.height <= ra.y + ra.height + 0.01f);
 	};
 }
 

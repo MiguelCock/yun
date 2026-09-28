@@ -61,7 +61,29 @@ fn void finish_open(
 {
 	config.load((String)project.root);
 	ui::set_ui_scale((float)config.settings.get_float(settings::SettingId.APP_UI_SCALE));
-	workspace::load(project, canvas);
+	bool restored = workspace::load(project, canvas);
+	if (restored)
+	{
+		project.place_unrestored();
+		project.invalidate_bounds();
+	}
+	else
+	{
+		project.layout();
+		for (sz i = 0; i < project.folders.len(); i++)
+		{
+			project.folders[i].collapsed = true;
+		}
+		project.invalidate_bounds();
+		if (config.settings.get_bool(settings::SettingId.CANVAS_FIT_ON_OPEN))
+		{
+			Rect bounds;
+			if (project.content_bounds(&bounds))
+			{
+				canvas.fit_zoom(bounds, rl::get_screen_width(), rl::get_screen_height());
+			}
+		}
+	}
 	set_project_title(project);
 	keymap.build(config);
 	push_config_warnings(config, notifier);
