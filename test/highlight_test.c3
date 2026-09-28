@@ -70,6 +70,7 @@ fn void test_language_for_path()
 	assert(language::language_for_path("server.hrl") == language::Language.ERLANG);
 	assert(language::language_for_path("lib.ex") == language::Language.ELIXIR);
 	assert(language::language_for_path("test.exs") == language::Language.ELIXIR);
+	assert(language::language_for_path("main.dart") == language::Language.DART);
 	assert(language::language_for_path("notes.txt") == language::Language.NONE);
 	assert(language::language_for_path("Makefile") == language::Language.NONE);
 	assert(language::language_for_path("dir.with.dots/file") == language::Language.NONE);
@@ -604,6 +605,25 @@ fn void test_elixir_sigil_injects_javascript()
 		highlighter.ensure_parsed();
 
 		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.KEYWORD));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_parse_highlights_dart()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "// note\nvoid main() { int x = 1; }\n");
+
+		Highlighter* highlighter = create(tmem, &table, "main.dart");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.COMMENT));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.TYPE));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.NUMBER));
 
 		destroy(highlighter, tmem);
 	};

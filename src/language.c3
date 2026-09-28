@@ -35,6 +35,7 @@ enum Language : int
 	GLEAM,
 	ERLANG,
 	ELIXIR,
+	DART,
 	COUNT,
 }
 
@@ -369,6 +370,17 @@ const LanguageSpec[] LANGUAGES = {
 		.module_query = "",
 		.symbols_query = "",
 	},
+	{
+		.name = "dart",
+		.extensions = { ".dart" },
+		.lib = "tree-sitter-dart",
+		.symbol = "tree_sitter_dart",
+		.highlights_path = "lib/tree_sitter_dart.c3l/queries/highlights.scm",
+		.injections_path = "",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
 };
 
 fn String path_extension(String path)
@@ -652,6 +664,11 @@ const LspSpec[] LSP_LANGUAGES = {
 		.id = "elixir",
 		.extensions = { ".ex", ".exs" },
 		.command = "elixir-ls",
+	},
+	{
+		.id = "dart",
+		.extensions = { ".dart" },
+		.command = "dart language-server --protocol=lsp",
 	},
 };
 
