@@ -71,6 +71,8 @@ fn void test_language_for_path()
 	assert(language::language_for_path("lib.ex") == language::Language.ELIXIR);
 	assert(language::language_for_path("test.exs") == language::Language.ELIXIR);
 	assert(language::language_for_path("main.dart") == language::Language.DART);
+	assert(language::language_for_path("README.md") == language::Language.MARKDOWN);
+	assert(language::language_for_path("doc.markdown") == language::Language.MARKDOWN);
 	assert(language::language_for_path("notes.txt") == language::Language.NONE);
 	assert(language::language_for_path("Makefile") == language::Language.NONE);
 	assert(language::language_for_path("dir.with.dots/file") == language::Language.NONE);
@@ -258,11 +260,13 @@ fn void test_registry_is_well_formed()
 	{
 		language::LanguageSpec spec = language::LANGUAGES[i];
 		assert(spec.name.len > 0);
-		assert(spec.extensions.len > 0);
 		assert(spec.lib.len > 0);
 		assert(spec.symbol.len > 0);
 		assert(spec.highlights_path.len > 0);
-		assert(language::language_for_path(spec.extensions[0]) == (language::Language)i);
+		if (spec.extensions.len > 0)
+		{
+			assert(language::language_for_path(spec.extensions[0]) == (language::Language)i);
+		}
 		assert(language::grammar_language((language::Language)i) != null);
 	}
 }
@@ -295,6 +299,9 @@ fn void test_language_for_name()
 	assert(language::language_for_name("erl") == language::Language.ERLANG);
 	assert(language::language_for_name("ex") == language::Language.ELIXIR);
 	assert(language::language_for_name("exs") == language::Language.ELIXIR);
+	assert(language::language_for_name("md") == language::Language.MARKDOWN);
+	assert(language::language_for_name("markdown") == language::Language.MARKDOWN);
+	assert(language::language_for_name("markdown_inline") == language::Language.MARKDOWN_INLINE);
 	assert(language::language_for_name("sql") == language::Language.NONE);
 	assert(language::language_for_name("comment") == language::Language.NONE);
 	assert(language::language_for_name("") == language::Language.NONE);
@@ -624,6 +631,48 @@ fn void test_parse_highlights_dart()
 		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.COMMENT));
 		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.TYPE));
 		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.NUMBER));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_parse_highlights_markdown()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(
+			tmem,
+			"# Title\n\nSome *emphasis* and **strong** and `code` and [link](http://x).\n\n- item\n"
+		);
+
+		Highlighter* highlighter = create(tmem, &table, "README.md");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.TITLE));
+		assert(runs_have_role(highlighter, &table, 2, SyntaxRole.EMPHASIS));
+		assert(runs_have_role(highlighter, &table, 2, SyntaxRole.STRONG));
+		assert(runs_have_role(highlighter, &table, 2, SyntaxRole.LITERAL));
+		assert(runs_have_role(highlighter, &table, 2, SyntaxRole.URI));
+		assert(runs_have_role(highlighter, &table, 4, SyntaxRole.PUNCTUATION));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_markdown_fence_injects_language()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "```c\nint x = 1;\n```\n");
+
+		Highlighter* highlighter = create(tmem, &table, "README.md");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.TYPE));
 
 		destroy(highlighter, tmem);
 	};

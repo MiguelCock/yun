@@ -51,6 +51,7 @@ Options:
 | `--src` | source subdirectory inside upstream (default `src`) |
 | `--queries` | queries subdirectory inside upstream (default `queries`) |
 | `--license` | license file to copy (default: upstream `LICENSE`) |
+| `--no-extensions` | injection-only grammar (no file extension; implies `--no-lsp`) |
 
 It creates the C3L directory, registers the submodule (`.gitmodules`), copies the
 highlight (and, when present, injections) query and license, generates the
@@ -176,6 +177,8 @@ grammars are Apache-2.0.
 | tree_sitter_julia | tree-sitter/tree-sitter-julia | `v0.25.0` | MIT |
 | tree_sitter_kotlin | fwcd/tree-sitter-kotlin | `0.3.8` | MIT |
 | tree_sitter_lua | tree-sitter-grammars/tree-sitter-lua | `v0.5.0` | MIT |
+| tree_sitter_markdown | tree-sitter-grammars/tree-sitter-markdown | `v0.5.3` | MIT |
+| tree_sitter_markdown_inline | tree-sitter-grammars/tree-sitter-markdown | `v0.5.3` | MIT |
 | tree_sitter_nim | alaviss/tree-sitter-nim | `0.6.2` | MPL-2.0 |
 | tree_sitter_odin | tree-sitter-grammars/tree-sitter-odin | `v1.3.0` | MIT |
 | tree_sitter_php | tree-sitter/tree-sitter-php | `v0.25.0` | MIT |

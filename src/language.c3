@@ -36,6 +36,8 @@ enum Language : int
 	ERLANG,
 	ELIXIR,
 	DART,
+	MARKDOWN,
+	MARKDOWN_INLINE,
 	COUNT,
 }
 
@@ -381,6 +383,28 @@ const LanguageSpec[] LANGUAGES = {
 		.module_query = "",
 		.symbols_query = "",
 	},
+	{
+		.name = "markdown",
+		.extensions = { ".md", ".markdown" },
+		.lib = "tree-sitter-markdown",
+		.symbol = "tree_sitter_markdown",
+		.highlights_path = "lib/tree_sitter_markdown.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_markdown.c3l/queries/injections.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "markdown_inline",
+		.extensions = { },
+		.lib = "tree-sitter-markdown-inline",
+		.symbol = "tree_sitter_markdown_inline",
+		.highlights_path = "lib/tree_sitter_markdown_inline.c3l/queries/highlights.scm",
+		.injections_path = "lib/tree_sitter_markdown_inline.c3l/queries/injections.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
 };
 
 fn String path_extension(String path)
@@ -498,6 +522,7 @@ fn Language language_for_name(String name)
 	if (name_equals(trimmed, "hs")) return Language.HASKELL;
 	if (name_equals(trimmed, "erl")) return Language.ERLANG;
 	if (name_equals(trimmed, "ex") || name_equals(trimmed, "exs")) return Language.ELIXIR;
+	if (name_equals(trimmed, "md")) return Language.MARKDOWN;
 	return Language.NONE;
 }
 
@@ -669,6 +694,11 @@ const LspSpec[] LSP_LANGUAGES = {
 		.id = "dart",
 		.extensions = { ".dart" },
 		.command = "dart language-server --protocol=lsp",
+	},
+	{
+		.id = "markdown",
+		.extensions = { ".md", ".markdown" },
+		.command = "marksman server",
 	},
 };
 

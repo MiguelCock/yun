@@ -34,6 +34,12 @@ enum SyntaxRole : int
 	PARAMETER,
 	PROPERTY,
 	BUILTIN,
+	TITLE,
+	EMPHASIS,
+	STRONG,
+	LITERAL,
+	URI,
+	REFERENCE,
 	NONE,
 }
 
@@ -624,6 +630,12 @@ fn SyntaxRole role_for_name(String name)
 	if (name.starts_with("label")) return SyntaxRole.LABEL;
 	if (name.starts_with("tag")) return SyntaxRole.TYPE;
 	if (name.starts_with("escape")) return SyntaxRole.ESCAPE;
+	if (name.starts_with("text.title")) return SyntaxRole.TITLE;
+	if (name.starts_with("text.literal")) return SyntaxRole.LITERAL;
+	if (name.starts_with("text.uri")) return SyntaxRole.URI;
+	if (name.starts_with("text.reference")) return SyntaxRole.REFERENCE;
+	if (name.starts_with("text.strong")) return SyntaxRole.STRONG;
+	if (name.starts_with("text.emphasis")) return SyntaxRole.EMPHASIS;
 	return SyntaxRole.NONE;
 }
 
@@ -675,6 +687,18 @@ fn RLColor role_color(SyntaxRole role)
 			return t.syn_property;
 		case SyntaxRole.BUILTIN:
 			return t.syn_builtin;
+		case SyntaxRole.TITLE:
+			return t.syn_keyword;
+		case SyntaxRole.EMPHASIS:
+			return t.syn_attribute;
+		case SyntaxRole.STRONG:
+			return t.syn_type;
+		case SyntaxRole.LITERAL:
+			return t.syn_string;
+		case SyntaxRole.URI:
+			return t.syn_module;
+		case SyntaxRole.REFERENCE:
+			return t.syn_function;
 		case SyntaxRole.VARIABLE:
 			return t.editor_text;
 		case SyntaxRole.TEXT:

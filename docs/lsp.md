@@ -45,6 +45,7 @@ The id is also the key used to override the command in config.
 | `erlang` | `.erl` `.hrl` | `elp server` |
 | `elixir` | `.ex` `.exs` | `elixir-ls` |
 | `dart` | `.dart` | `dart language-server --protocol=lsp` |
+| `markdown` | `.md` `.markdown` | `marksman server` |
 
 The defaults are best-effort. A language with no entry (and no override) is
 ignored by the LSP.
@@ -81,6 +82,7 @@ a project file, or a matching version.
 | Erlang | `elp` (Erlang Language Platform) and a rebar3/OTP project. |
 | Elixir | `elixir-ls` (or its `language_server.sh`) and a `mix.exs` project. |
 | Dart / Flutter | `dart language-server` from the Dart or Flutter SDK (Flutter users may need `flutter/bin/dart` via the `lsp` override) and a `pubspec.yaml` project. |
+| Markdown | `marksman` (or another server via config); a workspace folder for link/diagnostic resolution. |
 
 Command values are split on whitespace, honoring single/double quotes, so
 commands with arguments (R, Julia) work as written.
