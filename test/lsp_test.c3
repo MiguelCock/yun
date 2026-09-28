@@ -236,6 +236,51 @@ fn void test_client_captures_notifications()
 	};
 }
 
+fn void test_client_answers_server_requests()
+{
+	@pool()
+	{
+		FakeTransport fake_ctx;
+		fake::fake_init(&fake_ctx, tmem);
+
+		LspClient client;
+		client.init(tmem, "c", "file:///root");
+		client.transport = fake::fake_transport(&fake_ctx);
+
+		client.handle_message("{\"id\":42,\"method\":\"client/registerCapability\",\"params\":{}}");
+		assert(fake_ctx.written.len() == 1);
+		assert(fake_ctx.written[0].contains("\"id\":42"));
+		assert(fake_ctx.written[0].contains("\"result\":null"));
+
+		client.handle_message("{\"id\":43,\"method\":\"workspace/configuration\",\"params\":{\"items\":[{},{}]}}");
+		assert(fake_ctx.written.len() == 2);
+		assert(fake_ctx.written[1].contains("\"result\":[{},{}]"));
+
+		client.handle_message("{\"id\":44,\"method\":\"workspace/applyEdit\",\"params\":{}}");
+		assert(fake_ctx.written.len() == 3);
+		assert(fake_ctx.written[2].contains("\"applied\":false"));
+
+		client.destroy();
+		fake::fake_free(&fake_ctx);
+	};
+}
+
+fn void test_client_handles_request_error()
+{
+	@pool()
+	{
+		LspClient client;
+		client.init(tmem, "zig", "file:///root");
+		client.pending.push({ .id = 7, .method = "textDocument/completion".copy(tmem) });
+
+		client.handle_message("{\"id\":7,\"error\":{\"code\":-32601,\"message\":\"nope\"}}");
+		assert(client.pending.len() == 0);
+		assert(client.responses.len() == 0);
+
+		client.destroy();
+	};
+}
+
 fn void test_diagnostics_store()
 {
 	@pool()
@@ -458,6 +503,7 @@ fn void test_lsp_language_detection()
 	assert(lsp_language_for_path("src/main.cxx").compare_to("cpp") == 0);
 	assert(lsp_language_for_path("include/foo.hpp").compare_to("cpp") == 0);
 	assert(lsp_language_for_path("include/foo.hh").compare_to("cpp") == 0);
+	assert(lsp_language_for_path("include/foo.hxx").compare_to("cpp") == 0);
 	assert(lsp_language_for_path("script.py").compare_to("python") == 0);
 	assert(lsp_language_for_path("app.js").compare_to("javascript") == 0);
 	assert(lsp_language_for_path("app.mjs").compare_to("javascript") == 0);
@@ -465,6 +511,14 @@ fn void test_lsp_language_detection()
 	assert(lsp_language_for_path("app.jsx").compare_to("javascript") == 0);
 	assert(lsp_language_for_path("app.ts").compare_to("typescript") == 0);
 	assert(lsp_language_for_path("app.tsx").compare_to("typescript") == 0);
+	assert(lsp_language_for_path("main.go").compare_to("go") == 0);
+	assert(lsp_language_for_path("lib.rs").compare_to("rust") == 0);
+	assert(lsp_language_for_path("build.zig").compare_to("zig") == 0);
+	assert(lsp_language_for_path("build.zon").compare_to("zig") == 0);
+	assert(lsp_language_for_path("main.odin").compare_to("odin") == 0);
+	assert(lsp_language_for_path("main.v").compare_to("v") == 0);
+	assert(lsp_language_for_path("main.nim").compare_to("nim") == 0);
+	assert(lsp_language_for_path("main.nims").compare_to("nim") == 0);
 	assert(lsp_language_for_path("notes.txt").len == 0);
 	assert(lsp_language_for_path("Makefile").len == 0);
 	assert(lsp_language_for_path("dir.with.dots/file").len == 0);
@@ -478,6 +532,12 @@ fn void test_lsp_default_commands()
 	assert(lsp_default_command("python").compare_to("pyright-langserver --stdio") == 0);
 	assert(lsp_default_command("javascript").compare_to("typescript-language-server --stdio") == 0);
 	assert(lsp_default_command("typescript").compare_to("typescript-language-server --stdio") == 0);
+	assert(lsp_default_command("go").compare_to("gopls") == 0);
+	assert(lsp_default_command("rust").compare_to("rust-analyzer") == 0);
+	assert(lsp_default_command("zig").compare_to("zls") == 0);
+	assert(lsp_default_command("odin").compare_to("ols") == 0);
+	assert(lsp_default_command("v").compare_to("v-analyzer") == 0);
+	assert(lsp_default_command("nim").compare_to("nimlangserver") == 0);
 	assert(lsp_default_command("unknown").len == 0);
 }
 

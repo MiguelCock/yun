@@ -4,6 +4,7 @@ import std::collections::list;
 import std::collections::map;
 import std::collections::object;
 import std::core::mem::alloc;
+import std::io;
 import std::math;
 import yun::config;
 import yun::language;
@@ -640,6 +641,10 @@ fn void Lsp.update(&self, double now)
 						&self.completion_incomplete
 					);
 				}
+				if (self.completion_items.len() == 0)
+				{
+					io::eprintfn("LSP: %s completion returned no items", client.language);
+				}
 				self.completion_ready = true;
 				self.completion_request_id = -1;
 			}
@@ -660,6 +665,14 @@ fn void Lsp.update(&self, double now)
 		{
 			if (client.status != LspStatus.ERROR)
 			{
+				if (client.last_error.len > 0)
+				{
+					io::eprintfn("LSP: %s server exited (%s)", client.language, client.last_error);
+				}
+				else
+				{
+					io::eprintfn("LSP: %s server exited; restarting", client.language);
+				}
 				client.backoff = client.backoff == 0.0 ? 1.0 : math::min(client.backoff * 2.0, 8.0);
 				client.restart_at = now + client.backoff;
 				client.status = LspStatus.ERROR;

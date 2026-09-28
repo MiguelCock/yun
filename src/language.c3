@@ -11,6 +11,13 @@ enum Language : int
 	C,
 	PYTHON,
 	JAVASCRIPT,
+	GO,
+	RUST,
+	ZIG,
+	ODIN,
+	V,
+	NIM,
+	CPP,
 	COUNT,
 }
 
@@ -91,6 +98,76 @@ const LanguageSpec[] LANGUAGES = {
 			"(method_definition name: (property_identifier) @method)\n"
 			"(variable_declarator name: (identifier) @variable)",
 	},
+	{
+		.name = "go",
+		.extensions = { ".go" },
+		.lib = "tree-sitter-go",
+		.symbol = "tree_sitter_go",
+		.highlights_path = "lib/tree_sitter_go.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "rust",
+		.extensions = { ".rs" },
+		.lib = "tree-sitter-rust",
+		.symbol = "tree_sitter_rust",
+		.highlights_path = "lib/tree_sitter_rust.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "zig",
+		.extensions = { ".zig", ".zon" },
+		.lib = "tree-sitter-zig",
+		.symbol = "tree_sitter_zig",
+		.highlights_path = "lib/tree_sitter_zig.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "odin",
+		.extensions = { ".odin" },
+		.lib = "tree-sitter-odin",
+		.symbol = "tree_sitter_odin",
+		.highlights_path = "lib/tree_sitter_odin.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "v",
+		.extensions = { ".v" },
+		.lib = "tree-sitter-v",
+		.symbol = "tree_sitter_v",
+		.highlights_path = "lib/tree_sitter_v.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "nim",
+		.extensions = { ".nim", ".nims" },
+		.lib = "tree-sitter-nim",
+		.symbol = "tree_sitter_nim",
+		.highlights_path = "lib/tree_sitter_nim.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "cpp",
+		.extensions = { ".cpp", ".cc", ".cxx", ".hpp", ".hxx" },
+		.lib = "tree-sitter-cpp",
+		.symbol = "tree_sitter_cpp",
+		.highlights_path = "lib/tree_sitter_cpp.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
 };
 
 fn String path_extension(String path)
@@ -147,6 +224,15 @@ fn String grammar_query_path(Language language)
 	return LANGUAGES[index].highlights_path;
 }
 
+fn String highlights_path_for_name(String name)
+{
+	foreach (LanguageSpec spec : LANGUAGES)
+	{
+		if (spec.name.compare_to(name) == 0) return spec.highlights_path;
+	}
+	return "";
+}
+
 fn String import_query_text(Language language)
 {
 	int index = (int)language;
@@ -188,7 +274,7 @@ const LspSpec[] LSP_LANGUAGES = {
 	},
 	{
 		.id = "cpp",
-		.extensions = { ".cpp", ".cc", ".cxx", ".hpp", ".hh" },
+		.extensions = { ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx" },
 		.command = "clangd",
 	},
 	{
@@ -205,6 +291,36 @@ const LspSpec[] LSP_LANGUAGES = {
 		.id = "typescript",
 		.extensions = { ".ts", ".tsx" },
 		.command = "typescript-language-server --stdio",
+	},
+	{
+		.id = "go",
+		.extensions = { ".go" },
+		.command = "gopls",
+	},
+	{
+		.id = "rust",
+		.extensions = { ".rs" },
+		.command = "rust-analyzer",
+	},
+	{
+		.id = "zig",
+		.extensions = { ".zig", ".zon" },
+		.command = "zls",
+	},
+	{
+		.id = "odin",
+		.extensions = { ".odin" },
+		.command = "ols",
+	},
+	{
+		.id = "v",
+		.extensions = { ".v" },
+		.command = "v-analyzer",
+	},
+	{
+		.id = "nim",
+		.extensions = { ".nim", ".nims" },
+		.command = "nimlangserver",
 	},
 };
 

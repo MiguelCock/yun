@@ -30,6 +30,19 @@ fn void test_language_for_path()
 	assert(language::language_for_path("script.py") == language::Language.PYTHON);
 	assert(language::language_for_path("app.js") == language::Language.JAVASCRIPT);
 	assert(language::language_for_path("app.mjs") == language::Language.JAVASCRIPT);
+	assert(language::language_for_path("main.go") == language::Language.GO);
+	assert(language::language_for_path("lib.rs") == language::Language.RUST);
+	assert(language::language_for_path("build.zig") == language::Language.ZIG);
+	assert(language::language_for_path("build.zon") == language::Language.ZIG);
+	assert(language::language_for_path("main.odin") == language::Language.ODIN);
+	assert(language::language_for_path("main.v") == language::Language.V);
+	assert(language::language_for_path("main.nim") == language::Language.NIM);
+	assert(language::language_for_path("main.nims") == language::Language.NIM);
+	assert(language::language_for_path("main.cpp") == language::Language.CPP);
+	assert(language::language_for_path("main.cc") == language::Language.CPP);
+	assert(language::language_for_path("main.cxx") == language::Language.CPP);
+	assert(language::language_for_path("main.hpp") == language::Language.CPP);
+	assert(language::language_for_path("main.hxx") == language::Language.CPP);
 	assert(language::language_for_path("notes.txt") == language::Language.NONE);
 	assert(language::language_for_path("Makefile") == language::Language.NONE);
 	assert(language::language_for_path("dir.with.dots/file") == language::Language.NONE);
@@ -224,4 +237,54 @@ fn void test_registry_is_well_formed()
 		assert(language::language_for_path(spec.extensions[0]) == (language::Language)i);
 		assert(language::grammar_language((language::Language)i) != null);
 	}
+}
+
+fn void test_highlights_path_for_name()
+{
+	assert(language::highlights_path_for_name("c").compare_to("lib/tree_sitter_c.c3l/queries/highlights.scm") == 0);
+	assert(language::highlights_path_for_name("nope").len == 0);
+}
+
+fn void test_all_highlight_queries_compile()
+{
+	for (int i = 1; i < language::LANGUAGE_COUNT; i++)
+	{
+		assert(query_for((language::Language)i) != null);
+	}
+}
+
+fn void test_cpp_inherits_c_highlights()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "// note\nint x = 42;\n");
+
+		Highlighter* highlighter = create(tmem, &table, "sample.cpp");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.COMMENT));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.NUMBER));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_parse_highlights_v()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "fn main() {\n\tprintln(\"hi\")\n}\n");
+
+		Highlighter* highlighter = create(tmem, &table, "sample.v");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.KEYWORD));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.STRING));
+
+		destroy(highlighter, tmem);
+	};
 }
