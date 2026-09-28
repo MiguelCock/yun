@@ -56,7 +56,7 @@ specifiers never resolve and stay external.
 
 ### Manifest readers
 
-`ImportContext` reads, best-effort, from the project root:
+`ImportContext` reads, best-effort, from each file's **module root** (see below):
 
 - `go.mod` (`module …`) — Go module prefix.
 - `Cargo.toml` (`name = …`) — Rust crate name.
@@ -68,6 +68,25 @@ specifiers never resolve and stay external.
 
 When a manifest is missing or unreadable, resolution falls back to the
 conventional roots above and relative paths.
+
+## Nested projects and monorepos
+
+Each file resolves against its **nearest module root**: `find_module_root` walks
+up from the importing file's directory toward the opened project root, and the
+first ancestor containing the language's manifest/marker wins (`go.mod`,
+`Cargo.toml`, `tsconfig.json`/`jsconfig.json` — `package.json` only as a JS/TS
+fallback — `composer.json`, `pubspec.yaml`, `mix.exs`, `*.cabal`/`stack.yaml`,
+`*.csproj`/`*.sln`, `pom.xml`/`build.gradle*`/`src/main/java`,
+`build.gradle*`/`src/main/kotlin`, `build.sbt`/`src/main/scala`, `Gemfile`,
+`v.mod`, `gleam.toml`, `*.nimble`). With no marker, the opened project root is
+used, and single-project repos behave exactly as before.
+
+Source roots are then searched **nearest-first** from the file's directory up to
+that module root (`dir`, `src`, `lib`, `src/main/{java,kotlin,scala}`, `test`,
+`app`, `include`), so a monorepo, a folder of projects, or the
+`fixtures/imports/` tree resolves correctly when opened as one project. The
+search never walks above the opened project root. Manifests are read once per
+module root and cached.
 
 ## Extending a language
 
@@ -82,11 +101,12 @@ conventional roots above and relative paths.
 
 ## Code fence / mini project
 
-`fixtures/imports/` is a small project with one example per language (and the
-real manifests). It is used by `test/imports_test.c3` and
-`test/symbols_test.c3`, and can be opened in Yun to see arrows resolve across
-every language. It is listed in `.gitignore` (so it does not clutter the Yun
-repo's own canvas) but committed with `git add -f`.
+`fixtures/imports/` is a small tree with one example per language (and the real
+manifests). It is used by `test/imports_test.c3` and `test/symbols_test.c3`, and
+can be opened in Yun **as a single project** to see arrows resolve across every
+language (thanks to the ancestor-aware resolution above); opening an individual
+`fixtures/imports/<lang>/` also works. It is listed in `.gitignore` (so it does
+not clutter the Yun repo's own canvas) but committed with `git add -f`.
 
 ## Configuration
 

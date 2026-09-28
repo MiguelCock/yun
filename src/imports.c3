@@ -135,9 +135,8 @@ struct ImportIndex
 	bool pending_edit;
 	String pending_path;
 	double pending_since;
-	ImportContext context;
-	bool context_ready;
-	String context_root;
+	List{ImportContext*} contexts;
+	HashMap{String, int} context_index;
 }
 
 TSQuery*[language::LANGUAGE_COUNT] import_query_cache;
@@ -166,23 +165,38 @@ fn void ImportIndex.init(&self, Allocator allocator)
 	self.pending_edit = false;
 	self.pending_path = "";
 	self.pending_since = 0.0;
-	self.context_ready = false;
-	self.context_root = "";
+	self.contexts.init(allocator);
+	self.context_index.init(allocator);
 	self.init_pool();
 }
 
-fn void ImportIndex.ensure_context(&self, project::Project* project)
+fn void ImportIndex.free_contexts(&self)
 {
-	String root = (String)project.root;
-	if (self.context_ready && self.context_root.compare_to(root) == 0) return;
-	if (self.context_ready)
+	for (sz i = 0; i < self.contexts.len(); i++)
 	{
-		context_destroy(&self.context);
-		if (self.context_root.len) self.context_root.free(self.allocator);
+		context_destroy(self.contexts[i]);
+		alloc::free(self.allocator, self.contexts[i]);
 	}
-	context_build(&self.context, self.allocator, root);
-	self.context_root = root.copy(self.allocator);
-	self.context_ready = true;
+	self.contexts.clear();
+	self.context_index.clear();
+}
+
+fn ImportContext* ImportIndex.context_for(&self, String source_path, language::Language language, String project_root)
+{
+	String root = find_module_root(self.allocator, project_root, source_path, language);
+	int*? hit   = self.context_index.get_ref(root);
+	if (try existing = hit)
+	{
+		root.free(self.allocator);
+		return self.contexts[*existing];
+	}
+
+	ImportContext* ctx = alloc::new(self.allocator, ImportContext);
+	context_build(ctx, self.allocator, root);
+	root.free(self.allocator);
+	self.contexts.push(ctx);
+	self.context_index.set(ctx.root, (int)(self.contexts.len() - 1));
+	return ctx;
 }
 
 fn int resolve_scan_workers()
@@ -246,11 +260,9 @@ fn void ImportIndex.destroy(&self)
 	self.file_index.free();
 	self.card_paths.free();
 	self.clear_pending_edit();
-	if (self.context_ready)
-	{
-		context_destroy(&self.context);
-		if (self.context_root.len) self.context_root.free(self.allocator);
-	}
+	self.free_contexts();
+	self.contexts.free();
+	self.context_index.free();
 }
 
 fn TSQuery* make_query(language::Language language, String text)
@@ -1010,15 +1022,145 @@ fn String strip_dotted(Allocator allocator, String s, String prefix)
 	return s;
 }
 
-fn void local_roots(Allocator allocator, String root, List{String}* out)
+fn bool any_ext_in(Allocator allocator, String dir, String ext)
 {
-	out.push(string::format(allocator, "%s/src", root));
-	out.push(root.copy(allocator));
-	out.push(string::format(allocator, "%s/lib", root));
+	@pool()
+	{
+		RLFilePathList files = rl::load_directory_files_ex(dir.zstr_tcopy(), string::format(tmem, "*%s", ext)
+			.zstr_tcopy(), false);
+		return files.count > 0;
+	};
+}
+
+fn bool has_manifest(String dir, language::Language language)
+{
+	@pool()
+	{
+		switch (language)
+		{
+			case language::Language.GO:
+				return path::exists((Path)string::format(tmem, "%s/go.mod", dir));
+			case language::Language.RUST:
+				return path::exists((Path)string::format(tmem, "%s/Cargo.toml", dir));
+			case language::Language.JAVASCRIPT:
+			case language::Language.TYPESCRIPT:
+			case language::Language.TSX:
+				if (path::exists((Path)string::format(tmem, "%s/tsconfig.json", dir))) return true;
+				if (path::exists((Path)string::format(tmem, "%s/jsconfig.json", dir))) return true;
+				return path::exists((Path)string::format(tmem, "%s/package.json", dir));
+			case language::Language.PHP:
+				return path::exists((Path)string::format(tmem, "%s/composer.json", dir));
+			case language::Language.DART:
+				return path::exists((Path)string::format(tmem, "%s/pubspec.yaml", dir));
+			case language::Language.ELIXIR:
+				return path::exists((Path)string::format(tmem, "%s/mix.exs", dir));
+			case language::Language.RUBY:
+				return path::exists((Path)string::format(tmem, "%s/Gemfile", dir));
+			case language::Language.V:
+				return path::exists((Path)string::format(tmem, "%s/v.mod", dir));
+			case language::Language.GLEAM:
+				return path::exists((Path)string::format(tmem, "%s/gleam.toml", dir));
+			case language::Language.JAVA:
+				return path::exists(
+					(Path)string::format(tmem, "%s/pom.xml", dir)
+				) || path::exists(
+					(Path)string::format(tmem, "%s/build.gradle", dir)
+				) || path::exists(
+					(Path)string::format(tmem, "%s/build.gradle.kts", dir)
+				) || path::exists((Path)string::format(tmem, "%s/src/main/java", dir));
+			case language::Language.KOTLIN:
+				return path::exists(
+					(Path)string::format(tmem, "%s/build.gradle", dir)
+				) || path::exists(
+					(Path)string::format(tmem, "%s/build.gradle.kts", dir)
+				) || path::exists((Path)string::format(tmem, "%s/src/main/kotlin", dir));
+			case language::Language.SCALA:
+				return path::exists(
+					(Path)string::format(tmem, "%s/build.sbt", dir)
+				) || path::exists((Path)string::format(tmem, "%s/src/main/scala", dir));
+			case language::Language.HASKELL:
+				return any_ext_in(
+					tmem,
+					dir,
+					".cabal"
+				) || path::exists(
+					(Path)string::format(tmem, "%s/stack.yaml", dir)
+				) || path::exists((Path)string::format(tmem, "%s/package.yaml", dir));
+			case language::Language.C_SHARP:
+				return any_ext_in(tmem, dir, ".csproj") || any_ext_in(tmem, dir, ".sln");
+			case language::Language.NIM:
+				return any_ext_in(tmem, dir, ".nimble");
+			default:
+				return false;
+		}
+	};
+}
+
+fn String find_module_root(Allocator allocator, String project_root, String source_path, language::Language language)
+{
+	@pool()
+	{
+		String dir = dir_of(tmem, source_path);
+		while (true)
+		{
+			if (has_manifest(dir, language)) return dir.copy(allocator);
+			if (dir.compare_to(project_root) == 0) break;
+			String parent = dir_of(tmem, dir);
+			if (parent.compare_to(dir) == 0) break;
+			if (parent.len < project_root.len) break;
+			dir = parent;
+		}
+		return project_root.copy(allocator);
+	};
+}
+
+fn bool roots_has(List{String}* out, String value)
+{
+	for (sz i = 0; i < out.len(); i++)
+	{
+		if ((*out)[i].compare_to(value) == 0) return true;
+	}
+	return false;
+}
+
+fn void roots_push_ancestor(Allocator allocator, String dir, List{String}* out)
+{
+	String[9] candidates;
+	candidates[0] = dir.copy(allocator);
+	candidates[1] = string::format(allocator, "%s/src", dir);
+	candidates[2] = string::format(allocator, "%s/lib", dir);
+	candidates[3] = string::format(allocator, "%s/src/main/java", dir);
+	candidates[4] = string::format(allocator, "%s/src/main/kotlin", dir);
+	candidates[5] = string::format(allocator, "%s/src/main/scala", dir);
+	candidates[6] = string::format(allocator, "%s/test", dir);
+	candidates[7] = string::format(allocator, "%s/app", dir);
+	candidates[8] = string::format(allocator, "%s/include", dir);
+	for (usz i = 0; i < 9; i++)
+	{
+		if (!roots_has(out, candidates[i])) out.push(candidates[i]);
+	}
+}
+
+fn void roots_for(Allocator allocator, String ctx_root, String source_path, List{String}* out)
+{
+	@pool()
+	{
+		String dir = dir_of(tmem, source_path);
+		while (true)
+		{
+			roots_push_ancestor(allocator, dir, out);
+			if (dir.compare_to(ctx_root) == 0) break;
+			String parent = dir_of(tmem, dir);
+			if (parent.compare_to(dir) == 0) break;
+			if (parent.len < ctx_root.len) break;
+			dir = parent;
+		}
+	};
 }
 
 fn bool resolve_import(
 	ImportContext* ctx,
+	String[] roots,
 	HashMap{String, int}* paths,
 	CardImports[] files,
 	Allocator allocator,
@@ -1033,16 +1175,6 @@ fn bool resolve_import(
 	language::Language language = language::language_for_path(source_path);
 	String root                 = ctx.root;
 	String dir                  = dir_of(allocator, source_path);
-	List{String} roots;
-	roots.init(tmem);
-	local_roots(allocator, root, &roots);
-	// extra conventional roots
-	roots.push(string::format(allocator, "%s/src/main/java", root));
-	roots.push(string::format(allocator, "%s/src/main/kotlin", root));
-	roots.push(string::format(allocator, "%s/src/main/scala", root));
-	roots.push(string::format(allocator, "%s/test", root));
-	roots.push(string::format(allocator, "%s/app", root));
-	roots.push(string::format(allocator, "%s/include", root));
 
 	switch (language)
 	{
@@ -1057,7 +1189,7 @@ fn bool resolve_import(
 					string::format(allocator, "%s/%s", dir, specifier),
 					out_targets
 				)) return true;
-				for (sz r = 0; r < roots.len(); r++)
+				for (usz r = 0; r < roots.len; r++)
 				{
 					if (push_if(
 						paths,
@@ -1099,7 +1231,7 @@ fn bool resolve_import(
 					String base = string::format(allocator, "%s/%s", ctx.ts_base, specifier);
 					if (try_base(paths, allocator, base, TS_EXTS, "", out_targets)) return true;
 				}
-				for (sz r = 0; r < roots.len(); r++)
+				for (usz r = 0; r < roots.len; r++)
 				{
 					String base = string::format(allocator, "%s/%s", roots[r], specifier);
 					if (try_base(paths, allocator, base, TS_EXTS, "", out_targets)) return true;
@@ -1127,15 +1259,7 @@ fn bool resolve_import(
 					return false;
 				}
 				String rel = module_rel(allocator, specifier);
-				if (try_roots(
-					paths,
-					allocator,
-					roots.entries[0:roots.len()],
-					rel,
-					{ ".py" },
-					"__init__.py",
-					out_targets
-				)) return true;
+				if (try_roots(paths, allocator, roots, rel, { ".py" }, "__init__.py", out_targets)) return true;
 				return false;
 			}
 		case language::Language.C3:
@@ -1150,15 +1274,7 @@ fn bool resolve_import(
 				}
 				if (out_targets.len() > 0) return true;
 				String rel = module_rel(allocator, specifier);
-				if (try_roots(
-					paths,
-					allocator,
-					roots.entries[0:roots.len()],
-					rel,
-					{ ".c3", ".c3i" },
-					"",
-					out_targets
-				)) return true;
+				if (try_roots(paths, allocator, roots, rel, { ".c3", ".c3i" }, "", out_targets)) return true;
 				return false;
 			}
 		case language::Language.GO:
@@ -1223,7 +1339,7 @@ fn bool resolve_import(
 					string::format(allocator, "%s/%s", dir, specifier),
 					out_targets
 				)) return true;
-				for (sz r = 0; r < roots.len(); r++)
+				for (usz r = 0; r < roots.len; r++)
 				{
 					if (push_if(
 						paths,
@@ -1249,7 +1365,7 @@ fn bool resolve_import(
 				) || try_roots(
 					paths,
 					allocator,
-					roots.entries[0:roots.len()],
+					roots,
 					specifier,
 					{ ".odin" },
 					"",
@@ -1257,7 +1373,7 @@ fn bool resolve_import(
 				) || any_file_under(
 					paths,
 					allocator,
-					string::format(allocator, "%s/%s", root, specifier),
+					string::format(allocator, "%s/%s", dir, specifier),
 					".odin",
 					out_targets
 				);
@@ -1270,12 +1386,12 @@ fn bool resolve_import(
 				return try_roots(
 					paths,
 					allocator,
-					roots.entries[0:roots.len()],
+					roots,
 					rel,
 					{ ".v" },
 					"",
 					out_targets
-				) || any_file_under(paths, allocator, string::format(allocator, "%s/%s", root, rel), ".v", out_targets);
+				) || any_file_under(paths, allocator, string::format(allocator, "%s/%s", dir, rel), ".v", out_targets);
 			}
 		case language::Language.NIM:
 
@@ -1283,37 +1399,21 @@ fn bool resolve_import(
 				if (line_starts(specifier, "std/")) return false;
 				String rel = replace_seps(allocator, specifier, '/', '.', '/');
 				rel = strip_dotted(allocator, rel, "./");
-				return try_roots(paths, allocator, roots.entries[0:roots.len()], rel, { ".nim" }, "", out_targets);
+				return try_roots(paths, allocator, roots, rel, { ".nim" }, "", out_targets);
 			}
 		case language::Language.JAVA:
 
 			{
 				if (specifier.starts_with("java.") || specifier.starts_with("javax.")) return false;
 				String rel = replace_seps(allocator, specifier, '.', '.', '/');
-				return try_module_drop(
-					paths,
-					allocator,
-					roots.entries[0:roots.len()],
-					rel,
-					{ ".java" },
-					"",
-					out_targets
-				);
+				return try_module_drop(paths, allocator, roots, rel, { ".java" }, "", out_targets);
 			}
 		case language::Language.KOTLIN:
 
 			{
 				if (specifier.starts_with("kotlin.")) return false;
 				String rel = replace_seps(allocator, specifier, '.', '.', '/');
-				return try_module_drop(
-					paths,
-					allocator,
-					roots.entries[0:roots.len()],
-					rel,
-					{ ".kt", ".kts" },
-					"",
-					out_targets
-				);
+				return try_module_drop(paths, allocator, roots, rel, { ".kt", ".kts" }, "", out_targets);
 			}
 		case language::Language.SCALA:
 
@@ -1322,22 +1422,14 @@ fn bool resolve_import(
 				if (line_starts(spec, "import ")) spec = trim_spaces(spec[7:spec.len - 7]);
 				if (spec.starts_with("scala.") || spec.starts_with("java.")) return false;
 				String rel = replace_seps(allocator, spec, '.', '.', '/');
-				return try_module_drop(
-					paths,
-					allocator,
-					roots.entries[0:roots.len()],
-					rel,
-					{ ".scala", ".sc" },
-					"",
-					out_targets
-				);
+				return try_module_drop(paths, allocator, roots, rel, { ".scala", ".sc" }, "", out_targets);
 			}
 		case language::Language.C_SHARP:
 
 			{
 				if (specifier.starts_with("System")) return false;
 				String rel = replace_seps(allocator, specifier, '.', '.', '/');
-				return try_module_drop(paths, allocator, roots.entries[0:roots.len()], rel, { ".cs" }, "", out_targets);
+				return try_module_drop(paths, allocator, roots, rel, { ".cs" }, "", out_targets);
 			}
 		case language::Language.CSS:
 
@@ -1350,15 +1442,7 @@ fn bool resolve_import(
 					{ "", ".css" },
 					"",
 					out_targets
-				) || try_roots(
-					paths,
-					allocator,
-					roots.entries[0:roots.len()],
-					specifier,
-					{ "", ".css" },
-					"",
-					out_targets
-				);
+				) || try_roots(paths, allocator, roots, specifier, { "", ".css" }, "", out_targets);
 			}
 		case language::Language.HTML:
 
@@ -1384,15 +1468,7 @@ fn bool resolve_import(
 					string::format(allocator, "%s/%s/init.lua", dir, rel),
 					out_targets
 				)) return true;
-				return try_roots(
-					paths,
-					allocator,
-					roots.entries[0:roots.len()],
-					rel,
-					{ ".lua" },
-					"init.lua",
-					out_targets
-				);
+				return try_roots(paths, allocator, roots, rel, { ".lua" }, "init.lua", out_targets);
 			}
 		case language::Language.PHP:
 
@@ -1416,7 +1492,7 @@ fn bool resolve_import(
 						)) return true;
 					}
 					String rel = replace_seps(allocator, specifier, '\\', '\\', '/');
-					return try_roots(paths, allocator, roots.entries[0:roots.len()], rel, { ".php" }, "", out_targets);
+					return try_roots(paths, allocator, roots, rel, { ".php" }, "", out_targets);
 				}
 				return try_root(paths, allocator, dir, specifier, { "" }, "", out_targets);
 			}
@@ -1429,7 +1505,7 @@ fn bool resolve_import(
 					return try_root(paths, allocator, dir, rel, { ".rb" }, "", out_targets);
 				}
 				if (kind.len > 0 && kind.compare_to("require") != 0 && kind.compare_to("load") != 0) return false;
-				return try_roots(paths, allocator, roots.entries[0:roots.len()], rel, { ".rb" }, "", out_targets);
+				return try_roots(paths, allocator, roots, rel, { ".rb" }, "", out_targets);
 			}
 		case language::Language.R:
 
@@ -1446,19 +1522,11 @@ fn bool resolve_import(
 					return try_root(paths, allocator, dir, specifier, { "", ".jl" }, "", out_targets);
 				}
 				// using/import: package or relative file
-				if (try_roots(
-					paths,
-					allocator,
-					roots.entries[0:roots.len()],
-					specifier,
-					{ "", ".jl" },
-					"",
-					out_targets
-				)) return true;
+				if (try_roots(paths, allocator, roots, specifier, { "", ".jl" }, "", out_targets)) return true;
 				return try_roots(
 					paths,
 					allocator,
-					roots.entries[0:roots.len()],
+					roots,
 					string::format(allocator, "%s/src/%s", specifier, specifier),
 					{ "", ".jl" },
 					"",
@@ -1472,7 +1540,7 @@ fn bool resolve_import(
 				List{String} hs;
 				hs.init(tmem);
 				for (sz i = 0; i < ctx.hs_sources.len(); i++) hs.push(ctx.hs_sources[i]);
-				for (sz r = 0; r < roots.len(); r++) hs.push(roots[r]);
+				for (usz r = 0; r < roots.len; r++) hs.push(roots[r]);
 				return try_roots(paths, allocator, hs.entries[0:hs.len()], rel, { ".hs", ".lhs" }, "", out_targets);
 			}
 		case language::Language.GLEAM:
@@ -1480,15 +1548,7 @@ fn bool resolve_import(
 			{
 				if (specifier.starts_with("gleam/")) return false;
 				String rel = module_rel(allocator, specifier);
-				return try_root(
-					paths,
-					allocator,
-					string::format(allocator, "%s/src", root),
-					rel,
-					{ ".gleam" },
-					"",
-					out_targets
-				);
+				return try_roots(paths, allocator, roots, rel, { ".gleam" }, "", out_targets);
 			}
 		case language::Language.ERLANG:
 
@@ -1502,7 +1562,7 @@ fn bool resolve_import(
 					{ "" },
 					"",
 					out_targets
-				) || try_roots(paths, allocator, roots.entries[0:roots.len()], specifier, { "" }, "", out_targets);
+				) || try_roots(paths, allocator, roots, specifier, { "" }, "", out_targets);
 			}
 		case language::Language.ELIXIR:
 
@@ -1514,15 +1574,7 @@ fn bool resolve_import(
 				) != 0 && kind.compare_to("require") != 0 && kind.compare_to("use") != 0) return false;
 				String rel = replace_seps(allocator, specifier, '.', '.', '/');
 				rel = snake_path(allocator, rel);
-				return try_module_drop(
-					paths,
-					allocator,
-					roots.entries[0:roots.len()],
-					rel,
-					{ ".ex", ".exs" },
-					"",
-					out_targets
-				);
+				return try_module_drop(paths, allocator, roots, rel, { ".ex", ".exs" }, "", out_targets);
 			}
 		case language::Language.DART:
 
@@ -1593,6 +1645,14 @@ fn void ImportIndex.refresh_card_paths(&self, project::Project* project)
 
 fn void ImportIndex.resolve_file(&self, project::Project* project, CardImports[] all_files, CardImports* file)
 {
+	language::Language language = language::language_for_path((String)file.path);
+	if (language == language::Language.NONE) return;
+	ImportContext* ctx = self.context_for((String)file.path, language, (String)project.root);
+	List{String} roots;
+	roots.init(tmem);
+	roots_for(tmem, ctx.root, (String)file.path, &roots);
+	String[] root_view = roots.entries[0:roots.len()];
+
 	List{ImportRef} next;
 	next.init(self.allocator);
 	for (sz r = 0; r < file.imports.len(); r++)
@@ -1601,7 +1661,8 @@ fn void ImportIndex.resolve_file(&self, project::Project* project, CardImports[]
 		List{String} targets;
 		targets.init(tmem);
 		bool ok = resolve_import(
-			&self.context,
+			ctx,
+			root_view,
 			&self.card_paths,
 			all_files,
 			tmem,
@@ -1677,7 +1738,7 @@ fn void ImportIndex.start_scan(&self, project::Project* project)
 	self.free_files();
 	self.clear_pending_edit();
 	self.refresh_card_paths(project);
-	self.ensure_context(project);
+	self.free_contexts();
 	self.known_cards = (usz)project.cards.len();
 	self.generation++;
 	self.pending = 0;
