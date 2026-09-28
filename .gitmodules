@@ -37,3 +37,15 @@
 [submodule "lib/tree_sitter_v.c3l/upstream"]
 	path = lib/tree_sitter_v.c3l/upstream
 	url = https://github.com/nedpals/tree-sitter-v
+[submodule "lib/tree_sitter_java.c3l/upstream"]
+	path = lib/tree_sitter_java.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-java
+[submodule "lib/tree_sitter_kotlin.c3l/upstream"]
+	path = lib/tree_sitter_kotlin.c3l/upstream
+	url = https://github.com/fwcd/tree-sitter-kotlin
+[submodule "lib/tree_sitter_scala.c3l/upstream"]
+	path = lib/tree_sitter_scala.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-scala
+[submodule "lib/tree_sitter_c_sharp.c3l/upstream"]
+	path = lib/tree_sitter_c_sharp.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-c-sharp

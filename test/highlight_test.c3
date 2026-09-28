@@ -43,6 +43,13 @@ fn void test_language_for_path()
 	assert(language::language_for_path("main.cxx") == language::Language.CPP);
 	assert(language::language_for_path("main.hpp") == language::Language.CPP);
 	assert(language::language_for_path("main.hxx") == language::Language.CPP);
+	assert(language::language_for_path("Main.java") == language::Language.JAVA);
+	assert(language::language_for_path("Main.kt") == language::Language.KOTLIN);
+	assert(language::language_for_path("build.gradle.kts") == language::Language.KOTLIN);
+	assert(language::language_for_path("Main.scala") == language::Language.SCALA);
+	assert(language::language_for_path("build.sc") == language::Language.SCALA);
+	assert(language::language_for_path("build.sbt") == language::Language.SCALA);
+	assert(language::language_for_path("Program.cs") == language::Language.C_SHARP);
 	assert(language::language_for_path("notes.txt") == language::Language.NONE);
 	assert(language::language_for_path("Makefile") == language::Language.NONE);
 	assert(language::language_for_path("dir.with.dots/file") == language::Language.NONE);

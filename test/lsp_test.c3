@@ -519,6 +519,13 @@ fn void test_lsp_language_detection()
 	assert(lsp_language_for_path("main.v").compare_to("v") == 0);
 	assert(lsp_language_for_path("main.nim").compare_to("nim") == 0);
 	assert(lsp_language_for_path("main.nims").compare_to("nim") == 0);
+	assert(lsp_language_for_path("Main.java").compare_to("java") == 0);
+	assert(lsp_language_for_path("Main.kt").compare_to("kotlin") == 0);
+	assert(lsp_language_for_path("build.gradle.kts").compare_to("kotlin") == 0);
+	assert(lsp_language_for_path("Main.scala").compare_to("scala") == 0);
+	assert(lsp_language_for_path("build.sc").compare_to("scala") == 0);
+	assert(lsp_language_for_path("build.sbt").compare_to("scala") == 0);
+	assert(lsp_language_for_path("Program.cs").compare_to("csharp") == 0);
 	assert(lsp_language_for_path("notes.txt").len == 0);
 	assert(lsp_language_for_path("Makefile").len == 0);
 	assert(lsp_language_for_path("dir.with.dots/file").len == 0);
@@ -538,6 +545,10 @@ fn void test_lsp_default_commands()
 	assert(lsp_default_command("odin").compare_to("ols") == 0);
 	assert(lsp_default_command("v").compare_to("v-analyzer") == 0);
 	assert(lsp_default_command("nim").compare_to("nimlangserver") == 0);
+	assert(lsp_default_command("java").compare_to("jdtls") == 0);
+	assert(lsp_default_command("kotlin").compare_to("kotlin-language-server") == 0);
+	assert(lsp_default_command("scala").compare_to("metals") == 0);
+	assert(lsp_default_command("csharp").compare_to("csharp-ls") == 0);
 	assert(lsp_default_command("unknown").len == 0);
 }
 
