@@ -26,6 +26,11 @@ enum Language : int
 	TSX,
 	CSS,
 	HTML,
+	LUA,
+	PHP,
+	RUBY,
+	R,
+	JULIA,
 	COUNT,
 }
 
@@ -256,6 +261,56 @@ const LanguageSpec[] LANGUAGES = {
 		.module_query = "",
 		.symbols_query = "",
 	},
+	{
+		.name = "lua",
+		.extensions = { ".lua" },
+		.lib = "tree-sitter-lua",
+		.symbol = "tree_sitter_lua",
+		.highlights_path = "lib/tree_sitter_lua.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "php",
+		.extensions = { ".php" },
+		.lib = "tree-sitter-php",
+		.symbol = "tree_sitter_php",
+		.highlights_path = "lib/tree_sitter_php.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "ruby",
+		.extensions = { ".rb" },
+		.lib = "tree-sitter-ruby",
+		.symbol = "tree_sitter_ruby",
+		.highlights_path = "lib/tree_sitter_ruby.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "r",
+		.extensions = { ".r", ".R" },
+		.lib = "tree-sitter-r",
+		.symbol = "tree_sitter_r",
+		.highlights_path = "lib/tree_sitter_r.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "julia",
+		.extensions = { ".jl" },
+		.lib = "tree-sitter-julia",
+		.symbol = "tree_sitter_julia",
+		.highlights_path = "lib/tree_sitter_julia.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
 };
 
 fn String path_extension(String path)
@@ -439,6 +494,31 @@ const LspSpec[] LSP_LANGUAGES = {
 		.id = "html",
 		.extensions = { ".html", ".htm" },
 		.command = "vscode-html-language-server --stdio",
+	},
+	{
+		.id = "lua",
+		.extensions = { ".lua" },
+		.command = "lua-language-server",
+	},
+	{
+		.id = "php",
+		.extensions = { ".php" },
+		.command = "intelephense --stdio",
+	},
+	{
+		.id = "ruby",
+		.extensions = { ".rb" },
+		.command = "ruby-lsp",
+	},
+	{
+		.id = "r",
+		.extensions = { ".r", ".R" },
+		.command = "R --no-echo -e \"languageserver::run()\"",
+	},
+	{
+		.id = "julia",
+		.extensions = { ".jl" },
+		.command = "julia --startup-file=no --history-file=no -e \"using LanguageServer; LanguageServer.runserver()\"",
 	},
 };
 
