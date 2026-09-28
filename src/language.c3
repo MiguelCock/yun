@@ -22,6 +22,10 @@ enum Language : int
 	KOTLIN,
 	SCALA,
 	C_SHARP,
+	TYPESCRIPT,
+	TSX,
+	CSS,
+	HTML,
 	COUNT,
 }
 
@@ -90,7 +94,7 @@ const LanguageSpec[] LANGUAGES = {
 	},
 	{
 		.name = "javascript",
-		.extensions = { ".js", ".mjs", ".cjs" },
+		.extensions = { ".js", ".mjs", ".cjs", ".jsx" },
 		.lib = "tree-sitter-javascript",
 		.symbol = "tree_sitter_javascript",
 		.highlights_path = "lib/tree_sitter_javascript.c3l/queries/highlights.scm",
@@ -208,6 +212,46 @@ const LanguageSpec[] LANGUAGES = {
 		.lib = "tree-sitter-c-sharp",
 		.symbol = "tree_sitter_c_sharp",
 		.highlights_path = "lib/tree_sitter_c_sharp.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "typescript",
+		.extensions = { ".ts", ".mts", ".cts" },
+		.lib = "tree-sitter-typescript",
+		.symbol = "tree_sitter_typescript",
+		.highlights_path = "lib/tree_sitter_typescript.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "tsx",
+		.extensions = { ".tsx" },
+		.lib = "tree-sitter-tsx",
+		.symbol = "tree_sitter_tsx",
+		.highlights_path = "lib/tree_sitter_tsx.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "css",
+		.extensions = { ".css" },
+		.lib = "tree-sitter-css",
+		.symbol = "tree_sitter_css",
+		.highlights_path = "lib/tree_sitter_css.c3l/queries/highlights.scm",
+		.import_query = "",
+		.module_query = "",
+		.symbols_query = "",
+	},
+	{
+		.name = "html",
+		.extensions = { ".html", ".htm" },
+		.lib = "tree-sitter-html",
+		.symbol = "tree_sitter_html",
+		.highlights_path = "lib/tree_sitter_html.c3l/queries/highlights.scm",
 		.import_query = "",
 		.module_query = "",
 		.symbols_query = "",
@@ -333,7 +377,7 @@ const LspSpec[] LSP_LANGUAGES = {
 	},
 	{
 		.id = "typescript",
-		.extensions = { ".ts", ".tsx" },
+		.extensions = { ".ts", ".tsx", ".mts", ".cts" },
 		.command = "typescript-language-server --stdio",
 	},
 	{
@@ -385,6 +429,16 @@ const LspSpec[] LSP_LANGUAGES = {
 		.id = "csharp",
 		.extensions = { ".cs" },
 		.command = "csharp-ls",
+	},
+	{
+		.id = "css",
+		.extensions = { ".css" },
+		.command = "vscode-css-language-server --stdio",
+	},
+	{
+		.id = "html",
+		.extensions = { ".html", ".htm" },
+		.command = "vscode-html-language-server --stdio",
 	},
 };
 

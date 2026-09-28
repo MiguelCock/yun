@@ -82,6 +82,10 @@ fn void test_language_abi()
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.KOTLIN)) > 0);
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.SCALA)) > 0);
 	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.C_SHARP)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.TYPESCRIPT)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.TSX)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.CSS)) > 0);
+	assert(tree_sitter::ts_language_symbol_count(language::grammar_language(language::Language.HTML)) > 0);
 	assert(tree_sitter::TS_MIN_COMPATIBLE_LANGUAGE_VERSION <= tree_sitter::TS_LANGUAGE_VERSION);
 }
 
@@ -172,6 +176,38 @@ fn void test_parse_c_sharp()
 		language::grammar_language(language::Language.C_SHARP),
 		"class Main { static void Main() {} }\n"
 	));
+}
+
+fn void test_parse_typescript()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(parser, language::grammar_language(language::Language.TYPESCRIPT), "const x: number = 1;\n"));
+}
+
+fn void test_parse_tsx()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(
+		parser,
+		language::grammar_language(language::Language.TSX),
+		"const el = <div className=\"x\">hi</div>;\n"
+	));
+}
+
+fn void test_parse_css()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(parser, language::grammar_language(language::Language.CSS), "a { color: red; }\n"));
+}
+
+fn void test_parse_html()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(parses_ok(parser, language::grammar_language(language::Language.HTML), "<html><body>hi</body></html>\n"));
 }
 
 fn void test_highlights_query_loads()
