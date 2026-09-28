@@ -1,3 +1,5 @@
 module app::util;
 
-fn void hi() {}
+fn void hi()
+{
+}
