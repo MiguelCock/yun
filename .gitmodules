@@ -88,3 +88,6 @@
 [submodule "lib/tree_sitter_elixir.c3l/upstream"]
 	path = lib/tree_sitter_elixir.c3l/upstream
 	url = https://github.com/elixir-lang/tree-sitter-elixir
+[submodule "lib/tree_sitter_dart.c3l/upstream"]
+	path = lib/tree_sitter_dart.c3l/upstream
+	url = https://github.com/UserNobody14/tree-sitter-dart
