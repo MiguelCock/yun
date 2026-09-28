@@ -211,8 +211,11 @@ Supported query features:
   `language::language_for_name` with aliases (`js`→javascript, `ts`→typescript,
   `sh`/`md`/`regex`/`comment`/... resolve to nothing). Unresolved names fall back
   to plain text.
-- **Combined**: `(#set! injection.combined)` concatenates a pattern's content
-  fragments into one parse and maps spans back to the original ranges.
+- **Combined**: `(#set! injection.combined)` concatenates all content ranges
+  captured for the same injected language (across every match, in document
+  order) into one parse and maps spans back to the original ranges. PHP needs
+  this: its markup is split into one `(text)` node per PHP block, so the stray
+  closing tags only resolve when the fragments are parsed together.
 - **Predicates**: `#eq?`, `#not-eq?`, `#any-of?`, `#not-any-of?` are evaluated
   (used by Lua's `cdef` and Julia's prefixed strings); `#set!` is treated as a
   property, and any other predicate (`#offset!`, `#match?`) makes the match be
@@ -225,7 +228,8 @@ language. Rust's self-injection (`macro token_tree → rust`) is intentionally n
 enabled; a few upstream rules resolve to languages that are not vendored yet
 (`markdown`, `sql`, `regex`, `comment`, ...) and are therefore no-ops. PHP's
 vendored `injections.scm` adds a Yun-specific `(text) → html` rule because the
-PHP grammar exposes markup outside `<?php ?>` as a single opaque `(text)` node.
+PHP grammar exposes markup outside `<?php ?>` as opaque `(text)` nodes (one per
+PHP block), which upstream does not inject.
 
 ## Checks
 

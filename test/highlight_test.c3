@@ -317,6 +317,29 @@ fn void test_php_injects_html()
 	};
 }
 
+fn void test_php_injects_html_across_blocks()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(
+			tmem,
+			"<!DOCTYPE html>\n<html>\n<body>\n\n<h1>My First PHP Page</h1>\n\n<?php\necho \"Hello World!\";\n?>\n\n<div></div>\n\n</body>\n</html>\n"
+		);
+
+		Highlighter* highlighter = create(tmem, &table, "index.php");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 4, SyntaxRole.TYPE));
+		assert(runs_have_role(highlighter, &table, 10, SyntaxRole.TYPE));
+		assert(runs_have_role(highlighter, &table, 12, SyntaxRole.TYPE));
+		assert(runs_have_role(highlighter, &table, 13, SyntaxRole.TYPE));
+
+		destroy(highlighter, tmem);
+	};
+}
+
 fn void test_html_injects_script_and_style()
 {
 	@pool()

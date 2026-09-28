@@ -426,6 +426,10 @@ fn void collect_spans(
 	if (!cursor) return;
 	tree_sitter::ts_query_cursor_exec(cursor, injections, root);
 
+	List{TSNode}[language::LANGUAGE_COUNT] combined_nodes;
+	bool[language::LANGUAGE_COUNT] combined_used;
+	bool any_combined = false;
+
 	TSQueryMatch match;
 	while (tree_sitter::ts_query_cursor_next_match(cursor, &match))
 	{
@@ -474,65 +478,17 @@ fn void collect_spans(
 
 		if (props.combined)
 		{
-			DString combined;
-			combined.init(allocator, 256);
-			List{InjectionSegment} segments;
-			segments.init(allocator);
+			int target_index = (int)target;
+			if (!combined_used[target_index])
+			{
+				combined_nodes[target_index].init(allocator);
+				combined_used[target_index] = true;
+			}
 			foreach (TSNode node : content)
 			{
-				uint start = tree_sitter::ts_node_start_byte(node);
-				uint end   = tree_sitter::ts_node_end_byte(node);
-				if (end <= start || (usz)end > source.len) continue;
-				uint combined_start = (uint)combined.len();
-				combined.append_string(source[start:end - start]);
-				combined.append_char('\n');
-				segments.push(
-					{
-						.combined_start = combined_start,
-						.combined_end = (uint)combined.len() - 1,
-						.original_start = start
-					}
-				);
+				combined_nodes[target_index].push(node);
 			}
-			String combined_text = combined.str_view();
-			TSParser* parser     = injection_parser_for(target);
-			if (parser && combined_text.len > 0)
-			{
-				TSTree* child = tree_sitter::ts_parser_parse_string(
-					parser,
-					null,
-					(char*)combined_text.ptr,
-					(uint)combined_text.len
-				);
-				if (child)
-				{
-					List{Span} child_spans;
-					child_spans.init(allocator);
-					collect_spans(allocator, target, child, combined_text, 0, &child_spans, depth + 1);
-					foreach (Span span : child_spans)
-					{
-						foreach (InjectionSegment segment : segments)
-						{
-							uint start = span.start > segment.combined_start ? span.start : segment.combined_start;
-							uint end   = span.end < segment.combined_end ? span.end : segment.combined_end;
-							if (end > start)
-							{
-								out.push(
-									{
-										.start = segment.original_start + (start - segment.combined_start),
-										.end = segment.original_start + (end - segment.combined_start),
-										.role = span.role,
-									}
-								);
-							}
-						}
-					}
-					child_spans.free();
-					tree_sitter::ts_tree_delete(child);
-				}
-			}
-			combined.free();
-			segments.free();
+			any_combined = true;
 			content.free();
 			continue;
 		}
@@ -569,6 +525,72 @@ fn void collect_spans(
 		content.free();
 	}
 	tree_sitter::ts_query_cursor_delete(cursor);
+
+	if (!any_combined) return;
+	for (int i = 1; i < language::LANGUAGE_COUNT; i++)
+	{
+		if (!combined_used[i]) continue;
+		List{TSNode}* nodes = &combined_nodes[i];
+
+		DString combined;
+		combined.init(allocator, 256);
+		List{InjectionSegment} segments;
+		segments.init(allocator);
+		for (sz k = 0; k < nodes.len(); k++)
+		{
+			TSNode node = (*nodes)[(usz)k];
+			uint start  = tree_sitter::ts_node_start_byte(node);
+			uint end    = tree_sitter::ts_node_end_byte(node);
+			if (end <= start || (usz)end > source.len) continue;
+			uint combined_start = (uint)combined.len();
+			combined.append_string(source[start:end - start]);
+			combined.append_char('\n');
+			segments.push(
+				{ .combined_start = combined_start, .combined_end = (uint)combined.len() - 1, .original_start = start }
+			);
+		}
+
+		String combined_text = combined.str_view();
+		TSParser* parser     = injection_parser_for((language::Language)i);
+		if (parser && combined_text.len > 0)
+		{
+			TSTree* child = tree_sitter::ts_parser_parse_string(
+				parser,
+				null,
+				(char*)combined_text.ptr,
+				(uint)combined_text.len
+			);
+			if (child)
+			{
+				List{Span} child_spans;
+				child_spans.init(allocator);
+				collect_spans(allocator, (language::Language)i, child, combined_text, 0, &child_spans, depth + 1);
+				foreach (Span span : child_spans)
+				{
+					foreach (InjectionSegment segment : segments)
+					{
+						uint start = span.start > segment.combined_start ? span.start : segment.combined_start;
+						uint end   = span.end < segment.combined_end ? span.end : segment.combined_end;
+						if (end > start)
+						{
+							out.push(
+								{
+									.start = segment.original_start + (start - segment.combined_start),
+									.end = segment.original_start + (end - segment.combined_start),
+									.role = span.role,
+								}
+							);
+						}
+					}
+				}
+				child_spans.free();
+				tree_sitter::ts_tree_delete(child);
+			}
+		}
+		combined.free();
+		segments.free();
+		nodes.free();
+	}
 }
 
 fn SyntaxRole role_for_name(String name)
