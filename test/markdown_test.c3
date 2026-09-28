@@ -6,8 +6,10 @@ fn void test_parse_blocks()
 {
 	@pool()
 	{
-		String src = "# Title\n\nA paragraph\nline two.\n\n- one\n- two\n\n1. first\n2. second\n\n> quoted\n\n---\n\n```c\nint x = 1;\n```\n";
-		MdDocument* doc = parse(tmem, src);
+		MdDocument* doc = parse(
+			tmem,
+			"# Title\n\nA paragraph\nline two.\n\n- one\n- two\n\n1. first\n2. second\n\n> quoted\n\n---\n\n```c\nint x = 1;\n```\n"
+		);
 
 		int headings = 0;
 		int paras    = 0;
