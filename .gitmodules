@@ -76,3 +76,15 @@
 [submodule "lib/tree_sitter_julia.c3l/upstream"]
 	path = lib/tree_sitter_julia.c3l/upstream
 	url = https://github.com/tree-sitter/tree-sitter-julia
+[submodule "lib/tree_sitter_haskell.c3l/upstream"]
+	path = lib/tree_sitter_haskell.c3l/upstream
+	url = https://github.com/tree-sitter-grammars/tree-sitter-haskell
+[submodule "lib/tree_sitter_gleam.c3l/upstream"]
+	path = lib/tree_sitter_gleam.c3l/upstream
+	url = https://github.com/gleam-lang/tree-sitter-gleam
+[submodule "lib/tree_sitter_erlang.c3l/upstream"]
+	path = lib/tree_sitter_erlang.c3l/upstream
+	url = https://github.com/WhatsApp/tree-sitter-erlang
+[submodule "lib/tree_sitter_elixir.c3l/upstream"]
+	path = lib/tree_sitter_elixir.c3l/upstream
+	url = https://github.com/elixir-lang/tree-sitter-elixir

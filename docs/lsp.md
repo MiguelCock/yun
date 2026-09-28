@@ -40,6 +40,10 @@ The id is also the key used to override the command in config.
 | `ruby` | `.rb` | `ruby-lsp` |
 | `r` | `.r` `.R` | `R --no-echo -e "languageserver::run()"` |
 | `julia` | `.jl` | `julia --startup-file=no --history-file=no -e "using LanguageServer; LanguageServer.runserver()"` |
+| `haskell` | `.hs` | `haskell-language-server-wrapper --lsp` |
+| `gleam` | `.gleam` | `gleam lsp` |
+| `erlang` | `.erl` `.hrl` | `elp server` |
+| `elixir` | `.ex` `.exs` | `elixir-ls` |
 
 The defaults are best-effort. A language with no entry (and no override) is
 ignored by the LSP.
@@ -71,6 +75,10 @@ a project file, or a matching version.
 | Ruby | `ruby-lsp` (or `solargraph`). |
 | R | `R` with the `languageserver` package (`install.packages("languageserver")`). |
 | Julia | `julia` with `LanguageServer.jl` installed in a Julia environment. |
+| Haskell | `haskell-language-server-wrapper` (e.g. via GHCup) and a Cabal/Stack project. |
+| Gleam | the Gleam toolchain (`gleam lsp` is built in) and a `gleam.toml` project. |
+| Erlang | `elp` (Erlang Language Platform) and a rebar3/OTP project. |
+| Elixir | `elixir-ls` (or its `language_server.sh`) and a `mix.exs` project. |
 
 Command values are split on whitespace, honoring single/double quotes, so
 commands with arguments (R, Julia) work as written.

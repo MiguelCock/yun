@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_elixir",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-elixir"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-elixir"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-elixir"
+      ]
+    }
+  }
+}

@@ -12,7 +12,7 @@ The project is early and evolving quickly. The roadmap is the flat GitHub issue 
 - **Project** — open a folder from the CLI (`c3c run -- <dir>`) or the in-app browser; folder clusters mirror disk folders.
 - **Files** — drop files onto the canvas, create new file cards and folders, resize cards, and use right-click context menus.
 - **Editor** — a piece-table text buffer with undo/redo, line numbers and gutter, caret navigation and scrolling, UTF-8 input, in-file find (and replace), adjustable font size, and external-edit reload.
-- **Syntax highlighting** — tree-sitter grammars for C3, C, C++, Java, Kotlin, Scala, C#, Go, Rust, Zig, Odin, V, Nim, Python, JavaScript, TypeScript, CSS, HTML, Lua, PHP, Ruby, R, and Julia, loaded lazily from shared libraries, with embedded-language injections (PHP/HTML, HTML script/style, C++ raw strings, JS tagged templates).
+- **Syntax highlighting** — tree-sitter grammars for C3, C, C++, Java, Kotlin, Scala, C#, Go, Rust, Zig, Odin, V, Nim, Python, JavaScript, TypeScript, CSS, HTML, Lua, PHP, Ruby, R, Julia, Haskell, Gleam, Erlang, and Elixir, loaded lazily from shared libraries, with embedded-language injections (PHP/HTML, HTML script/style, C++ raw strings, JS tagged templates, Haskell quasiquotes, Elixir sigils).
 - **Search** — in-file find/replace, project-wide search, and a fuzzy symbol palette.
 - **Dependencies** — import arrows between cards, with animated, line-highlighted jumps to results, definitions, and symbols.
 - **LSP** — hover, go-to-definition, completion, and a problems panel, driven by per-language servers configured in the config.
@@ -93,7 +93,7 @@ Already cloned without submodules? Run `git submodule update --init --recursive`
 ## Dependencies
 
 - **raylib 6** — `lib/raylib6.c3l` is a packed library; it ships prebuilt static libs for `linux-x64`, `macos-aarch64`, `windows-x64`, `windows-aarch64`, `emscripten`, and `wasm-32`.
-- **tree-sitter** — `lib/tree_sitter.c3l` (runtime, linked in) plus the `tree_sitter_c`, `tree_sitter_c3`, `tree_sitter_python`, and `tree_sitter_javascript` grammars. Grammar shared libraries are built (not committed) with `scripts/build-tree-sitter.sh [--static] [target] [grammar...]` and loaded lazily at runtime. See [`docs/tree-sitter.md`](docs/tree-sitter.md).
+- **tree-sitter** — `lib/tree_sitter.c3l` (runtime, linked in) plus a `lib/tree_sitter_<lang>.c3l` grammar per supported language. Grammar shared libraries are built (not committed) with `scripts/build-tree-sitter.sh [--static] [target] [grammar...]` and loaded lazily at runtime. See [`docs/tree-sitter.md`](docs/tree-sitter.md).
 - **Lua 5.4** — `lib/lua54.c3l` is a submodule vendored ahead of the mods work (#33–#36); it is not wired into the build yet.
 
 ## Layout
