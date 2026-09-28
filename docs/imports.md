@@ -113,5 +113,15 @@ not clutter the Yun repo's own canvas) but committed with `git add -f`.
 The `arrows` section of the settings/config controls rendering and scanning:
 `enabled`, `show_internal`, `show_external`, `labels`, `line_thickness`,
 `hover_thickness`, `arrowhead_size`, `hit_tolerance`, `rescan_debounce`, and
-`scan_workers`. Resolution runs on a thread pool; edits are debounced and only
-the edited file is re-resolved unless a module name changed.
+`scan_workers`.
+
+Arrow **line styles** are configurable independently for internal and external
+arrows via `internal_style` and `external_style`
+(`solid`, `dashed`, `dotted`, `long-dash`, `dash-dot`; defaults `solid` and
+`dashed`). `dash_length` and `dash_gap` are in screen pixels, so the pattern
+stays constant at any zoom. Card, selected, and cluster outlines also keep a
+constant on-screen thickness (they are divided by the camera zoom), and the card
+under the cursor gets a subtle hover outline.
+
+Resolution runs on a thread pool; edits are debounced and only the edited file
+is re-resolved unless a module name changed.

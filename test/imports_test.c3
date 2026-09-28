@@ -348,6 +348,17 @@ fn void test_hit_test_disabled_gate()
 	set_settings(saved);
 }
 
+fn void test_parse_arrow_style()
+{
+	assert(parse_arrow_style("solid") == ArrowStyle.SOLID);
+	assert(parse_arrow_style("dashed") == ArrowStyle.DASHED);
+	assert(parse_arrow_style("dotted") == ArrowStyle.DOTTED);
+	assert(parse_arrow_style("long-dash") == ArrowStyle.LONG_DASH);
+	assert(parse_arrow_style("dash-dot") == ArrowStyle.DASH_DOT);
+	assert(parse_arrow_style("nope") == ArrowStyle.SOLID);
+	assert(parse_arrow_style("") == ArrowStyle.SOLID);
+}
+
 fn void test_find_module_root()
 {
 	@pool()

@@ -94,6 +94,7 @@ struct Project
 	Allocator allocator;
 	int focused;
 	int selected;
+	int hover_card;
 	bool drag_card;
 	int drag_index;
 	bool drag_cluster;
@@ -214,6 +215,7 @@ fn void Project.discard_ephemeral(&self, int keep)
 		else if (self.focused == (int)index)
 		{
 			self.focused = -1;
+			self.hover_card = -1;
 		}
 		if (self.selected > (int)index)
 		{
@@ -1454,6 +1456,7 @@ fn void Project.update(
 	RLVector2 mouse = rl::get_mouse_position();
 	RLVector2 world = canvas.screen_to_world(mouse);
 	canvas.block_zoom = false;
+	self.hover_card = pointer_blocked ? -1 : self.hit_test(world);
 
 	float wheel = rl::get_mouse_wheel_move();
 	if (wheel != 0.0f && !pointer_blocked)
@@ -2209,14 +2212,14 @@ fn void Project.handle_keyboard(
 	}
 }
 
-fn void Project.draw_cluster(&self, int index)
+fn void Project.draw_cluster(&self, int index, float zoom)
 {
 	FolderCluster cluster = self.folders[index];
 	Rect bounds           = self.cluster_visual_bounds(index);
 	rl::draw_rectangle_rec(bounds, theme::current().cluster_body);
 	Rect title = self.cluster_title_rect(index);
 	rl::draw_rectangle_rec(title, theme::current().cluster_title);
-	rl::draw_rectangle_lines_ex(bounds, 1.0f, theme::current().cluster_border);
+	rl::draw_rectangle_lines_ex(bounds, card::screen_thickness(1.0f, zoom), theme::current().cluster_border);
 	String name = rl::get_file_name((ZString)cluster.path.ptr).str_view();
 	@pool()
 	{
@@ -2246,7 +2249,7 @@ fn void Project.draw_folders(&self, RLCamera2D camera)
 	{
 		if (!self.cluster_visible((int)i)) continue;
 		if (!rect_intersects(self.cluster_visual_bounds((int)i), visible)) continue;
-		self.draw_cluster((int)i);
+		self.draw_cluster((int)i, camera.zoom);
 	}
 }
 
@@ -2277,10 +2280,20 @@ fn void Project.draw_cards(
 		bool is_focused = (int)i == self.focused;
 		if (is_focused) editor::ensure_buffer(card, self.allocator);
 		if (!rect_intersects(card.rect, visible)) continue;
-		card.draw(is_focused);
+		card.draw(is_focused, camera.zoom);
 		if (!is_focused && (int)i == self.selected)
 		{
-			rl::draw_rectangle_lines_ex(card.effective_rect(), 2.0f, theme::current().card_focus);
+			rl::draw_rectangle_lines_ex(
+				card.effective_rect(),
+				card::screen_thickness(2.0f, camera.zoom),
+				theme::current()
+				.card_focus);
+		}
+		else if (!is_focused && self.selected != (int)i && (int)i == self.hover_card)
+		{
+			RLColor base  = theme::current().card_focus;
+			RLColor hover = { base[0], base[1], base[2], (char)140 };
+			rl::draw_rectangle_lines_ex(card.effective_rect(), card::screen_thickness(1.0f, camera.zoom), hover);
 		}
 		if (!card.open) continue;
 

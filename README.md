@@ -14,7 +14,7 @@ The project is early and evolving quickly. The roadmap is the flat GitHub issue 
 - **Editor** — a piece-table text buffer with undo/redo, line numbers and gutter, caret navigation and scrolling, UTF-8 input, in-file find (and replace), adjustable font size, and external-edit reload.
 - **Syntax highlighting** — tree-sitter grammars for C3, C, C++, Java, Kotlin, Scala, C#, Go, Rust, Zig, Odin, V, Nim, Python, JavaScript, TypeScript, CSS, HTML, Lua, PHP, Ruby, R, Julia, Haskell, Gleam, Erlang, Elixir, Dart, and Markdown, loaded lazily from shared libraries, with embedded-language injections (PHP/HTML, HTML script/style, C++ raw strings, JS tagged templates, Haskell quasiquotes, Elixir sigils).
 - **Search** — in-file find/replace, project-wide search, and a fuzzy symbol palette.
-- **Dependencies** — import arrows between cards, with animated, line-highlighted jumps to results, definitions, and symbols.
+- **Dependencies** — import arrows between cards (configurable solid/dashed/dotted/long-dash/dash-dot line styles, independently for internal and external), with animated, line-highlighted jumps to results, definitions, and symbols. Card, selected, and cluster outlines stay a constant on-screen thickness when zoomed out.
 - **LSP** — hover, go-to-definition, completion, and a problems panel, driven by per-language servers configured in the config.
 - **Markdown preview** — toggle a rendered view of a Markdown card (headings, lists, fenced code, blockquotes, links, inline emphasis) with `Ctrl+Shift+V`, the command palette, or the card-title `M` marker; click the preview to jump back to the source.
 - **Themes** — nine built-in palettes with a picker.
