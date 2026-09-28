@@ -121,3 +121,6 @@ Override the command for a language id under the `lsp` section of the config
 - Set `YUN_LSP_DEBUG=1` to log LSP requests/responses and the server's stderr to
   the terminal (useful when a server starts but returns nothing). Yun also logs
   each server's start/exit and its negotiated capabilities by default.
+- Outgoing messages always include a `params` object (empty when there is none);
+  some servers (e.g. Dart) require it on the `initialized` notification and
+  otherwise reject every request with `ServerNotInitialized`.

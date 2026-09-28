@@ -142,6 +142,34 @@ fn void test_message_builders()
 	};
 }
 
+fn void test_notification_empty_params()
+{
+	@pool()
+	{
+		String json = lsp_message(tmem, false, 0, "initialized", null);
+
+		Object*? parsed = json::parse(tmem, json);
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			assert(!parsed.has_key("id"));
+			Object*? params = parsed.get("params");
+			if (try value = params)
+			{
+				assert(value.is_map());
+				assert(value.get_len() == 0);
+			}
+			else
+			{
+				assert(false);
+			}
+		}
+	};
+}
+
 fn void test_capabilities_parse()
 {
 	@pool()

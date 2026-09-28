@@ -78,7 +78,14 @@ fn String lsp_message(Allocator allocator, bool has_id, long id, String method, 
 	root.set("jsonrpc", "2.0");
 	if (has_id) root.set("id", id);
 	root.set("method", method);
-	if (params) root.set("params", params);
+	if (params)
+	{
+		root.set("params", params);
+	}
+	else
+	{
+		root.set("params", object::new_obj(allocator));
+	}
 	String json = json::marshal(allocator, root, JsonIndent.NONE);
 	if (allocator != tmem) root.free();
 	return json;
