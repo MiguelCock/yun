@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_haskell",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-haskell"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-haskell"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-haskell"
+      ]
+    }
+  }
+}

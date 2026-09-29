@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_r",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-r"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-r"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-r"
+      ]
+    }
+  }
+}

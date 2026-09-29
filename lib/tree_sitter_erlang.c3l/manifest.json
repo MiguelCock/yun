@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_erlang",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-erlang"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-erlang"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-erlang"
+      ]
+    }
+  }
+}

@@ -5,9 +5,12 @@ import std::collections::list;
 import std::core::dstring;
 import std::core::mem::alloc;
 import std::math;
+import yun::commands;
 import yun::editor;
+import yun::keymap;
 import yun::lsp;
 import yun::theme;
+import yun::ui;
 
 const int ROW_HEIGHT       = 24;
 const int PADDING          = 10;
@@ -40,6 +43,7 @@ struct Problems
 	List{ProblemRow} rows;
 	int selected;
 	int scroll;
+	bool consumed;
 }
 
 fn void Problems.init(&self, Allocator allocator)
@@ -50,6 +54,7 @@ fn void Problems.init(&self, Allocator allocator)
 	self.rows.init(allocator);
 	self.selected = 0;
 	self.scroll = 0;
+	self.consumed = false;
 }
 
 fn void Problems.free_contents(&self)
@@ -108,6 +113,13 @@ fn void Problems.show(&self)
 	self.selected = self.first_selectable();
 	self.scroll = 0;
 	self.open = true;
+}
+
+fn void Problems.destroy(&self)
+{
+	self.free_contents();
+	self.entries.free();
+	self.rows.free();
 }
 
 fn void Problems.close(&self)
@@ -173,7 +185,7 @@ fn void Problems.move_selection(&self, int delta)
 
 fn Rect Problems.panel_rect(&self)
 {
-	float s     = editor::text_scale();
+	float s     = ui::scale();
 	int pad     = (int)((float)PADDING * s);
 	int title_h = (int)(TITLE_HEIGHT * s);
 	int row_h   = (int)((float)ROW_HEIGHT * s);
@@ -199,7 +211,7 @@ fn Rect Problems.panel_rect(&self)
 
 fn float Problems.list_y(&self)
 {
-	float s = editor::text_scale();
+	float s = ui::scale();
 	return self.panel_rect().y + (float)PADDING * s + TITLE_HEIGHT * s;
 }
 
@@ -207,30 +219,45 @@ fn int Problems.row_at(&self, RLVector2 mouse)
 {
 	float list_y = self.list_y();
 	if (mouse[1] < list_y) return -1;
-	int row = (int)((mouse[1] - list_y) / ((float)ROW_HEIGHT * editor::text_scale())) + self.scroll;
+	int row = (int)((mouse[1] - list_y) / ((float)ROW_HEIGHT * ui::scale())) + self.scroll;
 	if (row < 0 || row >= (int)self.rows.len()) return -1;
 	return row;
 }
 
-fn int Problems.update(&self)
+fn int Problems.update(&self, keymap::Keymap* keymap)
 {
 	if (!self.open) return -1;
+	self.consumed = false;
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_PROBLEMS))
 	{
+		self.consumed = true;
 		self.open = false;
 		return -1;
 	}
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.DOWN
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) self.move_selection(1);
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.UP
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) self.move_selection(-1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN)) self.move_selection(MAX_VISIBLE_ROWS);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP)) self.move_selection(-MAX_VISIBLE_ROWS);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_PROBLEMS))
 	{
+		self.consumed = true;
+		self.move_selection(1);
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_PROBLEMS))
+	{
+		self.consumed = true;
+		self.move_selection(-1);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_DOWN, commands::CTX_PROBLEMS))
+	{
+		self.consumed = true;
+		self.move_selection(MAX_VISIBLE_ROWS);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_UP, commands::CTX_PROBLEMS))
+	{
+		self.consumed = true;
+		self.move_selection(-MAX_VISIBLE_ROWS);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_ACCEPT, commands::CTX_PROBLEMS))
+	{
+		self.consumed = true;
 		int entry = self.selected_entry();
 		if (entry >= 0)
 		{
@@ -305,7 +332,8 @@ fn void Problems.draw(&self, RLFont font)
 {
 	if (!self.open) return;
 
-	float s    = editor::text_scale();
+	float s    = ui::scale();
+	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
@@ -313,14 +341,14 @@ fn void Problems.draw(&self, RLFont font)
 	@pool()
 	{
 		String title = string::format(tmem, "Problems (%d)", (long)self.entries.len());
-		draw_text(font, title, panel.x + (float)PADDING * s, panel.y + (float)PADDING * s, 18.0f * s, theme::current()
+		draw_text(font, title, panel.x + (float)PADDING * s, panel.y + (float)PADDING * s, 18.0f * ts, theme::current()
 			.panel_text);
 	};
 
 	float list_y = self.list_y();
 	if (self.rows.len() == 0)
 	{
-		draw_text(font, "No problems", panel.x + (float)PADDING * s, list_y + 4.0f * s, 16.0f * s, theme::current()
+		draw_text(font, "No problems", panel.x + (float)PADDING * s, list_y + 4.0f * s, 16.0f * ts, theme::current()
 			.panel_dim);
 		return;
 	}
@@ -340,7 +368,7 @@ fn void Problems.draw(&self, RLFont font)
 
 		if (row.header)
 		{
-			draw_text(font, row.label, panel.x + (float)PADDING * s, row_y + 3.0f * s, 15.0f * s, theme::current()
+			draw_text(font, row.label, panel.x + (float)PADDING * s, row_y + 3.0f * s, 15.0f * ts, theme::current()
 				.panel_header);
 			continue;
 		}
@@ -367,7 +395,7 @@ fn void Problems.draw(&self, RLFont font)
 				label,
 				panel.x + (float)PADDING * s + 16.0f * s,
 				row_y + 3.0f * s,
-				16.0f * s,
+				16.0f * ts,
 				theme::current()
 				.panel_text);
 		};
@@ -381,7 +409,7 @@ fn float text_width(RLFont font, String text)
 	float width = 0.0f;
 	@pool()
 	{
-		width = rl::measure_text_ex(font, text.zstr_tcopy(), 14.0f * editor::text_scale(), 0.0f)[0];
+		width = rl::measure_text_ex(font, text.zstr_tcopy(), 14.0f * ui::text_scale(), 0.0f)[0];
 	};
 	return width;
 }
@@ -442,8 +470,9 @@ fn void draw_tooltip(String message, RLVector2 screen_pos, RLFont font)
 	if (message.len == 0) return;
 	@pool()
 	{
-		float s      = editor::text_scale();
-		float line_h = 18.0f * s;
+		float s      = ui::scale();
+		float ts     = ui::text_scale();
+		float line_h = 18.0f * ts;
 		List{String} lines;
 		lines.init(tmem);
 		wrap_text(tmem, font, 420.0f * s, message, &lines);
@@ -477,7 +506,7 @@ fn void draw_tooltip(String message, RLVector2 screen_pos, RLFont font)
 				lines[(sz)i],
 				panel.x + 8.0f * s,
 				panel.y + 6.0f * s + (float)i * line_h,
-				14.0f * s,
+				14.0f * ts,
 				theme::current()
 				.panel_text);
 		}

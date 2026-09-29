@@ -25,6 +25,7 @@ fn void test_filter_matches()
 		p.append_codepoint('s');
 		p.append_codepoint('a');
 		p.append_codepoint('v');
+		p.append_codepoint('e');
 		p.filter();
 		assert(p.results.len() == 1);
 		assert(p.selected_command() == (int)commands::CommandId.SAVE);

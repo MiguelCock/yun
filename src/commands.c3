@@ -1,5 +1,31 @@
 module yun::commands;
 
+const ulong CTX_GLOBAL     = 1 << 0;
+const ulong CTX_EDIT       = 1 << 1;
+const ulong CTX_MOVE       = 1 << 2;
+const ulong CTX_TOP_BAR    = 1 << 3;
+const ulong CTX_PALETTE    = 1 << 4;
+const ulong CTX_FIND       = 1 << 5;
+const ulong CTX_SEARCH     = 1 << 6;
+const ulong CTX_SYMBOLS    = 1 << 7;
+const ulong CTX_PROBLEMS   = 1 << 8;
+const ulong CTX_PROMPT     = 1 << 9;
+const ulong CTX_BROWSER    = 1 << 10;
+const ulong CTX_SETTINGS   = 1 << 11;
+const ulong CTX_MENU       = 1 << 12;
+const ulong CTX_COMPLETION = 1 << 13;
+
+const ulong CTX_OVERLAY_CLOSE  = CTX_PALETTE | CTX_FIND | CTX_SEARCH | CTX_SYMBOLS | CTX_PROBLEMS | CTX_PROMPT
+	| CTX_BROWSER
+	| CTX_SETTINGS
+	| CTX_MENU;
+const ulong CTX_OVERLAY_LIST   = CTX_PALETTE | CTX_SEARCH | CTX_SYMBOLS | CTX_PROBLEMS | CTX_BROWSER | CTX_SETTINGS
+	| CTX_MENU;
+const ulong CTX_OVERLAY_PAGE   = CTX_SEARCH | CTX_SYMBOLS | CTX_PROBLEMS;
+const ulong CTX_OVERLAY_ACCEPT = CTX_PALETTE | CTX_SEARCH | CTX_SYMBOLS | CTX_PROBLEMS | CTX_BROWSER | CTX_PROMPT
+	| CTX_SETTINGS
+	| CTX_MENU;
+
 enum CommandId
 {
 	NEW_FILE,
@@ -19,6 +45,78 @@ enum CommandId
 	SELECT_THEME,
 	SEARCH_PROJECT,
 	SYMBOLS_PROJECT,
+	TOGGLE_SETTINGS,
+	UNDO,
+	REDO,
+	INDENT,
+	OUTDENT,
+	NEWLINE,
+	DELETE_BACK,
+	DELETE_FORWARD,
+	CURSOR_LEFT,
+	CURSOR_RIGHT,
+	CURSOR_UP,
+	CURSOR_DOWN,
+	LINE_START,
+	LINE_END,
+	PAGE_UP,
+	PAGE_DOWN,
+	EXIT_EDITOR,
+	COMPLETION_NEXT,
+	COMPLETION_PREV,
+	COMPLETION_ACCEPT,
+	COMPLETION_CLOSE,
+	PAN_LEFT,
+	PAN_RIGHT,
+	PAN_UP,
+	PAN_DOWN,
+	SELECT_LEFT,
+	SELECT_RIGHT,
+	SELECT_UP,
+	SELECT_DOWN,
+	CYCLE_NEXT,
+	CYCLE_PREV,
+	ZOOM_IN,
+	ZOOM_OUT,
+	FOCUS_TOP_BAR,
+	FOCUS_EDITOR,
+	TOPBAR_LEFT,
+	TOPBAR_RIGHT,
+	TOPBAR_ACTIVATE,
+	FOCUS_CANVAS,
+	OVERLAY_CLOSE,
+	LIST_UP,
+	LIST_DOWN,
+	LIST_PAGE_UP,
+	LIST_PAGE_DOWN,
+	LIST_ACCEPT,
+	FIND_NEXT,
+	FIND_PREV,
+	FIND_REPLACE,
+	FIND_REPLACE_ALL,
+	FIND_CYCLE_FIELD,
+	SEARCH_TOGGLE_CASE,
+	SEARCH_TOGGLE_WORD,
+	SETTINGS_SCOPE_TOGGLE,
+	SETTINGS_RESET,
+	SETTINGS_VALUE_DEC,
+	SETTINGS_VALUE_INC,
+	BROWSER_PARENT,
+	CLOSE_CARD,
+	TOGGLE_CARD,
+	RENAME_CARD,
+	DUPLICATE_CARD,
+	COPY_PATH,
+	DELETE_CARD,
+	OPEN_CONTEXT_MENU,
+	MINIMAP_FOCUS,
+	ZOOM_RESET,
+	ZOOM_FIT,
+	TOGGLE_PREVIEW,
+	LEAVE_FOLDER,
+	CYCLE_FOCUS,
+	MINIMIZE_CARD,
+	TOGGLE_FOCUS_MODE,
 }
 
 struct CommandDef
@@ -27,26 +125,518 @@ struct CommandDef
 	String label;
 	String shortcut;
 	bool in_top_bar;
+	ulong contexts;
+	bool repeat;
 }
 
 const CommandDef[] COMMAND_DEFS = {
-	{ .id = CommandId.NEW_FILE, .label = "New", .shortcut = "Ctrl+N", .in_top_bar = true },
-	{ .id = CommandId.NEW_FOLDER, .label = "New Folder", .shortcut = "", .in_top_bar = false },
-	{ .id = CommandId.OPEN, .label = "Open", .shortcut = "Ctrl+O", .in_top_bar = true },
-	{ .id = CommandId.SAVE, .label = "Save", .shortcut = "Ctrl+S", .in_top_bar = true },
-	{ .id = CommandId.SHOW_PALETTE, .label = "Command Palette", .shortcut = "Ctrl+Shift+P", .in_top_bar = false },
-	{ .id = CommandId.FIND, .label = "Find", .shortcut = "Ctrl+F", .in_top_bar = false },
-	{ .id = CommandId.REPLACE, .label = "Replace", .shortcut = "Ctrl+H", .in_top_bar = false },
-	{ .id = CommandId.COPY, .label = "Copy", .shortcut = "Ctrl+C", .in_top_bar = false },
-	{ .id = CommandId.CUT, .label = "Cut", .shortcut = "Ctrl+X", .in_top_bar = false },
-	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false },
-	{ .id = CommandId.SELECT_ALL, .label = "Select All", .shortcut = "Ctrl+A", .in_top_bar = false },
-	{ .id = CommandId.PROBLEMS, .label = "Problems", .shortcut = "Ctrl+Shift+M", .in_top_bar = false },
-	{ .id = CommandId.GO_TO_DEFINITION, .label = "Go to Definition", .shortcut = "F12", .in_top_bar = false },
-	{ .id = CommandId.COMPLETE, .label = "Complete", .shortcut = "Ctrl+Space", .in_top_bar = false },
-	{ .id = CommandId.SELECT_THEME, .label = "Theme", .shortcut = "Ctrl+Shift+T", .in_top_bar = false },
-	{ .id = CommandId.SEARCH_PROJECT, .label = "Search in Project", .shortcut = "Ctrl+Shift+F", .in_top_bar = false },
-	{ .id = CommandId.SYMBOLS_PROJECT, .label = "Go to Symbol", .shortcut = "Ctrl+Shift+O", .in_top_bar = false },
+	{ .id = CommandId.NEW_FILE, .label = "New", .shortcut = "Ctrl+N", .in_top_bar = true, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.NEW_FOLDER, .label = "New Folder", .shortcut = "", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.OPEN, .label = "Open", .shortcut = "Ctrl+O", .in_top_bar = true, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.SAVE, .label = "Save", .shortcut = "Ctrl+S", .in_top_bar = true, .contexts = CTX_GLOBAL },
+	{
+		.id = CommandId.SHOW_PALETTE,
+		.label = "Command Palette",
+		.shortcut = "Ctrl+Shift+P",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{ .id = CommandId.FIND, .label = "Find", .shortcut = "Ctrl+F", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.REPLACE, .label = "Replace", .shortcut = "Ctrl+H", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.COPY, .label = "Copy", .shortcut = "Ctrl+C", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.CUT, .label = "Cut", .shortcut = "Ctrl+X", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{
+		.id = CommandId.SELECT_ALL,
+		.label = "Select All",
+		.shortcut = "Ctrl+A",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.PROBLEMS,
+		.label = "Problems",
+		.shortcut = "Ctrl+Shift+M",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.GO_TO_DEFINITION,
+		.label = "Go to Definition",
+		.shortcut = "F12",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.COMPLETE,
+		.label = "Complete",
+		.shortcut = "Ctrl+Space",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.SELECT_THEME,
+		.label = "Theme",
+		.shortcut = "Ctrl+Shift+T",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.SEARCH_PROJECT,
+		.label = "Search in Project",
+		.shortcut = "Ctrl+Shift+F",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.SYMBOLS_PROJECT,
+		.label = "Go to Symbol",
+		.shortcut = "Ctrl+Shift+O",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.TOGGLE_SETTINGS,
+		.label = "Settings",
+		.shortcut = "Ctrl+Shift+S",
+		.in_top_bar = true,
+		.contexts = CTX_GLOBAL,
+	},
+	{ .id = CommandId.UNDO, .label = "Undo", .shortcut = "Ctrl+Z", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.REDO, .label = "Redo", .shortcut = "Ctrl+Y", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.INDENT, .label = "Indent", .shortcut = "Tab", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.OUTDENT,
+		.label = "Outdent",
+		.shortcut = "Shift+Tab",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{ .id = CommandId.NEWLINE, .label = "New Line", .shortcut = "Enter", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.DELETE_BACK,
+		.label = "Delete Back",
+		.shortcut = "Backspace",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.DELETE_FORWARD,
+		.label = "Delete Forward",
+		.shortcut = "Delete",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.CURSOR_LEFT,
+		.label = "Cursor Left",
+		.shortcut = "Left",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.CURSOR_RIGHT,
+		.label = "Cursor Right",
+		.shortcut = "Right",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{ .id = CommandId.CURSOR_UP, .label = "Cursor Up", .shortcut = "Up", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.CURSOR_DOWN,
+		.label = "Cursor Down",
+		.shortcut = "Down",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.LINE_START,
+		.label = "Line Start",
+		.shortcut = "Home",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{ .id = CommandId.LINE_END, .label = "Line End", .shortcut = "End", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.PAGE_UP, .label = "Page Up", .shortcut = "PageUp", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.PAGE_DOWN,
+		.label = "Page Down",
+		.shortcut = "PageDown",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.EXIT_EDITOR,
+		.label = "Exit Editor",
+		.shortcut = "Esc",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{
+		.id = CommandId.COMPLETION_NEXT,
+		.label = "Completion Next",
+		.shortcut = "Down",
+		.in_top_bar = false,
+		.contexts = CTX_COMPLETION,
+	},
+	{
+		.id = CommandId.COMPLETION_PREV,
+		.label = "Completion Previous",
+		.shortcut = "Up",
+		.in_top_bar = false,
+		.contexts = CTX_COMPLETION,
+	},
+	{
+		.id = CommandId.COMPLETION_ACCEPT,
+		.label = "Completion Accept",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_COMPLETION,
+	},
+	{
+		.id = CommandId.COMPLETION_CLOSE,
+		.label = "Completion Close",
+		.shortcut = "Esc",
+		.in_top_bar = false,
+		.contexts = CTX_COMPLETION,
+	},
+	{
+		.id = CommandId.PAN_LEFT,
+		.label = "Pan Left",
+		.shortcut = "Shift+H",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.PAN_RIGHT,
+		.label = "Pan Right",
+		.shortcut = "Shift+L",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.PAN_UP,
+		.label = "Pan Up",
+		.shortcut = "Shift+K",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.PAN_DOWN,
+		.label = "Pan Down",
+		.shortcut = "Shift+J",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.SELECT_LEFT,
+		.label = "Select Left",
+		.shortcut = "H",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.SELECT_RIGHT,
+		.label = "Select Right",
+		.shortcut = "L",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.SELECT_UP,
+		.label = "Select Up",
+		.shortcut = "K",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.SELECT_DOWN,
+		.label = "Select Down",
+		.shortcut = "J",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.CYCLE_NEXT,
+		.label = "Next Card",
+		.shortcut = "]",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.CYCLE_PREV,
+		.label = "Previous Card",
+		.shortcut = "[",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{ .id = CommandId.ZOOM_IN, .label = "Zoom In", .shortcut = "=", .in_top_bar = false, .contexts = CTX_MOVE },
+	{ .id = CommandId.ZOOM_OUT, .label = "Zoom Out", .shortcut = "-", .in_top_bar = false, .contexts = CTX_MOVE },
+	{
+		.id = CommandId.FOCUS_TOP_BAR,
+		.label = "Focus Top Bar",
+		.shortcut = "",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.FOCUS_EDITOR,
+		.label = "Focus Editor",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.TOPBAR_LEFT,
+		.label = "Top Bar Left",
+		.shortcut = "Left",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.TOPBAR_RIGHT,
+		.label = "Top Bar Right",
+		.shortcut = "Right",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.TOPBAR_ACTIVATE,
+		.label = "Top Bar Activate",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+	},
+	{
+		.id = CommandId.FOCUS_CANVAS,
+		.label = "Focus Canvas",
+		.shortcut = "Esc",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+	},
+	{
+		.id = CommandId.OVERLAY_CLOSE,
+		.label = "Close Overlay",
+		.shortcut = "Esc",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_CLOSE,
+	},
+	{
+		.id = CommandId.LIST_UP,
+		.label = "List Up",
+		.shortcut = "Up",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_LIST,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.LIST_DOWN,
+		.label = "List Down",
+		.shortcut = "Down",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_LIST,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.LIST_PAGE_UP,
+		.label = "List Page Up",
+		.shortcut = "PageUp",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_PAGE,
+	},
+	{
+		.id = CommandId.LIST_PAGE_DOWN,
+		.label = "List Page Down",
+		.shortcut = "PageDown",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_PAGE,
+	},
+	{
+		.id = CommandId.LIST_ACCEPT,
+		.label = "List Accept",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_OVERLAY_ACCEPT,
+	},
+	{
+		.id = CommandId.FIND_NEXT,
+		.label = "Find Next",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_FIND,
+	},
+	{
+		.id = CommandId.FIND_PREV,
+		.label = "Find Previous",
+		.shortcut = "Shift+Enter",
+		.in_top_bar = false,
+		.contexts = CTX_FIND,
+	},
+	{
+		.id = CommandId.FIND_REPLACE,
+		.label = "Replace Match",
+		.shortcut = "Ctrl+H",
+		.in_top_bar = false,
+		.contexts = CTX_FIND,
+	},
+	{
+		.id = CommandId.FIND_REPLACE_ALL,
+		.label = "Replace All",
+		.shortcut = "Ctrl+Enter",
+		.in_top_bar = false,
+		.contexts = CTX_FIND,
+	},
+	{
+		.id = CommandId.FIND_CYCLE_FIELD,
+		.label = "Find Field",
+		.shortcut = "Tab",
+		.in_top_bar = false,
+		.contexts = CTX_FIND,
+	},
+	{
+		.id = CommandId.SEARCH_TOGGLE_CASE,
+		.label = "Match Case",
+		.shortcut = "Alt+C",
+		.in_top_bar = false,
+		.contexts = CTX_SEARCH,
+	},
+	{
+		.id = CommandId.SEARCH_TOGGLE_WORD,
+		.label = "Whole Word",
+		.shortcut = "Alt+W",
+		.in_top_bar = false,
+		.contexts = CTX_SEARCH,
+	},
+	{
+		.id = CommandId.SETTINGS_SCOPE_TOGGLE,
+		.label = "Toggle Scope",
+		.shortcut = "Tab",
+		.in_top_bar = false,
+		.contexts = CTX_SETTINGS,
+	},
+	{
+		.id = CommandId.SETTINGS_RESET,
+		.label = "Reset Setting",
+		.shortcut = "Del",
+		.in_top_bar = false,
+		.contexts = CTX_SETTINGS,
+	},
+	{
+		.id = CommandId.SETTINGS_VALUE_DEC,
+		.label = "Decrease Value",
+		.shortcut = "Left",
+		.in_top_bar = false,
+		.contexts = CTX_SETTINGS,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.SETTINGS_VALUE_INC,
+		.label = "Increase Value",
+		.shortcut = "Right",
+		.in_top_bar = false,
+		.contexts = CTX_SETTINGS,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.BROWSER_PARENT,
+		.label = "Parent Folder",
+		.shortcut = "Backspace",
+		.in_top_bar = false,
+		.contexts = CTX_BROWSER,
+	},
+	{ .id = CommandId.CLOSE_CARD, .label = "Close Card", .shortcut = "C", .in_top_bar = false, .contexts = CTX_MOVE },
+	{
+		.id = CommandId.TOGGLE_CARD,
+		.label = "Toggle Card",
+		.shortcut = "Space",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.RENAME_CARD,
+		.label = "Rename Card",
+		.shortcut = "F2",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE
+	},
+	{
+		.id = CommandId.DUPLICATE_CARD,
+		.label = "Duplicate Card",
+		.shortcut = "Ctrl+D",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.COPY_PATH,
+		.label = "Copy Path",
+		.shortcut = "Ctrl+Shift+C",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.DELETE_CARD,
+		.label = "Delete Card",
+		.shortcut = "Delete",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.OPEN_CONTEXT_MENU,
+		.label = "Context Menu",
+		.shortcut = "Shift+F10",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.MINIMAP_FOCUS,
+		.label = "Focus Content",
+		.shortcut = "Shift+M",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{ .id = CommandId.ZOOM_RESET, .label = "Reset Zoom", .shortcut = "0", .in_top_bar = false, .contexts = CTX_MOVE },
+	{ .id = CommandId.ZOOM_FIT, .label = "Fit Content", .shortcut = "F", .in_top_bar = false, .contexts = CTX_MOVE },
+	{
+		.id = CommandId.TOGGLE_PREVIEW,
+		.label = "Toggle Preview",
+		.shortcut = "Ctrl+Shift+V",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE | CTX_EDIT,
+	},
+	{
+		.id = CommandId.LEAVE_FOLDER,
+		.label = "Leave Folder",
+		.shortcut = "Backspace",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.CYCLE_FOCUS,
+		.label = "Grab / Focus",
+		.shortcut = "Tab",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.MINIMIZE_CARD,
+		.label = "Minimize Card",
+		.shortcut = "z",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.TOGGLE_FOCUS_MODE,
+		.label = "Focus Mode",
+		.shortcut = "Ctrl+Shift+Enter",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL,
+	},
 };
 
 fn usz command_count()
@@ -97,6 +687,150 @@ fn String command_name(CommandId id)
 			return "search_project";
 		case CommandId.SYMBOLS_PROJECT:
 			return "symbols_project";
+		case CommandId.TOGGLE_SETTINGS:
+			return "toggle_settings";
+		case CommandId.UNDO:
+			return "undo";
+		case CommandId.REDO:
+			return "redo";
+		case CommandId.INDENT:
+			return "indent";
+		case CommandId.OUTDENT:
+			return "outdent";
+		case CommandId.NEWLINE:
+			return "newline";
+		case CommandId.DELETE_BACK:
+			return "delete_back";
+		case CommandId.DELETE_FORWARD:
+			return "delete_forward";
+		case CommandId.CURSOR_LEFT:
+			return "cursor_left";
+		case CommandId.CURSOR_RIGHT:
+			return "cursor_right";
+		case CommandId.CURSOR_UP:
+			return "cursor_up";
+		case CommandId.CURSOR_DOWN:
+			return "cursor_down";
+		case CommandId.LINE_START:
+			return "line_start";
+		case CommandId.LINE_END:
+			return "line_end";
+		case CommandId.PAGE_UP:
+			return "page_up";
+		case CommandId.PAGE_DOWN:
+			return "page_down";
+		case CommandId.EXIT_EDITOR:
+			return "exit_editor";
+		case CommandId.COMPLETION_NEXT:
+			return "completion_next";
+		case CommandId.COMPLETION_PREV:
+			return "completion_prev";
+		case CommandId.COMPLETION_ACCEPT:
+			return "completion_accept";
+		case CommandId.COMPLETION_CLOSE:
+			return "completion_close";
+		case CommandId.PAN_LEFT:
+			return "pan_left";
+		case CommandId.PAN_RIGHT:
+			return "pan_right";
+		case CommandId.PAN_UP:
+			return "pan_up";
+		case CommandId.PAN_DOWN:
+			return "pan_down";
+		case CommandId.SELECT_LEFT:
+			return "select_left";
+		case CommandId.SELECT_RIGHT:
+			return "select_right";
+		case CommandId.SELECT_UP:
+			return "select_up";
+		case CommandId.SELECT_DOWN:
+			return "select_down";
+		case CommandId.CYCLE_NEXT:
+			return "cycle_next";
+		case CommandId.CYCLE_PREV:
+			return "cycle_prev";
+		case CommandId.ZOOM_IN:
+			return "zoom_in";
+		case CommandId.ZOOM_OUT:
+			return "zoom_out";
+		case CommandId.FOCUS_TOP_BAR:
+			return "focus_top_bar";
+		case CommandId.FOCUS_EDITOR:
+			return "focus_editor";
+		case CommandId.TOPBAR_LEFT:
+			return "topbar_left";
+		case CommandId.TOPBAR_RIGHT:
+			return "topbar_right";
+		case CommandId.TOPBAR_ACTIVATE:
+			return "topbar_activate";
+		case CommandId.FOCUS_CANVAS:
+			return "focus_canvas";
+		case CommandId.OVERLAY_CLOSE:
+			return "overlay_close";
+		case CommandId.LIST_UP:
+			return "list_up";
+		case CommandId.LIST_DOWN:
+			return "list_down";
+		case CommandId.LIST_PAGE_UP:
+			return "list_page_up";
+		case CommandId.LIST_PAGE_DOWN:
+			return "list_page_down";
+		case CommandId.LIST_ACCEPT:
+			return "list_accept";
+		case CommandId.FIND_NEXT:
+			return "find_next";
+		case CommandId.FIND_PREV:
+			return "find_prev";
+		case CommandId.FIND_REPLACE:
+			return "find_replace";
+		case CommandId.FIND_REPLACE_ALL:
+			return "find_replace_all";
+		case CommandId.FIND_CYCLE_FIELD:
+			return "find_cycle_field";
+		case CommandId.SEARCH_TOGGLE_CASE:
+			return "search_toggle_case";
+		case CommandId.SEARCH_TOGGLE_WORD:
+			return "search_toggle_word";
+		case CommandId.SETTINGS_SCOPE_TOGGLE:
+			return "settings_scope_toggle";
+		case CommandId.SETTINGS_RESET:
+			return "settings_reset";
+		case CommandId.SETTINGS_VALUE_DEC:
+			return "settings_value_dec";
+		case CommandId.SETTINGS_VALUE_INC:
+			return "settings_value_inc";
+		case CommandId.BROWSER_PARENT:
+			return "browser_parent";
+		case CommandId.CLOSE_CARD:
+			return "close_card";
+		case CommandId.TOGGLE_CARD:
+			return "toggle_card";
+		case CommandId.RENAME_CARD:
+			return "rename_card";
+		case CommandId.DUPLICATE_CARD:
+			return "duplicate_card";
+		case CommandId.COPY_PATH:
+			return "copy_path";
+		case CommandId.DELETE_CARD:
+			return "delete_card";
+		case CommandId.OPEN_CONTEXT_MENU:
+			return "open_context_menu";
+		case CommandId.MINIMAP_FOCUS:
+			return "minimap_focus";
+		case CommandId.ZOOM_RESET:
+			return "zoom_reset";
+		case CommandId.ZOOM_FIT:
+			return "zoom_fit";
+		case CommandId.TOGGLE_PREVIEW:
+			return "toggle_preview";
+		case CommandId.LEAVE_FOLDER:
+			return "leave_folder";
+		case CommandId.CYCLE_FOCUS:
+			return "cycle_focus";
+		case CommandId.MINIMIZE_CARD:
+			return "minimize_card";
+		case CommandId.TOGGLE_FOCUS_MODE:
+			return "toggle_focus_mode";
 	}
 }
 
@@ -169,6 +903,84 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 			return has_project;
 		case CommandId.SYMBOLS_PROJECT:
 			return has_project;
+		case CommandId.TOGGLE_SETTINGS:
+			return true;
+		case CommandId.UNDO:
+		case CommandId.REDO:
+		case CommandId.INDENT:
+		case CommandId.OUTDENT:
+		case CommandId.NEWLINE:
+		case CommandId.DELETE_BACK:
+		case CommandId.DELETE_FORWARD:
+		case CommandId.CURSOR_LEFT:
+		case CommandId.CURSOR_RIGHT:
+		case CommandId.CURSOR_UP:
+		case CommandId.CURSOR_DOWN:
+		case CommandId.LINE_START:
+		case CommandId.LINE_END:
+		case CommandId.PAGE_UP:
+		case CommandId.PAGE_DOWN:
+		case CommandId.EXIT_EDITOR:
+		case CommandId.COMPLETION_NEXT:
+		case CommandId.COMPLETION_PREV:
+		case CommandId.COMPLETION_ACCEPT:
+		case CommandId.COMPLETION_CLOSE:
+			return has_buffer;
+		case CommandId.PAN_LEFT:
+		case CommandId.PAN_RIGHT:
+		case CommandId.PAN_UP:
+		case CommandId.PAN_DOWN:
+		case CommandId.SELECT_LEFT:
+		case CommandId.SELECT_RIGHT:
+		case CommandId.SELECT_UP:
+		case CommandId.SELECT_DOWN:
+		case CommandId.CYCLE_NEXT:
+		case CommandId.CYCLE_PREV:
+		case CommandId.ZOOM_IN:
+		case CommandId.ZOOM_OUT:
+		case CommandId.FOCUS_EDITOR:
+		case CommandId.LEAVE_FOLDER:
+		case CommandId.CYCLE_FOCUS:
+		case CommandId.MINIMIZE_CARD:
+		case CommandId.TOGGLE_FOCUS_MODE:
+			return has_project;
+		case CommandId.FOCUS_TOP_BAR:
+		case CommandId.TOPBAR_LEFT:
+		case CommandId.TOPBAR_RIGHT:
+		case CommandId.TOPBAR_ACTIVATE:
+		case CommandId.FOCUS_CANVAS:
+		case CommandId.OVERLAY_CLOSE:
+		case CommandId.LIST_UP:
+		case CommandId.LIST_DOWN:
+		case CommandId.LIST_PAGE_UP:
+		case CommandId.LIST_PAGE_DOWN:
+		case CommandId.LIST_ACCEPT:
+		case CommandId.FIND_NEXT:
+		case CommandId.FIND_PREV:
+		case CommandId.FIND_REPLACE:
+		case CommandId.FIND_REPLACE_ALL:
+		case CommandId.FIND_CYCLE_FIELD:
+		case CommandId.SEARCH_TOGGLE_CASE:
+		case CommandId.SEARCH_TOGGLE_WORD:
+		case CommandId.SETTINGS_SCOPE_TOGGLE:
+		case CommandId.SETTINGS_RESET:
+		case CommandId.SETTINGS_VALUE_DEC:
+		case CommandId.SETTINGS_VALUE_INC:
+		case CommandId.BROWSER_PARENT:
+		case CommandId.ZOOM_RESET:
+			return true;
+		case CommandId.CLOSE_CARD:
+		case CommandId.TOGGLE_CARD:
+		case CommandId.RENAME_CARD:
+		case CommandId.DUPLICATE_CARD:
+		case CommandId.COPY_PATH:
+		case CommandId.DELETE_CARD:
+		case CommandId.OPEN_CONTEXT_MENU:
+		case CommandId.MINIMAP_FOCUS:
+		case CommandId.ZOOM_FIT:
+			return has_project;
+		case CommandId.TOGGLE_PREVIEW:
+			return has_buffer;
 	}
 }
 

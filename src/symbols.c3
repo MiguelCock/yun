@@ -13,9 +13,11 @@ import std::thread::channel;
 import tree_sitter;
 import yun::commands;
 import yun::editor;
-import yun::highlight;
+import yun::language;
+import yun::keymap;
 import yun::project;
 import yun::theme;
+import yun::ui;
 
 enum SymbolKind : int
 {
@@ -53,7 +55,7 @@ struct SymbolWork
 {
 	Symbols* owner;
 	String path;
-	highlight::Language language;
+	language::Language language;
 	uint generation;
 }
 
@@ -72,6 +74,7 @@ struct SymbolTarget
 }
 
 const int MAX_SYMBOL_WORKERS = 4;
+const int PUMP_BATCH_BUDGET  = 32;
 const int QUERY_MAX          = 128;
 const double EDIT_DEBOUNCE   = 0.15;
 const int MAX_VISIBLE_ROWS   = 14;
@@ -104,54 +107,17 @@ struct Symbols
 	bool dirty;
 	int selected;
 	int scroll;
+	bool consumed;
 }
 
-fn String def_query_text(highlight::Language language)
-{
-	switch (language)
-	{
-		case highlight::Language.C3:
-			return "(func_definition (func_header name: (ident) @function))\n"
-				"(func_declaration (func_header name: (ident) @function))\n"
-				"(macro_declaration (macro_header name: (_) @function))\n"
-				"(struct_declaration name: (type_ident) @type)\n"
-				"(interface_declaration name: (type_ident) @type)\n"
-				"(bitstruct_declaration name: (type_ident) @type)\n"
-				"(typedef_declaration name: (type_ident) @type)\n"
-				"(enum_declaration name: (type_ident) @enum)\n"
-				"(constdef_declaration name: (type_ident) @const)";
-		case highlight::Language.C:
-			return "(function_definition declarator: (function_declarator declarator: (identifier) @function))\n"
-				"(struct_specifier name: (type_identifier) @type)\n"
-				"(enum_specifier name: (type_identifier) @enum)\n"
-				"(type_definition declarator: (type_identifier) @type)\n"
-				"(declaration declarator: (init_declarator declarator: (identifier) @variable))\n"
-				"(declaration declarator: (identifier) @variable)";
-		case highlight::Language.PYTHON:
-			return "(function_definition name: (identifier) @function)\n"
-				"(class_definition name: (identifier) @class)";
-		case highlight::Language.JAVASCRIPT:
-			return "(function_declaration name: (identifier) @function)\n"
-				"(class_declaration name: (identifier) @class)\n"
-				"(method_definition name: (property_identifier) @method)\n"
-				"(variable_declarator name: (identifier) @variable)";
-		case highlight::Language.NONE:
-			return "";
-	}
-}
-
-fn TSQuery* make_query(highlight::Language language, String text)
+fn TSQuery* make_query(language::Language language, String text)
 {
 	if (text.len == 0) return null;
+	TSLanguage* lang = language::grammar_language(language);
+	if (!lang) return null;
 	uint offset        = 0;
 	TSQueryError error = TS_QUERY_ERROR_NONE;
-	TSQuery* query = tree_sitter::ts_query_new(
-		highlight::grammar_language(language),
-		(char*)text.ptr,
-		(uint)text.len,
-		&offset,
-		&error
-	);
+	TSQuery* query     = tree_sitter::ts_query_new(lang, (char*)text.ptr, (uint)text.len, &offset, &error);
 	if (!query || error != TS_QUERY_ERROR_NONE) return null;
 	return query;
 }
@@ -217,9 +183,9 @@ fn String kind_label(SymbolKind kind)
 	}
 }
 
-fn void extract_file(Allocator allocator, String path, highlight::Language language, List{Symbol}* out)
+fn void extract_file(Allocator allocator, String path, language::Language language, List{Symbol}* out)
 {
-	if (language == highlight::Language.NONE) return;
+	if (language == language::Language.NONE) return;
 	@pool()
 	{
 		char[]? data = file::load(tmem, path);
@@ -228,12 +194,12 @@ fn void extract_file(Allocator allocator, String path, highlight::Language langu
 
 		TSParser* parser = tree_sitter::ts_parser_new();
 		if (!parser) return;
-		if (!tree_sitter::ts_parser_set_language(parser, highlight::grammar_language(language)))
+		if (!tree_sitter::ts_parser_set_language(parser, language::grammar_language(language)))
 		{
 			tree_sitter::ts_parser_delete(parser);
 			return;
 		}
-		TSQuery* query = make_query(language, def_query_text(language));
+		TSQuery* query = make_query(language, language::symbols_query_text(language));
 		if (!query)
 		{
 			tree_sitter::ts_parser_delete(parser);
@@ -291,11 +257,11 @@ fn void extract_file(Allocator allocator, String path, highlight::Language langu
 
 fn void symbol_worker(void* arg)
 {
-	SymbolWork* work             = (SymbolWork*)arg;
-	Symbols* symbols             = work.owner;
-	String path                  = work.path;
-	highlight::Language language = work.language;
-	uint generation              = work.generation;
+	SymbolWork* work            = (SymbolWork*)arg;
+	Symbols* symbols            = work.owner;
+	String path                 = work.path;
+	language::Language language = work.language;
+	uint generation             = work.generation;
 
 	List{Symbol} out;
 	out.init(symbols.allocator);
@@ -374,6 +340,7 @@ fn void Symbols.init(&self, Allocator allocator)
 	self.dirty = false;
 	self.selected = 0;
 	self.scroll = 0;
+	self.consumed = false;
 	self.results = null;
 	self.pool_ready = false;
 	self.init_pool();
@@ -388,6 +355,13 @@ fn void Symbols.destroy(&self)
 	}
 	if (self.results)
 	{
+		while (true)
+		{
+			SymbolBatch? maybe = self.results.try_pop();
+			if (catch excuse = maybe) break;
+			SymbolBatch batch = maybe;
+			self.free_batch(&batch);
+		}
 		self.results.destroy();
 		self.results = null;
 	}
@@ -445,8 +419,8 @@ fn void Symbols.start_scan(&self, project::Project* project)
 			String path = (String)project.cards[i].path;
 			if (seen.has_key(path)) continue;
 			seen.set(path, 0);
-			highlight::Language language = highlight::language_for_path(path);
-			if (language == highlight::Language.NONE) continue;
+			language::Language language = language::language_for_path(path);
+			if (language == language::Language.NONE) continue;
 
 			SymbolWork* work = alloc::new(self.allocator, SymbolWork);
 			work.owner = self;
@@ -511,7 +485,7 @@ fn void Symbols.flush_edits(&self, project::Project* project, double now)
 	int index = project.find_card(path);
 	if (index >= 0)
 	{
-		highlight::Language language = highlight::language_for_path(path);
+		language::Language language = language::language_for_path(path);
 		List{Symbol} out;
 		out.init(self.allocator);
 		extract_file(self.allocator, path, language, &out);
@@ -535,7 +509,8 @@ fn void Symbols.pump(&self, project::Project* project, double now)
 
 	if (self.results)
 	{
-		while (true)
+		int budget = PUMP_BATCH_BUDGET;
+		while (budget-- > 0)
 		{
 			SymbolBatch? maybe = self.results.try_pop();
 			if (catch excuse = maybe) break;
@@ -639,7 +614,7 @@ fn void Symbols.ensure_visible(&self, int visible_rows)
 
 fn Rect Symbols.panel_rect(&self)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	int screen_w = rl::get_screen_width();
 	int screen_h = rl::get_screen_height();
 	float width  = 640.0f * s;
@@ -654,7 +629,7 @@ fn Rect Symbols.panel_rect(&self)
 
 fn int Symbols.visible_rows(&self)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	Rect panel   = self.panel_rect();
 	float list_y = panel.y + 62.0f * s;
 	float list_h = panel.y + panel.height - list_y - 10.0f * s;
@@ -665,7 +640,7 @@ fn int Symbols.visible_rows(&self)
 
 fn int Symbols.row_at_mouse(&self, RLVector2 mouse)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	Rect panel   = self.panel_rect();
 	float list_y = panel.y + 62.0f * s;
 	if (mouse[1] < list_y) return -1;
@@ -699,30 +674,45 @@ fn void draw_text(RLFont font, String text, float x, float y, float size, RLColo
 	};
 }
 
-fn SymbolTarget Symbols.update(&self, project::Project* project, double now)
+fn SymbolTarget Symbols.update(&self, keymap::Keymap* keymap, project::Project* project, double now)
 {
 	SymbolTarget target = { .valid = false, .path = "", .line = 0, .column = 0 };
 	if (!self.open) return target;
+	self.consumed = false;
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_SYMBOLS))
 	{
+		self.consumed = true;
 		self.close();
 		return target;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_ACCEPT, commands::CTX_SYMBOLS))
 	{
+		self.consumed = true;
 		return self.activate();
 	}
 
 	int visible = self.visible_rows();
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.DOWN
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) self.move_selection(1);
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.UP
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) self.move_selection(-1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN)) self.move_selection(visible);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP)) self.move_selection(-visible);
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_SYMBOLS))
+	{
+		self.consumed = true;
+		self.move_selection(1);
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_SYMBOLS))
+	{
+		self.consumed = true;
+		self.move_selection(-1);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_DOWN, commands::CTX_SYMBOLS))
+	{
+		self.consumed = true;
+		self.move_selection(visible);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_UP, commands::CTX_SYMBOLS))
+	{
+		self.consumed = true;
+		self.move_selection(-visible);
+	}
 	self.ensure_visible(visible);
 
 	if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))
@@ -767,7 +757,8 @@ fn void Symbols.draw(&self, RLFont font)
 {
 	if (!self.open) return;
 
-	float s    = editor::text_scale();
+	float s    = ui::scale();
+	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
@@ -779,11 +770,11 @@ fn void Symbols.draw(&self, RLFont font)
 	rl::draw_rectangle_lines_ex(field, 1.0f, theme::current().panel_border);
 
 	String query  = self.query_view();
-	float query_w = text_width(font, query, 15.0f * s);
-	draw_text(font, query, field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * s, theme::current().panel_text);
+	float query_w = text_width(font, query, 15.0f * ts);
+	draw_text(font, query, field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * ts, theme::current().panel_text);
 	if (query.len == 0)
 	{
-		draw_text(font, "Go to symbol...", field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * s, theme::current()
+		draw_text(font, "Go to symbol...", field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * ts, theme::current()
 			.panel_dim);
 	}
 	else
@@ -800,7 +791,7 @@ fn void Symbols.draw(&self, RLFont font)
 	@pool()
 	{
 		String status = string::format(tmem, "%d symbols", (long)self.matches.len());
-		draw_text(font, status, panel.x + pad, field.y + field_h + 6.0f * s, 13.0f * s, theme::current().panel_dim);
+		draw_text(font, status, panel.x + pad, field.y + field_h + 6.0f * s, 13.0f * ts, theme::current().panel_dim);
 	};
 
 	float list_y = panel.y + 62.0f * s;
@@ -823,7 +814,7 @@ fn void Symbols.draw(&self, RLFont font)
 		}
 
 		float x = panel.x + pad;
-		draw_text(font, symbol.name, x, y + 3.0f * s, 15.0f * s, theme::current().panel_text);
+		draw_text(font, symbol.name, x, y + 3.0f * s, 15.0f * ts, theme::current().panel_text);
 
 		if (query.len > 0)
 		{
@@ -835,8 +826,8 @@ fn void Symbols.draw(&self, RLFont font)
 				{
 					usz pos = positions[p];
 					if (pos >= symbol.name.len) break;
-					float mx = x + text_width(font, symbol.name[0:pos], 15.0f * s);
-					draw_text(font, symbol.name[pos:1], mx, y + 3.0f * s, 15.0f * s, theme::current().panel_match);
+					float mx = x + text_width(font, symbol.name[0:pos], 15.0f * ts);
+					draw_text(font, symbol.name[pos:1], mx, y + 3.0f * s, 15.0f * ts, theme::current().panel_match);
 				}
 			}
 		}
@@ -844,8 +835,8 @@ fn void Symbols.draw(&self, RLFont font)
 		@pool()
 		{
 			String right  = string::format(tmem, "%s  %s", kind_label(symbol.kind), self.relative(file.path));
-			float right_w = text_width(font, right, 13.0f * s);
-			draw_text(font, right, panel.x + panel.width - pad - right_w, y + 4.0f * s, 13.0f * s, theme::current()
+			float right_w = text_width(font, right, 13.0f * ts);
+			draw_text(font, right, panel.x + panel.width - pad - right_w, y + 4.0f * s, 13.0f * ts, theme::current()
 				.panel_dim);
 		};
 	}

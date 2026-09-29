@@ -12,34 +12,39 @@ The project is early and evolving quickly. The roadmap is the flat GitHub issue 
 - **Project** — open a folder from the CLI (`c3c run -- <dir>`) or the in-app browser; folder clusters mirror disk folders.
 - **Files** — drop files onto the canvas, create new file cards and folders, resize cards, and use right-click context menus.
 - **Editor** — a piece-table text buffer with undo/redo, line numbers and gutter, caret navigation and scrolling, UTF-8 input, in-file find (and replace), adjustable font size, and external-edit reload.
-- **Syntax highlighting** — tree-sitter grammars for C3, C, Python, and JavaScript.
+- **Syntax highlighting** — tree-sitter grammars for C3, C, C++, Java, Kotlin, Scala, C#, Go, Rust, Zig, Odin, V, Nim, Python, JavaScript, TypeScript, CSS, HTML, Lua, PHP, Ruby, R, Julia, Haskell, Gleam, Erlang, Elixir, Dart, and Markdown, loaded lazily from shared libraries, with embedded-language injections (PHP/HTML, HTML script/style, C++ raw strings, JS tagged templates, Haskell quasiquotes, Elixir sigils).
 - **Search** — in-file find/replace, project-wide search, and a fuzzy symbol palette.
-- **Dependencies** — import arrows between cards, with animated, line-highlighted jumps to results, definitions, and symbols.
+- **Dependencies** — import arrows between cards (configurable solid/dashed/dotted/long-dash/dash-dot line styles, independently for internal and external), with animated, line-highlighted jumps to results, definitions, and symbols. Card, selected, and cluster outlines stay a constant on-screen thickness when zoomed out.
 - **LSP** — hover, go-to-definition, completion, and a problems panel, driven by per-language servers configured in the config.
+- **Markdown preview** — toggle a rendered view of a Markdown card (headings, lists, fenced code, blockquotes, links, inline emphasis) with `Ctrl+Shift+V`, the command palette, or the card-title `M` marker; click the preview to jump back to the source.
 - **Themes** — nine built-in palettes with a picker.
-- **App** — top bar actions, Vim-like keyboard modes (see [Keyboard and modes](#keyboard-and-modes)), command palette, customizable keybindings, notifications, layered config (global + project), and `.yun/workspace.json` persistence.
+- **App** — top bar actions, Vim-like keyboard modes (see [Keyboard and modes](#keyboard-and-modes)), command palette, customizable keybindings, notifications, layered config (global + project), and `.yun/workspace.json` persistence. A freshly opened project starts with every folder collapsed: each level packs its files and folder chips tightly (wrapping at `sqrt` of their area into a roughly square footprint). Opening a folder reveals its contents overlapping its siblings on that level instead of pushing them aside, so arranging the canvas is left to you. The camera fits the visible content, never zooming past 100% (`canvas.fit_on_open` / `canvas.fit_min_zoom`); sub-3px cards are culled at low zoom and import arrows drop dashes/labels as they shrink. Folder positions and the camera are restored unchanged on reopen.
 
 ## Not yet
 
-Lua mods (#33–#36), large-file support (#14), very-large-project perf (#45), crash recovery (#47), HiDPI scaling (#44), and release packaging (#48–#49).
+Lua mods (#33–#36), large-file support (#14), very-large-project perf (#45), crash recovery (#47), and release packaging (#48–#49).
 
 ## Keyboard and modes
 
-Yun is keyboard-first and Vim-inspired. There are three modes, shown by an indicator next to the FPS counter (`-- MOVE --`, `-- EDIT --`, `-- TOP BAR --`). Overlays (command palette, search, symbol palette, problems panel, find bar, menus, prompts) are modal and handle their own keys.
+Yun is keyboard-first and Vim-inspired. There are three modes, shown by an indicator next to the FPS counter (`-- MOVE --`, `-- EDIT --`, `-- TOP BAR --`), plus a `-- GRAB --` sub-state in MOVE. The indicator also shows the current folder as a breadcrumb. Overlays (command palette, search, symbol palette, problems panel, find bar, menus, prompts) are modal and handle their own keys.
 
 ### MOVE (default)
 
-The cursor is a card on the canvas; no text is being edited.
+The cursor is a card or folder on the canvas at the folder level you're in; no text is being edited. Arrows move between the current folder's direct children, so navigation follows the folder depth rather than every open card.
 
 | Key | Action |
 | --- | --- |
-| `h` `j` `k` `l` / arrow keys | Move the cursor to the nearest card left / down / up / right |
-| `[` / `]` | Previous / next card (wraps) |
+| `h` `j` `k` `l` / arrow keys | Move to the nearest card/folder left / down / up / right (current folder only) |
+| `[` / `]` | Previous / next item in the current folder (wraps) |
 | `Shift` + `h` `j` `k` `l` | Pan the canvas |
+| `Enter` or `i` | Edit the selected card, or open and enter the selected folder |
+| `Backspace` / `Esc` | Leave the current folder (up one level); `Esc` at the root clears the selection |
+| `Tab` | Cycle focus: grab the selected card/folder, then focus the top bar, then back to MOVE |
+| `z` | Resize the selected card to its minimum width and height |
 | `=` / `+` / keypad `+` | Zoom in |
 | `-` / keypad `-` | Zoom out |
-| `Enter` or `i` | Edit the selected card (enter EDIT) |
-| `Tab` | Focus the top bar (enter TOP BAR) |
+
+When grabbed, hold `h` `j` `k` `l` (or the arrow keys) to glide the item smoothly at a constant on-screen speed — `Shift` slows it for fine placement — and press `Esc` or `Enter` to drop it.
 
 Mouse panning, zooming, clicking and dragging still work as before.
 
@@ -68,8 +73,9 @@ These work from any mode:
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` / `Ctrl+A` | Copy / cut / paste / select all |
 | `Ctrl+Space` | Trigger completion |
+| `Ctrl+Shift+Enter` | Toggle focus mode: the focused file fills the screen (top bar kept, file minimap bottom-right) |
 | `Ctrl` + scroll | Editor font size |
-| `F3` (hold) | Show the awake/asleep editor counter |
+| `F3` (hold) | Show the awake/asleep editor counter and frame/update/draw/scan timings |
 
 Bindings are customizable via the `keymap` object in the config — global `~/.config/yun/config.json` or project `<root>/.yun/config.json` — e.g. `{ "keymap": { "save": "Ctrl+K" } }`.
 
@@ -84,6 +90,10 @@ cd yun
 c3c build                 # build the `yun` executable
 c3c run                   # run
 c3c run -- <directory>    # run and open a project folder
+c3c run -- --selftest     # boot, render a few frames, exit (headless smoke test)
+c3c run -- --benchmark=200 --benchmark-frames=240   # synth N cards, scripted pan/zoom, print frame times
+c3c run -- <directory> --benchmark --benchmark-frames=240   # benchmark a real project (card/folder count + frame times)
+c3c benchmark             # micro benchmarks (hit-test, bounds cache, highlight runs)
 c3c test                  # run the test suite
 c3fmt --check $(git ls-files '*.c3')   # formatting check
 ```
@@ -93,7 +103,7 @@ Already cloned without submodules? Run `git submodule update --init --recursive`
 ## Dependencies
 
 - **raylib 6** — `lib/raylib6.c3l` is a packed library; it ships prebuilt static libs for `linux-x64`, `macos-aarch64`, `windows-x64`, `windows-aarch64`, `emscripten`, and `wasm-32`.
-- **tree-sitter** — `lib/tree_sitter.c3l` (runtime) plus the `tree_sitter_c`, `tree_sitter_c3`, `tree_sitter_python`, and `tree_sitter_javascript` grammars. `linux-x64` static libraries are committed; regenerate them (or build another target with a matching toolchain) with `scripts/build-tree-sitter.sh <target>`.
+- **tree-sitter** — `lib/tree_sitter.c3l` (runtime, linked in) plus a `lib/tree_sitter_<lang>.c3l` grammar per supported language. Grammar shared libraries are built (not committed) with `scripts/build-tree-sitter.sh [--static] [target] [grammar...]` and loaded lazily at runtime. See [`docs/tree-sitter.md`](docs/tree-sitter.md).
 - **Lua 5.4** — `lib/lua54.c3l` is a submodule vendored ahead of the mods work (#33–#36); it is not wired into the build yet.
 
 ## Layout
@@ -106,6 +116,34 @@ assets/     bundled fonts (JetBrains Mono, SIL OFL 1.1)
 ```
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the branch/PR workflow, [`AGENTS.md`](AGENTS.md) for the build/architecture cheat sheet, and [`.opencode/skills/yun-development/SKILL.md`](.opencode/skills/yun-development/SKILL.md) for C3 conventions.
+
+## Configuration
+
+Settings are JSON, layered as `defaults < global < project`, so a project can override your global preferences:
+
+- Global: `<OS config dir>/yun/config.json` (e.g. `~/.config/yun/config.json` on Linux).
+- Project: `.yun/config.json` at the project root (wins over global).
+
+Values are grouped into sections, for example:
+
+```json
+{
+  "app": { "theme": "dark" },
+  "editor": { "font_size": 16 },
+  "keymap": { "save": "Ctrl+S" },
+  "lsp": { "c3": "c3lsp" }
+}
+```
+
+Unknown top-level keys or section keys warn and are ignored, and a missing config is valid (built-in defaults apply).
+
+The `editor` section covers font size and family (monospace fonts found on the system), line height, padding, indentation (tabs or spaces + width), auto-indent, caret blink, scroll margin, wheel-scroll lines and the line-number gutter. The `app` section also sets the interface font (`ui_font_family`) and text size (`ui_font_size`), a global `ui_scale` factor that scales the whole interface (geometry and text), and `skip_submodules` (default on) which keeps nested git repositories (submodules, vendored deps) out of the project scan. Text and layout scale automatically with the display's DPI. The `canvas` section tunes navigation (zoom limits and step, keyboard pan distance, pan/zoom smoothing and toggle, inertia friction and stop speed, drag threshold, max pan delta, grid toggle and cell size, jump-zoom), and `minimap` controls the minimap (enabled, size and zoom threshold). The `arrows` section controls import connections (enabled, internal/external arrows and labels, line and hover thickness, arrowhead size, hover tolerance, rescan debounce and scan worker count).
+
+Language servers are configured under the `lsp` section: a map of language id to command, e.g. `"lsp": { "c3": "c3lsp", "python": "pylsp" }`. Yun detects the language id from the file extension and starts the server (rooted at the project); an override takes precedence over the built-in default. See [`docs/lsp.md`](docs/lsp.md) for the supported ids and defaults.
+
+In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's *Settings* button, or the command palette. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value. The panel's **Keys** section lists every command's shortcut: `Enter` captures a new chord, `Del` unbinds, `Backspace` resets it (when the search is empty), `Esc` cancels, and a *Reset all* row clears the current scope.
+
+Keybindings use chords like `Ctrl+Shift+P`. Modifiers are `Ctrl` (shown as `Cmd` on macOS), `Shift`, `Alt` and `Super`; keys can be letters/digits, punctuation (`, . / ; ' [ ] - = \ \``), named keys (`Enter`, `Esc`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `CapsLock`, `PrintScreen`, `Pause`), function keys `F1`-`F12`, or keypad keys (`KP_0`-`KP_9`, `KP_Add`, `KP_Subtract`, `KP_Multiply`, `KP_Divide`, `KP_Enter`). Set a command's chord to `""` to unbind it. Editor and completion actions (undo/redo, indentation, cursor movement, completion next/prev/accept), canvas/mode/top-bar navigation (pan, zoom in/out/reset/fit, item select/cycle, enter/leave folder, cycle focus/grab, minimize, focus switching), overlay navigation (lists, accept/close, find next/replace, search toggles) and card actions (close/toggle/rename/duplicate/copy-path/delete, context menu, focus content) are registered commands too, so they can be rebound the same way.
 
 ## Versioning and releases
 

@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 17);
+	assert(command_count() == 89);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -48,6 +48,60 @@ fn void test_command_defs()
 	assert(!command_def(CommandId.SEARCH_PROJECT).in_top_bar);
 	assert(command_def(CommandId.SYMBOLS_PROJECT).shortcut.compare_to("Ctrl+Shift+O") == 0);
 	assert(!command_def(CommandId.SYMBOLS_PROJECT).in_top_bar);
+
+	CommandDef settings = command_def(CommandId.TOGGLE_SETTINGS);
+	assert(settings.label.compare_to("Settings") == 0);
+	assert(settings.shortcut.compare_to("Ctrl+Shift+S") == 0);
+	assert(settings.in_top_bar);
+}
+
+fn void test_contexts()
+{
+	assert(command_def(CommandId.SAVE).contexts == CTX_GLOBAL);
+	assert(command_def(CommandId.COPY).contexts == CTX_GLOBAL);
+	assert(command_def(CommandId.TOGGLE_SETTINGS).contexts == CTX_GLOBAL);
+	assert(command_def(CommandId.UNDO).contexts == CTX_EDIT);
+	assert(command_def(CommandId.CURSOR_UP).contexts == CTX_EDIT);
+	assert(command_def(CommandId.OUTDENT).contexts == CTX_EDIT);
+	assert(command_def(CommandId.COMPLETION_ACCEPT).contexts == CTX_COMPLETION);
+	assert(command_def(CommandId.COMPLETION_NEXT).contexts == CTX_COMPLETION);
+	assert(command_def(CommandId.PAN_LEFT).contexts == CTX_MOVE);
+	assert(command_def(CommandId.SELECT_UP).contexts == CTX_MOVE);
+	assert(command_def(CommandId.ZOOM_IN).contexts == CTX_MOVE);
+	assert(command_def(CommandId.FOCUS_EDITOR).contexts == CTX_MOVE);
+	assert(command_def(CommandId.TOPBAR_LEFT).contexts == CTX_TOP_BAR);
+	assert(command_def(CommandId.FOCUS_CANVAS).contexts == CTX_TOP_BAR);
+	assert(command_def(CommandId.OVERLAY_CLOSE).contexts == CTX_OVERLAY_CLOSE);
+	assert(command_def(CommandId.LIST_ACCEPT).contexts == CTX_OVERLAY_ACCEPT);
+	assert(command_def(CommandId.FIND_REPLACE).contexts == CTX_FIND);
+	assert(command_def(CommandId.SEARCH_TOGGLE_CASE).contexts == CTX_SEARCH);
+	assert(command_def(CommandId.SETTINGS_RESET).contexts == CTX_SETTINGS);
+	assert(command_def(CommandId.BROWSER_PARENT).contexts == CTX_BROWSER);
+	assert((command_def(CommandId.LIST_UP).contexts & CTX_FIND) == 0);
+	assert(command_def(CommandId.CLOSE_CARD).contexts == CTX_MOVE);
+	assert(command_def(CommandId.TOGGLE_CARD).contexts == CTX_MOVE);
+	assert(command_def(CommandId.RENAME_CARD).contexts == CTX_MOVE);
+	assert(command_def(CommandId.DUPLICATE_CARD).contexts == CTX_MOVE);
+	assert(command_def(CommandId.COPY_PATH).contexts == CTX_MOVE);
+	assert(command_def(CommandId.DELETE_CARD).contexts == CTX_MOVE);
+	assert(command_def(CommandId.OPEN_CONTEXT_MENU).contexts == CTX_MOVE);
+	assert(command_def(CommandId.MINIMAP_FOCUS).contexts == CTX_MOVE);
+	assert(command_def(CommandId.ZOOM_RESET).contexts == CTX_MOVE);
+	assert(command_def(CommandId.ZOOM_FIT).contexts == CTX_MOVE);
+	assert(command_def(CommandId.TOGGLE_PREVIEW).contexts == (CTX_MOVE | CTX_EDIT));
+	assert(command_def(CommandId.TOGGLE_PREVIEW).shortcut.compare_to("Ctrl+Shift+V") == 0);
+}
+
+fn void test_repeat_flags()
+{
+	assert(command_def(CommandId.PAN_LEFT).repeat);
+	assert(command_def(CommandId.TOPBAR_RIGHT).repeat);
+	assert(command_def(CommandId.LIST_UP).repeat);
+	assert(command_def(CommandId.SETTINGS_VALUE_INC).repeat);
+	assert(!command_def(CommandId.SELECT_LEFT).repeat);
+	assert(!command_def(CommandId.ZOOM_IN).repeat);
+	assert(!command_def(CommandId.UNDO).repeat);
+	assert(!command_def(CommandId.FIND_NEXT).repeat);
 }
 
 fn void test_command_from_name()
@@ -67,15 +121,18 @@ fn void test_command_from_name()
 	assert(command_from_name("select_theme") == (int)CommandId.SELECT_THEME);
 	assert(command_from_name("search_project") == (int)CommandId.SEARCH_PROJECT);
 	assert(command_from_name("symbols_project") == (int)CommandId.SYMBOLS_PROJECT);
+	assert(command_from_name("toggle_settings") == (int)CommandId.TOGGLE_SETTINGS);
+	assert(command_from_name("toggle_preview") == (int)CommandId.TOGGLE_PREVIEW);
 	assert(command_from_name("nope") == -1);
 }
 
 fn void test_bar_commands()
 {
-	assert(bar_command_count() == 3);
+	assert(bar_command_count() == 4);
 	assert(bar_command(0).id == CommandId.NEW_FILE);
 	assert(bar_command(1).id == CommandId.OPEN);
 	assert(bar_command(2).id == CommandId.SAVE);
+	assert(bar_command(3).id == CommandId.TOGGLE_SETTINGS);
 }
 
 fn void test_command_enabled()
@@ -104,6 +161,12 @@ fn void test_command_enabled()
 	assert(!command_enabled(CommandId.SEARCH_PROJECT, false, false));
 	assert(command_enabled(CommandId.SYMBOLS_PROJECT, true, false));
 	assert(!command_enabled(CommandId.SYMBOLS_PROJECT, false, false));
+	assert(command_enabled(CommandId.TOGGLE_SETTINGS, false, false));
+	assert(command_enabled(CommandId.TOGGLE_SETTINGS, true, true));
+	assert(command_enabled(CommandId.CLOSE_CARD, true, false));
+	assert(!command_enabled(CommandId.DELETE_CARD, false, false));
+	assert(command_enabled(CommandId.TOGGLE_PREVIEW, true, true));
+	assert(!command_enabled(CommandId.TOGGLE_PREVIEW, true, false));
 }
 
 fn void test_fuzzy_exact_and_case()

@@ -5,6 +5,7 @@ import std::collections::object;
 import std::core::dstring;
 import std::core::mem::alloc;
 import std::encoding::json;
+import std::os::posix;
 import yun::version;
 
 faultdef LSP_NO_HOVER;
@@ -77,23 +78,69 @@ fn String lsp_message(Allocator allocator, bool has_id, long id, String method, 
 	root.set("jsonrpc", "2.0");
 	if (has_id) root.set("id", id);
 	root.set("method", method);
-	if (params) root.set("params", params);
+	if (params)
+	{
+		root.set("params", params);
+	}
+	else
+	{
+		root.set("params", object::new_obj(allocator));
+	}
 	String json = json::marshal(allocator, root, JsonIndent.NONE);
 	if (allocator != tmem) root.free();
 	return json;
 }
 
+fn String lsp_response_message(Allocator allocator, long id, String result_json)
+{
+	return string::format(allocator, "{\"jsonrpc\":\"2.0\",\"id\":%d,\"result\":%s}", id, result_json);
+}
+
+fn String path_basename(String path)
+{
+	sz slash = -1;
+	for (sz i = (sz)path.len; i > 0; i--)
+	{
+		char c = path[(usz)(i - 1)];
+		if (c == '/' || c == '\\')
+		{
+			slash = i - 1;
+			break;
+		}
+	}
+	if (slash < 0) return path;
+	return path[(usz)slash + 1:path.len - (usz)slash - 1];
+}
+
 fn Object* lsp_initialize_params(Allocator allocator, String root_uri)
 {
 	Object* root = object::new_obj(allocator);
+	$if !env::WIN32:
+		root.set("processId", (long)posix::getpid());
+	$endif
 	root.set("rootUri", root_uri);
+
+	String root_path = uri_to_path(allocator, root_uri);
+	root.set("rootPath", root_path);
+
+	Object* folders = object::new_array(allocator);
+	Object* folder  = object::new_obj(allocator);
+	folder.set("uri", root_uri);
+	folder.set("name", path_basename(root_path));
+	folders.push(folder);
+	root.set("workspaceFolders", folders);
 
 	Object* client = root.get_or_create_obj("clientInfo");
 	client.set("name", "Yun");
 	client.set("version", version::APP_VERSION);
 
-	Object* caps = root.get_or_create_obj("capabilities");
-	Object* td   = caps.get_or_create_obj("textDocument");
+	Object* caps      = root.get_or_create_obj("capabilities");
+	Object* general   = caps.get_or_create_obj("general");
+	Object* encodings = object::new_array(allocator);
+	encodings.push("utf-16");
+	general.set("positionEncodings", encodings);
+
+	Object* td = caps.get_or_create_obj("textDocument");
 
 	Object* sync = td.get_or_create_obj("synchronization");
 	sync.set("dynamicRegistration", false);

@@ -4,8 +4,10 @@ import raylib6::rl;
 import std::io::path;
 import std::math;
 import yun::highlight;
+import yun::markdown;
 import yun::text;
 import yun::theme;
+import yun::ui;
 
 const float CARD_WIDTH        = 240.0f;
 const float CARD_HEIGHT       = 160.0f;
@@ -33,12 +35,16 @@ struct FileCard
 	bool missing;
 	bool ephemeral;
 	bool sleeping;
+	bool restored;
+	bool preview;
+	float preview_scroll;
+	markdown::View* view;
 }
 
 fn Rect FileCard.effective_rect(&self)
 {
 	Rect r = self.rect;
-	if (!self.open) r.height = CARD_TITLE_HEIGHT;
+	if (!self.open) r.height = ui::pxf(CARD_TITLE_HEIGHT);
 	return r;
 }
 
@@ -46,14 +52,27 @@ fn bool FileCard.marker_hit(&self, RLVector2 world)
 {
 	Rect r  = self.effective_rect();
 	float x = r.x + r.width - 24.0f;
-	return world[0] >= x && world[0] <= r.x + r.width && world[1] >= r.y && world[1] <= r.y + CARD_TITLE_HEIGHT;
+	return world[0] >= x && world[0] <= r.x + r.width && world[1] >= r.y && world[1] <= r.y + ui::pxf(
+		CARD_TITLE_HEIGHT
+	);
+}
+
+fn bool FileCard.preview_marker_hit(&self, RLVector2 world)
+{
+	Rect r  = self.effective_rect();
+	float x = r.x + r.width - 74.0f;
+	return world[0] >= x && world[0] <= r.x + r.width - 56.0f && world[1] >= r.y && world[1] <= r.y + ui::pxf(
+		CARD_TITLE_HEIGHT
+	);
 }
 
 fn bool FileCard.close_marker_hit(&self, RLVector2 world)
 {
 	Rect r  = self.effective_rect();
 	float x = r.x + r.width - 44.0f;
-	return world[0] >= x && world[0] <= r.x + r.width - 24.0f && world[1] >= r.y && world[1] <= r.y + CARD_TITLE_HEIGHT;
+	return world[0] >= x && world[0] <= r.x + r.width - 24.0f && world[1] >= r.y && world[1] <= r.y + ui::pxf(
+		CARD_TITLE_HEIGHT
+	);
 }
 
 fn RLVector2 FileCard.center(&self)
@@ -73,7 +92,15 @@ fn void FileCard.move_by(&self, RLVector2 world_delta)
 	self.rect.y += world_delta[1];
 }
 
-fn void FileCard.draw(&self, bool focused)
+fn float screen_thickness(float px, float zoom)
+{
+	if (zoom <= 0.0f) return px;
+	float t = px / zoom;
+	if (t < 0.01f) t = 0.01f;
+	return t;
+}
+
+fn void FileCard.draw(&self, bool focused, float zoom)
 {
 	Rect r = self.effective_rect();
 	rl::draw_rectangle_rec(r, theme::current().card_body);
@@ -81,24 +108,68 @@ fn void FileCard.draw(&self, bool focused)
 		.x = r.x,
 		.y = r.y,
 		.width = r.width,
-		.height = CARD_TITLE_HEIGHT,
+		.height = ui::pxf(CARD_TITLE_HEIGHT),
 	};
 	rl::draw_rectangle_rec(title, theme::current().card_title);
 	if (focused)
 	{
-		rl::draw_rectangle_lines_ex(r, 1.0f, theme::current().card_focus);
+		rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_focus);
 	}
 	else
 	{
-		rl::draw_rectangle_lines_ex(r, 1.0f, theme::current().card_border);
+		rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_border);
 	}
-	rl::draw_text((ZString)self.name.ptr, (int)(r.x + 10.0f), (int)(r.y + 7.0f), 16, theme::current().card_text);
-	if (self.dirty) rl::draw_circle((int)(r.x + r.width - 52.0f), (int)(r.y + 14.0f), 3.0f, theme::current()
+	@pool()
+	{
+		rl::draw_text_ex(
+			ui::font(),
+			self.name.zstr_tcopy(),
+			{ r.x + (float)ui::px(10), r.y + (float)ui::px(7) },
+			(float)ui::tpx(16),
+			0.0f,
+			theme::current()
+			.card_text);
+	};
+	if (markdown::is_markdown_path((String)self.path))
+	{
+		rl::draw_text_ex(
+			ui::font(),
+			"M",
+			{ r.x + r.width - (float)ui::px(67), r.y + (float)ui::px(7) },
+			(float)ui::tpx(16),
+			0.0f,
+			self.preview ? theme::current()
+			.card_focus : theme::current().card_text);
+	}
+	if (self.dirty) rl::draw_circle(
+		(int)(r.x + r.width - (float)ui::px(52)),
+		(int)(r.y + (float)ui::px(14)),
+		(float)ui::px(3),
+		theme::current()
 		.card_dirty);
-	if (self.buffer) rl::draw_text("x", (int)(r.x + r.width - 40.0f), (int)(r.y + 7.0f), 16, theme::current()
+	if (self.buffer) rl::draw_text_ex(
+		ui::font(),
+		"x",
+		{ r.x + r.width - (float)ui::px(40), r.y + (float)ui::px(7) },
+		(float)ui::tpx(16),
+		0.0f,
+		theme::current()
 		.card_text);
-	rl::draw_text(self.open ? "-" : "+", (int)(r.x + r.width - 18.0f), (int)(r.y + 7.0f), 16, theme::current()
+	rl::draw_text_ex(
+		ui::font(),
+		self.open ? "-" : "+",
+		{ r.x + r.width - (float)ui::px(18), r.y + (float)ui::px(7) },
+		(float)ui::tpx(16),
+		0.0f,
+		theme::current()
 		.card_text);
+}
+
+fn void FileCard.draw_lod(&self, float zoom)
+{
+	Rect r = self.effective_rect();
+	rl::draw_rectangle_rec(r, theme::current().card_body);
+	rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_border);
 }
 fn void FileCard.handle_points(&self, RLVector2[8]* points)
 {

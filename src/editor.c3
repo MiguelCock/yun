@@ -10,14 +10,52 @@ import std::math;
 import yun::card;
 import yun::highlight;
 import yun::lsp;
+import yun::markdown;
 import yun::text;
 import yun::theme;
+import yun::ui;
 
 const int MAX_DIAGNOSTIC_SEGMENTS = 512;
-const int SCROLL_MARGIN_LINES     = 1;
 const int FONT_SIZE_MIN           = 8;
 const int FONT_SIZE_MAX           = 48;
 const int FONT_SIZE_DEFAULT       = 16;
+
+struct EditorSettings
+{
+	float line_height;
+	float padding_x;
+	float padding_y;
+	int caret_blink_ms;
+	int scroll_margin_lines;
+	int wheel_scroll_lines;
+	bool show_line_numbers;
+	int indent_width;
+	bool indent_spaces;
+	bool auto_indent;
+}
+
+EditorSettings g_editor_settings = {
+	.line_height = 1.25f,
+	.padding_x = 8.0f,
+	.padding_y = 6.0f,
+	.caret_blink_ms = 500,
+	.scroll_margin_lines = 1,
+	.wheel_scroll_lines = 3,
+	.show_line_numbers = true,
+	.indent_width = 4,
+	.indent_spaces = false,
+	.auto_indent = true,
+};
+
+fn EditorSettings settings()
+{
+	return g_editor_settings;
+}
+
+fn void set_settings(EditorSettings value)
+{
+	g_editor_settings = value;
+}
 
 fn float min_card_width(EditorMetrics metrics)
 {
@@ -26,7 +64,7 @@ fn float min_card_width(EditorMetrics metrics)
 
 fn float min_card_height(EditorMetrics metrics)
 {
-	return 30.0f * metrics.line_height + card::CARD_TITLE_HEIGHT + metrics.padding_y * 2.0f;
+	return 30.0f * metrics.line_height + ui::pxf(card::CARD_TITLE_HEIGHT) + metrics.padding_y * 2.0f;
 }
 
 struct EditorMetrics
@@ -50,6 +88,7 @@ enum CardRegion
 	HANDLE,
 	MARKER,
 	CLOSE,
+	PREVIEW,
 	TITLE,
 	BODY,
 }
@@ -83,6 +122,43 @@ fn float x_for_column(usz column, EditorMetrics metrics)
 	return metrics.padding_x + (float)column * metrics.char_width;
 }
 
+fn int tab_columns()
+{
+	return g_editor_settings.indent_width > 0 ? g_editor_settings.indent_width : 1;
+}
+
+fn String expand_tabs(String text, int width, Allocator allocator)
+{
+	if (width < 1) width = 1;
+	bool has_tab = false;
+	for (usz i = 0; i < text.len; i++)
+	{
+		if (text[i] == '\t')
+		{
+			has_tab = true;
+			break;
+		}
+	}
+	if (!has_tab) return text.copy(allocator);
+	DString out;
+	out.init(allocator, (sz)(text.len + 8));
+	for (usz i = 0; i < text.len; i++)
+	{
+		char c = text[i];
+		if (c == '\t')
+		{
+			for (int s = 0; s < width; s++) out.append_char(' ');
+		}
+		else
+		{
+			out.append_char(c);
+		}
+	}
+	String result = out.str_view().copy(allocator);
+	out.free();
+	return result;
+}
+
 fn usz line_length_bytes(PieceTable* table, usz line)
 {
 	usz start = table.line_start(line);
@@ -103,10 +179,18 @@ fn usz column_for_offset(PieceTable* table, usz line, usz offset)
 	if (offset <= start) return 0;
 	usz pos    = start;
 	usz column = 0;
+	int tabs   = tab_columns();
 	while (pos < offset && pos < table.length())
 	{
+		if (table.byte_at(pos) == '\t')
+		{
+			column += (usz)tabs;
+		}
+		else
+		{
+			column++;
+		}
 		pos = table.next_boundary(pos);
-		column++;
 	}
 	return column;
 }
@@ -136,15 +220,7 @@ fn usz offset_for_point(
 	usz start   = table.line_start((usz)line);
 	usz max_col = column_for_offset(table, (usz)line, start + line_length_bytes(table, (usz)line));
 	if ((usz)column > max_col) column = (sz)max_col;
-
-	usz pos      = start;
-	sz remaining = column;
-	while (remaining > 0 && pos < table.length())
-	{
-		pos = table.next_boundary(pos);
-		remaining--;
-	}
-	return pos;
+	return offset_for_column(table, (usz)line, (usz)column);
 }
 
 fn void selection_range(usz anchor, usz cursor, usz* start, usz* end)
@@ -212,6 +288,7 @@ fn void word_range(PieceTable* table, usz offset, usz* start, usz* end)
 
 fn float gutter_width(usz line_count, EditorMetrics metrics)
 {
+	if (!g_editor_settings.show_line_numbers) return 0.0f;
 	usz digits = 1;
 	usz n      = line_count > 0 ? line_count : 1;
 	while (n >= 10)
@@ -243,11 +320,82 @@ fn EditorMetrics metrics_for_font(RLFont font, float font_size)
 	EditorMetrics metrics;
 	RLVector2 size = rl::measure_text_ex(font, "M", font_size, 0.0f);
 	metrics.char_width = size[0];
-	metrics.line_height = font_size * 1.25f;
-	metrics.padding_x = 8.0f;
-	metrics.padding_y = 6.0f;
+	metrics.line_height = font_size * g_editor_settings.line_height;
+	metrics.padding_x = g_editor_settings.padding_x;
+	metrics.padding_y = g_editor_settings.padding_y;
 	metrics.font_size = font_size;
 	return metrics;
+}
+
+fn String indent_unit(Allocator allocator, bool spaces, int width)
+{
+	if (!spaces) return "\t".copy(allocator);
+	DString out;
+	out.init(allocator, (usz)(width > 0 ? width : 1));
+	for (int i = 0; i < width; i++) out.append_char(' ');
+	String result = out.str_view().copy(allocator);
+	out.free();
+	return result;
+}
+
+fn String newline_text(PieceTable* table, usz cursor, bool auto_indent, bool spaces, int width, Allocator allocator)
+{
+	DString out;
+	out.init(allocator, 16);
+	out.append_char('\n');
+	if (auto_indent)
+	{
+		usz line       = table.line_of(cursor);
+		usz start      = table.line_start(line);
+		usz indent_end = start;
+		while (indent_end < cursor)
+		{
+			char c = table.char_at(indent_end);
+			if (c != ' ' && c != '\t') break;
+			indent_end++;
+		}
+		for (usz i = start; i < indent_end; i++) out.append_char(table.char_at(i));
+
+		bool brace = false;
+		usz p      = cursor;
+		while (p > 0)
+		{
+			char c = table.char_at(p - 1);
+			if (c == ' ' || c == '\t')
+			{
+				p--;
+				continue;
+			}
+			brace = c == '{';
+			break;
+		}
+		if (brace)
+		{
+			if (spaces)
+			{
+				for (int i = 0; i < width; i++) out.append_char(' ');
+			}
+			else
+			{
+				out.append_char('\t');
+			}
+		}
+	}
+	String result = out.str_view().copy(allocator);
+	out.free();
+	return result;
+}
+
+fn usz outdent_count(PieceTable* table, usz cursor, bool spaces, int width)
+{
+	usz line  = table.line_of(cursor);
+	usz start = table.line_start(line);
+	char c    = table.char_at(start);
+	if (c == '\t') return 1;
+	if (c != ' ') return 0;
+	int count = 0;
+	while (count < width && table.char_at(start + (usz)count) == ' ') count++;
+	return (usz)count;
 }
 
 fn int clamp_font_size(int size)
@@ -273,9 +421,9 @@ fn Rect inner_rect(Rect card_rect, EditorMetrics metrics)
 {
 	return {
 		.x = card_rect.x + metrics.padding_x,
-		.y = card_rect.y + card::CARD_TITLE_HEIGHT + metrics.padding_y,
+		.y = card_rect.y + ui::pxf(card::CARD_TITLE_HEIGHT) + metrics.padding_y,
 		.width = card_rect.width - metrics.padding_x * 2.0f,
-		.height = card_rect.height - card::CARD_TITLE_HEIGHT - metrics.padding_y * 2.0f,
+		.height = card_rect.height - ui::pxf(card::CARD_TITLE_HEIGHT) - metrics.padding_y * 2.0f,
 	};
 }
 
@@ -283,9 +431,10 @@ fn CardRegion region_at(FileCard* card, RLVector2 world, EditorMetrics metrics, 
 {
 	if (!card.contains(world)) return CardRegion.NONE;
 	if (card.resize_handle_at(world, camera) >= 0) return CardRegion.HANDLE;
+	if (card.preview_marker_hit(world)) return CardRegion.PREVIEW;
 	if (card.close_marker_hit(world)) return CardRegion.CLOSE;
 	if (card.marker_hit(world)) return CardRegion.MARKER;
-	if (card.open && world[1] >= card.rect.y + card::CARD_TITLE_HEIGHT) return CardRegion.BODY;
+	if (card.open && world[1] >= card.rect.y + ui::pxf(card::CARD_TITLE_HEIGHT)) return CardRegion.BODY;
 	return CardRegion.TITLE;
 }
 
@@ -308,6 +457,10 @@ fn void ensure_buffer(FileCard* card, Allocator allocator)
 	if (!card.highlight && card.buffer)
 	{
 		card.highlight = highlight::create(allocator, card.buffer, (String)card.path);
+	}
+	if (!card.view && card.buffer && markdown::is_markdown_path((String)card.path))
+	{
+		card.view = markdown::view_create(allocator);
 	}
 	if (created && card.buffer) lsp::lsp_did_open((String)card.path, card.buffer);
 	stamp_file(card);
@@ -364,6 +517,12 @@ fn void destroy_buffer(FileCard* card, Allocator allocator)
 		card.highlight = null;
 	}
 
+	if (card.view)
+	{
+		markdown::view_destroy(card.view, allocator);
+		card.view = null;
+	}
+
 	card.cursor = 0;
 	card.selection_anchor = 0;
 	card.preferred_column = 0;
@@ -396,6 +555,7 @@ fn void reload_buffer(FileCard* card, Allocator allocator)
 	(void)card.buffer.init_from_file(allocator, (String)card.path);
 	if (card.history) card.history.reset();
 	if (card.highlight) card.highlight.mark_dirty();
+	if (card.view) markdown::view_mark_dirty(card.view);
 	if (card.buffer) lsp::lsp_did_change((String)card.path, card.buffer);
 	card.cursor = 0;
 	card.selection_anchor = 0;
@@ -447,11 +607,31 @@ fn void draw_text(
 		{
 			String text = line_text(table, line, tmem);
 			if (text.len == 0) continue;
-			float y = area.y + (float)line * metrics.line_height - scroll_y;
-			rl::draw_text_ex(font, (ZString)text.ptr, { area.x - scroll_x, y }, font_size, 0.0f, color);
+			String vis = expand_tabs(text, tab_columns(), tmem);
+			float y    = area.y + (float)line * metrics.line_height - scroll_y;
+			rl::draw_text_ex(font, vis.zstr_tcopy(), { area.x - scroll_x, y }, font_size, 0.0f, color);
 		}
 	};
 	rl::end_scissor_mode();
+}
+
+fn usz advance_columns(String text, usz from, usz to, int tabs, usz col)
+{
+	usz pos = from;
+	while (pos < to)
+	{
+		char c = text[pos];
+		if (c == '\t')
+		{
+			col += (usz)tabs;
+		}
+		else if (((int)c & 0xC0) != 0x80)
+		{
+			col++;
+		}
+		pos++;
+	}
+	return col;
 }
 
 fn void draw_text_highlighted(
@@ -480,46 +660,54 @@ fn void draw_text_highlighted(
 		VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
 		List{highlight::Span} runs;
 		runs.init(tmem);
+		highlighter.begin_runs();
 		for (usz line = range.first; line < range.last; line++)
 		{
 			usz line_start = table.line_start(line);
 			usz len        = line_length_bytes(table, line);
 			if (len == 0) continue;
 
-			String text = table.slice(line_start, len, tmem);
+			String text  = table.slice(line_start, len, tmem);
+			char* raw    = text.ptr;
+			bool has_tab = false;
+			for (usz k = 0; k < len; k++)
+			{
+				if (raw[k] == '\t')
+				{
+					has_tab = true;
+					break;
+				}
+			}
 			highlighter.runs_for_line(line_start, line_start + len, &runs);
 
-			DString buffer;
-			buffer.init(tmem, (sz)(len + 1));
-			buffer.append_string(text);
-			buffer.append_char(0);
-			char* raw = buffer.str_view().ptr;
-
-			float y = area.y + (float)line * metrics.line_height - scroll_y;
-			usz pos = 0;
-			usz col = 0;
+			float y  = area.y + (float)line * metrics.line_height - scroll_y;
+			int tabs = tab_columns();
+			usz pos  = 0;
+			usz col  = 0;
 			foreach (highlight::Span run : runs)
 			{
 				usz start = run.start - line_start;
 				usz end   = run.end - line_start;
-				while (pos < start)
+				col = advance_columns(text, pos, start, tabs, col);
+				pos = start;
+				RLVector2 at  = { area.x + (float)col * metrics.char_width - scroll_x, y };
+				RLColor color = highlight::role_color(run.role);
+				if (has_tab)
 				{
-					if (((int)text[pos] & 0xC0) != 0x80) col++;
-					pos++;
+					String span = text[start:end - start];
+					String vis  = expand_tabs(span, tabs, tmem);
+					rl::draw_text_ex(font, vis.zstr_tcopy(), at, font_size, 0.0f, color);
 				}
-				char saved = raw[end];
-				raw[end] = 0;
-				rl::draw_text_ex(
-					font,
-					(ZString)(raw + start),
-					{ area.x + (float)col * metrics.char_width - scroll_x, y },
-					font_size,
-					0.0f,
-					highlight::role_color(run.role)
-				);
-				raw[end] = saved;
+				else
+				{
+					char saved = raw[end];
+					raw[end] = 0;
+					rl::draw_text_ex(font, (ZString)&raw[start], at, font_size, 0.0f, color);
+					raw[end] = saved;
+				}
+				col = advance_columns(text, pos, end, tabs, col);
+				pos = end;
 			}
-			buffer.free();
 		}
 		runs.free();
 	};
@@ -606,10 +794,20 @@ fn usz offset_for_column(PieceTable* table, usz line, usz column)
 	usz end   = start + line_length_bytes(table, line);
 	usz pos   = start;
 	usz col   = 0;
-	while (col < column && pos < end)
+	int tabs  = tab_columns();
+	while (pos < end)
 	{
+		if (col >= column) break;
+		if (table.byte_at(pos) == '\t')
+		{
+			if (col + (usz)tabs > column) break;
+			col += (usz)tabs;
+		}
+		else
+		{
+			col++;
+		}
 		pos = table.next_boundary(pos);
-		col++;
 	}
 	return pos;
 }
@@ -886,7 +1084,7 @@ fn float scroll_to_reveal(PieceTable* table, EditorMetrics metrics, float area_h
 	usz line     = table.line_of(cursor);
 	float top    = (float)line * metrics.line_height;
 	float bottom = top + metrics.line_height;
-	float margin = (float)SCROLL_MARGIN_LINES * metrics.line_height;
+	float margin = (float)g_editor_settings.scroll_margin_lines * metrics.line_height;
 	float scroll = current_scroll;
 	if (top < scroll + margin) scroll = top - margin;
 	if (bottom > scroll + area_height - margin) scroll = bottom - area_height + margin;
@@ -1001,20 +1199,28 @@ fn void draw_gutter(
 	RLColor bg_color
 )
 {
+	if (!g_editor_settings.show_line_numbers) return;
 	apply_scissor(area, camera);
 	rl::draw_rectangle_rec(area, bg_color);
-	@pool()
+	char[24] buffer;
+	VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
+	for (usz line = range.first; line < range.last; line++)
 	{
-		VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
-		for (usz line = range.first; line < range.last; line++)
+		usz value  = line + 1;
+		usz digits = 1;
+		for (usz probe = value; probe >= 10; probe /= 10) digits++;
+		usz end = digits;
+		buffer[end] = 0;
+		usz rest = value;
+		for (usz k = end; k > 0; k--)
 		{
-			String label   = string::format(tmem, "%d", (int)(line + 1));
-			RLVector2 size = rl::measure_text_ex(font, (ZString)label.ptr, font_size, 0.0f);
-			float x        = area.x + area.width - metrics.padding_x - size[0];
-			float y        = area.y + (float)line * metrics.line_height - scroll_y;
-			rl::draw_text_ex(font, (ZString)label.ptr, { x, y }, font_size, 0.0f, text_color);
+			buffer[k - 1] = (char)('0' + (char)(rest % 10));
+			rest /= 10;
 		}
-	};
+		float x = area.x + area.width - metrics.padding_x - (float)digits * metrics.char_width;
+		float y = area.y + (float)line * metrics.line_height - scroll_y;
+		rl::draw_text_ex(font, (ZString)&buffer[0], { x, y }, font_size, 0.0f, text_color);
+	}
 	rl::end_scissor_mode();
 }
 
