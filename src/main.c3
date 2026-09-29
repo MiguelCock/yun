@@ -443,6 +443,15 @@ fn void enter_edit_mode(
 	int* edit_grace_frames
 )
 {
+	if (project.selected_cluster >= 0)
+	{
+		int folder = project.selected_cluster;
+		project.enter_folder(folder);
+		Rect r = project.cluster_visual_bounds(folder);
+		if (r.width > 0.0f) canvas.target.target = { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+		return;
+	}
+
 	bool enter = false;
 	if (project.selected >= 0)
 	{
@@ -882,22 +891,22 @@ fn void run_command(commands::CommandId id, App* app)
 				if (id == commands::CommandId.SELECT_RIGHT) dir = project::Dir.RIGHT;
 				if (id == commands::CommandId.SELECT_UP) dir = project::Dir.UP;
 				if (id == commands::CommandId.SELECT_DOWN) dir = project::Dir.DOWN;
-				int idx = project.card_in_direction(project.selected, dir);
-				if (idx >= 0) project.selected = idx;
+				project::NavItem item;
+				if (project.item_in_direction(dir, &item)) project.select_nav_item(item);
 				return;
 			}
 		case commands::CommandId.CYCLE_NEXT:
 
 			{
-				int idx = project.next_visible_card(project.selected, 1);
-				if (idx >= 0) project.selected = idx;
+				project::NavItem item;
+				if (project.cycle_nav_item(1, &item)) project.select_nav_item(item);
 				return;
 			}
 		case commands::CommandId.CYCLE_PREV:
 
 			{
-				int idx = project.next_visible_card(project.selected, -1);
-				if (idx >= 0) project.selected = idx;
+				project::NavItem item;
+				if (project.cycle_nav_item(-1, &item)) project.select_nav_item(item);
 				return;
 			}
 		case commands::CommandId.ZOOM_IN:
@@ -928,6 +937,28 @@ fn void run_command(commands::CommandId id, App* app)
 			}
 		case commands::CommandId.FOCUS_CANVAS:
 			*app.ui_mode = UiMode.MOVE;
+			return;
+		case commands::CommandId.LEAVE_FOLDER:
+
+			{
+				if (project.leave_folder())
+				{
+					Rect r = project.selected_item_rect();
+					if (r.width > 0.0f)
+					{
+						app.canvas.target.target = { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+					}
+				}
+				return;
+			}
+		case commands::CommandId.TOGGLE_GRAB:
+
+			{
+				if (project.has_selected_item()) project.grabbing = !project.grabbing;
+				return;
+			}
+		case commands::CommandId.MINIMIZE_CARD:
+			project.minimize_selected(app.metrics);
 			return;
 		case commands::CommandId.CLOSE_CARD:
 
@@ -1852,6 +1883,18 @@ fn int main(String[] args)
 							}
 							break;
 						}
+					case context::ContextAction.MINIMIZE_CARD:
+
+						{
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len())
+							{
+								FileCard* mc = &project.cards[app.context_card];
+								mc.rect.width = editor::min_card_width(app.metrics);
+								mc.rect.height = editor::min_card_height(app.metrics);
+								project.invalidate_bounds();
+							}
+							break;
+						}
 					case context::ContextAction.GO_TO_DEFINITION:
 
 						{
@@ -2004,46 +2047,99 @@ fn int main(String[] args)
 			}
 			else if (ui_mode == UiMode.MOVE)
 			{
-				int before = project.selected;
 				project.ensure_selection();
 
-				int move_cmd = keymap.poll_exact(commands::CTX_MOVE);
-				if (move_cmd < 0 && rl::is_key_pressed(
-					rl::RLKeyboardKey.LEFT
-				)) move_cmd = (int)commands::CommandId.SELECT_LEFT;
-				if (move_cmd < 0 && rl::is_key_pressed(
-					rl::RLKeyboardKey.RIGHT
-				)) move_cmd = (int)commands::CommandId.SELECT_RIGHT;
-				if (move_cmd < 0 && rl::is_key_pressed(
-					rl::RLKeyboardKey.UP
-				)) move_cmd = (int)commands::CommandId.SELECT_UP;
-				if (move_cmd < 0 && rl::is_key_pressed(
-					rl::RLKeyboardKey.DOWN
-				)) move_cmd = (int)commands::CommandId.SELECT_DOWN;
-				if (move_cmd < 0 && rl::is_key_pressed(
-					rl::RLKeyboardKey.I
-				)) move_cmd = (int)commands::CommandId.FOCUS_EDITOR;
-				if (move_cmd < 0 && rl::is_key_pressed(
-					rl::RLKeyboardKey.KP_ADD
-				)) move_cmd = (int)commands::CommandId.ZOOM_IN;
-				if (move_cmd < 0 && rl::is_key_pressed(
-					rl::RLKeyboardKey.KP_SUBTRACT
-				)) move_cmd = (int)commands::CommandId.ZOOM_OUT;
-				if (move_cmd >= 0) run_command((commands::CommandId)move_cmd, &app);
-
-				bool selection_changed  = project.selected != before;
-				FileCard* selected_card = project.selected_card();
-				if (selection_changed && selected_card)
+				if (project.grabbing)
 				{
-					Rect view = project::visible_world_rect(canvas.camera);
-					if (!project::rect_intersects(selected_card.rect, view))
+					bool drop = rl::is_key_pressed(
+						rl::RLKeyboardKey.ESCAPE
+					) || rl::is_key_pressed(
+						rl::RLKeyboardKey.ENTER
+					) || rl::is_key_pressed(
+						rl::RLKeyboardKey.KP_ENTER
+					) || keymap.pressed((int)commands::CommandId.TOGGLE_GRAB, commands::CTX_MOVE);
+					if (drop)
 					{
-						canvas.target.target = selected_card.center();
+						project.grabbing = false;
+					}
+					else
+					{
+						bool fine = project::shift_down();
+						if (rl::is_key_pressed_repeat(
+							rl::RLKeyboardKey.LEFT
+						) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.H))
+						{
+							project.nudge_selected(project::Dir.LEFT, fine);
+						}
+						if (rl::is_key_pressed_repeat(
+							rl::RLKeyboardKey.RIGHT
+						) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.L))
+						{
+							project.nudge_selected(project::Dir.RIGHT, fine);
+						}
+						if (rl::is_key_pressed_repeat(
+							rl::RLKeyboardKey.UP
+						) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.K))
+						{
+							project.nudge_selected(project::Dir.UP, fine);
+						}
+						if (rl::is_key_pressed_repeat(
+							rl::RLKeyboardKey.DOWN
+						) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.J))
+						{
+							project.nudge_selected(project::Dir.DOWN, fine);
+						}
+					}
+					while (rl::get_char_pressed() != 0)
+					{
 					}
 				}
-
-				while (rl::get_char_pressed() != 0)
+				else
 				{
+					int before         = project.selected;
+					int before_cluster = project.selected_cluster;
+
+					int move_cmd = keymap.poll_exact(commands::CTX_MOVE);
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.LEFT
+					)) move_cmd = (int)commands::CommandId.SELECT_LEFT;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.RIGHT
+					)) move_cmd = (int)commands::CommandId.SELECT_RIGHT;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.UP
+					)) move_cmd = (int)commands::CommandId.SELECT_UP;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.DOWN
+					)) move_cmd = (int)commands::CommandId.SELECT_DOWN;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.I
+					)) move_cmd = (int)commands::CommandId.FOCUS_EDITOR;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.ESCAPE
+					)) move_cmd = (int)commands::CommandId.LEAVE_FOLDER;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.KP_ADD
+					)) move_cmd = (int)commands::CommandId.ZOOM_IN;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.KP_SUBTRACT
+					)) move_cmd = (int)commands::CommandId.ZOOM_OUT;
+					if (move_cmd >= 0) run_command((commands::CommandId)move_cmd, &app);
+
+					bool selection_changed = project.selected != before || project.selected_cluster != before_cluster;
+					if (selection_changed)
+					{
+						Rect r    = project.selected_item_rect();
+						Rect view = project::visible_world_rect(canvas.camera);
+						if (r.width > 0.0f && !project::rect_intersects(r, view))
+						{
+							canvas.target.target = { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+						}
+					}
+
+					while (rl::get_char_pressed() != 0)
+					{
+					}
 				}
 			}
 
@@ -2368,14 +2464,29 @@ fn int main(String[] args)
 				{
 					mode_label = "-- TOP BAR --";
 				}
-				rl::draw_text_ex(
-					font,
-					(ZString)mode_label.ptr,
-					{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(34) },
-					(float)ui::tpx(15),
-					0.0f,
-					theme::current()
-					.topbar_name);
+				else if (project.grabbing)
+				{
+					mode_label = "-- GRAB --";
+				}
+				@pool()
+				{
+					String label = mode_label;
+					if (project.current_folder != project::ROOT_FOLDER
+						&& project.current_folder < (int)project.folders.len())
+					{
+						String fp  = (String)project.folders[project.current_folder].path;
+						String rel = fp.len > project.root.len + 1 ? fp[project.root.len + 1..] : fp;
+						label = string::format(tmem, "%s  %s", mode_label, rel);
+					}
+					rl::draw_text_ex(
+						font,
+						label.zstr_tcopy(),
+						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(34) },
+						(float)ui::tpx(15),
+						0.0f,
+						theme::current()
+						.topbar_name);
+				};
 			}
 			if (project_open && rl::is_key_down(rl::RLKeyboardKey.F3))
 			{
