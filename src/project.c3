@@ -19,6 +19,7 @@ import yun::highlight;
 import yun::keymap;
 import yun::lsp;
 import yun::markdown;
+import yun::spatial;
 import yun::text;
 import yun::theme;
 import yun::ui;
@@ -129,6 +130,11 @@ struct Project
 	int awake_count;
 	int asleep_count;
 	int cards_revision;
+	spatial::Grid grid;
+	bool grid_dirty;
+	bool content_bounds_valid;
+	Rect content_bounds_cache;
+	int hover_cluster;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -159,6 +165,10 @@ fn void Project.init(&self, Allocator allocator)
 	self.awake_count = 0;
 	self.asleep_count = 0;
 	self.cards_revision = 0;
+	self.grid.init(allocator, spatial::CELL_SIZE);
+	self.grid_dirty = true;
+	self.content_bounds_valid = false;
+	self.hover_cluster = -1;
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
 	{
@@ -201,6 +211,7 @@ fn void Project.destroy(&self)
 	self.cards.free();
 	self.folders.free();
 	self.folder_index.free();
+	self.grid.destroy();
 	self.clear_jump();
 	if (((String)self.root).len) ((String)self.root).free(self.allocator);
 }
@@ -221,6 +232,8 @@ fn void Project.reset(&self)
 	self.drag_cluster_title = false;
 	self.cluster_moved = false;
 	self.selecting = false;
+	self.grid_dirty = true;
+	self.content_bounds_valid = false;
 	self.clear_jump();
 }
 
@@ -448,6 +461,21 @@ fn void Project.invalidate_bounds(&self)
 	{
 		self.folders[i].bounds_valid = false;
 	}
+	self.grid_dirty = true;
+	self.content_bounds_valid = false;
+}
+
+fn void Project.invalidate_bounds_for_card(&self, int card_index)
+{
+	if (card_index < 0 || card_index >= (int)self.cards.len()) return;
+	int current = self.cards[card_index].folder;
+	while (current != ROOT_FOLDER)
+	{
+		self.folders[current].bounds_valid = false;
+		current = self.folders[current].parent;
+	}
+	self.grid_dirty = true;
+	self.content_bounds_valid = false;
 }
 
 fn int Project.add_folder(&self, String folder_path, int parent)
@@ -563,6 +591,11 @@ fn bool Project.cluster_title_hit(&self, int index, RLVector2 world)
 
 fn bool Project.content_bounds(&self, Rect* out)
 {
+	if (self.content_bounds_valid)
+	{
+		*out = self.content_bounds_cache;
+		return true;
+	}
 	bool found  = false;
 	float min_x = 0.0f;
 	float min_y = 0.0f;
@@ -613,7 +646,35 @@ fn bool Project.content_bounds(&self, Rect* out)
 
 	if (!found) return false;
 	*out = { .x = min_x, .y = min_y, .width = max_x - min_x, .height = max_y - min_y };
+	self.content_bounds_cache = *out;
+	self.content_bounds_valid = true;
 	return true;
+}
+
+fn void Project.ensure_grid(&self)
+{
+	if (!self.grid_dirty) return;
+	self.grid.clear();
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		if (!self.card_visible((int)i)) continue;
+		self.grid.insert(self.cards[i].rect, (int)i);
+	}
+	self.grid_dirty = false;
+}
+
+fn void Project.visible_cards(&self, Rect visible, List{int}* out)
+{
+	self.ensure_grid();
+	self.grid.query_rect(visible, out);
+	if (out.len() > 1) libc::qsort(out.entries, (usz)out.size, (usz)int::size, &int_compare);
+}
+
+fn int int_compare(void* a, void* b)
+{
+	int va = *(int*)a;
+	int vb = *(int*)b;
+	return va < vb ? -1 : (va > vb ? 1 : 0);
 }
 
 fn int Project.cluster_hit(&self, RLVector2 world)
@@ -1765,11 +1826,22 @@ fn bool Project.paste_clipboard(&self, double now)
 
 fn int Project.hit_test(&self, RLVector2 world)
 {
-	for (sz i = self.cards.len(); i > 0; i--)
+	self.ensure_grid();
+	int best = -1;
+	@pool()
 	{
-		if (self.card_visible((int)(i - 1)) && self.cards[i - 1].contains(world)) return (int)(i - 1);
-	}
-	return -1;
+		List{int} candidates;
+		candidates.init(tmem);
+		self.grid.query_point(world, &candidates);
+		for (sz i = 0; i < candidates.len(); i++)
+		{
+			int index = candidates[i];
+			if (!self.card_visible(index)) continue;
+			if (!self.cards[index].contains(world)) continue;
+			if (index > best) best = index;
+		}
+	};
+	return best;
 }
 
 fn void Project.toggle_collapse(&self, int index)
@@ -1780,6 +1852,8 @@ fn void Project.toggle_collapse(&self, int index)
 		self.folders[index].bounds = self.cluster_bounds(index);
 	}
 	self.folders[index].collapsed = !self.folders[index].collapsed;
+	self.grid_dirty = true;
+	self.content_bounds_valid = false;
 }
 
 fn void Project.move_cluster(&self, int index, RLVector2 delta)
@@ -2097,7 +2171,7 @@ fn void Project.update(
 		{
 			RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
 			self.cards[self.drag_index].move_by(delta);
-			self.invalidate_bounds();
+			self.invalidate_bounds_for_card(self.drag_index);
 			self.drag_world = world;
 		}
 	}
@@ -2133,7 +2207,7 @@ fn void Project.update(
 			float min_w     = editor::min_card_width(metrics);
 			float min_h     = editor::min_card_height(metrics);
 			self.cards[self.resize_card].resize_from(self.resize_handle, delta, min_w, min_h);
-			self.invalidate_bounds();
+			self.invalidate_bounds_for_card(self.resize_card);
 			self.drag_world = world;
 		}
 	}
@@ -2695,173 +2769,180 @@ fn void Project.draw_cards(
 	}
 	Rect visible = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
 
-	for (sz i = 0; i < self.cards.len(); i++)
+	@pool()
 	{
-		if (!self.card_visible((int)i)) continue;
-		FileCard* card  = &self.cards[i];
-		bool is_focused = (int)i == self.focused;
-		if (is_focused) editor::ensure_buffer(card, self.allocator);
-		if (!rect_intersects(card.rect, visible)) continue;
-		if (!is_focused && card.rect.width * camera.zoom < CARD_MIN_DRAW_PX) continue;
-		card.draw(is_focused, camera.zoom);
-		if (!is_focused && (int)i == self.selected)
+		List{int} draw_list;
+		draw_list.init(tmem);
+		self.visible_cards(visible, &draw_list);
+		for (sz c = 0; c < draw_list.len(); c++)
 		{
-			rl::draw_rectangle_lines_ex(
-				card.effective_rect(),
-				card::screen_thickness(2.0f, camera.zoom),
-				theme::current()
-				.card_focus);
-		}
-		else if (!is_focused && self.selected != (int)i && (int)i == self.hover_card)
-		{
-			RLColor base  = theme::current().card_focus;
-			RLColor hover = { base[0], base[1], base[2], (char)140 };
-			rl::draw_rectangle_lines_ex(card.effective_rect(), card::screen_thickness(1.0f, camera.zoom), hover);
-		}
-		if (!card.open) continue;
-
-		if (card.preview && markdown::is_markdown_path((String)card.path))
-		{
-			editor::ensure_buffer(card, self.allocator);
-			Rect area = editor::inner_rect(card.rect, metrics);
-			float max = 0.0f;
-			if (card.buffer && card.view)
+			sz i = (sz)draw_list[c];
+			if (!self.card_visible((int)i)) continue;
+			FileCard* card  = &self.cards[i];
+			bool is_focused = (int)i == self.focused;
+			if (is_focused) editor::ensure_buffer(card, self.allocator);
+			if (!rect_intersects(card.rect, visible)) continue;
+			if (!is_focused && card.rect.width * camera.zoom < CARD_MIN_DRAW_PX) continue;
+			card.draw(is_focused, camera.zoom);
+			if (!is_focused && (int)i == self.selected)
 			{
-				max = markdown::view_draw(
-					card.view,
-					card.buffer,
-					area,
-					card.preview_scroll,
-					camera,
-					editor_font,
-					metrics.font_size,
-					metrics.char_width,
-					metrics.line_height,
-					card.highlight
-				);
-				if (card.preview_scroll > max) card.preview_scroll = max;
-				editor::draw_scrollbar(area, area.height + max, card.preview_scroll, camera, theme::current()
-					.editor_scrollbar);
+				rl::draw_rectangle_lines_ex(
+					card.effective_rect(),
+					card::screen_thickness(2.0f, camera.zoom),
+					theme::current()
+					.card_focus);
 			}
-			if (is_focused) card.draw_handles(camera, theme::current().editor_handle);
-			continue;
-		}
-
-		if (!card.buffer)
-		{
-			editor::draw_placeholder(editor::inner_rect(card.rect, metrics), metrics, camera, theme::current()
-				.editor_placeholder);
-			continue;
-		}
-
-		usz line_count = card.buffer.line_count();
-		Rect gutter    = editor::gutter_rect(card.rect, metrics, line_count);
-		Rect text      = editor::text_rect(card.rect, metrics, line_count);
-
-		if (self.jump_path.len > 0 && self.jump_path.compare_to((String)card.path) == 0)
-		{
-			double now = rl::get_time();
-			if (now < self.jump_until)
+			else if (!is_focused && self.selected != (int)i && (int)i == self.hover_card)
 			{
-				float fade    = jump_fade(now, self.jump_until, JUMP_HIGHLIGHT_SECONDS);
 				RLColor base  = theme::current().card_focus;
-				RLColor color = { base[0], base[1], base[2], (char)(fade * (float)JUMP_HIGHLIGHT_ALPHA) };
-				Rect line_rect = {
-					.x = text.x,
-					.y = text.y + editor::line_y(self.jump_line, card.scroll, metrics),
-					.width = text.width,
-					.height = metrics.line_height,
-				};
-				rl::draw_rectangle_rec(line_rect, color);
+				RLColor hover = { base[0], base[1], base[2], (char)140 };
+				rl::draw_rectangle_lines_ex(card.effective_rect(), card::screen_thickness(1.0f, camera.zoom), hover);
 			}
-			else
-			{
-				self.clear_jump();
-			}
-		}
+			if (!card.open) continue;
 
-		if (is_focused) editor::draw_current_line(
-			card.buffer,
-			text,
-			card.scroll,
-			metrics,
-			camera,
-			card.cursor,
-			theme::current()
-			.editor_current_line);
-		if (is_focused && editor::has_selection(card.selection_anchor, card.cursor))
-		{
-			usz sel_start = 0;
-			usz sel_end   = 0;
-			editor::selection_range(card.selection_anchor, card.cursor, &sel_start, &sel_end);
-			editor::draw_selection(
-				card.buffer,
-				text,
-				card.scroll,
-				card.scroll_x,
-				metrics,
-				camera,
-				sel_start,
-				sel_end,
-				theme::current()
-				.editor_selection);
-		}
-		if (is_focused && find_bar) find_bar.draw_matches(
-			card.rect,
-			card.buffer,
-			card.scroll,
-			card.scroll_x,
-			metrics,
-			camera
-		);
-		editor::draw_gutter(
-			card.buffer,
-			gutter,
-			card.scroll,
-			metrics,
-			camera,
-			editor_font,
-			metrics.font_size,
-			theme::current()
-			.editor_gutter_text, theme::current().editor_gutter_bg);
-		editor::draw_text_highlighted(
-			card.highlight,
-			card.buffer,
-			text,
-			card.scroll,
-			card.scroll_x,
-			metrics,
-			camera,
-			editor_font,
-			metrics.font_size,
-			theme::current()
-			.editor_text);
-		if (is_focused)
-		{
-			lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
-			if (diags.len > 0)
+			if (card.preview && markdown::is_markdown_path((String)card.path))
 			{
-				editor::draw_diagnostics(card.buffer, text, card.scroll, card.scroll_x, metrics, camera, diags);
+				editor::ensure_buffer(card, self.allocator);
+				Rect area = editor::inner_rect(card.rect, metrics);
+				float max = 0.0f;
+				if (card.buffer && card.view)
+				{
+					max = markdown::view_draw(
+						card.view,
+						card.buffer,
+						area,
+						card.preview_scroll,
+						camera,
+						editor_font,
+						metrics.font_size,
+						metrics.char_width,
+						metrics.line_height,
+						card.highlight
+					);
+					if (card.preview_scroll > max) card.preview_scroll = max;
+					editor::draw_scrollbar(area, area.height + max, card.preview_scroll, camera, theme::current()
+						.editor_scrollbar);
+				}
+				if (is_focused) card.draw_handles(camera, theme::current().editor_handle);
+				continue;
 			}
-		}
-		if (is_focused && caret_on)
-		{
-			editor::draw_caret(
+
+			if (!card.buffer)
+			{
+				editor::draw_placeholder(editor::inner_rect(card.rect, metrics), metrics, camera, theme::current()
+					.editor_placeholder);
+				continue;
+			}
+
+			usz line_count = card.buffer.line_count();
+			Rect gutter    = editor::gutter_rect(card.rect, metrics, line_count);
+			Rect text      = editor::text_rect(card.rect, metrics, line_count);
+
+			if (self.jump_path.len > 0 && self.jump_path.compare_to((String)card.path) == 0)
+			{
+				double now = rl::get_time();
+				if (now < self.jump_until)
+				{
+					float fade    = jump_fade(now, self.jump_until, JUMP_HIGHLIGHT_SECONDS);
+					RLColor base  = theme::current().card_focus;
+					RLColor color = { base[0], base[1], base[2], (char)(fade * (float)JUMP_HIGHLIGHT_ALPHA) };
+					Rect line_rect = {
+						.x = text.x,
+						.y = text.y + editor::line_y(self.jump_line, card.scroll, metrics),
+						.width = text.width,
+						.height = metrics.line_height,
+					};
+					rl::draw_rectangle_rec(line_rect, color);
+				}
+				else
+				{
+					self.clear_jump();
+				}
+			}
+
+			if (is_focused) editor::draw_current_line(
 				card.buffer,
 				text,
 				card.scroll,
-				card.scroll_x,
 				metrics,
 				camera,
 				card.cursor,
 				theme::current()
-				.editor_caret);
+				.editor_current_line);
+			if (is_focused && editor::has_selection(card.selection_anchor, card.cursor))
+			{
+				usz sel_start = 0;
+				usz sel_end   = 0;
+				editor::selection_range(card.selection_anchor, card.cursor, &sel_start, &sel_end);
+				editor::draw_selection(
+					card.buffer,
+					text,
+					card.scroll,
+					card.scroll_x,
+					metrics,
+					camera,
+					sel_start,
+					sel_end,
+					theme::current()
+					.editor_selection);
+			}
+			if (is_focused && find_bar) find_bar.draw_matches(
+				card.rect,
+				card.buffer,
+				card.scroll,
+				card.scroll_x,
+				metrics,
+				camera
+			);
+			editor::draw_gutter(
+				card.buffer,
+				gutter,
+				card.scroll,
+				metrics,
+				camera,
+				editor_font,
+				metrics.font_size,
+				theme::current()
+				.editor_gutter_text, theme::current().editor_gutter_bg);
+			editor::draw_text_highlighted(
+				card.highlight,
+				card.buffer,
+				text,
+				card.scroll,
+				card.scroll_x,
+				metrics,
+				camera,
+				editor_font,
+				metrics.font_size,
+				theme::current()
+				.editor_text);
+			if (is_focused)
+			{
+				lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
+				if (diags.len > 0)
+				{
+					editor::draw_diagnostics(card.buffer, text, card.scroll, card.scroll_x, metrics, camera, diags);
+				}
+			}
+			if (is_focused && caret_on)
+			{
+				editor::draw_caret(
+					card.buffer,
+					text,
+					card.scroll,
+					card.scroll_x,
+					metrics,
+					camera,
+					card.cursor,
+					theme::current()
+					.editor_caret);
+			}
+			float content_height = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
+			editor::draw_scrollbar(text, content_height, card.scroll, camera, theme::current().editor_scrollbar);
+			if (is_focused && find_bar) find_bar.draw(card.rect, metrics, font, null);
+			if (is_focused) card.draw_handles(camera, theme::current().editor_handle);
 		}
-		float content_height = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
-		editor::draw_scrollbar(text, content_height, card.scroll, camera, theme::current().editor_scrollbar);
-		if (is_focused && find_bar) find_bar.draw(card.rect, metrics, font, null);
-		if (is_focused) card.draw_handles(camera, theme::current().editor_handle);
-	}
+	};
 }
 fn void Project.toggle_preview(&self, int index)
 {

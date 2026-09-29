@@ -74,7 +74,7 @@ These work from any mode:
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` / `Ctrl+A` | Copy / cut / paste / select all |
 | `Ctrl+Space` | Trigger completion |
 | `Ctrl` + scroll | Editor font size |
-| `F3` (hold) | Show the awake/asleep editor counter |
+| `F3` (hold) | Show the awake/asleep editor counter and frame/update/draw/scan timings |
 
 Bindings are customizable via the `keymap` object in the config — global `~/.config/yun/config.json` or project `<root>/.yun/config.json` — e.g. `{ "keymap": { "save": "Ctrl+K" } }`.
 
@@ -90,6 +90,8 @@ c3c build                 # build the `yun` executable
 c3c run                   # run
 c3c run -- <directory>    # run and open a project folder
 c3c run -- --selftest     # boot, render a few frames, exit (headless smoke test)
+c3c run -- --benchmark=200 --benchmark-frames=240   # synth N cards, scripted pan/zoom, print frame times
+c3c benchmark             # micro benchmarks (hit-test, bounds cache, highlight runs)
 c3c test                  # run the test suite
 c3fmt --check $(git ls-files '*.c3')   # formatting check
 ```

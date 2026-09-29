@@ -1,5 +1,6 @@
 module yun::highlight @test;
 
+import libc;
 import std::collections::list;
 import yun::language;
 import yun::text;
@@ -104,6 +105,8 @@ fn void test_runs_cover_line_and_inner_wins()
 {
 	Highlighter highlighter;
 	highlighter.spans.init(tmem);
+	highlighter.run_cursor = 0;
+	highlighter.last_line_start = 0;
 	highlighter.spans.push({ .start = 0, .end = 5, .role = SyntaxRole.KEYWORD });
 	highlighter.spans.push({ .start = 2, .end = 3, .role = SyntaxRole.NUMBER });
 
@@ -131,6 +134,8 @@ fn void test_runs_clip_to_line()
 {
 	Highlighter highlighter;
 	highlighter.spans.init(tmem);
+	highlighter.run_cursor = 0;
+	highlighter.last_line_start = 0;
 	highlighter.spans.push({ .start = 3, .end = 20, .role = SyntaxRole.STRING });
 
 	List{Span} runs;
@@ -676,4 +681,67 @@ fn void test_markdown_fence_injects_language()
 
 		destroy(highlighter, tmem);
 	};
+}
+fn void test_runs_for_line_matches_reference()
+{
+	Highlighter highlighter;
+	highlighter.spans.init(tmem);
+	highlighter.run_cursor = 0;
+	highlighter.last_line_start = 0;
+
+	uint seed = 12345;
+	for (int i = 0; i < 60; i++)
+	{
+		seed = seed * 1664525 + 1013904223;
+		uint start = seed % 80;
+		seed = seed * 1664525 + 1013904223;
+		uint end        = start + 1 + (seed % 20);
+		SyntaxRole role = (seed % 2 == 0) ? SyntaxRole.KEYWORD : SyntaxRole.NUMBER;
+		highlighter.spans.push({ .start = start, .end = end, .role = role });
+	}
+	libc::qsort(highlighter.spans.entries, (usz)highlighter.spans.size, Span::size, &span_compare);
+
+	List{Span} runs;
+	runs.init(tmem);
+
+	for (usz line_start = 0; line_start < 80; line_start += 10)
+	{
+		usz line_end = line_start + 10;
+		highlighter.begin_runs();
+		highlighter.runs_for_line(line_start, line_end, &runs);
+
+		usz pos      = line_start;
+		sz run_index = 0;
+		while (pos < line_end)
+		{
+			SyntaxRole role = SyntaxRole.TEXT;
+			for (sz i = 0; i < highlighter.spans.len(); i++)
+			{
+				Span s = highlighter.spans[i];
+				if ((usz)s.start <= pos && (usz)s.end > pos) role = s.role;
+			}
+			usz next = pos + 1;
+			while (next < line_end)
+			{
+				SyntaxRole edge = SyntaxRole.TEXT;
+				for (sz i = 0; i < highlighter.spans.len(); i++)
+				{
+					Span s = highlighter.spans[i];
+					if ((usz)s.start <= next && (usz)s.end > next) edge = s.role;
+				}
+				if (edge != role) break;
+				next++;
+			}
+			assert(run_index < runs.len());
+			assert((usz)runs[run_index].start == pos);
+			assert((usz)runs[run_index].end == next);
+			assert(runs[run_index].role == role);
+			run_index++;
+			pos = next;
+		}
+		assert(run_index == runs.len());
+	}
+
+	runs.free();
+	highlighter.spans.free();
 }

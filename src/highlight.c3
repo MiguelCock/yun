@@ -58,6 +58,8 @@ struct Highlighter
 	TSQuery* query;
 	String source;
 	List{Span} spans;
+	sz run_cursor;
+	usz last_line_start;
 	bool dirty;
 	bool has_tree;
 	PieceTable* table;
@@ -725,6 +727,8 @@ fn Highlighter* create(Allocator allocator, PieceTable* table, String path)
 	highlighter.tree = null;
 	highlighter.has_tree = false;
 	highlighter.dirty = true;
+	highlighter.run_cursor = 0;
+	highlighter.last_line_start = 0;
 	highlighter.spans.init(allocator);
 	highlighter.parser = tree_sitter::ts_parser_new();
 	if (!highlighter.parser)
@@ -815,17 +819,10 @@ fn void Highlighter.ensure_parsed(&self)
 	self.dirty = false;
 }
 
-fn SyntaxRole Highlighter.role_at(&self, usz offset, sz first)
+fn void Highlighter.begin_runs(&self)
 {
-	uint off        = (uint)offset;
-	SyntaxRole role = SyntaxRole.TEXT;
-	for (sz i = first; i < self.spans.len(); i++)
-	{
-		Span span = self.spans[i];
-		if (span.start > off) break;
-		if (span.start <= off && span.end > off) role = span.role;
-	}
-	return role;
+	self.run_cursor = 0;
+	self.last_line_start = 0;
 }
 
 fn void Highlighter.runs_for_line(&self, usz line_start, usz line_end, List{Span}* out)
@@ -833,16 +830,47 @@ fn void Highlighter.runs_for_line(&self, usz line_start, usz line_end, List{Span
 	out.clear();
 	if (line_end <= line_start) return;
 
-	sz first = 0;
-	while (first < self.spans.len() && (usz)self.spans[first].end <= line_start) first++;
+	if (self.run_cursor < 0 || (usz)self.run_cursor > (usz)self.spans.len() || line_start < self.last_line_start)
+	{
+		self.run_cursor = 0;
+	}
+	self.last_line_start = line_start;
+
+	while (self.run_cursor < self.spans.len() && (usz)self.spans[self.run_cursor].end <= line_start)
+	{
+		self.run_cursor++;
+	}
+
+	sz first = self.run_cursor;
+	sz last  = first;
+	while (last < self.spans.len() && (usz)self.spans[last].start < line_end) last++;
+	if (first >= last) return;
 
 	usz pos = line_start;
 	while (pos < line_end)
 	{
-		SyntaxRole role = self.role_at(pos, first);
-		usz next        = pos + 1;
-		while (next < line_end && self.role_at(next, first) == role) next++;
-		out.push({ .start = (uint)pos, .end = (uint)next, .role = role });
+		SyntaxRole role = SyntaxRole.TEXT;
+		for (sz i = first; i < last; i++)
+		{
+			Span s = self.spans[i];
+			if ((usz)s.start <= pos && (usz)s.end > pos) role = s.role;
+		}
+		usz next = line_end;
+		for (sz i = first; i < last; i++)
+		{
+			Span s = self.spans[i];
+			if ((usz)s.start > pos && (usz)s.start < next) next = (usz)s.start;
+			if ((usz)s.end > pos && (usz)s.end < next) next = (usz)s.end;
+		}
+		if (next <= pos) next = pos + 1;
+		if (out.len() > 0 && (*out)[out.len() - 1].role == role)
+		{
+			(*out)[out.len() - 1].end = (uint)next;
+		}
+		else
+		{
+			out.push({ .start = (uint)pos, .end = (uint)next, .role = role });
+		}
 		pos = next;
 	}
 }

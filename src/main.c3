@@ -2,6 +2,7 @@ module yun;
 
 import raylib6::rl;
 import std::collections::list;
+import std::io;
 import std::io::file;
 import std::io::path;
 import std::math;
@@ -1389,6 +1390,18 @@ fn void update_dpi(
 	canvas.camera.offset = { (float)rl::get_screen_width() / 2.0f, canvas.usable_offset_y() };
 }
 
+fn int parse_int(String s)
+{
+	int value = 0;
+	for (usz i = 0; i < s.len; i++)
+	{
+		char c = s[i];
+		if (c < '0' || c > '9') break;
+		value = value * 10 + (int)(c - '0');
+	}
+	return value;
+}
+
 fn int main(String[] args)
 {
 	rl::set_config_flags(
@@ -1527,11 +1540,30 @@ fn int main(String[] args)
 	UiMode ui_mode              = UiMode.MOVE;
 	int edit_grace_frames       = 0;
 	bool selftest               = false;
+	int benchmark_cards         = 0;
+	int benchmark_frames        = 240;
 	for (usz i = 1; i < args.len; i++)
 	{
-		if (args[i].compare_to("--selftest") == 0) selftest = true;
+		String arg = args[i];
+		if (arg.compare_to("--selftest") == 0)
+		{
+			selftest = true;
+		}
+		else if (arg.starts_with("--benchmark-frames="))
+		{
+			benchmark_frames = parse_int(arg[19..]);
+		}
+		else if (arg.compare_to("--benchmark") == 0)
+		{
+			benchmark_cards = 200;
+		}
+		else if (arg.starts_with("--benchmark="))
+		{
+			benchmark_cards = parse_int(arg[12..]);
+		}
 	}
-	if (!selftest && args.len > 1)
+	if (benchmark_frames < 1) benchmark_frames = 1;
+	if (!selftest && benchmark_cards == 0 && args.len > 1)
 	{
 		String? resolved = project::resolve_path(project.allocator, args[1]);
 		if (catch excuse = resolved)
@@ -1563,6 +1595,30 @@ fn int main(String[] args)
 			&ui_size,
 			&font
 		);
+		if (benchmark_cards > 0)
+		{
+			int cols = 1;
+			while (cols * cols < benchmark_cards) cols++;
+			float cw = ui::pxf(card::CARD_WIDTH) + ui::pxf(32.0f);
+			float ch = ui::pxf(card::CARD_HEIGHT) + ui::pxf(32.0f);
+			for (int k = 0; k < benchmark_cards; k++)
+			{
+				String path = string::format(project.allocator, "%s/bench_%d.c3", (String)project.root, k);
+				int index   = project.append_card(path, { 0.0f, 0.0f });
+				project.cards[index].rect = {
+					.x = (float)(k % cols) * cw,
+					.y = (float)(k / cols) * ch,
+					.width = ui::pxf(card::CARD_WIDTH),
+					.height = ui::pxf(card::CARD_HEIGHT),
+				};
+			}
+			project.invalidate_bounds();
+			float span = (float)cols * cw;
+			canvas.camera.target = { span / 2.0f, span / 2.0f };
+			canvas.target.target = canvas.camera.target;
+			canvas.camera.zoom = 0.5f;
+			canvas.target.zoom = 0.5f;
+		}
 	}
 	keymap.build(&config);
 	push_config_warnings(&config, &notifier);
@@ -1611,12 +1667,32 @@ fn int main(String[] args)
 	float last_arrow_zoom       = -1.0f;
 	bool arrow_hovered_cache    =  false;
 
-	int frame_count = 0;
+	int frame_count    = 0;
+	double prof_update = 0.0;
+	double prof_scan   = 0.0;
+	double prof_draw   = 0.0;
+	double prof_frame  = 0.0;
+	double bench_sum   = 0.0;
+	double bench_max   = 0.0;
+	double bench_min   = 1.0e30;
+	int bench_over     = 0;
+	int bench_samples  = 0;
+	int bench_warmup   = 30;
 	while (!rl::window_should_close())
 	{
 		frame_count++;
 		if (selftest && frame_count > 3) break;
-		float dt = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
+		if (benchmark_cards > 0)
+		{
+			float t = (float)frame_count;
+			canvas.target.target = { 1600.0f * math::sin(t * 0.02f), 1300.0f * math::cos(t * 0.017f) };
+			canvas.target.zoom = 0.55f + 0.35f * math::sin(t * 0.013f);
+		}
+		double frame_start = rl::get_time();
+		double scan_ms     = 0.0;
+		double update_ms   = 0.0;
+		double draw_ms     = 0.0;
+		float dt           = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
 		update_dpi(
 			&fonts,
 			&config,
@@ -1632,8 +1708,10 @@ fn int main(String[] args)
 		);
 		HoverInfo hover    = { };
 		bool arrow_hovered = arrow_hovered_cache;
+		double scan_t0     = rl::get_time();
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
+		scan_ms += (rl::get_time() - scan_t0) * 1000.0;
 
 		apply_settings(
 			&config,
@@ -2279,7 +2357,9 @@ fn int main(String[] args)
 
 			content_changed = false;
 			bool suppress_edit_input = ui_mode == UiMode.EDIT && edit_grace_frames > 0;
+			double update_t0         = rl::get_time();
 			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
+			update_ms += (rl::get_time() - update_t0) * 1000.0;
 			if (ui_mode == UiMode.EDIT && project.focused < 0)
 			{
 				ui_mode = UiMode.MOVE;
@@ -2296,7 +2376,9 @@ fn int main(String[] args)
 			}
 			import_index.flush_edits(&project, rl::get_time());
 			import_index.sync(&project);
+			double imports_t0 = rl::get_time();
 			imports::ImportIndex.pump(&import_index, &project);
+			scan_ms += (rl::get_time() - imports_t0) * 1000.0;
 			if (over_top || font_wheel) canvas.block_zoom = true;
 			canvas.update();
 			hover = compute_hover(&project, &canvas, metrics);
@@ -2402,6 +2484,7 @@ fn int main(String[] args)
 		rl::@drawing()
 		{
 			canvas.draw();
+			double draw_t0 = rl::get_time();
 			rl::@mode2d(canvas.camera)
 			{
 				project.draw_folders(canvas.camera);
@@ -2409,6 +2492,7 @@ fn int main(String[] args)
 				project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar);
 			};
 			minimap::draw(&project, &canvas);
+			draw_ms += (rl::get_time() - draw_t0) * 1000.0;
 			if (rl::get_time() < font_indicator_until)
 			{
 				@pool()
@@ -2552,9 +2636,54 @@ fn int main(String[] args)
 						0.0f,
 						theme::current()
 						.panel_dim);
+					String perf = string::format(
+						tmem,
+						"frame %.2fms  update %.2f  draw %.2f  scan %.2f",
+						prof_frame,
+						prof_update,
+						prof_draw,
+						prof_scan
+					);
+					rl::draw_text_ex(
+						font,
+						perf.zstr_tcopy(),
+						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(74) },
+						(float)ui::tpx(14),
+						0.0f,
+						theme::current()
+						.panel_dim);
 				};
 			}
 		};
+		prof_update += (update_ms - prof_update) * 0.1;
+		prof_draw += (draw_ms - prof_draw) * 0.1;
+		prof_scan += (scan_ms - prof_scan) * 0.1;
+		prof_frame += ((rl::get_time() - frame_start) * 1000.0 - prof_frame) * 0.1;
+
+		if (benchmark_cards > 0 && frame_count > bench_warmup)
+		{
+			double ms = (rl::get_time() - frame_start) * 1000.0;
+			bench_sum += ms;
+			if (ms > bench_max) bench_max = ms;
+			if (ms < bench_min) bench_min = ms;
+			if (ms > 16.7) bench_over++;
+			bench_samples++;
+			if (bench_samples >= benchmark_frames)
+			{
+				double avg = bench_sum / (double)bench_samples;
+				io::printfn(
+					"benchmark: %d cards | %d frames | avg %.2f ms  min %.2f  max %.2f  | over 16.7ms: %d  (%.1f fps)",
+					(int)benchmark_cards,
+					(int)bench_samples,
+					avg,
+					bench_min,
+					bench_max,
+					(int)bench_over,
+					1000.0 / avg
+				);
+				break;
+			}
+		}
 	}
 
 	if (project_open) workspace::save(&project, &canvas);
