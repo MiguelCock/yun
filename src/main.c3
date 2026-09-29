@@ -70,7 +70,10 @@ fn void finish_open(
 	else
 	{
 		project.layout();
-		project.invalidate_bounds();
+		for (sz i = 0; i < project.folders.len(); i++)
+		{
+			project.folders[i].collapsed = true;
+		}
 		if (config.settings.get_bool(settings::SettingId.CANVAS_FIT_ON_OPEN))
 		{
 			Rect bounds;

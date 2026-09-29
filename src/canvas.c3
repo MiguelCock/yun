@@ -13,6 +13,7 @@ const float DRAG_THRESHOLD_PX          = 4.0f;
 const float MAX_PAN_DELTA_PX           = 200.0f;
 const float MIN_ZOOM                   = 0.1f;
 const float MAX_ZOOM                   = 8.0f;
+const float FIT_MAX_ZOOM               = 1.0f;
 const float ZOOM_STEP                  = 1.1f;
 const float PAN_RESPONSIVENESS         = 20.0f;
 const float ZOOM_RESPONSIVENESS        = 16.0f;
@@ -315,7 +316,8 @@ fn void Canvas.fit_zoom(&self, Rect content, int screen_w, int screen_h)
 	float margin = 40.0f;
 	float fit_x  = ((float)screen_w - margin * 2.0f) / content.width;
 	float fit_y  = ((float)screen_h - margin * 2.0f) / content.height;
-	self.target.zoom = math::clamp(math::min(fit_x, fit_y), g_canvas_settings.min_zoom, g_canvas_settings.max_zoom);
+	float top    = math::min(g_canvas_settings.max_zoom, FIT_MAX_ZOOM);
+	self.target.zoom = math::clamp(math::min(fit_x, fit_y), g_canvas_settings.min_zoom, top);
 	self.target.target = {
 		content.x + content.width / 2.0f,
 		content.y + content.height / 2.0f,

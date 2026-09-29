@@ -22,7 +22,7 @@ fn void test_fit_zoom_centers_and_clamps()
 
 	Rect tiny = { .x = 0.0f, .y = 0.0f, .width = 1.0f, .height = 1.0f };
 	c.fit_zoom(tiny, 1200, 800);
-	assert(c.target.zoom == MAX_ZOOM);
+	assert(c.target.zoom == FIT_MAX_ZOOM);
 
 	Rect empty = { .x = 0.0f, .y = 0.0f, .width = 0.0f, .height = 0.0f };
 	c.target.zoom = 2.0f;

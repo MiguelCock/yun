@@ -184,28 +184,30 @@ fn void test_layout_packs_clusters()
 		p.root = (Path)"/root".copy(tmem);
 		int a = p.add_folder("/root/a", ROOT_FOLDER);
 		int b = p.add_folder("/root/b", ROOT_FOLDER);
-		int c = p.add_folder("/root/c", ROOT_FOLDER);
-		p.cards.push(
-			{ .path = (Path)"/root/a/x.c3".copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f } }
-		);
-		p.cards.push(
-			{ .path = (Path)"/root/b/y.c3".copy(tmem), .folder = b, .rect = { .width = 1.0f, .height = 1.0f } }
-		);
-		p.cards.push(
-			{ .path = (Path)"/root/c/z.c3".copy(tmem), .folder = c, .rect = { .width = 1.0f, .height = 1.0f } }
-		);
+		for (int k = 0; k < 4; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/f%d.c3", k)
+				.copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
+		for (int k = 0; k < 4; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/b/f%d.c3", k)
+				.copy(tmem), .folder = b, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
 
 		p.layout();
 
-		// every card is placed and cards never overlap
-		for (sz i = 0; i < p.cards.len(); i++)
-		{
-			assert(p.cards[i].rect.width > 0.0f && p.cards[i].rect.height > 0.0f);
-			for (sz j = i + 1; j < p.cards.len(); j++)
-			{
-				assert(!rect_intersects(p.cards[i].rect, p.cards[j].rect));
-			}
-		}
+		// each level packs folders as chips, so expanded boxes overlap
+		assert(rect_intersects(p.cluster_bounds(a), p.cluster_bounds(b)));
+
+		// collapsed chips are packed tightly and never overlap
+		p.folders[a].collapsed = true;
+		p.folders[b].collapsed = true;
+		assert(!rect_intersects(p.cluster_visual_bounds(a), p.cluster_visual_bounds(b)));
 	};
 }
 
@@ -227,15 +229,12 @@ fn void test_layout_nests_child_clusters()
 
 		p.layout();
 
-		// nested folders do not matter for placement: all cards are placed
-		for (sz i = 0; i < p.cards.len(); i++)
-		{
-			assert(p.cards[i].rect.width > 0.0f && p.cards[i].rect.height > 0.0f);
-			for (sz j = i + 1; j < p.cards.len(); j++)
-			{
-				assert(!rect_intersects(p.cards[i].rect, p.cards[j].rect));
-			}
-		}
+		// the nested folder's box is contained in its parent
+		Rect ra = p.cluster_bounds(a);
+		Rect rd = p.cluster_visual_bounds(d);
+		assert(rd.x >= ra.x - 0.01f && rd.y >= ra.y - 0.01f);
+		assert(rd.x + rd.width <= ra.x + ra.width + 0.01f);
+		assert(rd.y + rd.height <= ra.y + ra.height + 0.01f);
 	};
 }
 
@@ -369,14 +368,13 @@ fn void test_open_scans_directory()
 		assert(p.folder_by_path((String)src) >= 0);
 		assert(p.folder_by_path((String)subdir) >= 0);
 
-		// opened with every folder expanded, and cached membership matches folder_for
+		// opened with every folder collapsed, and cached membership matches folder_for
 		for (sz i = 0; i < p.folders.len(); i++)
 		{
-			assert(!p.folders[i].collapsed);
+			assert(p.folders[i].collapsed);
 		}
 		for (sz i = 0; i < p.cards.len(); i++)
 		{
-			assert(p.card_visible((int)i));
 			assert(p.cards[i].folder == p.folder_for((String)p.cards[i].path));
 		}
 
@@ -926,16 +924,9 @@ fn void test_layout_compact_square()
 		assert(rd.x + rd.width <= ra.x + ra.width + 0.01f);
 		assert(rd.y + rd.height <= ra.y + ra.height + 0.01f);
 
-		// top-level clusters do not overlap, and no two cards overlap
+		// top-level siblings overlap because each level packs only chip footprints
 		Rect rb = p.cluster_bounds(b);
-		assert(!rect_intersects(ra, rb));
-		for (sz i = 0; i < p.cards.len(); i++)
-		{
-			for (sz j = i + 1; j < p.cards.len(); j++)
-			{
-				assert(!rect_intersects(p.cards[i].rect, p.cards[j].rect));
-			}
-		}
+		assert(rect_intersects(ra, rb));
 
 		// the overall footprint is roughly square
 		Rect out;
