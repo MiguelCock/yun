@@ -60,6 +60,12 @@ enum Dir : int
 	DOWN,
 }
 
+struct NavItem
+{
+	bool folder;
+	int index;
+}
+
 struct OpenJob
 {
 	Allocator allocator;
@@ -95,6 +101,9 @@ struct Project
 	Allocator allocator;
 	int focused;
 	int selected;
+	int selected_cluster;
+	int current_folder;
+	bool grabbing;
 	int hover_card;
 	bool drag_card;
 	int drag_index;
@@ -130,6 +139,9 @@ fn void Project.init(&self, Allocator allocator)
 	self.folder_index.init(allocator);
 	self.focused = -1;
 	self.selected = -1;
+	self.selected_cluster = -1;
+	self.current_folder = ROOT_FOLDER;
+	self.grabbing = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
@@ -165,6 +177,9 @@ fn void Project.reset(&self)
 	self.cards_revision++;
 	self.focused = -1;
 	self.selected = -1;
+	self.selected_cluster = -1;
+	self.current_folder = ROOT_FOLDER;
+	self.grabbing = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
@@ -1339,64 +1354,286 @@ fn FileCard* Project.selected_card(&self)
 	return &self.cards[self.selected];
 }
 
-fn void Project.ensure_selection(&self)
+fn void Project.select_card(&self, int index)
 {
-	if (self.selected >= 0 && self.selected < (int)self.cards.len() && self.card_visible(self.selected)) return;
-	if (self.focused >= 0 && self.focused < (int)self.cards.len() && self.card_visible(self.focused))
-	{
-		self.selected = self.focused;
-		return;
-	}
-	self.selected = self.next_visible_card(-1, 1);
+	self.selected = index;
+	self.selected_cluster = -1;
 }
 
-fn int Project.card_in_direction(&self, int from, Dir dir)
+fn void Project.select_folder(&self, int index)
 {
-	if (from < 0 || from >= (int)self.cards.len()) return -1;
-	RLVector2 origin =  self.cards[from].center();
-	int best         = -1;
-	float best_score =  0.0f;
+	self.selected = -1;
+	self.selected_cluster = index;
+}
+
+fn void Project.clear_selection(&self)
+{
+	self.selected = -1;
+	self.selected_cluster = -1;
+}
+
+fn void Project.select_nav_item(&self, NavItem item)
+{
+	if (item.folder)
+	{
+		self.select_folder(item.index);
+	}
+	else
+	{
+		self.select_card(item.index);
+	}
+}
+
+fn bool Project.is_selected_item(&self, NavItem item)
+{
+	if (item.folder) return self.selected_cluster == item.index;
+	return self.selected_cluster < 0 && self.selected == item.index;
+}
+
+fn RLVector2 Project.nav_item_center(&self, NavItem item)
+{
+	if (item.folder)
+	{
+		Rect r = self.cluster_visual_bounds(item.index);
+		return { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+	}
+	return self.cards[item.index].center();
+}
+
+fn void Project.nav_items(&self, List{NavItem}* out)
+{
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
-		if ((int)i == from) continue;
+		if (self.cards[i].folder != self.current_folder) continue;
 		if (!self.card_visible((int)i)) continue;
-		RLVector2 c = self.cards[i].center();
-		float dx    = c[0] - origin[0];
-		float dy    = c[1] - origin[1];
-		float primary;
-		float secondary;
-		if (dir == Dir.LEFT)
+		out.push({ .folder = false, .index = (int)i });
+	}
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		if (self.folders[i].parent != self.current_folder) continue;
+		if (!self.cluster_visible((int)i)) continue;
+		out.push({ .folder = true, .index = (int)i });
+	}
+}
+
+fn Rect Project.selected_item_rect(&self)
+{
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+	{
+		return self.cluster_visual_bounds(self.selected_cluster);
+	}
+	FileCard* card = self.selected_card();
+	if (card) return card.rect;
+	return { .x = 0.0f, .y = 0.0f, .width = 0.0f, .height = 0.0f };
+}
+
+fn void Project.ensure_selection(&self)
+{
+	if (self.current_folder != ROOT_FOLDER)
+	{
+		if (self.current_folder < 0 || self.current_folder >= (int)self.folders.len() || !self.cluster_visible(
+			self.current_folder
+		))
 		{
-			if (dx >= -0.5f) continue;
-			primary = -dx;
-			secondary = math::abs(dy);
+			self.current_folder = ROOT_FOLDER;
 		}
-		else if (dir == Dir.RIGHT)
+	}
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len() && self.cluster_visible(
+		self.selected_cluster
+	))
+	{
+		return;
+	}
+	if (self.selected >= 0 && self.selected < (int)self.cards.len() && self.card_visible(self.selected))
+	{
+		self.selected_cluster = -1;
+		return;
+	}
+	if (self.focused >= 0 && self.focused < (int)self.cards.len() && self.card_visible(self.focused))
+	{
+		self.current_folder = self.cards[self.focused].folder;
+		self.select_card(self.focused);
+		return;
+	}
+	@pool()
+	{
+		List{NavItem} items;
+		items.init(tmem);
+		self.nav_items(&items);
+		if (items.len() > 0)
 		{
-			if (dx <= 0.5f) continue;
-			primary = dx;
-			secondary = math::abs(dy);
-		}
-		else if (dir == Dir.UP)
-		{
-			if (dy >= -0.5f) continue;
-			primary = -dy;
-			secondary = math::abs(dx);
+			self.select_nav_item(items[0]);
 		}
 		else
 		{
-			if (dy <= 0.5f) continue;
-			primary = dy;
-			secondary = math::abs(dx);
+			self.clear_selection();
 		}
-		float score = primary + secondary * 2.0f;
-		if (best < 0 || score < best_score)
-		{
-			best = (int)i;
-			best_score = score;
-		}
+	};
+}
+
+fn bool Project.item_in_direction(&self, Dir dir, NavItem* out)
+{
+	RLVector2 origin;
+	bool have_origin = false;
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+	{
+		Rect r = self.cluster_visual_bounds(self.selected_cluster);
+		origin = { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+		have_origin = true;
 	}
+	else if (self.selected >= 0 && self.selected < (int)self.cards.len())
+	{
+		origin = self.cards[self.selected].center();
+		have_origin = true;
+	}
+	if (!have_origin) return false;
+
+	bool best        = false;
+	float best_score = 0.0f;
+	@pool()
+	{
+		List{NavItem} items;
+		items.init(tmem);
+		self.nav_items(&items);
+		for (sz i = 0; i < items.len(); i++)
+		{
+			NavItem item = items[i];
+			if (self.is_selected_item(item)) continue;
+			RLVector2 c = self.nav_item_center(item);
+			float dx    = c[0] - origin[0];
+			float dy    = c[1] - origin[1];
+			float primary;
+			float secondary;
+			if (dir == Dir.LEFT)
+			{
+				if (dx >= -0.5f) continue;
+				primary = -dx;
+				secondary = math::abs(dy);
+			}
+			else if (dir == Dir.RIGHT)
+			{
+				if (dx <= 0.5f) continue;
+				primary = dx;
+				secondary = math::abs(dy);
+			}
+			else if (dir == Dir.UP)
+			{
+				if (dy >= -0.5f) continue;
+				primary = -dy;
+				secondary = math::abs(dx);
+			}
+			else
+			{
+				if (dy <= 0.5f) continue;
+				primary = dy;
+				secondary = math::abs(dx);
+			}
+			float score = primary + secondary * 2.0f;
+			if (!best || score < best_score)
+			{
+				best = true;
+				best_score = score;
+				*out = item;
+			}
+		}
+	};
 	return best;
+}
+
+fn bool Project.cycle_nav_item(&self, int dir, NavItem* out)
+{
+	bool found = false;
+	@pool()
+	{
+		List{NavItem} items;
+		items.init(tmem);
+		self.nav_items(&items);
+		if (items.len() == 0) return false;
+		int current = -1;
+		for (sz i = 0; i < items.len(); i++)
+		{
+			if (self.is_selected_item(items[i]))
+			{
+				current = (int)i;
+				break;
+			}
+		}
+		int count = (int)items.len();
+		int next;
+		if (current < 0)
+		{
+			next = dir >= 0 ? 0 : count - 1;
+		}
+		else
+		{
+			next = (current + (dir >= 0 ? 1 : -1) + count) % count;
+		}
+		*out = items[(usz)next];
+		found = true;
+	};
+	return found;
+}
+
+fn void Project.enter_folder(&self, int index)
+{
+	if (index < 0 || index >= (int)self.folders.len()) return;
+	self.folders[index].collapsed = false;
+	self.current_folder = index;
+	self.grabbing = false;
+	self.selected = -1;
+	self.selected_cluster = -1;
+	@pool()
+	{
+		List{NavItem} items;
+		items.init(tmem);
+		self.nav_items(&items);
+		if (items.len() > 0) self.select_nav_item(items[0]);
+	};
+	self.invalidate_bounds();
+}
+
+fn bool Project.leave_folder(&self)
+{
+	self.grabbing = false;
+	if (self.current_folder == ROOT_FOLDER)
+	{
+		bool had = self.selected >= 0 || self.selected_cluster >= 0;
+		self.clear_selection();
+		return had;
+	}
+	int child = self.current_folder;
+	self.current_folder = self.folders[child].parent;
+	self.select_folder(child);
+	return true;
+}
+
+fn void Project.move_selected(&self, RLVector2 delta)
+{
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+	{
+		self.move_cluster(self.selected_cluster, delta);
+		return;
+	}
+	if (self.selected >= 0 && self.selected < (int)self.cards.len())
+	{
+		self.cards[self.selected].move_by(delta);
+		self.invalidate_bounds();
+	}
+}
+
+fn bool Project.has_selected_item(&self)
+{
+	return self.selected >= 0 || self.selected_cluster >= 0;
+}
+
+fn void Project.minimize_selected(&self, EditorMetrics metrics)
+{
+	if (self.selected_cluster >= 0) return;
+	if (self.selected < 0 || self.selected >= (int)self.cards.len()) return;
+	FileCard* card = &self.cards[self.selected];
+	card.rect.width = editor::min_card_width(metrics);
+	card.rect.height = editor::min_card_height(metrics);
+	self.invalidate_bounds();
 }
 
 fn bool is_double_click(double now, RLVector2 pos, double last_time, RLVector2 last_pos)
@@ -2358,6 +2595,15 @@ fn void Project.draw_cluster(&self, int index, float zoom)
 	Rect title = self.cluster_title_rect(index);
 	rl::draw_rectangle_rec(title, theme::current().cluster_title);
 	rl::draw_rectangle_lines_ex(bounds, card::screen_thickness(1.0f, zoom), theme::current().cluster_border);
+	if ((int)index == self.current_folder)
+	{
+		rl::draw_rectangle_lines_ex(title, card::screen_thickness(1.0f, zoom), theme::current().card_focus);
+	}
+	if ((int)index == self.selected_cluster)
+	{
+		float thickness = card::screen_thickness(self.grabbing ? 3.0f : 2.0f, zoom);
+		rl::draw_rectangle_lines_ex(bounds, thickness, theme::current().card_focus);
+	}
 	String name = rl::get_file_name((ZString)cluster.path.ptr).str_view();
 	@pool()
 	{

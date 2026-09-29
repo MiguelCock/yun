@@ -113,6 +113,9 @@ enum CommandId
 	ZOOM_RESET,
 	ZOOM_FIT,
 	TOGGLE_PREVIEW,
+	LEAVE_FOLDER,
+	CYCLE_FOCUS,
+	MINIMIZE_CARD,
 }
 
 struct CommandDef
@@ -375,7 +378,7 @@ const CommandDef[] COMMAND_DEFS = {
 	{
 		.id = CommandId.FOCUS_TOP_BAR,
 		.label = "Focus Top Bar",
-		.shortcut = "Tab",
+		.shortcut = "",
 		.in_top_bar = false,
 		.contexts = CTX_MOVE,
 	},
@@ -592,7 +595,7 @@ const CommandDef[] COMMAND_DEFS = {
 	{
 		.id = CommandId.MINIMAP_FOCUS,
 		.label = "Focus Content",
-		.shortcut = "M",
+		.shortcut = "Shift+M",
 		.in_top_bar = false,
 		.contexts = CTX_MOVE,
 	},
@@ -604,6 +607,27 @@ const CommandDef[] COMMAND_DEFS = {
 		.shortcut = "Ctrl+Shift+V",
 		.in_top_bar = false,
 		.contexts = CTX_MOVE | CTX_EDIT,
+	},
+	{
+		.id = CommandId.LEAVE_FOLDER,
+		.label = "Leave Folder",
+		.shortcut = "Backspace",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.CYCLE_FOCUS,
+		.label = "Grab / Focus",
+		.shortcut = "Tab",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
+	},
+	{
+		.id = CommandId.MINIMIZE_CARD,
+		.label = "Minimize Card",
+		.shortcut = "z",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE,
 	},
 };
 
@@ -791,6 +815,12 @@ fn String command_name(CommandId id)
 			return "zoom_fit";
 		case CommandId.TOGGLE_PREVIEW:
 			return "toggle_preview";
+		case CommandId.LEAVE_FOLDER:
+			return "leave_folder";
+		case CommandId.CYCLE_FOCUS:
+			return "cycle_focus";
+		case CommandId.MINIMIZE_CARD:
+			return "minimize_card";
 	}
 }
 
@@ -899,6 +929,9 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.ZOOM_IN:
 		case CommandId.ZOOM_OUT:
 		case CommandId.FOCUS_EDITOR:
+		case CommandId.LEAVE_FOLDER:
+		case CommandId.CYCLE_FOCUS:
+		case CommandId.MINIMIZE_CARD:
 			return has_project;
 		case CommandId.FOCUS_TOP_BAR:
 		case CommandId.TOPBAR_LEFT:

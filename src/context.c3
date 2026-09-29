@@ -16,6 +16,7 @@ enum ContextAction
 	DUPLICATE_CARD,
 	COPY_PATH,
 	DELETE_CARD,
+	MINIMIZE_CARD,
 	NEW_FILE,
 	NEW_FOLDER,
 	OPEN_PROJECT,
@@ -55,6 +56,8 @@ fn usz build(
 			out[count] = { .label = "Duplicate", .action = ContextAction.DUPLICATE_CARD, .enabled = !card_missing };
 			count++;
 			out[count] = { .label = "Copy Path", .action = ContextAction.COPY_PATH, .enabled = true };
+			count++;
+			out[count] = { .label = "Minimize", .action = ContextAction.MINIMIZE_CARD, .enabled = !card_missing };
 			count++;
 			out[count] = { .label = "Delete", .action = ContextAction.DELETE_CARD, .enabled = !card_missing };
 			count++;
@@ -105,6 +108,8 @@ fn int command_for(ContextAction action)
 			return (int)commands::CommandId.COPY_PATH;
 		case ContextAction.DELETE_CARD:
 			return (int)commands::CommandId.DELETE_CARD;
+		case ContextAction.MINIMIZE_CARD:
+			return (int)commands::CommandId.MINIMIZE_CARD;
 		default:
 			return -1;
 	}

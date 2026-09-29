@@ -1,10 +1,12 @@
 module yun::project @test;
 
 import raylib6::rl;
+import std::collections::list;
 import std::io::file;
 import std::io::path;
 import std::math;
 import yun::card;
+import yun::editor;
 
 fn void test_path_is_inside()
 {
@@ -834,7 +836,7 @@ fn void test_next_visible_card()
 		assert(p.next_visible_card(2, -1) == 0);
 	};
 }
-fn void test_card_in_direction()
+fn void test_item_in_direction()
 {
 	@pool()
 	{
@@ -873,13 +875,185 @@ fn void test_card_in_direction()
 			}
 		);
 
-		assert(p.card_in_direction(0, Dir.RIGHT) == 1);
-		assert(p.card_in_direction(0, Dir.DOWN) == 2);
-		assert(p.card_in_direction(0, Dir.LEFT) == -1);
-		assert(p.card_in_direction(0, Dir.UP) == -1);
-		assert(p.card_in_direction(1, Dir.LEFT) == 0);
-		assert(p.card_in_direction(3, Dir.UP) == 1);
-		assert(p.card_in_direction(3, Dir.LEFT) == 2);
+		NavItem item;
+		p.select_card(0);
+		assert(p.item_in_direction(Dir.RIGHT, &item) && !item.folder && item.index == 1);
+		assert(p.item_in_direction(Dir.DOWN, &item) && !item.folder && item.index == 2);
+		assert(!p.item_in_direction(Dir.LEFT, &item));
+		assert(!p.item_in_direction(Dir.UP, &item));
+
+		p.select_card(1);
+		assert(p.item_in_direction(Dir.LEFT, &item) && item.index == 0);
+
+		p.select_card(3);
+		assert(p.item_in_direction(Dir.UP, &item) && item.index == 1);
+		assert(p.item_in_direction(Dir.LEFT, &item) && item.index == 2);
+	};
+}
+
+fn void test_nav_scope_is_direct_children()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int sub  = p.add_folder("/root/sub", ROOT_FOLDER);
+		int deep = p.add_folder("/root/sub/deep", sub);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+		p.cards.push(
+			{
+				.path = (Path)"/root/sub/b.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = sub,
+				.open = true,
+			}
+		);
+		p.cards.push(
+			{
+				.path = (Path)"/root/sub/deep/c.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = deep,
+				.open = true,
+			}
+		);
+
+		// at root: only the root card and the top-level folder chip
+		List{NavItem} items;
+		items.init(tmem);
+		p.current_folder = ROOT_FOLDER;
+		p.nav_items(&items);
+		assert(items.len() == 2);
+		items.clear();
+
+		// inside sub: only its own card and the nested folder chip
+		p.current_folder = sub;
+		p.nav_items(&items);
+		assert(items.len() == 2);
+		assert(items[0].index == 1);
+		assert(items[1].folder && items[1].index == deep);
+	};
+}
+
+fn void test_enter_and_leave_folder()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int sub = p.add_folder("/root/sub", ROOT_FOLDER);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+		p.cards.push(
+			{
+				.path = (Path)"/root/sub/b.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 200.0f, .width = 100.0f, .height = 100.0f },
+				.folder = sub,
+				.open = true,
+			}
+		);
+		p.folders[sub].collapsed = true;
+
+		p.enter_folder(sub);
+		assert(p.current_folder == sub);
+		assert(!p.folders[sub].collapsed);
+		assert(p.selected == 1 && p.selected_cluster == -1);
+
+		assert(p.leave_folder());
+		assert(p.current_folder == ROOT_FOLDER);
+		assert(p.selected_cluster == sub && p.selected == -1);
+
+		// leaving again at root just clears the selection
+		assert(p.leave_folder());
+		assert(p.selected == -1 && p.selected_cluster == -1);
+	};
+}
+
+fn void test_grab_move_selected()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int sub = p.add_folder("/root/sub", ROOT_FOLDER);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+		p.cards.push(
+			{
+				.path = (Path)"/root/sub/b.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f },
+				.folder = sub,
+				.open = true,
+			}
+		);
+
+		// moving a card keeps its folder membership
+		p.select_card(0);
+		float x0 = p.cards[0].rect.x;
+		float y0 = p.cards[0].rect.y;
+		p.move_selected({ 200.0f, 0.0f });
+		assert(p.cards[0].rect.x == x0 + 200.0f);
+		assert(p.cards[0].rect.y == y0);
+		assert(p.cards[0].folder == ROOT_FOLDER);
+
+		// moving a folder moves its contents
+		p.select_folder(sub);
+		float bx = p.cards[1].rect.x;
+		p.move_selected({ 0.0f, 120.0f });
+		assert(p.cards[1].rect.x == bx);
+		assert(p.cards[1].rect.y == 120.0f);
+	};
+}
+
+fn void test_minimize_selected_card()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.rect = { .x = 10.0f, .y = 20.0f, .width = 900.0f, .height = 800.0f },
+				.folder = ROOT_FOLDER,
+				.open = true,
+			}
+		);
+		EditorMetrics metrics = {
+			.char_width = 8.0f,
+			.line_height = 16.0f,
+			.padding_x = 8.0f,
+			.padding_y = 8.0f,
+			.font_size = 16.0f,
+		};
+
+		p.select_card(0);
+		p.minimize_selected(metrics);
+		assert(p.cards[0].rect.x == 10.0f && p.cards[0].rect.y == 20.0f);
+		assert(p.cards[0].rect.width == editor::min_card_width(metrics));
+		assert(p.cards[0].rect.height == editor::min_card_height(metrics));
 	};
 }
 fn void test_layout_compact_square()
