@@ -2693,6 +2693,11 @@ fn int main(String[] args)
 		prof_scan += (scan_ms - prof_scan) * 0.1;
 		prof_frame += ((rl::get_time() - frame_start) * 1000.0 - prof_frame) * 0.1;
 
+		if (benchmark_on && !bench_ready && frame_count > 20000)
+		{
+			io::printn("benchmark: project did not finish opening; aborting");
+			break;
+		}
 		if (bench_ready && frame_count > bench_warmup)
 		{
 			double ms = (rl::get_time() - frame_start) * 1000.0;
