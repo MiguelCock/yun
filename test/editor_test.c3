@@ -804,3 +804,18 @@ fn void test_expand_tabs()
 		assert(expand_tabs("ab", 4, tmem).compare_to("ab") == 0);
 	};
 }
+fn void test_advance_columns()
+{
+	String text = "ab\tcd \u00e9";
+	usz col     = 0;
+	col = advance_columns(text, 0, 2, 4, col);
+	assert(col == 2);
+	col = advance_columns(text, 2, 3, 4, col);
+	assert(col == 6);
+	col = advance_columns(text, 3, 5, 4, col);
+	assert(col == 8);
+	col = advance_columns(text, 5, 6, 4, col);
+	assert(col == 9);
+	col = advance_columns(text, 6, 8, 4, col);
+	assert(col == 10);
+}
