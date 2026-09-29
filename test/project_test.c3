@@ -1124,3 +1124,28 @@ fn void test_cards_revision_bumps()
 		assert(p.cards_revision == r0 + 2);
 	};
 }
+fn void test_project_destroy_frees_owned_memory()
+{
+	Project p;
+	p.init(mem);
+	p.append_card("/root/a.c3", { 0.0f, 0.0f });
+	p.append_card("/root/b.c3", { 0.0f, 0.0f });
+	(void)p.add_folder("/root/sub", ROOT_FOLDER);
+	p.mark_jump("/root/a.c3", 3, 0.0);
+	p.destroy();
+}
+
+fn void test_project_reset_releases_cards()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.append_card("/root/a.c3", { 0.0f, 0.0f });
+		(void)p.add_folder("/root/sub", ROOT_FOLDER);
+		p.reset();
+		assert(p.cards.len() == 0);
+		assert(p.folders.len() == 0);
+		p.destroy();
+	};
+}

@@ -42,6 +42,12 @@ fn void Palette.init(&self, Allocator allocator)
 	self.consumed = false;
 }
 
+fn void Palette.destroy(&self)
+{
+	self.results.free();
+	self.recent.free();
+}
+
 fn void Palette.show(&self)
 {
 	self.open = true;

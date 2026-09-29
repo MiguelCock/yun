@@ -135,6 +135,17 @@ fn void Lsp.shutdown_all(&self)
 	self.has_root = false;
 }
 
+fn void Lsp.destroy(&self)
+{
+	self.shutdown_all();
+	self.clients.free();
+	self.docs.free();
+	self.diag_files.free();
+	self.diag_index.free();
+	self.definition_results.free();
+	self.completion_items.free();
+}
+
 fn void Lsp.set_root(&self, String root)
 {
 	self.shutdown_all();

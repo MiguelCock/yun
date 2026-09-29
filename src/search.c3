@@ -322,6 +322,13 @@ fn void Search.destroy(&self)
 	}
 	if (self.results)
 	{
+		while (true)
+		{
+			SearchBatch? maybe = self.results.try_pop();
+			if (catch excuse = maybe) break;
+			SearchBatch batch = maybe;
+			free_batch(self.allocator, &batch);
+		}
 		self.results.destroy();
 		self.results = null;
 	}

@@ -176,6 +176,30 @@ TSParser*[language::LANGUAGE_COUNT] import_parser_cache;
 TSQuery*[language::LANGUAGE_COUNT] module_query_cache;
 bool[language::LANGUAGE_COUNT] module_query_loaded;
 
+fn void shutdown_queries()
+{
+	for (int i = 0; i < language::LANGUAGE_COUNT; i++)
+	{
+		if (import_query_cache[i])
+		{
+			tree_sitter::ts_query_delete(import_query_cache[i]);
+			import_query_cache[i] = null;
+		}
+		if (import_parser_cache[i])
+		{
+			tree_sitter::ts_parser_delete(import_parser_cache[i]);
+			import_parser_cache[i] = null;
+		}
+		if (module_query_cache[i])
+		{
+			tree_sitter::ts_query_delete(module_query_cache[i]);
+			module_query_cache[i] = null;
+		}
+		import_query_loaded[i] = false;
+		module_query_loaded[i] = false;
+	}
+}
+
 const ImportRef[] NO_IMPORTS = { };
 
 fn void ImportIndex.init(&self, Allocator allocator)
@@ -279,6 +303,13 @@ fn void ImportIndex.destroy_pool(&self)
 	}
 	if (self.results)
 	{
+		while (true)
+		{
+			ScanResult? maybe = self.results.try_pop();
+			if (catch excuse = maybe) break;
+			ScanResult result = maybe;
+			free_scan_result(self.allocator, &result);
+		}
 		self.results.destroy();
 		self.results = null;
 	}
@@ -699,6 +730,7 @@ fn void context_build(ImportContext* ctx, Allocator allocator, String root)
 	@pool()
 	{
 		RLFilePathList files = rl::load_directory_files_ex(root.zstr_tcopy(), ".cabal".zstr_tcopy(), false);
+		defer rl::unload_directory_files(files);
 		for (uint i = 0; i < files.count; i++)
 		{
 			String cpath = files.paths[i].str_view();
@@ -1060,6 +1092,7 @@ fn bool any_ext_in(Allocator allocator, String dir, String ext)
 	{
 		RLFilePathList files = rl::load_directory_files_ex(dir.zstr_tcopy(), string::format(tmem, "*%s", ext)
 			.zstr_tcopy(), false);
+		defer rl::unload_directory_files(files);
 		return files.count > 0;
 	};
 }
@@ -1651,6 +1684,14 @@ fn void free_refs(Allocator allocator, List{ImportRef}* refs)
 		if (ref.target_path.len) ref.target_path.free(allocator);
 		if (ref.kind.len) ref.kind.free(allocator);
 	}
+}
+
+fn void free_scan_result(Allocator allocator, ScanResult* result)
+{
+	free_refs(allocator, &result.imports);
+	result.imports.free();
+	if (result.module_name.len) result.module_name.free(allocator);
+	if (result.path.len) result.path.free(allocator);
 }
 
 fn void ImportIndex.free_files(&self)

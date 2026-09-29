@@ -753,6 +753,30 @@ fn void destroy(Highlighter* highlighter, Allocator allocator)
 	alloc::free(allocator, highlighter);
 }
 
+fn void shutdown()
+{
+	for (int i = 0; i < language::LANGUAGE_COUNT; i++)
+	{
+		if (query_cache[i])
+		{
+			tree_sitter::ts_query_delete(query_cache[i]);
+			query_cache[i] = null;
+		}
+		if (injection_cache[i])
+		{
+			tree_sitter::ts_query_delete(injection_cache[i]);
+			injection_cache[i] = null;
+		}
+		if (injection_parsers[i])
+		{
+			tree_sitter::ts_parser_delete(injection_parsers[i]);
+			injection_parsers[i] = null;
+		}
+		query_loaded[i] = false;
+		injection_loaded[i] = false;
+	}
+}
+
 fn void Highlighter.mark_dirty(&self)
 {
 	self.dirty = true;

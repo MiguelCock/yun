@@ -104,8 +104,8 @@ fn void Fonts.destroy(&self)
 {
 	for (sz i = 0; i < self.entries.len(); i++)
 	{
-		self.entries[i].label.free(self.allocator);
-		self.entries[i].path.free(self.allocator);
+		if (self.entries[i].label.len) self.entries[i].label.free(self.allocator);
+		if (self.entries[i].path.len) self.entries[i].path.free(self.allocator);
 	}
 	self.entries.free();
 	self.names.free();

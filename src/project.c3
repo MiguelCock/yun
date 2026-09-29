@@ -168,12 +168,48 @@ fn void Project.init(&self, Allocator allocator)
 	self.root = cwd;
 }
 
+fn void Project.destroy_card(&self, FileCard* card)
+{
+	editor::destroy_buffer(card, self.allocator);
+	if (((String)card.path).len) ((String)card.path).free(self.allocator);
+	if (card.name.len) card.name.free(self.allocator);
+}
+
+fn void Project.destroy_cards(&self)
+{
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		self.destroy_card(&self.cards[i]);
+	}
+	self.cards.clear();
+}
+
+fn void Project.destroy_folders(&self)
+{
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		if (((String)self.folders[i].path).len) ((String)self.folders[i].path).free(self.allocator);
+	}
+	self.folders.clear();
+	self.folder_index.clear();
+}
+
+fn void Project.destroy(&self)
+{
+	self.destroy_cards();
+	self.destroy_folders();
+	self.cards.free();
+	self.folders.free();
+	self.folder_index.free();
+	self.clear_jump();
+	if (((String)self.root).len) ((String)self.root).free(self.allocator);
+}
+
 fn void Project.reset(&self)
 {
 	self.discard_ephemeral(-1);
-	self.cards.clear();
-	self.folders.clear();
-	self.folder_index.clear();
+	self.destroy_cards();
+	self.destroy_folders();
 	self.cards_revision++;
 	self.focused = -1;
 	self.selected = -1;
@@ -227,6 +263,8 @@ fn void Project.discard_ephemeral(&self, int keep)
 			(void)libc::remove(((String)card.path).zstr_tcopy());
 		};
 		self.cards.remove_at(index);
+		if (((String)card.path).len) ((String)card.path).free(self.allocator);
+		if (card.name.len) card.name.free(self.allocator);
 		if (self.focused > (int)index)
 		{
 			self.focused--;

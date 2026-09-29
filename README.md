@@ -89,6 +89,7 @@ cd yun
 c3c build                 # build the `yun` executable
 c3c run                   # run
 c3c run -- <directory>    # run and open a project folder
+c3c run -- --selftest     # boot, render a few frames, exit (headless smoke test)
 c3c test                  # run the test suite
 c3fmt --check $(git ls-files '*.c3')   # formatting check
 ```

@@ -42,3 +42,43 @@ jobs:
 
       - name: Format check
         run: c3fmt --check $(git ls-files '*.c3')
+
+  sanitize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libgl1-mesa-dev libgl1-mesa-dri xvfb
+
+      - name: Install c3c (pinned)
+        run: |
+          curl -fsSL -o c3.tar.gz https://github.com/c3lang/c3c/releases/download/v0.8.4/c3-linux-static.tar.gz
+          tar -xzf c3.tar.gz
+          echo "$PWD/c3" >> "$GITHUB_PATH"
+
+      - name: Build tree-sitter grammars
+        run: scripts/build-tree-sitter.sh linux-x64
+
+      - name: Test under AddressSanitizer
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          LSAN_OPTIONS: suppressions=scripts/asan-suppressions.txt
+        run: c3c test --sanitize=address
+
+      - name: Build under AddressSanitizer
+        run: c3c build --sanitize=address
+
+      # Leak detection runs in the sanitized test job above (it exercises every
+      # destructor directly). The GUI smoke focuses on catching invalid frees /
+      # use-after-free across the full startup -> shutdown path, where the
+      # software GL stack under Xvfb adds third-party allocations.
+      - name: Headless startup/shutdown smoke under AddressSanitizer
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          LIBGL_ALWAYS_SOFTWARE: 1
+        run: xvfb-run -a ./build/yun --selftest

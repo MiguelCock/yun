@@ -54,6 +54,11 @@ fn void FindBar.init(&self, Allocator allocator)
 	self.consumed = false;
 }
 
+fn void FindBar.destroy(&self)
+{
+	self.starts.free();
+}
+
 fn void FindBar.open_for(&self, find::FindField field)
 {
 	self.open = true;
