@@ -82,3 +82,36 @@ jobs:
           ASAN_OPTIONS: detect_leaks=0
           LIBGL_ALWAYS_SOFTWARE: 1
         run: xvfb-run -a ./build/yun --selftest
+
+  # Non-gating: prints micro + render benchmark timings without failing the build.
+  benchmark:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libgl1-mesa-dev libgl1-mesa-dri xvfb
+
+      - name: Install c3c (pinned)
+        run: |
+          curl -fsSL -o c3.tar.gz https://github.com/c3lang/c3c/releases/download/v0.8.4/c3-linux-static.tar.gz
+          tar -xzf c3.tar.gz
+          echo "$PWD/c3" >> "$GITHUB_PATH"
+
+      - name: Build tree-sitter grammars
+        run: scripts/build-tree-sitter.sh linux-x64
+
+      - name: Micro benchmarks
+        run: c3c benchmark
+
+      - name: Render benchmark (headless, 200 cards)
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 1
+        run: |
+          c3c build
+          xvfb-run -a ./build/yun --benchmark=200 --benchmark-frames=240

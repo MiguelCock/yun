@@ -1149,3 +1149,63 @@ fn void test_project_reset_releases_cards()
 		p.destroy();
 	};
 }
+fn void test_hit_test_matches_linear_scan()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		for (int k = 0; k < 40; k++)
+		{
+			String path = string::format(tmem, "/root/f%d.c3", k);
+			p.append_card(path, { 0.0f, 0.0f });
+			p.cards[k].rect = {
+				.x = (float)(k % 8) * 40.0f,
+				.y = (float)(k / 8) * 40.0f,
+				.width = 60.0f,
+				.height = 50.0f,
+			};
+		}
+		p.invalidate_bounds();
+
+		for (float y = -20.0f; y < 240.0f; y += 17.0f)
+		{
+			for (float x = -20.0f; x < 360.0f; x += 13.0f)
+			{
+				RLVector2 point =  { x, y };
+				int grid        =  p.hit_test(point);
+				int linear      = -1;
+				for (sz i = 0; i < p.cards.len(); i++)
+				{
+					if (p.card_visible((int)i) && p.cards[i].contains(point)) linear = (int)i;
+				}
+				assert(grid == linear);
+			}
+		}
+		p.destroy();
+	};
+}
+
+fn void test_content_bounds_cache_invalidates()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		p.append_card("/root/a.c3", { 0.0f, 0.0f });
+
+		Rect first;
+		assert(p.content_bounds(&first));
+
+		p.cards[0].rect = { .x = 2000.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f };
+		p.invalidate_bounds();
+
+		Rect second;
+		assert(p.content_bounds(&second));
+		assert(second.x >= 2000.0f);
+
+		p.destroy();
+	};
+}

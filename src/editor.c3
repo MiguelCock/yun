@@ -641,13 +641,24 @@ fn void draw_text_highlighted(
 		VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
 		List{highlight::Span} runs;
 		runs.init(tmem);
+		highlighter.begin_runs();
 		for (usz line = range.first; line < range.last; line++)
 		{
 			usz line_start = table.line_start(line);
 			usz len        = line_length_bytes(table, line);
 			if (len == 0) continue;
 
-			String text = table.slice(line_start, len, tmem);
+			String text  = table.slice(line_start, len, tmem);
+			char* raw    = text.ptr;
+			bool has_tab = false;
+			for (usz k = 0; k < len; k++)
+			{
+				if (raw[k] == '\t')
+				{
+					has_tab = true;
+					break;
+				}
+			}
 			highlighter.runs_for_line(line_start, line_start + len, &runs);
 
 			float y  = area.y + (float)line * metrics.line_height - scroll_y;
@@ -671,16 +682,22 @@ fn void draw_text_highlighted(
 					}
 					pos++;
 				}
-				String span = text[start:end - start];
-				String vis  = expand_tabs(span, tabs, tmem);
-				rl::draw_text_ex(
-					font,
-					vis.zstr_tcopy(),
-					{ area.x + (float)col * metrics.char_width - scroll_x, y },
-					font_size,
-					0.0f,
-					highlight::role_color(run.role)
-				);
+				RLVector2 at  = { area.x + (float)col * metrics.char_width - scroll_x, y };
+				RLColor color = highlight::role_color(run.role);
+				if (has_tab)
+				{
+					String span = text[start:end - start];
+					String vis  = expand_tabs(span, tabs, tmem);
+					rl::draw_text_ex(font, vis.zstr_tcopy(), at, font_size, 0.0f, color);
+				}
+				else
+				{
+					char saved = raw[end];
+					raw[end] = 0;
+					rl::draw_text_ex(font, (ZString)&raw[start], at, font_size, 0.0f, color);
+					raw[end] = saved;
+				}
+				pos = end;
 			}
 		}
 		runs.free();
@@ -1176,18 +1193,25 @@ fn void draw_gutter(
 	if (!g_editor_settings.show_line_numbers) return;
 	apply_scissor(area, camera);
 	rl::draw_rectangle_rec(area, bg_color);
-	@pool()
+	char[24] buffer;
+	VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
+	for (usz line = range.first; line < range.last; line++)
 	{
-		VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
-		for (usz line = range.first; line < range.last; line++)
+		usz value  = line + 1;
+		usz digits = 1;
+		for (usz probe = value; probe >= 10; probe /= 10) digits++;
+		usz end = digits;
+		buffer[end] = 0;
+		usz rest = value;
+		for (usz k = end; k > 0; k--)
 		{
-			String label   = string::format(tmem, "%d", (int)(line + 1));
-			RLVector2 size = rl::measure_text_ex(font, (ZString)label.ptr, font_size, 0.0f);
-			float x        = area.x + area.width - metrics.padding_x - size[0];
-			float y        = area.y + (float)line * metrics.line_height - scroll_y;
-			rl::draw_text_ex(font, (ZString)label.ptr, { x, y }, font_size, 0.0f, text_color);
+			buffer[k - 1] = (char)('0' + (char)(rest % 10));
+			rest /= 10;
 		}
-	};
+		float x = area.x + area.width - metrics.padding_x - (float)digits * metrics.char_width;
+		float y = area.y + (float)line * metrics.line_height - scroll_y;
+		rl::draw_text_ex(font, (ZString)&buffer[0], { x, y }, font_size, 0.0f, text_color);
+	}
 	rl::end_scissor_mode();
 }
 

@@ -74,6 +74,7 @@ struct SymbolTarget
 }
 
 const int MAX_SYMBOL_WORKERS = 4;
+const int PUMP_BATCH_BUDGET  = 32;
 const int QUERY_MAX          = 128;
 const double EDIT_DEBOUNCE   = 0.15;
 const int MAX_VISIBLE_ROWS   = 14;
@@ -508,7 +509,8 @@ fn void Symbols.pump(&self, project::Project* project, double now)
 
 	if (self.results)
 	{
-		while (true)
+		int budget = PUMP_BATCH_BUDGET;
+		while (budget-- > 0)
 		{
 			SymbolBatch? maybe = self.results.try_pop();
 			if (catch excuse = maybe) break;

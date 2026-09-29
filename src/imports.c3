@@ -22,6 +22,7 @@ import yun::theme;
 import yun::ui;
 
 const int MAX_SCAN_WORKERS         = 8;
+const int RESULT_BATCH_BUDGET      = 32;
 const float ARROW_HIT_PX           = 6.0f;
 const float ARROW_MIN_DRAW_PX      = 6.0f;
 const float ARROW_LABEL_MIN_ZOOM   = 0.5f;
@@ -1948,7 +1949,8 @@ fn void ImportIndex.pump(&self, project::Project* project)
 	}
 	if (self.results)
 	{
-		while (true)
+		int budget = RESULT_BATCH_BUDGET;
+		while (budget-- > 0)
 		{
 			ScanResult? maybe = self.results.try_pop();
 			if (catch excuse = maybe) break;
@@ -2447,29 +2449,34 @@ fn void ImportIndex.draw(&self, project::Project* project, RLCamera2D camera, RL
 	int active   = project.focused;
 	Rect visible = project::expand_rect(project::visible_world_rect(camera), 64.0f);
 
-	for (sz i = 0; i < project.cards.len(); i++)
+	@pool()
 	{
-		FileCard* card = &project.cards[i];
-		if (!project.card_visible((int)i)) continue;
-		if (!project::rect_intersects(card.rect, visible)) continue;
-
-		ImportRef[] refs = self.imports_for((String)card.path);
-		if (refs.len == 0) continue;
-
-		usz external_slot = 0;
-		for (usz r = 0; r < refs.len; r++)
+		List{int} draw_list;
+		draw_list.init(tmem);
+		project.visible_cards(visible, &draw_list);
+		for (sz c = 0; c < draw_list.len(); c++)
 		{
-			ImportRef ref = refs[r];
-			int slot      = 0;
-			if (!ref.resolved)
+			sz i           = (sz)draw_list[c];
+			FileCard* card = &project.cards[i];
+
+			ImportRef[] refs = self.imports_for((String)card.path);
+			if (refs.len == 0) continue;
+
+			usz external_slot = 0;
+			for (usz r = 0; r < refs.len; r++)
 			{
-				slot = (int)external_slot;
-				external_slot++;
+				ImportRef ref = refs[r];
+				int slot      = 0;
+				if (!ref.resolved)
+				{
+					slot = (int)external_slot;
+					external_slot++;
+				}
+				bool hovered = self.hover.valid && self.hover.source == (int)i && self.hover.ref_index == r;
+				draw_one(self, project, (int)i, card, ref, camera, font, active, slot, hovered);
 			}
-			bool hovered = self.hover.valid && self.hover.source == (int)i && self.hover.ref_index == r;
-			draw_one(self, project, (int)i, card, ref, camera, font, active, slot, hovered);
 		}
-	}
+	};
 }
 
 fn void ImportIndex.draw_tooltip(&self, project::Project* project, RLFont font)

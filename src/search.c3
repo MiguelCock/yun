@@ -26,6 +26,7 @@ const long MAX_FILE_BYTES      = 2 * 1024 * 1024;
 const int BINARY_SCAN_BYTES    = 8192;
 const int PREVIEW_MAX          = 120;
 const int MAX_SEARCH_WORKERS   = 4;
+const int PUMP_BATCH_BUDGET    = 32;
 const int QUERY_MAX            = 256;
 const double RESTART_DEBOUNCE  = 0.15;
 const float TOP_MARGIN         = 24.0f;
@@ -481,7 +482,8 @@ fn void Search.pump(&self, project::Project* project, double now)
 	}
 	if (self.results)
 	{
-		while (true)
+		int budget = PUMP_BATCH_BUDGET;
+		while (budget-- > 0)
 		{
 			SearchBatch? maybe = self.results.try_pop();
 			if (catch excuse = maybe) break;
