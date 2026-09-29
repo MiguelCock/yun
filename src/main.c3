@@ -951,10 +951,28 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
-		case commands::CommandId.TOGGLE_GRAB:
+		case commands::CommandId.CYCLE_FOCUS:
 
 			{
-				if (project.has_selected_item()) project.grabbing = !project.grabbing;
+				if (*app.ui_mode == UiMode.TOP_BAR)
+				{
+					*app.ui_mode = UiMode.MOVE;
+				}
+				else if (project.grabbing)
+				{
+					project.grabbing = false;
+					*app.ui_mode = UiMode.TOP_BAR;
+					app.bar.clamp_selection(*app.project_open, has_focused_buffer(project));
+				}
+				else if (project.has_selected_item())
+				{
+					project.grabbing = true;
+				}
+				else
+				{
+					*app.ui_mode = UiMode.TOP_BAR;
+					app.bar.clamp_selection(*app.project_open, has_focused_buffer(project));
+				}
 				return;
 			}
 		case commands::CommandId.MINIMIZE_CARD:
@@ -1248,7 +1266,9 @@ fn void mark_buffer_changed(project::Project* project, findbar::FindBar* find_ba
 	find_bar.mark_dirty();
 }
 
-const String FONT_PATH = "assets/fonts/JetBrainsMono-Regular.ttf";
+const String FONT_PATH           = "assets/fonts/JetBrainsMono-Regular.ttf";
+const float GRAB_MOVE_SPEED      = 700.0f;
+const float GRAB_MOVE_FINE_SPEED = 250.0f;
 
 fn RLFont finish_font(RLFont font)
 {
@@ -2051,44 +2071,35 @@ fn int main(String[] args)
 
 				if (project.grabbing)
 				{
-					bool drop = rl::is_key_pressed(
+					if (keymap.pressed((int)commands::CommandId.CYCLE_FOCUS, commands::CTX_MOVE))
+					{
+						run_command(commands::CommandId.CYCLE_FOCUS, &app);
+					}
+					else if (rl::is_key_pressed(
 						rl::RLKeyboardKey.ESCAPE
-					) || rl::is_key_pressed(
-						rl::RLKeyboardKey.ENTER
-					) || rl::is_key_pressed(
-						rl::RLKeyboardKey.KP_ENTER
-					) || keymap.pressed((int)commands::CommandId.TOGGLE_GRAB, commands::CTX_MOVE);
-					if (drop)
+					) || rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
 					{
 						project.grabbing = false;
 					}
 					else
 					{
-						bool fine = project::shift_down();
-						if (rl::is_key_pressed_repeat(
+						float zoom      = canvas.camera.zoom > 0.0f ? canvas.camera.zoom : 1.0f;
+						float speed     = project::shift_down() ? GRAB_MOVE_FINE_SPEED : GRAB_MOVE_SPEED;
+						float step      = speed * dt / zoom;
+						RLVector2 delta = { 0.0f, 0.0f };
+						if (rl::is_key_down(
 							rl::RLKeyboardKey.LEFT
-						) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.H))
-						{
-							project.nudge_selected(project::Dir.LEFT, fine);
-						}
-						if (rl::is_key_pressed_repeat(
+						) || rl::is_key_down(rl::RLKeyboardKey.H)) delta[0] -= step;
+						if (rl::is_key_down(
 							rl::RLKeyboardKey.RIGHT
-						) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.L))
-						{
-							project.nudge_selected(project::Dir.RIGHT, fine);
-						}
-						if (rl::is_key_pressed_repeat(
+						) || rl::is_key_down(rl::RLKeyboardKey.L)) delta[0] += step;
+						if (rl::is_key_down(
 							rl::RLKeyboardKey.UP
-						) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.K))
-						{
-							project.nudge_selected(project::Dir.UP, fine);
-						}
-						if (rl::is_key_pressed_repeat(
+						) || rl::is_key_down(rl::RLKeyboardKey.K)) delta[1] -= step;
+						if (rl::is_key_down(
 							rl::RLKeyboardKey.DOWN
-						) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.J))
-						{
-							project.nudge_selected(project::Dir.DOWN, fine);
-						}
+						) || rl::is_key_down(rl::RLKeyboardKey.J)) delta[1] += step;
+						if (delta[0] != 0.0f || delta[1] != 0.0f) project.move_selected(delta);
 					}
 					while (rl::get_char_pressed() != 0)
 					{

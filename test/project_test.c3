@@ -1012,17 +1012,17 @@ fn void test_grab_move_selected()
 		p.select_card(0);
 		float x0 = p.cards[0].rect.x;
 		float y0 = p.cards[0].rect.y;
-		p.nudge_selected(Dir.RIGHT, false);
-		assert(p.cards[0].rect.x > x0);
+		p.move_selected({ 200.0f, 0.0f });
+		assert(p.cards[0].rect.x == x0 + 200.0f);
 		assert(p.cards[0].rect.y == y0);
 		assert(p.cards[0].folder == ROOT_FOLDER);
 
 		// moving a folder moves its contents
 		p.select_folder(sub);
 		float bx = p.cards[1].rect.x;
-		p.nudge_selected(Dir.DOWN, false);
+		p.move_selected({ 0.0f, 120.0f });
 		assert(p.cards[1].rect.x == bx);
-		assert(p.cards[1].rect.y > 0.0f);
+		assert(p.cards[1].rect.y == 120.0f);
 	};
 }
 

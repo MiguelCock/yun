@@ -39,11 +39,12 @@ The cursor is a card or folder on the canvas at the folder level you're in; no t
 | `Shift` + `h` `j` `k` `l` | Pan the canvas |
 | `Enter` or `i` | Edit the selected card, or open and enter the selected folder |
 | `Backspace` / `Esc` | Leave the current folder (up one level); `Esc` at the root clears the selection |
-| `m` | Grab the selected card/folder — arrows move it (hold to repeat, `Shift` for a fine step), `Esc` drops it |
+| `Tab` | Cycle focus: grab the selected card/folder, then focus the top bar, then back to MOVE |
 | `z` | Resize the selected card to its minimum width and height |
 | `=` / `+` / keypad `+` | Zoom in |
 | `-` / keypad `-` | Zoom out |
-| `Tab` | Focus the top bar (enter TOP BAR) |
+
+When grabbed, hold `h` `j` `k` `l` (or the arrow keys) to glide the item smoothly at a constant on-screen speed — `Shift` slows it for fine placement — and press `Esc` or `Enter` to drop it.
 
 Mouse panning, zooming, clicking and dragging still work as before.
 
@@ -137,7 +138,7 @@ Language servers are configured under the `lsp` section: a map of language id to
 
 In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's *Settings* button, or the command palette. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value. The panel's **Keys** section lists every command's shortcut: `Enter` captures a new chord, `Del` unbinds, `Backspace` resets it (when the search is empty), `Esc` cancels, and a *Reset all* row clears the current scope.
 
-Keybindings use chords like `Ctrl+Shift+P`. Modifiers are `Ctrl` (shown as `Cmd` on macOS), `Shift`, `Alt` and `Super`; keys can be letters/digits, punctuation (`, . / ; ' [ ] - = \ \``), named keys (`Enter`, `Esc`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `CapsLock`, `PrintScreen`, `Pause`), function keys `F1`-`F12`, or keypad keys (`KP_0`-`KP_9`, `KP_Add`, `KP_Subtract`, `KP_Multiply`, `KP_Divide`, `KP_Enter`). Set a command's chord to `""` to unbind it. Editor and completion actions (undo/redo, indentation, cursor movement, completion next/prev/accept), canvas/mode/top-bar navigation (pan, zoom in/out/reset/fit, item select/cycle, enter/leave folder, grab, focus switching), overlay navigation (lists, accept/close, find next/replace, search toggles) and card actions (close/toggle/rename/duplicate/copy-path/delete, context menu, focus content) are registered commands too, so they can be rebound the same way.
+Keybindings use chords like `Ctrl+Shift+P`. Modifiers are `Ctrl` (shown as `Cmd` on macOS), `Shift`, `Alt` and `Super`; keys can be letters/digits, punctuation (`, . / ; ' [ ] - = \ \``), named keys (`Enter`, `Esc`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `CapsLock`, `PrintScreen`, `Pause`), function keys `F1`-`F12`, or keypad keys (`KP_0`-`KP_9`, `KP_Add`, `KP_Subtract`, `KP_Multiply`, `KP_Divide`, `KP_Enter`). Set a command's chord to `""` to unbind it. Editor and completion actions (undo/redo, indentation, cursor movement, completion next/prev/accept), canvas/mode/top-bar navigation (pan, zoom in/out/reset/fit, item select/cycle, enter/leave folder, cycle focus/grab, minimize, focus switching), overlay navigation (lists, accept/close, find next/replace, search toggles) and card actions (close/toggle/rename/duplicate/copy-path/delete, context menu, focus content) are registered commands too, so they can be rebound the same way.
 
 ## Versioning and releases
 

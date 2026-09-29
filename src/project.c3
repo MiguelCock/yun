@@ -1626,35 +1626,6 @@ fn bool Project.has_selected_item(&self)
 	return self.selected >= 0 || self.selected_cluster >= 0;
 }
 
-fn void Project.nudge_selected(&self, Dir dir, bool fine)
-{
-	float step_x = ui::pxf(card::CARD_WIDTH) + ui::pxf((float)CARD_GAP);
-	float step_y = ui::pxf(card::CARD_HEIGHT) + ui::pxf((float)CARD_GAP);
-	if (fine)
-	{
-		step_x = ui::pxf((float)CARD_GAP);
-		step_y = ui::pxf((float)CARD_GAP);
-	}
-	RLVector2 delta = { 0.0f, 0.0f };
-	if (dir == Dir.LEFT)
-	{
-		delta[0] = -step_x;
-	}
-	else if (dir == Dir.RIGHT)
-	{
-		delta[0] = step_x;
-	}
-	else if (dir == Dir.UP)
-	{
-		delta[1] = -step_y;
-	}
-	else
-	{
-		delta[1] = step_y;
-	}
-	self.move_selected(delta);
-}
-
 fn void Project.minimize_selected(&self, EditorMetrics metrics)
 {
 	if (self.selected_cluster >= 0) return;
