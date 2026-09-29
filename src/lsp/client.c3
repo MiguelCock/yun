@@ -197,15 +197,22 @@ fn void lsp_process_close(void* ctx)
 
 fn bool LspClient.spawn(&self, String[] argv)
 {
-	for (sz i = 0; i < self.argv.len(); i++)
+	@pool()
 	{
-		self.argv[i].free(self.allocator);
-	}
-	self.argv.clear();
-	foreach (String arg : argv) self.argv.push(arg.copy(self.allocator));
+		List{String} args;
+		args.init(tmem);
+		foreach (String arg : argv) args.push(arg.copy(tmem));
+		for (sz i = 0; i < self.argv.len(); i++)
+		{
+			self.argv[i].free(self.allocator);
+		}
+		self.argv.clear();
+		foreach (String arg : args) self.argv.push(arg.copy(self.allocator));
+	};
 
+	String[] spawn_argv = self.argv.entries[0:self.argv.len()];
 	Process? spawned = process::spawn(
-		argv,
+		spawn_argv,
 		process::SpawnOptions.INHERIT_ENV,
 		{ },
 		process::CAPTURE,
@@ -215,7 +222,7 @@ fn bool LspClient.spawn(&self, String[] argv)
 	if (catch excuse = spawned)
 	{
 		self.status = LspStatus.ERROR;
-		io::eprintfn("LSP: failed to start %s server (%s)", self.language, argv.len > 0 ? argv[0] : "");
+		io::eprintfn("LSP: failed to start %s server (%s)", self.language, spawn_argv.len > 0 ? spawn_argv[0] : "");
 		return false;
 	}
 	Process* proc = alloc::new(mem, Process);
@@ -228,7 +235,7 @@ fn bool LspClient.spawn(&self, String[] argv)
 		.is_alive = &lsp_process_alive,
 		.close = &lsp_process_close,
 	};
-	if (argv.len > 0) io::eprintfn("LSP: started %s server (%s)", self.language, argv[0]);
+	if (spawn_argv.len > 0) io::eprintfn("LSP: started %s server (%s)", self.language, spawn_argv[0]);
 	return true;
 }
 

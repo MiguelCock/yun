@@ -382,6 +382,18 @@ fn void completion_init(Allocator allocator)
 	active_completion.init(allocator);
 }
 
+fn void completion_destroy()
+{
+	if (!active_completion) return;
+	active_completion.clear_items();
+	if (active_completion.prefix.len) active_completion.prefix.free(active_completion.allocator);
+	active_completion.items.free();
+	active_completion.order.free();
+	active_completion.scores.free();
+	alloc::free(active_completion.allocator, active_completion);
+	active_completion = null;
+}
+
 fn void completion_poll(PieceTable* table, usz cursor)
 {
 	if (active_completion) active_completion.poll(table, cursor);

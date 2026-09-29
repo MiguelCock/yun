@@ -1186,6 +1186,12 @@ fn void clear_definitions(List{lsp::DefinitionTarget}* list)
 	list.clear();
 }
 
+fn void clear_pending_definitions(List{lsp::DefinitionTarget}* list)
+{
+	clear_definitions(list);
+	list.free();
+}
+
 struct HoverInfo
 {
 	bool over;
@@ -1419,7 +1425,6 @@ fn int main(String[] args)
 
 	config::Config config;
 	config.init(mem);
-	defer config.destroy();
 
 	lsp::Lsp lsp;
 	lsp.init(mem, &config);
@@ -1427,7 +1432,6 @@ fn int main(String[] args)
 	completion::completion_init(mem);
 	imports::ImportIndex import_index;
 	import_index.init(mem);
-	defer import_index.destroy();
 
 	browser::Browser browser;
 	browser.init(mem);
@@ -1464,23 +1468,18 @@ fn int main(String[] args)
 
 	settings_panel::Panel settings_panel;
 	settings_panel.init(mem);
-	defer settings_panel.destroy();
 
 	search::Search search;
 	search.init(mem);
-	defer search.destroy();
 
 	symbols::Symbols symbols;
 	symbols.init(mem);
-	defer symbols.destroy();
 
 	keymap::Keymap keymap;
 	keymap.init(mem);
-	defer keymap.destroy();
 
 	fonts::Fonts fonts;
 	fonts.init(mem);
-	defer fonts.destroy();
 	settings::set_font_options(fonts.labels());
 
 	int pending_kind        = 0;
@@ -1492,6 +1491,34 @@ fn int main(String[] args)
 	List{lsp::DefinitionTarget} pending_definitions;
 	pending_definitions.init(mem);
 
+	// Teardown: registered here so LIFO order is exactly the reverse of this list.
+	defer rl::unload_font(editor_font);
+	defer config.destroy();
+	defer keymap.destroy();
+	defer settings_panel.destroy();
+	defer fonts.destroy();
+	defer language::shutdown_grammars();
+	defer highlight::shutdown();
+	defer imports::shutdown_queries();
+	defer search.destroy();
+	defer symbols.destroy();
+	defer import_index.destroy();
+	defer lsp.destroy();
+	defer clear_pending_definitions(&pending_definitions);
+	defer notifier.destroy();
+	defer context_menu.destroy();
+	defer reload_menu.destroy();
+	defer theme_menu.destroy();
+	defer close_menu.destroy();
+	defer delete_menu.destroy();
+	defer definition_menu.destroy();
+	defer browser.destroy();
+	defer palette.destroy();
+	defer find_bar.destroy();
+	defer problems.destroy();
+	defer completion::completion_destroy();
+	defer project.destroy();
+
 	bool project_open           = false;
 	project::OpenJob* open_job  = null;
 	bool opening                = false;
@@ -1499,7 +1526,12 @@ fn int main(String[] args)
 	double font_indicator_until = 0.0;
 	UiMode ui_mode              = UiMode.MOVE;
 	int edit_grace_frames       = 0;
-	if (args.len > 1)
+	bool selftest               = false;
+	for (usz i = 1; i < args.len; i++)
+	{
+		if (args[i].compare_to("--selftest") == 0) selftest = true;
+	}
+	if (!selftest && args.len > 1)
 	{
 		String? resolved = project::resolve_path(project.allocator, args[1]);
 		if (catch excuse = resolved)
@@ -1579,8 +1611,11 @@ fn int main(String[] args)
 	float last_arrow_zoom       = -1.0f;
 	bool arrow_hovered_cache    =  false;
 
+	int frame_count = 0;
 	while (!rl::window_should_close())
 	{
+		frame_count++;
+		if (selftest && frame_count > 3) break;
 		float dt = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
 		update_dpi(
 			&fonts,
@@ -2523,7 +2558,5 @@ fn int main(String[] args)
 	}
 
 	if (project_open) workspace::save(&project, &canvas);
-	lsp.shutdown_all();
-	rl::unload_font(editor_font);
 	return 0;
 }

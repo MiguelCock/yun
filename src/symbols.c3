@@ -354,6 +354,13 @@ fn void Symbols.destroy(&self)
 	}
 	if (self.results)
 	{
+		while (true)
+		{
+			SymbolBatch? maybe = self.results.try_pop();
+			if (catch excuse = maybe) break;
+			SymbolBatch batch = maybe;
+			self.free_batch(&batch);
+		}
 		self.results.destroy();
 		self.results = null;
 	}

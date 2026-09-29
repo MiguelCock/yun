@@ -35,10 +35,26 @@ fn void Menu.init(&self, Allocator allocator)
 	self.consumed = false;
 }
 
-fn void Menu.open_at(&self, RLVector2 position, String[] items)
+fn void Menu.free_items(&self)
 {
+	for (sz i = 0; i < self.items.len(); i++)
+	{
+		if (self.items[i].len) self.items[i].free(self.allocator);
+	}
 	self.items.clear();
 	self.enabled.clear();
+}
+
+fn void Menu.destroy(&self)
+{
+	self.free_items();
+	self.items.free();
+	self.enabled.free();
+}
+
+fn void Menu.open_at(&self, RLVector2 position, String[] items)
+{
+	self.free_items();
 	for (usz i = 0; i < items.len; i++)
 	{
 		self.items.push(items[i].copy(self.allocator));
@@ -51,8 +67,7 @@ fn void Menu.open_at(&self, RLVector2 position, String[] items)
 
 fn void Menu.open_with(&self, RLVector2 position, String[] items, bool[] enabled)
 {
-	self.items.clear();
-	self.enabled.clear();
+	self.free_items();
 	for (usz i = 0; i < items.len; i++)
 	{
 		self.items.push(items[i].copy(self.allocator));

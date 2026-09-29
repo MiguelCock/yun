@@ -27,10 +27,20 @@ fn void Notifier.init(&self, Allocator allocator)
 	self.items.init(allocator);
 }
 
+fn void Notifier.destroy(&self)
+{
+	for (sz i = 0; i < self.items.len(); i++)
+	{
+		if (self.items[i].text.len) self.items[i].text.free(self.allocator);
+	}
+	self.items.free();
+}
+
 fn void Notifier.push(&self, String message)
 {
 	if (self.items.len() >= MAX_NOTICES)
 	{
+		if (self.items[0].text.len) self.items[0].text.free(self.allocator);
 		self.items.remove_at(0);
 	}
 	self.items.push({ .text = message.copy(self.allocator), .ttl = NOTICE_TTL });
@@ -41,7 +51,11 @@ fn void Notifier.update(&self, float dt)
 	for (sz i = self.items.len(); i > 0; i--)
 	{
 		self.items[i - 1].ttl -= dt;
-		if (self.items[i - 1].ttl <= 0.0f) self.items.remove_at(i - 1);
+		if (self.items[i - 1].ttl <= 0.0f)
+		{
+			if (self.items[i - 1].text.len) self.items[i - 1].text.free(self.allocator);
+			self.items.remove_at(i - 1);
+		}
 	}
 }
 

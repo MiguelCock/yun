@@ -67,6 +67,16 @@ fn void* open_lib(ZString path)
 	$endif
 }
 
+fn void unload_grammar(void* handle)
+{
+	if (!handle) return;
+	$if env::WIN32:
+		(void)win32::freeLibrary((win32::Win32_HMODULE)handle);
+	$else
+		(void)libc::dlclose(handle);
+	$endif
+}
+
 fn GrammarFn resolve_symbol(void* handle, ZString symbol)
 {
 	$if env::WIN32:

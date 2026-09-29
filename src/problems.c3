@@ -115,6 +115,13 @@ fn void Problems.show(&self)
 	self.open = true;
 }
 
+fn void Problems.destroy(&self)
+{
+	self.free_contents();
+	self.entries.free();
+	self.rows.free();
+}
+
 fn void Problems.close(&self)
 {
 	self.open = false;

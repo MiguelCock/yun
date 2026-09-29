@@ -24,3 +24,14 @@ fn void test_strip_extension()
 		assert(strip_extension(tmem, "NoExtension").compare_to("NoExtension") == 0);
 	};
 }
+
+fn void test_destroy_bundled_entry_is_safe()
+{
+	Fonts f;
+	f.allocator = mem;
+	f.entries.init(mem);
+	f.names.init(mem);
+	f.entries.push({ .label = "JetBrains Mono".copy(mem), .path = "" });
+	f.names.push(f.entries.get(0).label);
+	f.destroy();
+}

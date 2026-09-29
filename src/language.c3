@@ -442,6 +442,18 @@ TSLanguage*[LANGUAGE_COUNT] grammar_cache;
 void*[LANGUAGE_COUNT] grammar_handles;
 Atomic{bool}[LANGUAGE_COUNT] grammar_loaded;
 
+fn void shutdown_grammars()
+{
+	for (int i = 0; i < LANGUAGE_COUNT; i++)
+	{
+		if (!grammar_cache[i] && !grammar_handles[i]) continue;
+		grammar::unload_grammar(grammar_handles[i]);
+		grammar_handles[i] = null;
+		grammar_cache[i] = null;
+		grammar_loaded[i].store(false);
+	}
+}
+
 fn TSLanguage* grammar_language(Language language)
 {
 	int index = (int)language;

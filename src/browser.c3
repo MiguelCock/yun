@@ -40,9 +40,25 @@ fn String Browser.parent_dir(&self)
 	return rl::get_prev_directory_path((ZString)self.dir.ptr).str_view().copy(self.allocator);
 }
 
+fn void Browser.free_entries(&self)
+{
+	for (sz i = 0; i < self.entries.len(); i++)
+	{
+		if (((String)self.entries[i]).len) ((String)self.entries[i]).free(self.allocator);
+	}
+	self.entries.clear();
+}
+
+fn void Browser.destroy(&self)
+{
+	if (((String)self.dir).len) ((String)self.dir).free(self.allocator);
+	self.free_entries();
+	self.entries.free();
+}
+
 fn void Browser.scan(&self)
 {
-	self.entries.clear();
+	self.free_entries();
 	PathList? list = path::ls(self.allocator, self.dir, no_dirs: false, recursive: false, relative: false);
 	if (catch excuse = list) return;
 	foreach (Path entry : list)
@@ -62,6 +78,7 @@ fn void Browser.scan(&self)
 
 fn void Browser.navigate(&self, String dir)
 {
+	if (((String)self.dir).len) ((String)self.dir).free(self.allocator);
 	self.dir = (Path)dir.copy(self.allocator);
 	self.scan();
 	self.selected = 0;
