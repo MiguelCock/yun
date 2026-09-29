@@ -146,6 +146,8 @@ fn void apply_settings(
 		ui_changed = true;
 	}
 
+	project.skip_nested_repos = config.settings.get_bool(settings::SettingId.APP_SKIP_SUBMODULES);
+
 	editor::EditorSettings es = editor::settings();
 	es.line_height = (float)config.settings.get_float(settings::SettingId.EDITOR_LINE_HEIGHT);
 	es.padding_x = (float)config.settings.get_int(settings::SettingId.EDITOR_PADDING_X);
@@ -1540,6 +1542,8 @@ fn int main(String[] args)
 	UiMode ui_mode              = UiMode.MOVE;
 	int edit_grace_frames       = 0;
 	bool selftest               = false;
+	bool benchmark_on           = false;
+	bool benchmark_synthetic    = false;
 	int benchmark_cards         = 0;
 	int benchmark_frames        = 240;
 	for (usz i = 1; i < args.len; i++)
@@ -1551,19 +1555,23 @@ fn int main(String[] args)
 		}
 		else if (arg.starts_with("--benchmark-frames="))
 		{
+			benchmark_on = true;
 			benchmark_frames = parse_int(arg[19..]);
 		}
 		else if (arg.compare_to("--benchmark") == 0)
 		{
-			benchmark_cards = 200;
+			benchmark_on = true;
+			if (benchmark_cards == 0) benchmark_cards = 200;
 		}
 		else if (arg.starts_with("--benchmark="))
 		{
+			benchmark_on = true;
 			benchmark_cards = parse_int(arg[12..]);
 		}
 	}
 	if (benchmark_frames < 1) benchmark_frames = 1;
-	if (!selftest && benchmark_cards == 0 && args.len > 1)
+	bool open_path = !selftest && args.len > 1 && !args[1].starts_with("--");
+	if (open_path)
 	{
 		String? resolved = project::resolve_path(project.allocator, args[1]);
 		if (catch excuse = resolved)
@@ -1576,6 +1584,19 @@ fn int main(String[] args)
 		}
 		else
 		{
+			config.load((String)resolved);
+			apply_settings(
+				&config,
+				&fonts,
+				&notifier,
+				&project,
+				&canvas,
+				&font_size,
+				&editor_font,
+				&metrics,
+				&ui_size,
+				&font
+			);
 			open_job = project::open_job_create(project.allocator, &project, resolved);
 			opening = true;
 		}
@@ -1597,6 +1618,7 @@ fn int main(String[] args)
 		);
 		if (benchmark_cards > 0)
 		{
+			benchmark_synthetic = true;
 			int cols = 1;
 			while (cols * cols < benchmark_cards) cols++;
 			float cw = ui::pxf(card::CARD_WIDTH) + ui::pxf(32.0f);
@@ -1682,10 +1704,21 @@ fn int main(String[] args)
 	{
 		frame_count++;
 		if (selftest && frame_count > 3) break;
-		if (benchmark_cards > 0)
+		bool bench_ready = benchmark_on && (benchmark_synthetic || project_open);
+		if (bench_ready)
 		{
 			float t = (float)frame_count;
-			canvas.target.target = { 1600.0f * math::sin(t * 0.02f), 1300.0f * math::cos(t * 0.017f) };
+			Rect bounds;
+			if (project.content_bounds(&bounds))
+			{
+				float cx     = bounds.x + bounds.width / 2.0f;
+				float cy     = bounds.y + bounds.height / 2.0f;
+				float radius = math::max(bounds.width, bounds.height) * 0.5f;
+				canvas.target.target = {
+					cx + radius * math::sin(t * 0.02f),
+					cy + radius * math::cos(t * 0.017f),
+				};
+			}
 			canvas.target.zoom = 0.55f + 0.35f * math::sin(t * 0.013f);
 		}
 		double frame_start = rl::get_time();
@@ -2660,7 +2693,7 @@ fn int main(String[] args)
 		prof_scan += (scan_ms - prof_scan) * 0.1;
 		prof_frame += ((rl::get_time() - frame_start) * 1000.0 - prof_frame) * 0.1;
 
-		if (benchmark_cards > 0 && frame_count > bench_warmup)
+		if (bench_ready && frame_count > bench_warmup)
 		{
 			double ms = (rl::get_time() - frame_start) * 1000.0;
 			bench_sum += ms;
@@ -2672,8 +2705,9 @@ fn int main(String[] args)
 			{
 				double avg = bench_sum / (double)bench_samples;
 				io::printfn(
-					"benchmark: %d cards | %d frames | avg %.2f ms  min %.2f  max %.2f  | over 16.7ms: %d  (%.1f fps)",
-					(int)benchmark_cards,
+					"benchmark: %d cards | %d folders | %d frames | avg %.2f ms  min %.2f  max %.2f  | over 16.7ms: %d  (%.1f fps)",
+					(int)project.cards.len(),
+					(int)project.folders.len(),
 					(int)bench_samples,
 					avg,
 					bench_min,

@@ -9,6 +9,7 @@ import yun::theme;
 const int MINIMAP_WIDTH            = 220;
 const int MINIMAP_HEIGHT           = 160;
 const int MINIMAP_MARGIN           = 16;
+const int MINIMAP_MAX_CARDS        = 600;
 const float MINIMAP_ZOOM_THRESHOLD = 0.4f;
 
 struct MinimapSettings
@@ -86,6 +87,7 @@ fn bool visible(project::Project* project, canvas::Canvas* canvas)
 {
 	if (!g_minimap_settings.enabled) return false;
 	if (canvas.camera.zoom >= g_minimap_settings.zoom_threshold) return false;
+	if (project.cards.len() > (sz)MINIMAP_MAX_CARDS) return false;
 	Rect bounds;
 	return project.content_bounds(&bounds);
 }

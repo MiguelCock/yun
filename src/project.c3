@@ -32,9 +32,11 @@ const float CLUSTER_COLLAPSED_WIDTH =  240.0f;
 const float CLUSTER_GAP             =  16.0f;
 const float CARD_GAP                =  16.0f;
 const int CLUSTER_COLUMNS           =  3;
-const String[] IGNORED_NAMES        =  { ".git", ".yun", "build", "out", "node_modules" };
+const String[] IGNORED_NAMES        =  { ".git", ".gitmodules", ".yun", "build", "out", "node_modules" };
 const float DRAW_CULL_MARGIN        =  64.0f;
 const float CARD_MIN_DRAW_PX        =  3.0f;
+const float CARD_LOD_MIN_PX         =  48.0f;
+const float CLUSTER_TEXT_MIN_ZOOM   =  0.45f;
 const double DOUBLE_CLICK_SECONDS   =  0.35;
 const float DOUBLE_CLICK_DIST       =  6.0f;
 const usz OPEN_SCAN_BUDGET          =  64;
@@ -74,9 +76,11 @@ struct OpenJob
 	Path root;
 	PathList entries;
 	List{Path} pending;
+	List{Path} submodules;
 	gitignore::Gitignore ignore;
 	OpenPhase phase;
 	bool cancelled;
+	bool skip_nested;
 	usz scanned_dirs;
 	usz build_cursor;
 }
@@ -130,6 +134,7 @@ struct Project
 	int awake_count;
 	int asleep_count;
 	int cards_revision;
+	bool skip_nested_repos;
 	spatial::Grid grid;
 	bool grid_dirty;
 	bool content_bounds_valid;
@@ -165,6 +170,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.awake_count = 0;
 	self.asleep_count = 0;
 	self.cards_revision = 0;
+	self.skip_nested_repos = true;
 	self.grid.init(allocator, spatial::CELL_SIZE);
 	self.grid_dirty = true;
 	self.content_bounds_valid = false;
@@ -1058,6 +1064,56 @@ fn void Project.scale_geometry(&self, float factor)
 	self.invalidate_bounds();
 }
 
+fn bool is_nested_repo(String dir)
+{
+	@pool()
+	{
+		Path? git = ((Path)dir).append(tmem, ".git");
+		if (catch excuse = git) return false;
+		return path::exists(git);
+	};
+}
+
+fn bool is_submodule_path(OpenJob* job, String abs)
+{
+	for (sz i = 0; i < job.submodules.len(); i++)
+	{
+		if (((String)job.submodules[i]).compare_to(abs) == 0) return true;
+	}
+	return false;
+}
+
+fn void open_job_load_submodules(OpenJob* job, String root)
+{
+	@pool()
+	{
+		Path? file = ((Path)root).append(tmem, ".gitmodules");
+		if (catch excuse = file) return;
+		char[]? data = file::load(tmem, file);
+		if (catch excuse = data) return;
+		String text = (String)data;
+		usz start   = 0;
+		for (usz i = 0; i <= text.len; i++)
+		{
+			if (i != text.len && text[i] != '\n') continue;
+			String raw = text[start:i - start];
+			start = i + 1;
+			if (raw.len > 0 && raw[raw.len - 1] == '\r') raw = raw[0:raw.len - 1];
+			usz at = 0;
+			while (at < raw.len && (raw[at] == ' ' || raw[at] == '\t')) at++;
+			if (!raw[at:raw.len - at].starts_with("path")) continue;
+			usz eq = at;
+			while (eq < raw.len && raw[eq] != '=') eq++;
+			if (eq >= raw.len) continue;
+			usz value_at = eq + 1;
+			while (value_at < raw.len && (raw[value_at] == ' ' || raw[value_at] == '\t')) value_at++;
+			String value = raw[value_at:raw.len - value_at];
+			if (value.len == 0) continue;
+			job.submodules.push((Path)string::format(job.allocator, "%s/%s", root, value));
+		}
+	};
+}
+
 fn OpenJob* open_job_create(Allocator allocator, Project* project, String root)
 {
 	OpenJob* job = alloc::new(allocator, OpenJob);
@@ -1066,18 +1122,26 @@ fn OpenJob* open_job_create(Allocator allocator, Project* project, String root)
 	job.root = (Path)root;
 	job.entries.init(allocator);
 	job.pending.init(allocator);
+	job.submodules.init(allocator);
 	job.ignore.init(allocator);
 	job.phase = OpenPhase.SCAN;
 	job.cancelled = false;
+	job.skip_nested = project.skip_nested_repos;
 	job.scanned_dirs = 0;
 	job.build_cursor = 0;
 	job.pending.push((Path)root);
+	if (job.skip_nested) open_job_load_submodules(job, root);
 	return job;
 }
 
 fn void open_job_destroy(OpenJob* job)
 {
 	if (!job) return;
+	for (sz i = 0; i < job.submodules.len(); i++)
+	{
+		if (((String)job.submodules[i]).len) ((String)job.submodules[i]).free(job.allocator);
+	}
+	job.submodules.free();
 	job.entries.free();
 	job.pending.free();
 	job.ignore.free();
@@ -1107,6 +1171,11 @@ fn bool OpenJob.scan_dir(&self, Path dir)
 		bool is_dir = path::is_dir(entry);
 		if (basename_is_ignored((String)entry)) continue;
 		if (self.ignore.is_ignored((String)entry, is_dir)) continue;
+		if (is_dir && self.skip_nested)
+		{
+			if (is_submodule_path(self, (String)entry)) continue;
+			if (is_nested_repo((String)entry)) continue;
+		}
 		self.entries.push(entry);
 		if (is_dir) self.pending.push(entry);
 	}
@@ -2716,6 +2785,7 @@ fn void Project.draw_cluster(&self, int index, float zoom)
 		float thickness = card::screen_thickness(self.grabbing ? 3.0f : 2.0f, zoom);
 		rl::draw_rectangle_lines_ex(bounds, thickness, theme::current().card_focus);
 	}
+	if (zoom < CLUSTER_TEXT_MIN_ZOOM) return;
 	String name = rl::get_file_name((ZString)cluster.path.ptr).str_view();
 	@pool()
 	{
@@ -2782,7 +2852,13 @@ fn void Project.draw_cards(
 			bool is_focused = (int)i == self.focused;
 			if (is_focused) editor::ensure_buffer(card, self.allocator);
 			if (!rect_intersects(card.rect, visible)) continue;
-			if (!is_focused && card.rect.width * camera.zoom < CARD_MIN_DRAW_PX) continue;
+			float on_screen_w = card.rect.width * camera.zoom;
+			if (!is_focused && on_screen_w < CARD_MIN_DRAW_PX) continue;
+			if (!is_focused && on_screen_w < CARD_LOD_MIN_PX)
+			{
+				card.draw_lod(camera.zoom);
+				continue;
+			}
 			card.draw(is_focused, camera.zoom);
 			if (!is_focused && (int)i == self.selected)
 			{

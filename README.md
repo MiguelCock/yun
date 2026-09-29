@@ -91,6 +91,7 @@ c3c run                   # run
 c3c run -- <directory>    # run and open a project folder
 c3c run -- --selftest     # boot, render a few frames, exit (headless smoke test)
 c3c run -- --benchmark=200 --benchmark-frames=240   # synth N cards, scripted pan/zoom, print frame times
+c3c run -- <directory> --benchmark --benchmark-frames=240   # benchmark a real project (card/folder count + frame times)
 c3c benchmark             # micro benchmarks (hit-test, bounds cache, highlight runs)
 c3c test                  # run the test suite
 c3fmt --check $(git ls-files '*.c3')   # formatting check
@@ -135,7 +136,7 @@ Values are grouped into sections, for example:
 
 Unknown top-level keys or section keys warn and are ignored, and a missing config is valid (built-in defaults apply).
 
-The `editor` section covers font size and family (monospace fonts found on the system), line height, padding, indentation (tabs or spaces + width), auto-indent, caret blink, scroll margin, wheel-scroll lines and the line-number gutter. The `app` section also sets the interface font (`ui_font_family`) and text size (`ui_font_size`), and a global `ui_scale` factor that scales the whole interface (geometry and text). Text and layout scale automatically with the display's DPI. The `canvas` section tunes navigation (zoom limits and step, keyboard pan distance, pan/zoom smoothing and toggle, inertia friction and stop speed, drag threshold, max pan delta, grid toggle and cell size, jump-zoom), and `minimap` controls the minimap (enabled, size and zoom threshold). The `arrows` section controls import connections (enabled, internal/external arrows and labels, line and hover thickness, arrowhead size, hover tolerance, rescan debounce and scan worker count).
+The `editor` section covers font size and family (monospace fonts found on the system), line height, padding, indentation (tabs or spaces + width), auto-indent, caret blink, scroll margin, wheel-scroll lines and the line-number gutter. The `app` section also sets the interface font (`ui_font_family`) and text size (`ui_font_size`), a global `ui_scale` factor that scales the whole interface (geometry and text), and `skip_submodules` (default on) which keeps nested git repositories (submodules, vendored deps) out of the project scan. Text and layout scale automatically with the display's DPI. The `canvas` section tunes navigation (zoom limits and step, keyboard pan distance, pan/zoom smoothing and toggle, inertia friction and stop speed, drag threshold, max pan delta, grid toggle and cell size, jump-zoom), and `minimap` controls the minimap (enabled, size and zoom threshold). The `arrows` section controls import connections (enabled, internal/external arrows and labels, line and hover thickness, arrowhead size, hover tolerance, rescan debounce and scan worker count).
 
 Language servers are configured under the `lsp` section: a map of language id to command, e.g. `"lsp": { "c3": "c3lsp", "python": "pylsp" }`. Yun detects the language id from the file extension and starts the server (rooted at the project); an override takes precedence over the built-in default. See [`docs/lsp.md`](docs/lsp.md) for the supported ids and defaults.
 
