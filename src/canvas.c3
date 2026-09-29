@@ -105,6 +105,7 @@ struct Canvas
 	float top_inset;
 	bool pointer_over_ui;
 	bool block_zoom;
+	bool block_pan;
 	bool drag_pending;
 	bool dragging;
 	RLMouseButton drag_button;
@@ -139,7 +140,7 @@ fn void Canvas.update(&self)
 		self.zoom_at(wheel, mouse);
 	}
 
-	if (!self.drag_pending && !self.dragging)
+	if (!self.block_pan && !self.drag_pending && !self.dragging)
 	{
 		if (rl::is_mouse_button_pressed(rl::RLMouseButton.MIDDLE))
 		{

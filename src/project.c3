@@ -135,6 +135,12 @@ struct Project
 	int asleep_count;
 	int cards_revision;
 	bool skip_nested_repos;
+	int focus_card;
+	Rect focus_saved_rect;
+	RLCamera2D focus_saved_camera;
+	RLCamera2D focus_saved_target;
+	float focus_screen_w;
+	float focus_screen_h;
 	spatial::Grid grid;
 	bool grid_dirty;
 	bool content_bounds_valid;
@@ -171,6 +177,9 @@ fn void Project.init(&self, Allocator allocator)
 	self.asleep_count = 0;
 	self.cards_revision = 0;
 	self.skip_nested_repos = true;
+	self.focus_card = -1;
+	self.focus_screen_w = 0.0f;
+	self.focus_screen_h = 0.0f;
 	self.grid.init(allocator, spatial::CELL_SIZE);
 	self.grid_dirty = true;
 	self.content_bounds_valid = false;
@@ -685,6 +694,7 @@ fn int int_compare(void* a, void* b)
 
 fn int Project.cluster_hit(&self, RLVector2 world)
 {
+	if (self.focus_card >= 0) return ROOT_FOLDER;
 	int best     = ROOT_FOLDER;
 	usz best_len = 0;
 	for (sz i = 0; i < self.folders.len(); i++)
@@ -703,6 +713,7 @@ fn int Project.cluster_hit(&self, RLVector2 world)
 
 fn int Project.folder_at(&self, RLVector2 world)
 {
+	if (self.focus_card >= 0) return ROOT_FOLDER;
 	int best     = ROOT_FOLDER;
 	usz best_len = 0;
 	for (sz i = 0; i < self.folders.len(); i++)
@@ -1893,8 +1904,87 @@ fn bool Project.paste_clipboard(&self, double now)
 	return true;
 }
 
+fn bool Project.focused_editor(&self)
+{
+	return self.focus_card >= 0;
+}
+
+fn void Project.apply_focus_rect(&self, Canvas* canvas)
+{
+	int index = self.focus_card;
+	if (index < 0 || index >= (int)self.cards.len()) return;
+	float width  = (float)rl::get_screen_width();
+	float height = (float)rl::get_screen_height() - canvas.top_inset;
+	if (width < 1.0f) width = 1.0f;
+	if (height < 1.0f) height = 1.0f;
+	RLVector2 center = canvas.target.target;
+	self.cards[index].rect = {
+		.x = center[0] - width / 2.0f,
+		.y = center[1] - height / 2.0f,
+		.width = width,
+		.height = height,
+	};
+}
+
+fn bool Project.begin_focus(&self, int index, Canvas* canvas)
+{
+	if (index < 0 || index >= (int)self.cards.len()) return false;
+	int at = self.focus(index);
+	if (at < 0 || at >= (int)self.cards.len()) return false;
+	self.cards[at].open = true;
+	editor::ensure_buffer(&self.cards[at], self.allocator);
+	if (!self.cards[at].buffer) return false;
+
+	self.focus_saved_rect = self.cards[at].rect;
+	self.focus_saved_camera = canvas.camera;
+	self.focus_saved_target = canvas.target;
+	self.focus_screen_w = (float)rl::get_screen_width();
+	self.focus_screen_h = (float)rl::get_screen_height();
+	self.focus_card = at;
+
+	RLVector2 center = self.cards[at].center();
+	canvas.target.target = center;
+	canvas.target.zoom = 1.0f;
+	canvas.camera.target = center;
+	canvas.camera.zoom = 1.0f;
+	self.apply_focus_rect(canvas);
+	self.invalidate_bounds();
+	return true;
+}
+
+fn void Project.update_focus_rect(&self, Canvas* canvas)
+{
+	if (self.focus_card < 0) return;
+	float width  = (float)rl::get_screen_width();
+	float height = (float)rl::get_screen_height();
+	if (width == self.focus_screen_w && height == self.focus_screen_h) return;
+	self.focus_screen_w = width;
+	self.focus_screen_h = height;
+	self.apply_focus_rect(canvas);
+	self.invalidate_bounds();
+}
+
+fn void Project.end_focus(&self, Canvas* canvas)
+{
+	if (self.focus_card < 0) return;
+	if (self.focus_card >= 0 && self.focus_card < (int)self.cards.len())
+	{
+		self.cards[self.focus_card].rect = self.focus_saved_rect;
+	}
+	self.focus_card = -1;
+	canvas.camera = self.focus_saved_camera;
+	canvas.target = self.focus_saved_target;
+	self.invalidate_bounds();
+}
+
 fn int Project.hit_test(&self, RLVector2 world)
 {
+	if (self.focus_card >= 0)
+	{
+		int index = self.focus_card;
+		if (index >= (int)self.cards.len()) return -1;
+		return self.cards[index].contains(world) ? index : -1;
+	}
 	self.ensure_grid();
 	int best = -1;
 	@pool()
@@ -2063,6 +2153,7 @@ fn void Project.update(
 		{
 			bool double_click         = self.register_click(rl::get_time(), world);
 			editor::CardRegion region = editor::region_at(&self.cards[card_hit], world, metrics, canvas.camera);
+			if (self.focus_card >= 0 && region != editor::CardRegion.BODY) region = editor::CardRegion.NONE;
 			if (region == editor::CardRegion.HANDLE)
 			{
 				int handle = self.cards[card_hit].resize_handle_at(world, canvas.camera);
@@ -2179,7 +2270,7 @@ fn void Project.update(
 					if (!ctrl_down()) self.selecting = true;
 				}
 			}
-			else
+			else if (region == editor::CardRegion.TITLE)
 			{
 				int index      = self.focus(card_hit);
 				FileCard* card = &self.cards[index];
@@ -2281,7 +2372,7 @@ fn void Project.update(
 		}
 	}
 
-	if (!pointer_blocked && !self.resizing && !rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
+	if (!pointer_blocked && !self.resizing && self.focus_card < 0 && !rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
 	{
 		int hover  = self.hit_test(world);
 		int handle = hover >= 0 ? self.cards[hover].resize_handle_at(world, canvas.camera) : -1;
@@ -2313,7 +2404,7 @@ fn void Project.refresh_sleep(&self, Rect visible, float zoom)
 	int asleep = 0;
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
-		bool is_focused = (int)i == self.focused;
+		bool is_focused = (int)i == self.focused || (int)i == self.focus_card;
 		bool big_enough = self.cards[i].rect.width * zoom >= CARD_MIN_DRAW_PX;
 		bool on_screen  = self.card_visible(
 			(int)i
@@ -2825,7 +2916,8 @@ fn void Project.draw_cards(
 	RLFont font,
 	RLFont editor_font,
 	EditorMetrics metrics,
-	findbar::FindBar* find_bar
+	findbar::FindBar* find_bar,
+	int only_card
 )
 {
 	double elapsed = rl::get_time() - self.last_input_time;
@@ -2843,11 +2935,18 @@ fn void Project.draw_cards(
 	{
 		List{int} draw_list;
 		draw_list.init(tmem);
-		self.visible_cards(visible, &draw_list);
+		if (only_card >= 0)
+		{
+			draw_list.push(only_card);
+		}
+		else
+		{
+			self.visible_cards(visible, &draw_list);
+		}
 		for (sz c = 0; c < draw_list.len(); c++)
 		{
 			sz i = (sz)draw_list[c];
-			if (!self.card_visible((int)i)) continue;
+			if (only_card < 0 && !self.card_visible((int)i)) continue;
 			FileCard* card  = &self.cards[i];
 			bool is_focused = (int)i == self.focused;
 			if (is_focused) editor::ensure_buffer(card, self.allocator);
@@ -2899,7 +2998,7 @@ fn void Project.draw_cards(
 					editor::draw_scrollbar(area, area.height + max, card.preview_scroll, camera, theme::current()
 						.editor_scrollbar);
 				}
-				if (is_focused) card.draw_handles(camera, theme::current().editor_handle);
+				if (is_focused && self.focus_card < 0) card.draw_handles(camera, theme::current().editor_handle);
 				continue;
 			}
 
@@ -3016,7 +3115,7 @@ fn void Project.draw_cards(
 			float content_height = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
 			editor::draw_scrollbar(text, content_height, card.scroll, camera, theme::current().editor_scrollbar);
 			if (is_focused && find_bar) find_bar.draw(card.rect, metrics, font, null);
-			if (is_focused) card.draw_handles(camera, theme::current().editor_handle);
+			if (is_focused && self.focus_card < 0) card.draw_handles(camera, theme::current().editor_handle);
 		}
 	};
 }

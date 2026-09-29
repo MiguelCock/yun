@@ -75,3 +75,29 @@ fn void test_visible_gates()
 
 	set_settings(saved);
 }
+fn void test_file_minimap_line_mapping()
+{
+	Rect panel = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 200.0f };
+	assert(file_minimap_line_at(panel, 0.0f, 100) == 0);
+	assert(file_minimap_line_at(panel, 100.0f, 100) == 50);
+	assert(file_minimap_line_at(panel, 199.9f, 100) == 99);
+	assert(file_minimap_line_at(panel, -50.0f, 100) == 0);
+	assert(file_minimap_line_at(panel, 500.0f, 100) == 99);
+	assert(file_minimap_line_at(panel, 10.0f, 0) == 0);
+}
+
+fn void test_file_minimap_band_and_viewport()
+{
+	Rect panel = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 100.0f };
+	Rect band  = file_minimap_band(panel, 0, 100);
+	assert(band.y == 0.0f);
+	assert(band.height >= 1.0f);
+	Rect last = file_minimap_band(panel, 99, 100);
+	assert(last.y >= 99.0f && last.y < 100.0f);
+
+	Rect vp = file_minimap_viewport(panel, 0, 10, 100);
+	assert(vp.y == 0.0f);
+	assert(vp.height >= 2.0f && vp.height <= panel.height);
+	Rect mid = file_minimap_viewport(panel, 50, 10, 100);
+	assert(mid.y >= 49.0f && mid.y <= 51.0f);
+}
