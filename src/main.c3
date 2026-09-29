@@ -2,6 +2,7 @@ module yun;
 
 import raylib6::rl;
 import std::collections::list;
+import std::io;
 import std::io::file;
 import std::io::path;
 import std::math;
@@ -15,10 +16,12 @@ import yun::context;
 import yun::editor;
 import yun::find;
 import yun::findbar;
+import yun::fonts;
 import yun::hover;
 import yun::imports;
 import yun::keymap;
 import yun::lsp;
+import yun::markdown;
 import yun::menu;
 import yun::minimap;
 import yun::notify;
@@ -27,9 +30,12 @@ import yun::problems;
 import yun::project;
 import yun::prompt;
 import yun::search;
+import yun::settings;
+import yun::settings_panel;
 import yun::symbols;
 import yun::theme;
 import yun::topbar;
+import yun::ui;
 import yun::workspace;
 
 enum UiMode : int
@@ -54,20 +60,242 @@ fn void finish_open(
 	notify::Notifier* notifier
 )
 {
-	workspace::load(project, canvas);
 	config.load((String)project.root);
-	apply_config_theme(config, notifier);
+	ui::set_ui_scale((float)config.settings.get_float(settings::SettingId.APP_UI_SCALE));
+	bool restored = workspace::load(project, canvas);
+	if (restored)
+	{
+		project.place_unrestored();
+		project.invalidate_bounds();
+	}
+	else
+	{
+		project.layout();
+		for (sz i = 0; i < project.folders.len(); i++)
+		{
+			project.folders[i].collapsed = true;
+		}
+		if (config.settings.get_bool(settings::SettingId.CANVAS_FIT_ON_OPEN))
+		{
+			Rect bounds;
+			if (project.content_bounds(&bounds))
+			{
+				float floor = (float)config.settings.get_float(settings::SettingId.CANVAS_FIT_MIN_ZOOM);
+				canvas.fit_zoom_floor(bounds, rl::get_screen_width(), rl::get_screen_height(), floor);
+			}
+		}
+	}
 	set_project_title(project);
 	keymap.build(config);
 	push_config_warnings(config, notifier);
 	push_keymap_warnings(keymap, notifier);
 }
 
-fn void apply_config_theme(config::Config* config, notify::Notifier* notifier)
+fn void apply_settings(
+	config::Config* config,
+	fonts::Fonts* fonts,
+	notify::Notifier* notifier,
+	project::Project* project,
+	canvas::Canvas* canvas,
+	int* font_size,
+	RLFont* editor_font,
+	editor::EditorMetrics* metrics,
+	int* ui_size,
+	RLFont* ui_font
+)
 {
-	if (!theme::set_by_name(config.theme))
+	if (config.settings.consume_change(settings::SettingId.APP_THEME))
 	{
-		notifier.push("Unknown theme in config; using default");
+		if (!theme::set_by_name(config.settings.get_string(settings::SettingId.APP_THEME)))
+		{
+			notifier.push("Unknown theme in config; using default");
+		}
+	}
+
+	bool ui_scale_changed = false;
+	if (config.settings.consume_change(settings::SettingId.APP_UI_SCALE))
+	{
+		float next = (float)config.settings.get_float(settings::SettingId.APP_UI_SCALE);
+		if (next < 0.5f) next = 0.5f;
+		if (next > 2.0f) next = 2.0f;
+		float current = ui::ui_scale();
+		if (next != current)
+		{
+			float ratio = next / current;
+			ui::set_ui_scale(next);
+			project.scale_geometry(ratio);
+			canvas.camera.target = { canvas.camera.target[0] * ratio, canvas.camera.target[1] * ratio };
+			ui_scale_changed = true;
+		}
+	}
+
+	bool ui_changed = false;
+	if (config.settings.consume_change(settings::SettingId.APP_UI_FONT_SIZE))
+	{
+		int next = (int)config.settings.get_int(settings::SettingId.APP_UI_FONT_SIZE);
+		if (next < 8) next = 8;
+		if (next > 32) next = 32;
+		if (next != *ui_size)
+		{
+			*ui_size = next;
+			ui_changed = true;
+		}
+	}
+	if (config.settings.consume_change(settings::SettingId.APP_UI_FONT_FAMILY))
+	{
+		ui_changed = true;
+	}
+
+	project.skip_nested_repos = config.settings.get_bool(settings::SettingId.APP_SKIP_SUBMODULES);
+
+	editor::EditorSettings es = editor::settings();
+	es.line_height = (float)config.settings.get_float(settings::SettingId.EDITOR_LINE_HEIGHT);
+	es.padding_x = (float)config.settings.get_int(settings::SettingId.EDITOR_PADDING_X);
+	es.padding_y = (float)config.settings.get_int(settings::SettingId.EDITOR_PADDING_Y);
+	es.caret_blink_ms = (int)config.settings.get_int(settings::SettingId.EDITOR_CARET_BLINK_MS);
+	es.scroll_margin_lines = (int)config.settings.get_int(settings::SettingId.EDITOR_SCROLL_MARGIN_LINES);
+	es.wheel_scroll_lines = (int)config.settings.get_int(settings::SettingId.EDITOR_WHEEL_SCROLL_LINES);
+	es.show_line_numbers = config.settings.get_bool(settings::SettingId.EDITOR_SHOW_LINE_NUMBERS);
+	es.indent_width = (int)config.settings.get_int(settings::SettingId.EDITOR_INDENT_WIDTH);
+	es.indent_spaces = config.settings.get_string(settings::SettingId.EDITOR_INDENT_STYLE).compare_to("spaces") == 0;
+	es.auto_indent = config.settings.get_bool(settings::SettingId.EDITOR_AUTO_INDENT);
+
+	canvas::CanvasSettings cs = canvas::settings();
+	cs.min_zoom = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_MIN);
+	cs.max_zoom = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_MAX);
+	cs.zoom_step = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_STEP);
+	cs.key_pan_step = (float)config.settings.get_float(settings::SettingId.CANVAS_KEY_PAN_STEP);
+	cs.pan_responsiveness = (float)config.settings.get_float(settings::SettingId.CANVAS_PAN_SMOOTHING);
+	cs.zoom_responsiveness = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_SMOOTHING);
+	cs.smoothing = config.settings.get_bool(settings::SettingId.CANVAS_SMOOTHING);
+	cs.inertia_friction = (float)config.settings.get_float(settings::SettingId.CANVAS_INERTIA_FRICTION);
+	cs.inertia_min_speed = (float)config.settings.get_float(settings::SettingId.CANVAS_INERTIA_MIN_SPEED);
+	cs.drag_threshold = (float)config.settings.get_float(settings::SettingId.CANVAS_DRAG_THRESHOLD);
+	cs.max_pan_delta = (float)config.settings.get_float(settings::SettingId.CANVAS_MAX_PAN_DELTA);
+	cs.grid = config.settings.get_bool(settings::SettingId.CANVAS_GRID);
+	cs.grid_cell = (float)config.settings.get_int(settings::SettingId.CANVAS_GRID_CELL);
+	cs.grid_min_px = (float)config.settings.get_float(settings::SettingId.CANVAS_GRID_MIN_PX);
+	cs.grid_max_px = (float)config.settings.get_float(settings::SettingId.CANVAS_GRID_MAX_PX);
+	cs.jump_zoom_min = (float)config.settings.get_float(settings::SettingId.CANVAS_JUMP_ZOOM_MIN);
+	cs.jump_zoom_target = (float)config.settings.get_float(settings::SettingId.CANVAS_JUMP_ZOOM_TARGET);
+	canvas::set_settings(cs);
+
+	minimap::MinimapSettings ms = minimap::settings();
+	ms.enabled = config.settings.get_bool(settings::SettingId.MINIMAP_ENABLED);
+	ms.size = (float)config.settings.get_float(settings::SettingId.MINIMAP_SIZE);
+	ms.zoom_threshold = (float)config.settings.get_float(settings::SettingId.MINIMAP_ZOOM_THRESHOLD);
+	minimap::set_settings(ms);
+
+	imports::ImportSettings is = imports::settings();
+	is.enabled = config.settings.get_bool(settings::SettingId.ARROWS_ENABLED);
+	is.show_internal = config.settings.get_bool(settings::SettingId.ARROWS_SHOW_INTERNAL);
+	is.show_external = config.settings.get_bool(settings::SettingId.ARROWS_SHOW_EXTERNAL);
+	is.labels = config.settings.get_bool(settings::SettingId.ARROWS_LABELS);
+	is.line_thickness = (float)config.settings.get_float(settings::SettingId.ARROWS_LINE_THICKNESS);
+	is.hover_thickness = (float)config.settings.get_float(settings::SettingId.ARROWS_HOVER_THICKNESS);
+	is.arrowhead_size = (float)config.settings.get_float(settings::SettingId.ARROWS_ARROWHEAD_SIZE);
+	is.hit_tolerance = (float)config.settings.get_float(settings::SettingId.ARROWS_HIT_TOLERANCE);
+	is.rescan_debounce = (float)config.settings.get_float(settings::SettingId.ARROWS_RESCAN_DEBOUNCE);
+	is.scan_workers = (int)config.settings.get_int(settings::SettingId.ARROWS_SCAN_WORKERS);
+	is.internal_style = imports::parse_arrow_style(
+		config.settings.get_string(settings::SettingId.ARROWS_INTERNAL_STYLE)
+	);
+	is.external_style = imports::parse_arrow_style(
+		config.settings.get_string(settings::SettingId.ARROWS_EXTERNAL_STYLE)
+	);
+	is.dash_length = (float)config.settings.get_float(settings::SettingId.ARROWS_DASH_LENGTH);
+	is.dash_gap = (float)config.settings.get_float(settings::SettingId.ARROWS_DASH_GAP);
+	imports::set_settings(is);
+
+	bool font_changed    = false;
+	bool metrics_changed = false;
+
+	if (config.settings.consume_change(settings::SettingId.EDITOR_FONT_SIZE))
+	{
+		int next = editor::clamp_font_size((int)config.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE));
+		if (next != *font_size)
+		{
+			*font_size = next;
+			font_changed = true;
+		}
+	}
+	if (config.settings.consume_change(settings::SettingId.EDITOR_FONT_FAMILY))
+	{
+		font_changed = true;
+		String family = config.settings.get_string(settings::SettingId.EDITOR_FONT_FAMILY);
+		if (family.len > 0 && family.compare_to("JetBrains Mono") != 0 && fonts.path_for(family).len == 0)
+		{
+			notifier.push("Unknown font; using bundled font");
+		}
+	}
+	if (config.settings.consume_change(
+		settings::SettingId.EDITOR_LINE_HEIGHT
+	) || config.settings.consume_change(
+		settings::SettingId.EDITOR_PADDING_X
+	) || config.settings.consume_change(settings::SettingId.EDITOR_PADDING_Y))
+	{
+		metrics_changed = true;
+	}
+
+	bool reload_editor = font_changed || ui_scale_changed;
+	bool reload_ui     = ui_changed || ui_scale_changed;
+
+	if (!reload_ui && !reload_editor && !metrics_changed)
+	{
+		editor::set_settings(es);
+		return;
+	}
+
+	float old_lh = metrics.line_height;
+	float old_cw = metrics.char_width;
+	editor::set_settings(es);
+
+	if (ui_changed)
+	{
+		String family = config.settings.get_string(settings::SettingId.APP_UI_FONT_FAMILY);
+		if (family.len > 0 && family.compare_to("JetBrains Mono") != 0 && fonts.path_for(family).len == 0)
+		{
+			notifier.push("Unknown font; using bundled font");
+		}
+	}
+	if (reload_ui)
+	{
+		rl::unload_font(*ui_font);
+		*ui_font = load_editor_font(
+			fonts,
+			config.settings.get_string(settings::SettingId.APP_UI_FONT_FAMILY),
+			ui::atlas_px(*ui_size)
+		);
+		ui::set_font(*ui_font, *ui_size);
+	}
+
+	float draw_size = (float)ui::draw_px(*font_size);
+	if (reload_editor)
+	{
+		String family = config.settings.get_string(settings::SettingId.EDITOR_FONT_FAMILY);
+		reload_editor_font(fonts, editor_font, ui::atlas_px(*font_size), draw_size, family, metrics);
+	}
+	else if (metrics_changed)
+	{
+		*metrics = editor::metrics_for_font(*editor_font, draw_size);
+	}
+
+	if (ui_scale_changed)
+	{
+		canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
+		canvas.camera.offset = { (float)rl::get_screen_width() / 2.0f, canvas.usable_offset_y() };
+	}
+
+	if (reload_editor || metrics_changed)
+	{
+		float lh_ratio = old_lh > 0.0f ? metrics.line_height / old_lh : 1.0f;
+		float cw_ratio = old_cw > 0.0f ? metrics.char_width / old_cw : 1.0f;
+		for (sz i = 0; i < project.cards.len(); i++)
+		{
+			project.cards[i].scroll *= lh_ratio;
+			project.cards[i].scroll_x *= cw_ratio;
+		}
+		project.reveal_focused(*metrics);
 	}
 }
 
@@ -118,13 +346,31 @@ fn void draw_loading(project::OpenJob* job, RLFont font)
 			(long)job.scanned_dirs,
 			(long)job.entries.len()
 		);
-		rl::draw_text_ex(font, title.zstr_tcopy(), { panel.x + 20.0f, panel.y + 20.0f }, 18.0f, 0.0f, theme::current()
+		rl::draw_text_ex(
+			font,
+			title.zstr_tcopy(),
+			{ panel.x + (float)ui::px(20), panel.y + (float)ui::px(20) },
+			(float)ui::tpx(18),
+			0.0f,
+			theme::current()
 			.loading_title);
-		rl::draw_text_ex(font, status.zstr_tcopy(), { panel.x + 20.0f, panel.y + 48.0f }, 14.0f, 0.0f, theme::current()
+		rl::draw_text_ex(
+			font,
+			status.zstr_tcopy(),
+			{ panel.x + (float)ui::px(20), panel.y + (float)ui::px(48) },
+			(float)ui::tpx(14),
+			0.0f,
+			theme::current()
 			.loading_status);
 		if (job.phase == project::OpenPhase.SCAN)
 		{
-			rl::draw_text_ex(font, "Esc to cancel", { panel.x + 20.0f, panel.y + 70.0f }, 14.0f, 0.0f, theme::current()
+			rl::draw_text_ex(
+				font,
+				"Esc to cancel",
+				{ panel.x + (float)ui::px(20), panel.y + (float)ui::px(70) },
+				(float)ui::tpx(14),
+				0.0f,
+				theme::current()
 				.loading_hint);
 		}
 	};
@@ -150,17 +396,38 @@ struct App
 {
 	project::Project* project;
 	canvas::Canvas* canvas;
+	config::Config* config;
 	browser::Browser* browser;
 	notify::Notifier* notifier;
 	prompt::Prompt* name_prompt;
 	palette::Palette* palette;
+	settings_panel::Panel* settings_panel;
 	findbar::FindBar* find_bar;
 	problems::Problems* problems;
 	menu::Menu* theme_menu;
+	menu::Menu* context_menu;
+	menu::Menu* close_menu;
+	menu::Menu* delete_menu;
+	menu::Menu* reload_menu;
+	menu::Menu* definition_menu;
 	search::Search* search;
 	symbols::Symbols* symbols;
 	editor::EditorMetrics metrics;
 	bool* project_open;
+	bool* content_changed;
+	UiMode* ui_mode;
+	UiMode* focus_saved_mode;
+	int* edit_grace_frames;
+	topbar::TopBar* bar;
+	keymap::Keymap* keymap;
+	context::ContextItem[context::CONTEXT_MAX_ITEMS] context_items;
+	usz context_item_count;
+	int context_card;
+	int context_parent;
+	RLVector2 context_world;
+	int context_offset;
+	int pending_rename_card;
+	int pending_delete_card;
 	int* pending_kind;
 	int* pending_parent;
 	RLVector2* pending_world;
@@ -170,6 +437,115 @@ fn bool has_focused_buffer(project::Project* project)
 {
 	int index = project.focused;
 	return index >= 0 && index < (int)project.cards.len() && project.cards[index].buffer != null;
+}
+
+fn void enter_edit_mode(
+	project::Project* project,
+	canvas::Canvas* canvas,
+	editor::EditorMetrics metrics,
+	UiMode* ui_mode,
+	int* edit_grace_frames
+)
+{
+	if (project.selected_cluster >= 0)
+	{
+		int folder = project.selected_cluster;
+		project.enter_folder(folder);
+		Rect r = project.cluster_visual_bounds(folder);
+		if (r.width > 0.0f) canvas.target.target = { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+		return;
+	}
+
+	bool enter = false;
+	if (project.selected >= 0)
+	{
+		int idx = project.focus(project.selected);
+		if (idx >= 0 && idx < (int)project.cards.len())
+		{
+			project.selected = idx;
+			editor::ensure_buffer(&project.cards[idx], project.allocator);
+			project.reveal_focused(metrics);
+			enter = true;
+		}
+	}
+	else if (project.focused >= 0)
+	{
+		project.selected = project.focused;
+		enter = true;
+	}
+	if (enter && project.focused >= 0)
+	{
+		*ui_mode = UiMode.EDIT;
+		*edit_grace_frames = 2;
+		FileCard* card = project.focused_card();
+		if (card) canvas.target.target = card.center();
+	}
+}
+
+fn void close_overlays(App* app)
+{
+	app.palette.close();
+	app.settings_panel.close();
+	app.problems.close();
+	app.name_prompt.close();
+	app.theme_menu.close();
+	app.context_menu.close();
+	app.close_menu.close();
+	app.delete_menu.close();
+	app.reload_menu.close();
+	app.definition_menu.close();
+	app.search.close();
+	app.symbols.close();
+	app.find_bar.close();
+}
+
+fn void poll_global(keymap::Keymap* keymap, App* app)
+{
+	int cmd = keymap.poll(commands::CTX_GLOBAL);
+	if (cmd >= 0) run_command((commands::CommandId)cmd, app);
+}
+
+fn int target_card_index(project::Project* project)
+{
+	if (project.selected >= 0 && project.selected < (int)project.cards.len()) return project.selected;
+	if (project.focused >= 0 && project.focused < (int)project.cards.len()) return project.focused;
+	return -1;
+}
+
+fn void open_context_menu(App* app, context::ContextTarget target, int card, int folder, RLVector2 world, int offset)
+{
+	project::Project* project = app.project;
+	app.context_card = card;
+	app.context_parent = folder;
+	app.context_world = world;
+	app.context_offset = offset;
+
+	bool card_open    = card >= 0 && project.cards[card].open;
+	bool card_missing = card >= 0 && project.cards[card].missing;
+	app.context_item_count = context::build(
+		target,
+		card_open,
+		card_missing,
+		*app.project_open,
+		offset >= 0,
+		app.context_items[0:context::CONTEXT_MAX_ITEMS]
+	);
+
+	@pool()
+	{
+		String[context::CONTEXT_MAX_ITEMS] labels;
+		bool[context::CONTEXT_MAX_ITEMS] enabled;
+		for (usz i = 0; i < app.context_item_count; i++)
+		{
+			context::ContextItem item = app.context_items[i];
+			int cmd                   = context::command_for(item.action);
+			String hint               = cmd >= 0 ? app.keymap.shortcut((commands::CommandId)cmd) : "";
+			labels[i] = hint.len > 0 ? string::format(tmem, "%s   %s", item.label, hint) : item.label;
+			enabled[i] = item.enabled;
+		}
+		RLVector2 screen = rl::get_world_to_screen2d(world, app.canvas.camera);
+		app.context_menu.open_with(screen, labels[0:app.context_item_count], enabled[0:app.context_item_count]);
+	};
 }
 
 fn void run_command(commands::CommandId id, App* app)
@@ -218,6 +594,7 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.OPEN:
 
 			{
+				close_overlays(app);
 				app.browser.open_at((String)project.root);
 				return;
 			}
@@ -248,6 +625,7 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.SHOW_PALETTE:
 
 			{
+				close_overlays(app);
 				app.palette.show();
 				while (rl::get_char_pressed() != 0)
 				{
@@ -267,6 +645,7 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				find::FindField field = id == commands::CommandId.REPLACE ? find::FindField.REPLACE
 					: find::FindField.QUERY;
+				close_overlays(app);
 				app.find_bar.open_for(field);
 				while (rl::get_char_pressed() != 0)
 				{
@@ -310,6 +689,7 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.PROBLEMS:
 
 			{
+				close_overlays(app);
 				app.problems.show();
 				return;
 			}
@@ -343,6 +723,7 @@ fn void run_command(commands::CommandId id, App* app)
 					(float)rl::get_screen_width() / 2.0f,
 					(float)rl::get_screen_height() / 2.0f,
 				};
+				close_overlays(app);
 				@pool()
 				{
 					String[32] labels;
@@ -361,6 +742,7 @@ fn void run_command(commands::CommandId id, App* app)
 					app.notifier.push("No project open");
 					return;
 				}
+				close_overlays(app);
 				app.search.show();
 				while (rl::get_char_pressed() != 0)
 				{
@@ -375,12 +757,384 @@ fn void run_command(commands::CommandId id, App* app)
 					app.notifier.push("No project open");
 					return;
 				}
+				close_overlays(app);
 				app.symbols.show();
 				while (rl::get_char_pressed() != 0)
 				{
 				}
 				return;
 			}
+		case commands::CommandId.TOGGLE_SETTINGS:
+
+			{
+				bool was_open = app.settings_panel.open;
+				close_overlays(app);
+				if (!was_open) app.settings_panel.show();
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+				return;
+			}
+		case commands::CommandId.UNDO:
+
+			{
+				if (project.editor_undo())
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.REDO:
+
+			{
+				if (project.editor_redo())
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.NEWLINE:
+
+			{
+				if (project.editor_newline())
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.INDENT:
+
+			{
+				if (project.editor_indent())
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.OUTDENT:
+
+			{
+				if (project.editor_outdent())
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.DELETE_BACK:
+
+			{
+				if (project.editor_delete(true))
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.DELETE_FORWARD:
+
+			{
+				if (project.editor_delete(false))
+				{
+					project.finish_edit(app.metrics);
+					*app.content_changed = true;
+				}
+				return;
+			}
+		case commands::CommandId.CURSOR_LEFT:
+			project.editor_move(project::EditorMove.LEFT, app.metrics);
+			return;
+		case commands::CommandId.CURSOR_RIGHT:
+			project.editor_move(project::EditorMove.RIGHT, app.metrics);
+			return;
+		case commands::CommandId.CURSOR_UP:
+			project.editor_move(project::EditorMove.UP, app.metrics);
+			return;
+		case commands::CommandId.CURSOR_DOWN:
+			project.editor_move(project::EditorMove.DOWN, app.metrics);
+			return;
+		case commands::CommandId.LINE_START:
+			project.editor_move(project::EditorMove.LINE_START, app.metrics);
+			return;
+		case commands::CommandId.LINE_END:
+			project.editor_move(project::EditorMove.LINE_END, app.metrics);
+			return;
+		case commands::CommandId.PAGE_UP:
+			project.editor_move(project::EditorMove.PAGE_UP, app.metrics);
+			return;
+		case commands::CommandId.PAGE_DOWN:
+			project.editor_move(project::EditorMove.PAGE_DOWN, app.metrics);
+			return;
+		case commands::CommandId.EXIT_EDITOR:
+			project.editor_exit();
+			return;
+		case commands::CommandId.PAN_LEFT:
+			app.canvas.key_pan({ -canvas::settings().key_pan_step, 0.0f });
+			return;
+		case commands::CommandId.PAN_RIGHT:
+			app.canvas.key_pan({ canvas::settings().key_pan_step, 0.0f });
+			return;
+		case commands::CommandId.PAN_UP:
+			app.canvas.key_pan({ 0.0f, -canvas::settings().key_pan_step });
+			return;
+		case commands::CommandId.PAN_DOWN:
+			app.canvas.key_pan({ 0.0f, canvas::settings().key_pan_step });
+			return;
+		case commands::CommandId.SELECT_LEFT:
+		case commands::CommandId.SELECT_RIGHT:
+		case commands::CommandId.SELECT_UP:
+		case commands::CommandId.SELECT_DOWN:
+
+			{
+				project.ensure_selection();
+				project::Dir dir = project::Dir.LEFT;
+				if (id == commands::CommandId.SELECT_RIGHT) dir = project::Dir.RIGHT;
+				if (id == commands::CommandId.SELECT_UP) dir = project::Dir.UP;
+				if (id == commands::CommandId.SELECT_DOWN) dir = project::Dir.DOWN;
+				project::NavItem item;
+				if (project.item_in_direction(dir, &item)) project.select_nav_item(item);
+				return;
+			}
+		case commands::CommandId.CYCLE_NEXT:
+
+			{
+				project::NavItem item;
+				if (project.cycle_nav_item(1, &item)) project.select_nav_item(item);
+				return;
+			}
+		case commands::CommandId.CYCLE_PREV:
+
+			{
+				project::NavItem item;
+				if (project.cycle_nav_item(-1, &item)) project.select_nav_item(item);
+				return;
+			}
+		case commands::CommandId.ZOOM_IN:
+			app.canvas.key_zoom(1.0f);
+			return;
+		case commands::CommandId.ZOOM_OUT:
+			app.canvas.key_zoom(-1.0f);
+			return;
+		case commands::CommandId.FOCUS_TOP_BAR:
+			*app.ui_mode = UiMode.TOP_BAR;
+			app.bar.clamp_selection(*app.project_open, has_focused_buffer(project));
+			return;
+		case commands::CommandId.FOCUS_EDITOR:
+			enter_edit_mode(project, app.canvas, app.metrics, app.ui_mode, app.edit_grace_frames);
+			return;
+		case commands::CommandId.TOPBAR_LEFT:
+			app.bar.move_selection(-1, *app.project_open, has_focused_buffer(project));
+			return;
+		case commands::CommandId.TOPBAR_RIGHT:
+			app.bar.move_selection(1, *app.project_open, has_focused_buffer(project));
+			return;
+		case commands::CommandId.TOPBAR_ACTIVATE:
+
+			{
+				int cmd_id = app.bar.activate(*app.project_open, has_focused_buffer(project));
+				if (cmd_id >= 0) run_command((commands::CommandId)cmd_id, app);
+				return;
+			}
+		case commands::CommandId.FOCUS_CANVAS:
+			*app.ui_mode = UiMode.MOVE;
+			return;
+		case commands::CommandId.LEAVE_FOLDER:
+
+			{
+				if (project.leave_folder())
+				{
+					Rect r = project.selected_item_rect();
+					if (r.width > 0.0f)
+					{
+						app.canvas.target.target = { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+					}
+				}
+				return;
+			}
+		case commands::CommandId.CYCLE_FOCUS:
+
+			{
+				if (*app.ui_mode == UiMode.TOP_BAR)
+				{
+					*app.ui_mode = UiMode.MOVE;
+				}
+				else if (project.grabbing)
+				{
+					project.grabbing = false;
+					*app.ui_mode = UiMode.TOP_BAR;
+					app.bar.clamp_selection(*app.project_open, has_focused_buffer(project));
+				}
+				else if (project.has_selected_item())
+				{
+					project.grabbing = true;
+				}
+				else
+				{
+					*app.ui_mode = UiMode.TOP_BAR;
+					app.bar.clamp_selection(*app.project_open, has_focused_buffer(project));
+				}
+				return;
+			}
+		case commands::CommandId.MINIMIZE_CARD:
+			project.minimize_selected(app.metrics);
+			return;
+		case commands::CommandId.TOGGLE_FOCUS_MODE:
+
+			{
+				if (project.focus_card >= 0)
+				{
+					project.end_focus(app.canvas);
+					*app.ui_mode = *app.focus_saved_mode;
+					return;
+				}
+				int index = project.focused;
+				if (index < 0) index = project.selected;
+				if (index < 0 || index >= (int)project.cards.len())
+				{
+					app.notifier.push("No file to focus");
+					return;
+				}
+				if (!project.begin_focus(index, app.canvas))
+				{
+					app.notifier.push("Could not focus file");
+					return;
+				}
+				*app.focus_saved_mode = *app.ui_mode;
+				*app.ui_mode = UiMode.EDIT;
+				*app.edit_grace_frames = 2;
+				return;
+			}
+		case commands::CommandId.CLOSE_CARD:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				FileCard* card = &project.cards[index];
+				if (card.ephemeral)
+				{
+					project.discard_ephemeral(-1);
+				}
+				else if (card.buffer)
+				{
+					if (card.dirty)
+					{
+						project.pending_close = project.focus(index);
+					}
+					else
+					{
+						(void)editor::unload_buffer(card, project.allocator);
+					}
+				}
+				return;
+			}
+		case commands::CommandId.TOGGLE_CARD:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				project.cards[index].open = !project.cards[index].open;
+				return;
+			}
+		case commands::CommandId.TOGGLE_PREVIEW:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				project.toggle_preview(index);
+				return;
+			}
+		case commands::CommandId.RENAME_CARD:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				app.pending_rename_card = index;
+				*app.pending_kind = 2;
+				app.name_prompt.open_with("Rename", project.cards[index].name);
+				return;
+			}
+		case commands::CommandId.DUPLICATE_CARD:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				RLVector2 pos = project.cards[index].center();
+				if (project.duplicate_card(index, pos) < 0)
+				{
+					app.notifier.push("Could not duplicate");
+				}
+				else
+				{
+					app.notifier.push("Duplicated");
+				}
+				return;
+			}
+		case commands::CommandId.COPY_PATH:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				@pool()
+				{
+					rl::set_clipboard_text(((String)project.cards[index].path).zstr_tcopy());
+				};
+				app.notifier.push("Path copied");
+				return;
+			}
+		case commands::CommandId.DELETE_CARD:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				app.pending_delete_card = index;
+				RLVector2 center = {
+					(float)rl::get_screen_width() / 2.0f,
+					(float)rl::get_screen_height() / 2.0f,
+				};
+				app.delete_menu.open_at(center, { "Delete", "Cancel" });
+				return;
+			}
+		case commands::CommandId.OPEN_CONTEXT_MENU:
+
+			{
+				int index = target_card_index(project);
+				if (index < 0) return;
+				FileCard* card = &project.cards[index];
+				open_context_menu(app, context::ContextTarget.CARD, index, project::ROOT_FOLDER, card.center(), -1);
+				return;
+			}
+		case commands::CommandId.MINIMAP_FOCUS:
+
+			{
+				Rect bounds;
+				if (project.content_bounds(&bounds))
+				{
+					app.canvas.target.target = {
+						bounds.x + bounds.width / 2.0f,
+						bounds.y + bounds.height / 2.0f,
+					};
+				}
+				return;
+			}
+		case commands::CommandId.ZOOM_RESET:
+			app.canvas.reset_zoom();
+			return;
+		case commands::CommandId.ZOOM_FIT:
+
+			{
+				Rect bounds;
+				if (project.content_bounds(&bounds))
+				{
+					app.canvas.fit_zoom(bounds, rl::get_screen_width(), rl::get_screen_height());
+				}
+				return;
+			}
+		default:
+			return;
 	}
 }
 
@@ -396,7 +1150,7 @@ fn void focus_camera_on_line(
 	float world_y    = text.y + editor::line_y(line, card.scroll, metrics) + metrics.line_height * 0.5f;
 	RLVector2 center = card.center();
 	canvas.target.target = { center[0], world_y };
-	if (canvas.target.zoom < JUMP_ZOOM_MIN) canvas.target.zoom = JUMP_ZOOM_TARGET;
+	if (canvas.target.zoom < canvas::settings().jump_zoom_min) canvas.target.zoom = canvas::settings().jump_zoom_target;
 	project.mark_jump((String)card.path, line, rl::get_time());
 }
 
@@ -460,6 +1214,12 @@ fn void clear_definitions(List{lsp::DefinitionTarget}* list)
 		if ((*list)[i].path.len) (*list)[i].path.free(list.allocator);
 	}
 	list.clear();
+}
+
+fn void clear_pending_definitions(List{lsp::DefinitionTarget}* list)
+{
+	clear_definitions(list);
+	list.free();
 }
 
 struct HoverInfo
@@ -537,37 +1297,146 @@ fn void mark_buffer_changed(project::Project* project, findbar::FindBar* find_ba
 	if (!card) return;
 	card.dirty = true;
 	if (card.highlight) card.highlight.mark_dirty();
+	if (card.view) markdown::view_mark_dirty(card.view);
 	project.reveal_focused(metrics);
 	find_bar.mark_dirty();
 }
 
-const String FONT_PATH       = "assets/fonts/JetBrainsMono-Regular.ttf";
-const float JUMP_ZOOM_MIN    = 0.6f;
-const float JUMP_ZOOM_TARGET = 1.0f;
+const String FONT_PATH           = "assets/fonts/JetBrainsMono-Regular.ttf";
+const float GRAB_MOVE_SPEED      = 700.0f;
+const float GRAB_MOVE_FINE_SPEED = 250.0f;
+
+fn RLFont finish_font(RLFont font)
+{
+	if (font.texture.id > 0)
+	{
+		rl::gen_texture_mipmaps(&font.texture);
+		font.texture.set_filter(RLTextureFilter.TRILINEAR);
+	}
+	return font;
+}
 
 fn RLFont load_bundled_font(int size)
 {
-	if (file::exists(FONT_PATH)) return rl::load_font_ex(FONT_PATH, size, null, 0);
+	if (file::exists(FONT_PATH)) return finish_font(rl::load_font_ex(FONT_PATH, size, null, 0));
 	@pool()
 	{
 		String exe    = rl::get_application_directory().str_view();
 		String joined = string::format(tmem, "%s%s", exe, FONT_PATH);
-		if (file::exists(joined)) return rl::load_font_ex((ZString)joined.ptr, size, null, 0);
+		if (file::exists(joined)) return finish_font(rl::load_font_ex((ZString)joined.ptr, size, null, 0));
 	};
-	return rl::load_font_ex(FONT_PATH, size, null, 0);
+	return finish_font(rl::load_font_ex(FONT_PATH, size, null, 0));
 }
 
-fn void reload_editor_font(RLFont* font, int size, editor::EditorMetrics* metrics)
+fn RLFont load_editor_font(fonts::Fonts* fonts, String family, int size)
+{
+	if (family.len > 0 && family.compare_to("JetBrains Mono") != 0)
+	{
+		String path = fonts.path_for(family);
+		if (path.len > 0 && file::exists(path))
+		{
+			@pool()
+			{
+				return finish_font(rl::load_font_ex(path.zstr_tcopy(), size, null, 0));
+			};
+		}
+	}
+	return load_bundled_font(size);
+}
+
+fn void reload_editor_font(
+	fonts::Fonts* fonts,
+	RLFont* font,
+	int atlas_size,
+	float draw_size,
+	String family,
+	editor::EditorMetrics* metrics
+)
 {
 	rl::unload_font(*font);
-	*font = load_bundled_font(size);
-	*metrics = editor::metrics_for_font(*font, (float)size);
-	editor::set_font_size((float)size);
+	*font = load_editor_font(fonts, family, atlas_size);
+	*metrics = editor::metrics_for_font(*font, draw_size);
+	editor::set_font_size(draw_size);
+}
+
+fn void update_dpi(
+	fonts::Fonts* fonts,
+	config::Config* config,
+	canvas::Canvas* canvas,
+	RLFont* ui_font,
+	RLFont* editor_font,
+	int ui_size,
+	int font_size,
+	editor::EditorMetrics* metrics,
+	bool* ready,
+	float* last_font_scale,
+	float* last_layout_scale
+)
+{
+	int monitor    = rl::get_current_monitor();
+	float os_scale = rl::get_window_scale_dpi()[0];
+	if (os_scale < 1.0f) os_scale = 1.0f;
+
+	float ppi   = 1.0f;
+	int phys_mm = rl::get_monitor_physical_width(monitor);
+	int mon_w   = rl::get_monitor_width(monitor);
+	if (phys_mm > 0 && mon_w > 0)
+	{
+		float dpi = (float)mon_w / ((float)phys_mm / 25.4f);
+		ppi = dpi / 96.0f;
+	}
+	if (ppi < 1.0f) ppi = 1.0f;
+	if (ppi > 3.0f) ppi = 3.0f;
+
+	int sw             = rl::get_screen_width();
+	int rw             = rl::get_render_width();
+	float render_scale = (sw > 0 && rw > sw) ? (float)rw / (float)sw : 1.0f;
+
+	float layout_scale = render_scale > 1.0f ? 1.0f : math::max(os_scale, ppi);
+	float font_scale   = layout_scale * math::max(1.0f, render_scale);
+
+	if (*ready && layout_scale == *last_layout_scale && font_scale == *last_font_scale) return;
+	*ready = true;
+	*last_font_scale = font_scale;
+	*last_layout_scale = layout_scale;
+	ui::set_dpi(font_scale, layout_scale);
+
+	int atlas = ui::atlas_px(ui_size);
+	rl::unload_font(*ui_font);
+	*ui_font = load_editor_font(fonts, config.settings.get_string(settings::SettingId.APP_UI_FONT_FAMILY), atlas);
+	ui::set_font(*ui_font, ui_size);
+
+	reload_editor_font(
+		fonts,
+		editor_font,
+		ui::atlas_px(font_size),
+		(float)ui::draw_px(font_size),
+		config.settings.get_string(settings::SettingId.EDITOR_FONT_FAMILY),
+		metrics
+	);
+
+	canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
+	canvas.camera.offset = { (float)rl::get_screen_width() / 2.0f, canvas.usable_offset_y() };
+}
+
+fn int parse_int(String s)
+{
+	int value = 0;
+	for (usz i = 0; i < s.len; i++)
+	{
+		char c = s[i];
+		if (c < '0' || c > '9') break;
+		value = value * 10 + (int)(c - '0');
+	}
+	return value;
 }
 
 fn int main(String[] args)
 {
-	rl::set_config_flags((RLConfigFlag)(rl::RLConfigFlag.WINDOW_RESIZABLE | rl::RLConfigFlag.VSYNC_HINT));
+	rl::set_config_flags(
+		(RLConfigFlag)(rl::RLConfigFlag.WINDOW_RESIZABLE | rl::RLConfigFlag.VSYNC_HINT
+			| rl::RLConfigFlag.WINDOW_HIGHDPI)
+	);
 	rl::init_window(1280, 720, "Yun");
 	defer rl::close_window();
 	rl::set_target_fps(60);
@@ -575,7 +1444,12 @@ fn int main(String[] args)
 
 	RLFont font = load_bundled_font(16);
 	defer rl::unload_font(font);
+	ui::set_font(font, 16);
 
+	int ui_size                   = 16;
+	bool dpi_ready                = false;
+	float dpi_font_scale          = 1.0f;
+	float dpi_layout_scale        = 1.0f;
 	int font_size                 = editor::FONT_SIZE_DEFAULT;
 	RLFont editor_font            = load_bundled_font(font_size);
 	editor::EditorMetrics metrics = editor::metrics_for_font(editor_font, (float)font_size);
@@ -583,7 +1457,7 @@ fn int main(String[] args)
 
 	canvas::Canvas canvas;
 	canvas.init();
-	canvas.top_inset = topbar::TOP_BAR_HEIGHT;
+	canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
 
 	project::Project project;
 	project.init(mem);
@@ -593,7 +1467,6 @@ fn int main(String[] args)
 
 	config::Config config;
 	config.init(mem);
-	defer config.destroy();
 
 	lsp::Lsp lsp;
 	lsp.init(mem, &config);
@@ -601,7 +1474,6 @@ fn int main(String[] args)
 	completion::completion_init(mem);
 	imports::ImportIndex import_index;
 	import_index.init(mem);
-	defer import_index.destroy();
 
 	browser::Browser browser;
 	browser.init(mem);
@@ -636,45 +1508,98 @@ fn int main(String[] args)
 	problems::Problems problems;
 	problems.init(mem);
 
+	settings_panel::Panel settings_panel;
+	settings_panel.init(mem);
+
 	search::Search search;
 	search.init(mem);
-	defer search.destroy();
 
 	symbols::Symbols symbols;
 	symbols.init(mem);
-	defer symbols.destroy();
 
 	keymap::Keymap keymap;
 	keymap.init(mem);
-	defer keymap.destroy();
+
+	fonts::Fonts fonts;
+	fonts.init(mem);
+	settings::set_font_options(fonts.labels());
 
 	int pending_kind        = 0;
 	int pending_parent      = project::ROOT_FOLDER;
 	RLVector2 pending_world = { 0.0f, 0.0f };
-
-	context::ContextItem[context::CONTEXT_MAX_ITEMS] context_items;
-	usz context_item_count  =  0;
-	int context_card        = -1;
-	int context_parent      =  project::ROOT_FOLDER;
-	RLVector2 context_world =  { 0.0f, 0.0f };
-	int context_offset      = -1;
-	int pending_rename_card = -1;
-	int pending_delete_card = -1;
 
 	menu::Menu definition_menu;
 	definition_menu.init(mem);
 	List{lsp::DefinitionTarget} pending_definitions;
 	pending_definitions.init(mem);
 
+	// Teardown: registered here so LIFO order is exactly the reverse of this list.
+	defer rl::unload_font(editor_font);
+	defer config.destroy();
+	defer keymap.destroy();
+	defer settings_panel.destroy();
+	defer fonts.destroy();
+	defer language::shutdown_grammars();
+	defer highlight::shutdown();
+	defer imports::shutdown_queries();
+	defer search.destroy();
+	defer symbols.destroy();
+	defer import_index.destroy();
+	defer lsp.destroy();
+	defer clear_pending_definitions(&pending_definitions);
+	defer notifier.destroy();
+	defer context_menu.destroy();
+	defer reload_menu.destroy();
+	defer theme_menu.destroy();
+	defer close_menu.destroy();
+	defer delete_menu.destroy();
+	defer definition_menu.destroy();
+	defer browser.destroy();
+	defer palette.destroy();
+	defer find_bar.destroy();
+	defer problems.destroy();
+	defer completion::completion_destroy();
+	defer project.destroy();
+
 	bool project_open           = false;
 	project::OpenJob* open_job  = null;
 	bool opening                = false;
-	int pending_font_size       = 0;
+	bool content_changed        = false;
 	double font_indicator_until = 0.0;
-	bool font_save_pending      = false;
 	UiMode ui_mode              = UiMode.MOVE;
+	UiMode focus_saved_mode     = UiMode.MOVE;
 	int edit_grace_frames       = 0;
-	if (args.len > 1)
+	bool selftest               = false;
+	bool benchmark_on           = false;
+	bool benchmark_synthetic    = false;
+	int benchmark_cards         = 0;
+	int benchmark_frames        = 240;
+	for (usz i = 1; i < args.len; i++)
+	{
+		String arg = args[i];
+		if (arg.compare_to("--selftest") == 0)
+		{
+			selftest = true;
+		}
+		else if (arg.starts_with("--benchmark-frames="))
+		{
+			benchmark_on = true;
+			benchmark_frames = parse_int(arg[19..]);
+		}
+		else if (arg.compare_to("--benchmark") == 0)
+		{
+			benchmark_on = true;
+			if (benchmark_cards == 0) benchmark_cards = 200;
+		}
+		else if (arg.starts_with("--benchmark="))
+		{
+			benchmark_on = true;
+			benchmark_cards = parse_int(arg[12..]);
+		}
+	}
+	if (benchmark_frames < 1) benchmark_frames = 1;
+	bool open_path = !selftest && args.len > 1 && !args[1].starts_with("--");
+	if (open_path)
 	{
 		String? resolved = project::resolve_path(project.allocator, args[1]);
 		if (catch excuse = resolved)
@@ -687,6 +1612,19 @@ fn int main(String[] args)
 		}
 		else
 		{
+			config.load((String)resolved);
+			apply_settings(
+				&config,
+				&fonts,
+				&notifier,
+				&project,
+				&canvas,
+				&font_size,
+				&editor_font,
+				&metrics,
+				&ui_size,
+				&font
+			);
 			open_job = project::open_job_create(project.allocator, &project, resolved);
 			opening = true;
 		}
@@ -694,8 +1632,43 @@ fn int main(String[] args)
 	else
 	{
 		config.load("");
-		apply_config_theme(&config, &notifier);
-		pending_font_size = editor::clamp_font_size(config.font_size);
+		apply_settings(
+			&config,
+			&fonts,
+			&notifier,
+			&project,
+			&canvas,
+			&font_size,
+			&editor_font,
+			&metrics,
+			&ui_size,
+			&font
+		);
+		if (benchmark_cards > 0)
+		{
+			benchmark_synthetic = true;
+			int cols = 1;
+			while (cols * cols < benchmark_cards) cols++;
+			float cw = ui::pxf(card::CARD_WIDTH) + ui::pxf(32.0f);
+			float ch = ui::pxf(card::CARD_HEIGHT) + ui::pxf(32.0f);
+			for (int k = 0; k < benchmark_cards; k++)
+			{
+				String path = string::format(project.allocator, "%s/bench_%d.c3", (String)project.root, k);
+				int index   = project.append_card(path, { 0.0f, 0.0f });
+				project.cards[index].rect = {
+					.x = (float)(k % cols) * cw,
+					.y = (float)(k / cols) * ch,
+					.width = ui::pxf(card::CARD_WIDTH),
+					.height = ui::pxf(card::CARD_HEIGHT),
+				};
+			}
+			project.invalidate_bounds();
+			float span = (float)cols * cw;
+			canvas.camera.target = { span / 2.0f, span / 2.0f };
+			canvas.target.target = canvas.camera.target;
+			canvas.camera.zoom = 0.5f;
+			canvas.target.zoom = 0.5f;
+		}
 	}
 	keymap.build(&config);
 	push_config_warnings(&config, &notifier);
@@ -704,43 +1677,116 @@ fn int main(String[] args)
 	App app = {
 		.project = &project,
 		.canvas = &canvas,
+		.config = &config,
 		.browser = &browser,
 		.notifier = &notifier,
 		.name_prompt = &name_prompt,
 		.palette = &palette,
+		.settings_panel = &settings_panel,
 		.find_bar = &find_bar,
 		.problems = &problems,
 		.theme_menu = &theme_menu,
+		.context_menu = &context_menu,
+		.close_menu = &close_menu,
+		.delete_menu = &delete_menu,
+		.reload_menu = &reload_menu,
+		.definition_menu = &definition_menu,
 		.search = &search,
 		.symbols = &symbols,
 		.metrics = metrics,
 		.project_open = &project_open,
+		.content_changed = &content_changed,
+		.ui_mode = &ui_mode,
+		.focus_saved_mode = &focus_saved_mode,
+		.edit_grace_frames = &edit_grace_frames,
+		.bar = &bar,
+		.keymap = &keymap,
+		.context_item_count = 0,
+		.context_card = -1,
+		.context_parent = project::ROOT_FOLDER,
+		.context_world = { 0.0f, 0.0f },
+		.context_offset = -1,
+		.pending_rename_card = -1,
+		.pending_delete_card = -1,
 		.pending_kind = &pending_kind,
 		.pending_parent = &pending_parent,
 		.pending_world = &pending_world,
 	};
 
+	RLVector2 last_arrow_mouse  =  { -1.0f, -1.0f };
+	RLVector2 last_arrow_target =  { 0.0f, 0.0f };
+	float last_arrow_zoom       = -1.0f;
+	bool arrow_hovered_cache    =  false;
+
+	int frame_count    = 0;
+	double prof_update = 0.0;
+	double prof_scan   = 0.0;
+	double prof_draw   = 0.0;
+	double prof_frame  = 0.0;
+	double bench_sum   = 0.0;
+	double bench_max   = 0.0;
+	double bench_min   = 1.0e30;
+	int bench_over     = 0;
+	int bench_samples  = 0;
+	int bench_warmup   = 30;
 	while (!rl::window_should_close())
 	{
+		frame_count++;
+		if (selftest && frame_count > 3) break;
+		bool bench_ready = benchmark_on && (benchmark_synthetic || project_open);
+		if (bench_ready)
+		{
+			float t = (float)frame_count;
+			Rect bounds;
+			if (project.content_bounds(&bounds))
+			{
+				float cx     = bounds.x + bounds.width / 2.0f;
+				float cy     = bounds.y + bounds.height / 2.0f;
+				float radius = math::max(bounds.width, bounds.height) * 0.5f;
+				canvas.target.target = {
+					cx + radius * math::sin(t * 0.02f),
+					cy + radius * math::cos(t * 0.017f),
+				};
+			}
+			canvas.target.zoom = 0.55f + 0.35f * math::sin(t * 0.013f);
+		}
+		double frame_start = rl::get_time();
+		double scan_ms     = 0.0;
+		double update_ms   = 0.0;
+		double draw_ms     = 0.0;
 		float dt           = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
+		update_dpi(
+			&fonts,
+			&config,
+			&canvas,
+			&font,
+			&editor_font,
+			ui_size,
+			font_size,
+			&metrics,
+			&dpi_ready,
+			&dpi_font_scale,
+			&dpi_layout_scale
+		);
 		HoverInfo hover    = { };
-		bool arrow_hovered = false;
-		import_index.clear_hover();
+		bool arrow_hovered = arrow_hovered_cache;
+		double scan_t0     = rl::get_time();
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
+		scan_ms += (rl::get_time() - scan_t0) * 1000.0;
 
-		if (pending_font_size > 0)
-		{
-			font_size = editor::clamp_font_size(pending_font_size);
-			reload_editor_font(&editor_font, font_size, &metrics);
-			pending_font_size = 0;
-		}
-		if (font_save_pending && !project::ctrl_down())
-		{
-			config.font_size = font_size;
-			config.save_global();
-			font_save_pending = false;
-		}
+		apply_settings(
+			&config,
+			&fonts,
+			&notifier,
+			&project,
+			&canvas,
+			&font_size,
+			&editor_font,
+			&metrics,
+			&ui_size,
+			&font
+		);
 
 		if (opening)
 		{
@@ -762,7 +1808,18 @@ fn int main(String[] args)
 					symbols.start_scan(&project);
 					ui_mode = UiMode.MOVE;
 					project.selected = -1;
-					pending_font_size = editor::clamp_font_size(config.font_size);
+					apply_settings(
+						&config,
+						&fonts,
+						&notifier,
+						&project,
+						&canvas,
+						&font_size,
+						&editor_font,
+						&metrics,
+						&ui_size,
+						&font
+					);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
 					import_index.start_scan(&project);
@@ -777,7 +1834,7 @@ fn int main(String[] args)
 		}
 		else if (browser.open)
 		{
-			if (browser.update())
+			if (browser.update(&keymap))
 			{
 				search.close();
 				symbols.close();
@@ -786,19 +1843,26 @@ fn int main(String[] args)
 				open_job = project::open_job_create(project.allocator, &project, (String)browser.dir);
 				opening = true;
 			}
+			if (!browser.consumed) poll_global(&keymap, &app);
 		}
 		else if (palette.open)
 		{
-			int chosen = palette.update(project_open, has_focused_buffer(&project));
+			int chosen = palette.update(&keymap, project_open, has_focused_buffer(&project));
 			if (chosen >= 0)
 			{
 				palette.record((commands::CommandId)chosen);
 				run_command((commands::CommandId)chosen, &app);
 			}
+			if (!palette.consumed) poll_global(&keymap, &app);
+		}
+		else if (settings_panel.open)
+		{
+			settings_panel.update(&keymap, &config, project_open, (String)project.root, &notifier);
+			if (!settings_panel.consumed) poll_global(&keymap, &app);
 		}
 		else if (problems.open)
 		{
-			int chosen = problems.update();
+			int chosen = problems.update(&keymap);
 			if (chosen >= 0)
 			{
 				problems::ProblemEntry* entry = problems.entry_at(chosen);
@@ -807,10 +1871,11 @@ fn int main(String[] args)
 					navigate_to_location(&project, &canvas, metrics, entry.path, entry.line, entry.character);
 				}
 			}
+			if (!problems.consumed) poll_global(&keymap, &app);
 		}
 		else if (definition_menu.open)
 		{
-			int chosen = definition_menu.update();
+			int chosen = definition_menu.update(&keymap);
 			if (chosen >= 0 && chosen < (int)pending_definitions.len())
 			{
 				lsp::DefinitionTarget target = pending_definitions[(sz)chosen];
@@ -820,10 +1885,11 @@ fn int main(String[] args)
 			{
 				clear_definitions(&pending_definitions);
 			}
+			if (!definition_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (name_prompt.open)
 		{
-			if (name_prompt.update())
+			if (name_prompt.update(&keymap))
 			{
 				String name = name_prompt.text_view();
 				if (!project::is_valid_name(name))
@@ -832,7 +1898,7 @@ fn int main(String[] args)
 				}
 				else if (pending_kind == 2)
 				{
-					if (project.rename_card(pending_rename_card, name))
+					if (project.rename_card(app.pending_rename_card, name))
 					{
 						name_prompt.close();
 					}
@@ -855,10 +1921,11 @@ fn int main(String[] args)
 					}
 				}
 			}
+			if (!name_prompt.consumed) poll_global(&keymap, &app);
 		}
 		else if (close_menu.open)
 		{
-			int chosen = close_menu.update();
+			int chosen = close_menu.update(&keymap);
 			if (chosen >= 0)
 			{
 				int index = project.pending_close;
@@ -868,15 +1935,16 @@ fn int main(String[] args)
 				}
 				project.pending_close = -1;
 			}
+			if (!close_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (delete_menu.open)
 		{
-			int chosen = delete_menu.update();
+			int chosen = delete_menu.update(&keymap);
 			if (chosen >= 0)
 			{
-				if (chosen == 0 && pending_delete_card >= 0 && pending_delete_card < (int)project.cards.len())
+				if (chosen == 0 && app.pending_delete_card >= 0 && app.pending_delete_card < (int)project.cards.len())
 				{
-					if (project.delete_card_file(pending_delete_card))
+					if (project.delete_card_file(app.pending_delete_card))
 					{
 						notifier.push("Deleted");
 					}
@@ -885,12 +1953,13 @@ fn int main(String[] args)
 						notifier.push("Could not delete");
 					}
 				}
-				pending_delete_card = -1;
+				app.pending_delete_card = -1;
 			}
+			if (!delete_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (reload_menu.open)
 		{
-			int chosen = reload_menu.update();
+			int chosen = reload_menu.update(&keymap);
 			if (chosen >= 0)
 			{
 				int index = project.pending_reload;
@@ -908,27 +1977,32 @@ fn int main(String[] args)
 				}
 				project.pending_reload = -1;
 			}
+			if (!reload_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (theme_menu.open)
 		{
-			int chosen = theme_menu.update();
+			int chosen = theme_menu.update(&keymap);
 			if (chosen >= 0)
 			{
-				theme::set_index(chosen);
-				config.set_theme(theme::name(chosen));
+				config.settings.set_string(
+					settings::SettingId.APP_THEME,
+					theme::name(chosen),
+					settings::SettingLayer.GLOBAL
+				);
 				config.save_global();
 				@pool()
 				{
 					notifier.push(string::format(tmem, "Theme: %s", theme::label(chosen)));
 				};
 			}
+			if (!theme_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (context_menu.open)
 		{
-			int chosen = context_menu.update();
-			if (chosen >= 0 && chosen < (int)context_item_count)
+			int chosen = context_menu.update(&keymap);
+			if (chosen >= 0 && chosen < (int)app.context_item_count)
 			{
-				context::ContextAction action = context_items[chosen].action;
+				context::ContextAction action = app.context_items[chosen].action;
 				switch (action)
 				{
 					case context::ContextAction.NEW_FILE:
@@ -936,8 +2010,8 @@ fn int main(String[] args)
 
 						{
 							pending_kind = action == context::ContextAction.NEW_FILE ? 0 : 1;
-							pending_parent = context_parent;
-							pending_world = context_world;
+							pending_parent = app.context_parent;
+							pending_world = app.context_world;
 							name_prompt.open_with(pending_kind == 0 ? "New file" : "New folder", "");
 							break;
 						}
@@ -947,27 +2021,27 @@ fn int main(String[] args)
 					case context::ContextAction.TOGGLE_CARD:
 
 						{
-							if (context_card >= 0 && context_card < (int)project.cards.len())
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len())
 							{
-								project.cards[context_card].open = !project.cards[context_card].open;
+								project.cards[app.context_card].open = !project.cards[app.context_card].open;
 							}
 							break;
 						}
 					case context::ContextAction.RENAME_CARD:
 
 						{
-							if (context_card >= 0 && context_card < (int)project.cards.len())
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len())
 							{
-								pending_rename_card = context_card;
+								app.pending_rename_card = app.context_card;
 								pending_kind = 2;
-								name_prompt.open_with("Rename", project.cards[context_card].name);
+								name_prompt.open_with("Rename", project.cards[app.context_card].name);
 							}
 							break;
 						}
 					case context::ContextAction.DUPLICATE_CARD:
 
 						{
-							if (project.duplicate_card(context_card, context_world) < 0)
+							if (project.duplicate_card(app.context_card, app.context_world) < 0)
 							{
 								notifier.push("Could not duplicate");
 							}
@@ -980,11 +2054,11 @@ fn int main(String[] args)
 					case context::ContextAction.COPY_PATH:
 
 						{
-							if (context_card >= 0 && context_card < (int)project.cards.len())
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len())
 							{
 								@pool()
 								{
-									rl::set_clipboard_text(((String)project.cards[context_card].path).zstr_tcopy());
+									rl::set_clipboard_text(((String)project.cards[app.context_card].path).zstr_tcopy());
 								};
 								notifier.push("Path copied");
 							}
@@ -993,9 +2067,9 @@ fn int main(String[] args)
 					case context::ContextAction.DELETE_CARD:
 
 						{
-							if (context_card >= 0 && context_card < (int)project.cards.len())
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len())
 							{
-								pending_delete_card = context_card;
+								app.pending_delete_card = app.context_card;
 								RLVector2 center = {
 									(float)rl::get_screen_width() / 2.0f,
 									(float)rl::get_screen_height() / 2.0f,
@@ -1004,17 +2078,30 @@ fn int main(String[] args)
 							}
 							break;
 						}
+					case context::ContextAction.MINIMIZE_CARD:
+
+						{
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len())
+							{
+								FileCard* mc = &project.cards[app.context_card];
+								mc.rect.width = editor::min_card_width(app.metrics);
+								mc.rect.height = editor::min_card_height(app.metrics);
+								project.invalidate_bounds();
+							}
+							break;
+						}
 					case context::ContextAction.GO_TO_DEFINITION:
 
 						{
-							if (context_card >= 0 && context_card < (int)project.cards.len() && context_offset >= 0)
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len()
+								&& app.context_offset >= 0)
 							{
-								int index    = project.focus(context_card);
+								int index    = project.focus(app.context_card);
 								FileCard* cc = &project.cards[index];
 								editor::ensure_buffer(cc, project.allocator);
 								if (cc.buffer)
 								{
-									cc.cursor = (usz)context_offset;
+									cc.cursor = (usz)app.context_offset;
 									cc.selection_anchor = cc.cursor;
 									if (!lsp::lsp_request_definition(
 										(String)cc.path,
@@ -1027,24 +2114,27 @@ fn int main(String[] args)
 						}
 				}
 			}
+			if (!context_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (search.open)
 		{
-			search::SearchTarget target = search.update(&project, rl::get_time());
+			search::SearchTarget target = search.update(&keymap, &project, rl::get_time());
 			if (target.valid)
 			{
 				search.close();
 				navigate_to_location(&project, &canvas, metrics, target.path, (uint)target.line, (uint)target.column);
 			}
+			if (!search.consumed) poll_global(&keymap, &app);
 		}
 		else if (symbols.open)
 		{
-			symbols::SymbolTarget target = symbols.update(&project, rl::get_time());
+			symbols::SymbolTarget target = symbols.update(&keymap, &project, rl::get_time());
 			if (target.valid)
 			{
 				symbols.close();
 				navigate_to_location(&project, &canvas, metrics, target.path, (uint)target.line, (uint)target.column);
 			}
+			if (!symbols.consumed) poll_global(&keymap, &app);
 		}
 		else if (find_bar.open)
 		{
@@ -1059,6 +2149,7 @@ fn int main(String[] args)
 				bool replaced = false;
 				bool jumped   = false;
 				int result = find_bar.update(
+					&keymap,
 					project.cards[focus].buffer,
 					project.cards[focus].history,
 					false,
@@ -1089,6 +2180,7 @@ fn int main(String[] args)
 					}
 				}
 			}
+			if (!find_bar.consumed) poll_global(&keymap, &app);
 		}
 		else
 		{
@@ -1114,155 +2206,165 @@ fn int main(String[] args)
 					int next = editor::clamp_font_size(font_size + step);
 					if (next != font_size)
 					{
-						float old_lh = metrics.line_height;
-						float old_cw = metrics.char_width;
-						font_size = next;
-						reload_editor_font(&editor_font, font_size, &metrics);
-						float lh_ratio = old_lh > 0.0f ? metrics.line_height / old_lh : 1.0f;
-						float cw_ratio = old_cw > 0.0f ? metrics.char_width / old_cw : 1.0f;
-						for (sz i = 0; i < project.cards.len(); i++)
-						{
-							project.cards[i].scroll *= lh_ratio;
-							project.cards[i].scroll_x *= cw_ratio;
-						}
-						project.reveal_focused(metrics);
+						config.settings.set_int(
+							settings::SettingId.EDITOR_FONT_SIZE,
+							(long)next,
+							settings::SettingLayer.GLOBAL
+						);
+						config.save_global();
 						font_indicator_until = rl::get_time() + 1.2;
-						font_save_pending = true;
 					}
 					font_wheel = true;
 				}
 			}
 
-			int key_cmd = keymap.poll();
+			int key_cmd = keymap.poll(commands::CTX_GLOBAL);
 			if (key_cmd >= 0) run_command((commands::CommandId)key_cmd, &app);
 
 			int bar_cmd = bar.update(mouse, project_open, has_buffer);
 			if (bar_cmd >= 0) run_command((commands::CommandId)bar_cmd, &app);
 
-			if (rl::is_key_pressed(rl::RLKeyboardKey.TAB))
-			{
-				if (ui_mode == UiMode.TOP_BAR)
-				{
-					ui_mode = UiMode.MOVE;
-				}
-				else if (ui_mode == UiMode.MOVE)
-				{
-					bar.clamp_selection(project_open, has_buffer);
-					ui_mode = UiMode.TOP_BAR;
-				}
-			}
-
 			if (ui_mode == UiMode.TOP_BAR)
 			{
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.RIGHT
-				) || rl::is_key_pressed_repeat(
-					rl::RLKeyboardKey.RIGHT
-				)) bar.move_selection(1, project_open, has_buffer);
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.LEFT
-				) || rl::is_key_pressed_repeat(
-					rl::RLKeyboardKey.LEFT
-				)) bar.move_selection(-1, project_open, has_buffer);
-				if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.SPACE))
+				int bar_key_cmd = keymap.poll_exact(commands::CTX_TOP_BAR);
+				if (bar_key_cmd < 0 && rl::is_key_pressed(rl::RLKeyboardKey.SPACE))
 				{
-					int id = bar.activate(project_open, has_buffer);
-					if (id >= 0) run_command((commands::CommandId)id, &app);
+					bar_key_cmd = (int)commands::CommandId.TOPBAR_ACTIVATE;
 				}
-				if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE)) ui_mode = UiMode.MOVE;
+				if (bar_key_cmd < 0 && rl::is_key_pressed(rl::RLKeyboardKey.TAB))
+				{
+					bar_key_cmd = (int)commands::CommandId.FOCUS_CANVAS;
+				}
+				if (bar_key_cmd >= 0) run_command((commands::CommandId)bar_key_cmd, &app);
 				while (rl::get_char_pressed() != 0)
 				{
 				}
 			}
 			else if (ui_mode == UiMode.MOVE)
 			{
-				int before = project.selected;
 				project.ensure_selection();
 
-				if (project::shift_down())
+				if (project.grabbing)
 				{
-					float step = 48.0f;
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.L
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.L)) canvas.key_pan({ step, 0.0f });
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.H
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.H)) canvas.key_pan({ -step, 0.0f });
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.J
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.J)) canvas.key_pan({ 0.0f, step });
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.K
-					) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.K)) canvas.key_pan({ 0.0f, -step });
-				}
-				else
-				{
-					int direction = -1;
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.H
-					) || rl::is_key_pressed(rl::RLKeyboardKey.LEFT)) direction = (int)project::Dir.LEFT;
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.J
-					) || rl::is_key_pressed(rl::RLKeyboardKey.DOWN)) direction = (int)project::Dir.DOWN;
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.K
-					) || rl::is_key_pressed(rl::RLKeyboardKey.UP)) direction = (int)project::Dir.UP;
-					if (rl::is_key_pressed(
-						rl::RLKeyboardKey.L
-					) || rl::is_key_pressed(rl::RLKeyboardKey.RIGHT)) direction = (int)project::Dir.RIGHT;
-
-					if (direction >= 0)
+					if (keymap.pressed((int)commands::CommandId.CYCLE_FOCUS, commands::CTX_MOVE))
 					{
-						int idx = project.card_in_direction(project.selected, (project::Dir)direction);
-						if (idx >= 0) project.selected = idx;
+						run_command(commands::CommandId.CYCLE_FOCUS, &app);
+					}
+					else if (rl::is_key_pressed(
+						rl::RLKeyboardKey.ESCAPE
+					) || rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
+					{
+						project.grabbing = false;
 					}
 					else
 					{
-						int cycle = 0;
-						if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT_BRACKET)) cycle = 1;
-						if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT_BRACKET)) cycle = -1;
-						if (cycle != 0)
+						float zoom      = canvas.camera.zoom > 0.0f ? canvas.camera.zoom : 1.0f;
+						float speed     = project::shift_down() ? GRAB_MOVE_FINE_SPEED : GRAB_MOVE_SPEED;
+						float step      = speed * dt / zoom;
+						RLVector2 delta = { 0.0f, 0.0f };
+						if (rl::is_key_down(
+							rl::RLKeyboardKey.LEFT
+						) || rl::is_key_down(rl::RLKeyboardKey.H)) delta[0] -= step;
+						if (rl::is_key_down(
+							rl::RLKeyboardKey.RIGHT
+						) || rl::is_key_down(rl::RLKeyboardKey.L)) delta[0] += step;
+						if (rl::is_key_down(
+							rl::RLKeyboardKey.UP
+						) || rl::is_key_down(rl::RLKeyboardKey.K)) delta[1] -= step;
+						if (rl::is_key_down(
+							rl::RLKeyboardKey.DOWN
+						) || rl::is_key_down(rl::RLKeyboardKey.J)) delta[1] += step;
+						if (delta[0] != 0.0f || delta[1] != 0.0f) project.move_selected(delta);
+					}
+					while (rl::get_char_pressed() != 0)
+					{
+					}
+				}
+				else
+				{
+					int before         = project.selected;
+					int before_cluster = project.selected_cluster;
+
+					int move_cmd = keymap.poll_exact(commands::CTX_MOVE);
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.LEFT
+					)) move_cmd = (int)commands::CommandId.SELECT_LEFT;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.RIGHT
+					)) move_cmd = (int)commands::CommandId.SELECT_RIGHT;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.UP
+					)) move_cmd = (int)commands::CommandId.SELECT_UP;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.DOWN
+					)) move_cmd = (int)commands::CommandId.SELECT_DOWN;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.I
+					)) move_cmd = (int)commands::CommandId.FOCUS_EDITOR;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.ESCAPE
+					)) move_cmd = (int)commands::CommandId.LEAVE_FOLDER;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.KP_ADD
+					)) move_cmd = (int)commands::CommandId.ZOOM_IN;
+					if (move_cmd < 0 && rl::is_key_pressed(
+						rl::RLKeyboardKey.KP_SUBTRACT
+					)) move_cmd = (int)commands::CommandId.ZOOM_OUT;
+					if (move_cmd >= 0) run_command((commands::CommandId)move_cmd, &app);
+
+					bool selection_changed = project.selected != before || project.selected_cluster != before_cluster;
+					if (selection_changed)
+					{
+						Rect r    = project.selected_item_rect();
+						Rect view = project::visible_world_rect(canvas.camera);
+						if (r.width > 0.0f && !project::rect_intersects(r, view))
 						{
-							int idx = project.next_visible_card(project.selected, cycle);
-							if (idx >= 0) project.selected = idx;
+							canvas.target.target = { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
 						}
 					}
-				}
 
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.EQUAL
-				) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ADD)) canvas.key_zoom(1.0f);
-				if (rl::is_key_pressed(
-					rl::RLKeyboardKey.MINUS
-				) || rl::is_key_pressed(rl::RLKeyboardKey.KP_SUBTRACT)) canvas.key_zoom(-1.0f);
-
-				bool selection_changed  = project.selected != before;
-				FileCard* selected_card = project.selected_card();
-				if (selection_changed && selected_card)
-				{
-					Rect view = project::visible_world_rect(canvas.camera);
-					if (!project::rect_intersects(selected_card.rect, view))
+					while (rl::get_char_pressed() != 0)
 					{
-						canvas.target.target = selected_card.center();
 					}
-				}
-
-				while (rl::get_char_pressed() != 0)
-				{
 				}
 			}
 
-			bool over_minimap = minimap::contains_screen(&project, &canvas, mouse);
-			if (!over_top && !over_minimap && project.hit_test(world) < 0)
+			bool focus_active = project.focus_card >= 0;
+			bool over_minimap = focus_active ? minimap::file_contains_screen(&project, mouse)
+				: minimap::contains_screen(&project, &canvas, mouse);
+			if (focus_active || over_top || over_minimap || project.hit_test(world) >= 0)
 			{
-				arrow_hovered = import_index.hit_test(&project, canvas.camera, world, imports::ARROW_HIT_PX);
+				import_index.clear_hover();
+				arrow_hovered = false;
 			}
 			else
 			{
-				import_index.clear_hover();
+				bool moved          = mouse[0] != last_arrow_mouse[0] || mouse[1] != last_arrow_mouse[1];
+				bool camera_changed = canvas.camera.zoom != last_arrow_zoom
+					|| canvas.camera.target[0] != last_arrow_target[0]
+					|| canvas.camera.target[1] != last_arrow_target[1];
+				if (moved || camera_changed)
+				{
+					arrow_hovered = import_index.hit_test(&project, canvas.camera, world);
+					last_arrow_mouse = mouse;
+					last_arrow_zoom = canvas.camera.zoom;
+					last_arrow_target = canvas.camera.target;
+				}
+				else
+				{
+					arrow_hovered = import_index.hover.valid;
+				}
 			}
+			arrow_hovered_cache = arrow_hovered;
 			canvas.pointer_over_ui = over_top || project.pointer_over_ui(world) || over_minimap || arrow_hovered;
-			minimap::update(&project, &canvas);
+			if (focus_active)
+			{
+				minimap::update_file(&project, metrics);
+			}
+			else
+			{
+				minimap::update(&project, &canvas);
+			}
 
 			if (!over_top && rl::is_mouse_button_pressed(
 				rl::RLMouseButton.RIGHT
@@ -1270,9 +2372,6 @@ fn int main(String[] args)
 			{
 				int card   = project.hit_test(world);
 				int folder = project.cluster_hit(world);
-				context_card = card;
-				context_parent = folder;
-				context_world = world;
 
 				context::ContextTarget target = context::ContextTarget.CANVAS;
 				if (card >= 0)
@@ -1284,9 +2383,7 @@ fn int main(String[] args)
 					target = context::ContextTarget.CLUSTER;
 				}
 
-				bool card_open    = card >= 0 && project.cards[card].open;
-				bool card_missing = card >= 0 && project.cards[card].missing;
-				context_offset = -1;
+				int offset = -1;
 				if (card >= 0 && project.cards[card].open && project.cards[card].buffer)
 				{
 					FileCard* cc = &project.cards[card];
@@ -1294,7 +2391,7 @@ fn int main(String[] args)
 					if (world[0] >= text.x && world[0] <= text.x + text.width && world[1] >= text.y
 						&& world[1] <= text.y + text.height)
 					{
-						context_offset = (int)editor::offset_for_point(
+						offset = (int)editor::offset_for_point(
 							cc.buffer,
 							world[0] - text.x,
 							world[1] - text.y,
@@ -1304,24 +2401,7 @@ fn int main(String[] args)
 						);
 					}
 				}
-				bool can_define = context_offset >= 0;
-				context_item_count = context::build(
-					target,
-					card_open,
-					card_missing,
-					project_open,
-					can_define,
-					context_items[0:context::CONTEXT_MAX_ITEMS]
-				);
-
-				String[context::CONTEXT_MAX_ITEMS] labels;
-				bool[context::CONTEXT_MAX_ITEMS] enabled;
-				for (usz i = 0; i < context_item_count; i++)
-				{
-					labels[i] = context_items[i].label;
-					enabled[i] = context_items[i].enabled;
-				}
-				context_menu.open_with(mouse, labels[0:context_item_count], enabled[0:context_item_count]);
+				open_context_menu(&app, target, card, folder, world, offset);
 			}
 
 			if (!over_top && rl::is_file_dropped())
@@ -1346,40 +2426,21 @@ fn int main(String[] args)
 				rl::unload_dropped_files(files);
 			}
 
-			bool content_changed = false;
-			project.update(&canvas, metrics, over_top || font_wheel, &content_changed);
+			if (project.focus_card >= 0) project.update_focus_rect(&canvas);
+
+			content_changed = false;
+			bool suppress_edit_input = ui_mode == UiMode.EDIT && edit_grace_frames > 0;
+			double update_t0         = rl::get_time();
+			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
+			update_ms += (rl::get_time() - update_t0) * 1000.0;
 			if (ui_mode == UiMode.EDIT && project.focused < 0)
 			{
 				ui_mode = UiMode.MOVE;
 			}
-			else if (ui_mode == UiMode.MOVE)
+			if (project.focus_card >= 0 && project.focused < 0)
 			{
-				bool enter_edit = false;
-				if ((rl::is_key_pressed(
-					rl::RLKeyboardKey.ENTER
-				) || rl::is_key_pressed(rl::RLKeyboardKey.I)) && project.selected >= 0)
-				{
-					int idx = project.focus(project.selected);
-					if (idx >= 0 && idx < (int)project.cards.len())
-					{
-						project.selected = idx;
-						editor::ensure_buffer(&project.cards[idx], project.allocator);
-						project.reveal_focused(metrics);
-						enter_edit = true;
-					}
-				}
-				else if (project.focused >= 0)
-				{
-					project.selected = project.focused;
-					enter_edit = true;
-				}
-				if (enter_edit && project.focused >= 0)
-				{
-					ui_mode = UiMode.EDIT;
-					edit_grace_frames = 2;
-					FileCard* card = project.focused_card();
-					if (card) canvas.target.target = card.center();
-				}
+				project.end_focus(&canvas);
+				ui_mode = focus_saved_mode;
 			}
 			project.discard_ephemeral(project.focused);
 			if (content_changed)
@@ -1393,8 +2454,12 @@ fn int main(String[] args)
 			}
 			import_index.flush_edits(&project, rl::get_time());
 			import_index.sync(&project);
+			double imports_t0 = rl::get_time();
 			imports::ImportIndex.pump(&import_index, &project);
+			scan_ms += (rl::get_time() - imports_t0) * 1000.0;
 			if (over_top || font_wheel) canvas.block_zoom = true;
+			canvas.block_pan = project.focus_card >= 0;
+			if (project.focus_card >= 0) canvas.block_zoom = true;
 			canvas.update();
 			hover = compute_hover(&project, &canvas, metrics);
 
@@ -1498,51 +2563,75 @@ fn int main(String[] args)
 
 		rl::@drawing()
 		{
-			canvas.draw();
+			bool focus_active = project.focus_card >= 0;
+			if (focus_active)
+			{
+				rl::clear_background(theme::current().window_bg);
+			}
+			else
+			{
+				canvas.draw();
+			}
+			double draw_t0 = rl::get_time();
 			rl::@mode2d(canvas.camera)
 			{
-				project.draw_folders(canvas.camera);
-				import_index.draw(&project, canvas.camera, editor_font);
-				project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar);
+				if (focus_active)
+				{
+					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, project.focus_card);
+				}
+				else
+				{
+					project.draw_folders(canvas.camera);
+					import_index.draw(&project, canvas.camera, font);
+					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, -1);
+				}
 			};
-			minimap::draw(&project, &canvas);
+			if (focus_active)
+			{
+				minimap::draw_file(&project, metrics);
+			}
+			else
+			{
+				minimap::draw(&project, &canvas);
+			}
+			draw_ms += (rl::get_time() - draw_t0) * 1000.0;
 			if (rl::get_time() < font_indicator_until)
 			{
 				@pool()
 				{
 					String label = string::format(tmem, "Font %d", (long)font_size);
-					float width  = rl::measure_text_ex(font, label.zstr_tcopy(), 16.0f, 0.0f)[0];
+					float width  = rl::measure_text_ex(font, label.zstr_tcopy(), (float)ui::tpx(16), 0.0f)[0];
 					Rect panel = {
-						.x = (float)rl::get_screen_width() / 2.0f - (width + 24.0f) / 2.0f,
-						.y = topbar::TOP_BAR_HEIGHT + 16.0f,
-						.width = width + 24.0f,
-						.height = 30.0f,
+						.x = (float)rl::get_screen_width() / 2.0f - (width + (float)ui::px(24)) / 2.0f,
+						.y = ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(16),
+						.width = width + (float)ui::px(24),
+						.height = (float)ui::px(30),
 					};
 					rl::draw_rectangle_rec(panel, theme::current().panel_bg_alt);
 					rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 					rl::draw_text_ex(
 						font,
 						label.zstr_tcopy(),
-						{ panel.x + 12.0f, panel.y + 7.0f },
-						16.0f,
+						{ panel.x + (float)ui::px(12), panel.y + (float)ui::px(7) },
+						(float)ui::tpx(16),
 						0.0f,
 						theme::current()
 						.panel_text);
 				};
 			}
-			if (!problems.open && !palette.open && !opening)
+			if (!problems.open && !palette.open && !opening && !settings_panel.open)
 			{
 				if (import_index.hover.valid)
 				{
-					import_index.draw_tooltip(&project, editor_font);
+					import_index.draw_tooltip(&project, font);
 				}
 				else if (hover.diagnostic.len > 0)
 				{
-					problems::draw_tooltip(hover.diagnostic, hover.anchor, editor_font);
+					problems::draw_tooltip(hover.diagnostic, hover.anchor, font);
 				}
 				else if (hover.over && lsp.hover_is_valid())
 				{
-					hover::draw_hover(lsp.hover_message(), hover.anchor, editor_font);
+					hover::draw_hover(lsp.hover_message(), hover.anchor, font);
 				}
 			}
 			if (completion::completion_is_open() && !problems.open && !palette.open && !definition_menu.open)
@@ -1586,15 +2675,16 @@ fn int main(String[] args)
 			reload_menu.draw();
 			theme_menu.draw();
 			context_menu.draw();
-			name_prompt.draw();
+			name_prompt.draw(font);
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
-			problems.draw(editor_font);
-			search.draw(editor_font);
-			symbols.draw(editor_font);
+			settings_panel.draw(font, project_open, &keymap, &config);
+			problems.draw(font);
+			search.draw(font);
+			symbols.draw(font);
 			definition_menu.draw();
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
-			rl::draw_fps(10, (int)topbar::TOP_BAR_HEIGHT + 10);
+			rl::draw_fps(10, (int)ui::pxf(topbar::TOP_BAR_HEIGHT) + 10);
 			if (project_open)
 			{
 				String mode_label = "-- MOVE --";
@@ -1606,14 +2696,29 @@ fn int main(String[] args)
 				{
 					mode_label = "-- TOP BAR --";
 				}
-				rl::draw_text_ex(
-					font,
-					(ZString)mode_label.ptr,
-					{ 10.0f, (float)topbar::TOP_BAR_HEIGHT + 34.0f },
-					15.0f,
-					0.0f,
-					theme::current()
-					.topbar_name);
+				else if (project.grabbing)
+				{
+					mode_label = "-- GRAB --";
+				}
+				@pool()
+				{
+					String label = mode_label;
+					if (project.current_folder != project::ROOT_FOLDER
+						&& project.current_folder < (int)project.folders.len())
+					{
+						String fp  = (String)project.folders[project.current_folder].path;
+						String rel = fp.len > project.root.len + 1 ? fp[project.root.len + 1..] : fp;
+						label = string::format(tmem, "%s  %s", mode_label, rel);
+					}
+					rl::draw_text_ex(
+						font,
+						label.zstr_tcopy(),
+						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(34) },
+						(float)ui::tpx(15),
+						0.0f,
+						theme::current()
+						.topbar_name);
+				};
 			}
 			if (project_open && rl::is_key_down(rl::RLKeyboardKey.F3))
 			{
@@ -1628,18 +2733,68 @@ fn int main(String[] args)
 					rl::draw_text_ex(
 						font,
 						counter.zstr_tcopy(),
-						{ 10.0f, (float)topbar::TOP_BAR_HEIGHT + 54.0f },
-						14.0f,
+						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(54) },
+						(float)ui::tpx(14),
+						0.0f,
+						theme::current()
+						.panel_dim);
+					String perf = string::format(
+						tmem,
+						"frame %.2fms  update %.2f  draw %.2f  scan %.2f",
+						prof_frame,
+						prof_update,
+						prof_draw,
+						prof_scan
+					);
+					rl::draw_text_ex(
+						font,
+						perf.zstr_tcopy(),
+						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(74) },
+						(float)ui::tpx(14),
 						0.0f,
 						theme::current()
 						.panel_dim);
 				};
 			}
 		};
+		prof_update += (update_ms - prof_update) * 0.1;
+		prof_draw += (draw_ms - prof_draw) * 0.1;
+		prof_scan += (scan_ms - prof_scan) * 0.1;
+		prof_frame += ((rl::get_time() - frame_start) * 1000.0 - prof_frame) * 0.1;
+
+		if (benchmark_on && !bench_ready && frame_count > 20000)
+		{
+			io::printn("benchmark: project did not finish opening; aborting");
+			break;
+		}
+		if (bench_ready && frame_count > bench_warmup)
+		{
+			double ms = (rl::get_time() - frame_start) * 1000.0;
+			bench_sum += ms;
+			if (ms > bench_max) bench_max = ms;
+			if (ms < bench_min) bench_min = ms;
+			if (ms > 16.7) bench_over++;
+			bench_samples++;
+			if (bench_samples >= benchmark_frames)
+			{
+				double avg = bench_sum / (double)bench_samples;
+				io::printfn(
+					"benchmark: %d cards | %d folders | %d frames | avg %.2f ms  min %.2f  max %.2f  | over 16.7ms: %d  (%.1f fps)",
+					(int)project.cards.len(),
+					(int)project.folders.len(),
+					(int)bench_samples,
+					avg,
+					bench_min,
+					bench_max,
+					(int)bench_over,
+					1000.0 / avg
+				);
+				break;
+			}
+		}
 	}
 
+	if (project.focus_card >= 0) project.end_focus(&canvas);
 	if (project_open) workspace::save(&project, &canvas);
-	lsp.shutdown_all();
-	rl::unload_font(editor_font);
 	return 0;
 }

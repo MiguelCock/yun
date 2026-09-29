@@ -9,14 +9,12 @@ import std::io::file;
 import std::io::path;
 import std::os::env;
 import yun::commands;
+import yun::settings;
 
 const String CONFIG_DIR     = "yun";
 const String CONFIG_FILE    = "config.json";
 const String PROJECT_DIR    = ".yun";
-const String DEFAULT_THEME  = "dark";
-const int DEFAULT_FONT_SIZE = 16;
-const String DEFAULT_CONFIG = "{\n  \"theme\": \"dark\",\n  \"font_size\": 16,\n  \"keymap\": {},\n  \"lsp\": {}\n}\n";
-const String[] KNOWN_KEYS   = { "theme", "font_size", "keymap", "lsp" };
+const String DEFAULT_CONFIG = "{\n  \"app\": {\n    \"theme\": \"dark\"\n  },\n  \"editor\": {\n    \"font_size\": 16\n  },\n  \"keymap\": {},\n  \"lsp\": {}\n}\n";
 
 struct KeyBinding
 {
@@ -33,10 +31,9 @@ struct LspCommand
 struct Config
 {
 	Allocator allocator;
-	String theme;
-	int font_size;
-	bool owns_theme;
-	List{KeyBinding} keymap;
+	settings::Settings settings;
+	List{KeyBinding} keymap_global;
+	List{KeyBinding} keymap_project;
 	List{LspCommand} lsp;
 	List{String} warnings;
 }
@@ -44,39 +41,61 @@ struct Config
 fn void Config.init(&self, Allocator allocator)
 {
 	self.allocator = allocator;
-	self.theme = DEFAULT_THEME;
-	self.font_size = DEFAULT_FONT_SIZE;
-	self.owns_theme = false;
-	self.keymap.init(allocator);
+	self.settings.init(allocator);
+	self.keymap_global.init(allocator);
+	self.keymap_project.init(allocator);
 	self.lsp.init(allocator);
 	self.warnings.init(allocator);
 }
 
 fn void Config.destroy(&self)
 {
-	self.free_theme();
+	self.settings.destroy();
 	self.free_keymap();
 	self.free_lsp();
 	self.free_warnings();
-	self.keymap.free();
+	self.keymap_global.free();
+	self.keymap_project.free();
 	self.lsp.free();
 	self.warnings.free();
 }
 
-fn void Config.free_theme(&self)
-{
-	if (self.owns_theme) self.theme.free(self.allocator);
-	self.owns_theme = false;
-}
-
 fn void Config.free_keymap(&self)
 {
-	for (sz i = 0; i < self.keymap.len(); i++)
+	self.free_keymap_layer(&self.keymap_global);
+	self.free_keymap_layer(&self.keymap_project);
+}
+
+fn void Config.free_keymap_layer(&self, List{KeyBinding}* list)
+{
+	for (sz i = 0; i < list.len(); i++)
 	{
-		self.keymap[i].command.free(self.allocator);
-		self.keymap[i].chord.free(self.allocator);
+		list.get_ref(i).command.free(self.allocator);
+		list.get_ref(i).chord.free(self.allocator);
 	}
-	self.keymap.clear();
+	list.clear();
+}
+
+fn List{KeyBinding}* Config.keymap_layer(&self, settings::SettingLayer layer)
+{
+	switch (layer)
+	{
+		case settings::SettingLayer.GLOBAL:
+			return &self.keymap_global;
+		case settings::SettingLayer.PROJECT:
+			return &self.keymap_project;
+		case settings::SettingLayer.DEFAULT:
+			return null;
+	}
+}
+
+fn sz Config.keymap_index(&self, List{KeyBinding}* list, String command)
+{
+	for (sz i = 0; i < list.len(); i++)
+	{
+		if (list.get(i).command.compare_to(command) == 0) return i;
+	}
+	return -1;
 }
 
 fn void Config.free_lsp(&self)
@@ -100,19 +119,10 @@ fn void Config.free_warnings(&self)
 
 fn void Config.reset(&self)
 {
-	self.free_theme();
-	self.theme = DEFAULT_THEME;
-	self.font_size = DEFAULT_FONT_SIZE;
+	self.settings.reset();
 	self.free_keymap();
 	self.free_lsp();
 	self.free_warnings();
-}
-
-fn void Config.set_theme(&self, String value)
-{
-	self.free_theme();
-	self.theme = value.copy(self.allocator);
-	self.owns_theme = true;
 }
 
 fn void Config.add_warning(&self, String message)
@@ -120,27 +130,60 @@ fn void Config.add_warning(&self, String message)
 	self.warnings.push(message.copy(self.allocator));
 }
 
-fn bool is_known_key(String key)
+fn void Config.set_key_binding(&self, String command, String chord, settings::SettingLayer layer)
 {
-	foreach (String known : KNOWN_KEYS)
+	List{KeyBinding}* list = self.keymap_layer(layer);
+	if (list == null) return;
+	sz index = self.keymap_index(list, command);
+	if (index >= 0)
 	{
-		if (key.compare_to(known) == 0) return true;
+		list.get_ref(index).chord.free(self.allocator);
+		list.get_ref(index).chord = chord.copy(self.allocator);
+		return;
 	}
-	return false;
+	list.push({ .command = command.copy(self.allocator), .chord = chord.copy(self.allocator) });
 }
 
-fn void Config.set_key_binding(&self, String command, String chord)
+fn void Config.remove_key_binding(&self, String command, settings::SettingLayer layer)
 {
-	for (sz i = 0; i < self.keymap.len(); i++)
+	List{KeyBinding}* list = self.keymap_layer(layer);
+	if (list == null) return;
+	sz index = self.keymap_index(list, command);
+	if (index < 0) return;
+	list.get_ref(index).command.free(self.allocator);
+	list.get_ref(index).chord.free(self.allocator);
+	list.remove_at(index);
+}
+
+fn void Config.clear_keymap(&self, settings::SettingLayer layer)
+{
+	List{KeyBinding}* list = self.keymap_layer(layer);
+	if (list == null) return;
+	for (sz i = 0; i < list.len(); i++)
 	{
-		if (self.keymap[i].command.compare_to(command) == 0)
-		{
-			self.keymap[i].chord.free(self.allocator);
-			self.keymap[i].chord = chord.copy(self.allocator);
-			return;
-		}
+		list.get_ref(i).command.free(self.allocator);
+		list.get_ref(i).chord.free(self.allocator);
 	}
-	self.keymap.push({ .command = command.copy(self.allocator), .chord = chord.copy(self.allocator) });
+	list.clear();
+}
+
+fn bool Config.keymap_override(&self, String command, String* out_chord, settings::SettingLayer* out_layer)
+{
+	sz project = self.keymap_index(&self.keymap_project, command);
+	if (project >= 0)
+	{
+		*out_chord = self.keymap_project.get(project).chord;
+		*out_layer = settings::SettingLayer.PROJECT;
+		return true;
+	}
+	sz global = self.keymap_index(&self.keymap_global, command);
+	if (global >= 0)
+	{
+		*out_chord = self.keymap_global.get(global).chord;
+		*out_layer = settings::SettingLayer.GLOBAL;
+		return true;
+	}
+	return false;
 }
 
 fn void Config.set_lsp_command(&self, String language, String command)
@@ -157,7 +200,7 @@ fn void Config.set_lsp_command(&self, String language, String command)
 	self.lsp.push({ .language = language.copy(self.allocator), .command = command.copy(self.allocator) });
 }
 
-fn void Config.apply_keymap(&self, Object* map)
+fn void Config.apply_keymap(&self, Object* map, settings::SettingLayer layer)
 {
 	map.@each_entry(; String key, Object* value)
 	{
@@ -167,7 +210,7 @@ fn void Config.apply_keymap(&self, Object* map)
 		}
 		else
 		{
-			self.set_key_binding(key, value.s);
+			self.set_key_binding(key, value.s, layer);
 		}
 	};
 }
@@ -187,7 +230,7 @@ fn void Config.apply_lsp(&self, Object* map)
 	};
 }
 
-fn void Config.apply_object(&self, Object* obj)
+fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
 {
 	if (!obj.is_map())
 	{
@@ -197,36 +240,18 @@ fn void Config.apply_object(&self, Object* obj)
 
 	obj.@each_entry(; String key, Object* value)
 	{
-		if (!is_known_key(key))
+		bool handled = key.compare_to("keymap") == 0 || key.compare_to("lsp") == 0;
+		if (!handled && settings::is_section(key))
+		{
+			self.settings.apply_section(key, value, layer, &self.warnings);
+			handled = true;
+		}
+		if (!handled)
 		{
 			self.add_warning(string::format(self.allocator, "Unknown config key: %s", key));
 		}
 	};
 
-	if (obj.has_key("theme"))
-	{
-		String? theme = obj.get_string("theme");
-		if (catch excuse = theme)
-		{
-			self.add_warning("Config \"theme\" must be a string");
-		}
-		else
-		{
-			self.set_theme(theme);
-		}
-	}
-	if (obj.has_key("font_size"))
-	{
-		int? size = obj.get_int("font_size");
-		if (catch excuse = size)
-		{
-			self.add_warning("Config \"font_size\" must be an integer");
-		}
-		else
-		{
-			self.font_size = size;
-		}
-	}
 	if (obj.has_key("keymap"))
 	{
 		Object*? keymap = obj.get("keymap");
@@ -236,7 +261,7 @@ fn void Config.apply_object(&self, Object* obj)
 		}
 		else if (keymap.is_map())
 		{
-			self.apply_keymap(keymap);
+			self.apply_keymap(keymap, layer);
 		}
 		else
 		{
@@ -261,17 +286,17 @@ fn void Config.apply_object(&self, Object* obj)
 	}
 }
 
-fn bool Config.apply_json(&self, String json)
+fn bool Config.apply_json(&self, String json_text, settings::SettingLayer layer)
 {
-	Object*? parsed = json::parse(self.allocator, json);
+	Object*? parsed = json::parse(self.allocator, json_text);
 	if (catch excuse = parsed) return false;
 	Object* obj = parsed;
-	self.apply_object(obj);
+	self.apply_object(obj, layer);
 	obj.free();
 	return true;
 }
 
-fn bool Config.load_path(&self, Path path)
+fn bool Config.load_path(&self, Path path, settings::SettingLayer layer)
 {
 	if (!path::exists(path)) return false;
 	bool ok = false;
@@ -284,7 +309,7 @@ fn bool Config.load_path(&self, Path path)
 		}
 		else
 		{
-			ok = self.apply_json((String)data);
+			ok = self.apply_json((String)data, layer);
 		}
 	};
 	if (!ok) self.add_warning(string::format(self.allocator, "Malformed config: %s", (String)path));
@@ -319,7 +344,7 @@ fn void Config.load_global(&self)
 		return;
 	}
 	self.ensure_defaults(dir, file);
-	self.load_path(file);
+	self.load_path(file, settings::SettingLayer.GLOBAL);
 }
 
 fn void Config.load_project(&self, String project_root)
@@ -329,7 +354,7 @@ fn void Config.load_project(&self, String project_root)
 	if (catch excuse = dir) return;
 	Path? file = dir.append(self.allocator, CONFIG_FILE);
 	if (catch excuse = file) return;
-	self.load_path(file);
+	self.load_path(file, settings::SettingLayer.PROJECT);
 }
 
 fn void Config.load(&self, String project_root)
@@ -337,15 +362,15 @@ fn void Config.load(&self, String project_root)
 	self.reset();
 	self.load_global();
 	self.load_project(project_root);
+	self.settings.mark_all_changed();
 }
 
 fn String Config.key_binding(&self, commands::CommandId id)
 {
 	String name = commands::command_name(id);
-	for (sz i = 0; i < self.keymap.len(); i++)
-	{
-		if (self.keymap[i].command.compare_to(name) == 0) return self.keymap[i].chord;
-	}
+	String chord;
+	settings::SettingLayer layer;
+	if (self.keymap_override(name, &chord, &layer)) return chord;
 	return "";
 }
 
@@ -370,24 +395,25 @@ fn void append_json_string(DString* out, String s)
 	out.append_char('"');
 }
 
-fn void Config.save_path(&self, Path path)
+fn void Config.save_path(&self, Path path, settings::SettingLayer scope)
 {
 	@pool()
 	{
 		DString out;
 		out.init(tmem, 256);
 		out.append_string("{\n");
-		out.append_string("  \"theme\": ");
-		append_json_string(&out, self.theme);
-		out.append_string(",\n");
-		(void)out.appendf("  \"font_size\": %d,\n", (long)self.font_size);
+		self.settings.write_sections(&out, scope);
+		List{KeyBinding}* keymap = self.keymap_layer(scope);
 		out.append_string("  \"keymap\": {");
-		for (sz i = 0; i < self.keymap.len(); i++)
+		if (keymap != null)
 		{
-			if (i > 0) out.append_string(", ");
-			append_json_string(&out, self.keymap[i].command);
-			out.append_string(": ");
-			append_json_string(&out, self.keymap[i].chord);
+			for (sz i = 0; i < keymap.len(); i++)
+			{
+				if (i > 0) out.append_string(", ");
+				append_json_string(&out, keymap.get(i).command);
+				out.append_string(": ");
+				append_json_string(&out, keymap.get(i).chord);
+			}
 		}
 		out.append_string("},\n");
 		out.append_string("  \"lsp\": {");
@@ -413,5 +439,16 @@ fn void Config.save_global(&self)
 	if (catch excuse = path::mkdir(dir, recursive: true)) return;
 	Path? file = dir.append(self.allocator, CONFIG_FILE);
 	if (catch excuse = file) return;
-	self.save_path(file);
+	self.save_path(file, settings::SettingLayer.GLOBAL);
+}
+
+fn void Config.save_project(&self, String project_root)
+{
+	if (project_root.len == 0) return;
+	Path? dir = ((Path)project_root).append(self.allocator, PROJECT_DIR);
+	if (catch excuse = dir) return;
+	Path? file = dir.append(self.allocator, CONFIG_FILE);
+	if (catch excuse = file) return;
+	if (catch excuse = path::mkdir(dir, recursive: true)) return;
+	self.save_path(file, settings::SettingLayer.PROJECT);
 }

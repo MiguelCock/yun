@@ -39,14 +39,14 @@ fn void test_keyboard_selection()
 {
 	TopBar bar;
 	bar.init();
-	// bar commands: NEW_FILE, OPEN, SAVE
+	// bar commands: NEW_FILE, OPEN, SAVE, TOGGLE_SETTINGS
 	bar.selected = 0;
 	bar.clamp_selection(false, false);
 	assert(bar.selected == 1); // NEW_FILE disabled -> OPEN
 
 	bar.move_selection(1, false, false);
-	assert(bar.selected == 1); // only OPEN enabled
-	assert(bar.activate(false, false) == (int)commands::CommandId.OPEN);
+	assert(bar.selected == 3); // SAVE disabled -> TOGGLE_SETTINGS
+	assert(bar.activate(false, false) == (int)commands::CommandId.TOGGLE_SETTINGS);
 
 	bar.selected = 0;
 	bar.move_selection(1, true, true);

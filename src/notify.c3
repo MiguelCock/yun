@@ -3,6 +3,7 @@ module yun::notify;
 import raylib6::rl;
 import std::collections::list;
 import yun::theme;
+import yun::ui;
 
 const float NOTICE_TTL  = 4.0f;
 const int MAX_NOTICES   = 5;
@@ -26,10 +27,20 @@ fn void Notifier.init(&self, Allocator allocator)
 	self.items.init(allocator);
 }
 
+fn void Notifier.destroy(&self)
+{
+	for (sz i = 0; i < self.items.len(); i++)
+	{
+		if (self.items[i].text.len) self.items[i].text.free(self.allocator);
+	}
+	self.items.free();
+}
+
 fn void Notifier.push(&self, String message)
 {
 	if (self.items.len() >= MAX_NOTICES)
 	{
+		if (self.items[0].text.len) self.items[0].text.free(self.allocator);
 		self.items.remove_at(0);
 	}
 	self.items.push({ .text = message.copy(self.allocator), .ttl = NOTICE_TTL });
@@ -40,18 +51,34 @@ fn void Notifier.update(&self, float dt)
 	for (sz i = self.items.len(); i > 0; i--)
 	{
 		self.items[i - 1].ttl -= dt;
-		if (self.items[i - 1].ttl <= 0.0f) self.items.remove_at(i - 1);
+		if (self.items[i - 1].ttl <= 0.0f)
+		{
+			if (self.items[i - 1].text.len) self.items[i - 1].text.free(self.allocator);
+			self.items.remove_at(i - 1);
+		}
 	}
 }
 
 fn void Notifier.draw(&self)
 {
-	int y = rl::get_screen_height() - NOTICE_HEIGHT - 10;
+	int height = ui::px(NOTICE_HEIGHT);
+	int y      = rl::get_screen_height() - height - ui::px(10);
 	foreach (Notice notice : self.items)
 	{
-		int width = rl::measure_text((ZString)notice.text.ptr, NOTICE_HEIGHT - 8) + 16;
-		rl::draw_rectangle(10, y, width, NOTICE_HEIGHT, theme::current().notice_bg);
-		rl::draw_text((ZString)notice.text.ptr, 18, y + 4, NOTICE_HEIGHT - 8, theme::current().notice_text);
-		y -= NOTICE_HEIGHT + 4;
+		@pool()
+		{
+			float size  = (float)ui::tpx(NOTICE_HEIGHT - 8);
+			float width = rl::measure_text_ex(ui::font(), notice.text.zstr_tcopy(), size, 0.0f)[0] + (float)ui::px(16);
+			rl::draw_rectangle(ui::px(10), y, (int)width, height, theme::current().notice_bg);
+			rl::draw_text_ex(
+				ui::font(),
+				notice.text.zstr_tcopy(),
+				{ (float)ui::px(18), (float)(y + ui::px(4)) },
+				size,
+				0.0f,
+				theme::current()
+				.notice_text);
+		};
+		y -= height + ui::px(4);
 	}
 }

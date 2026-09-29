@@ -1,0 +1,11 @@
+# LeakSanitizer suppressions for third-party libraries.
+# Usage: LSAN_OPTIONS=suppressions=scripts/asan-suppressions.txt <asan binary>
+#
+# raylib directory enumeration (LoadDirectoryFilesEx) keeps internal allocations
+# alive after UnloadDirectoryFiles; not owned by Yun.
+leak:LoadDirectoryFilesEx
+# tree-sitter runtime allocators and grammar shared libraries.
+leak:ts_malloc_default
+leak:ts_realloc_default
+leak:ts_calloc_default
+leak:new_stack

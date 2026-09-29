@@ -3,7 +3,10 @@ module yun::menu;
 import raylib6::rl;
 import std::collections::list;
 import std::math;
+import yun::commands;
+import yun::keymap;
 import yun::theme;
+import yun::ui;
 
 const int MENU_ROW_HEIGHT = 26;
 const int MENU_PADDING_X  = 12;
@@ -18,6 +21,7 @@ struct Menu
 	Allocator allocator;
 	int selected;
 	RLVector2 position;
+	bool consumed;
 }
 
 fn void Menu.init(&self, Allocator allocator)
@@ -28,12 +32,29 @@ fn void Menu.init(&self, Allocator allocator)
 	self.open = false;
 	self.selected = 0;
 	self.position = { 0.0f, 0.0f };
+	self.consumed = false;
+}
+
+fn void Menu.free_items(&self)
+{
+	for (sz i = 0; i < self.items.len(); i++)
+	{
+		if (self.items[i].len) self.items[i].free(self.allocator);
+	}
+	self.items.clear();
+	self.enabled.clear();
+}
+
+fn void Menu.destroy(&self)
+{
+	self.free_items();
+	self.items.free();
+	self.enabled.free();
 }
 
 fn void Menu.open_at(&self, RLVector2 position, String[] items)
 {
-	self.items.clear();
-	self.enabled.clear();
+	self.free_items();
 	for (usz i = 0; i < items.len; i++)
 	{
 		self.items.push(items[i].copy(self.allocator));
@@ -46,8 +67,7 @@ fn void Menu.open_at(&self, RLVector2 position, String[] items)
 
 fn void Menu.open_with(&self, RLVector2 position, String[] items, bool[] enabled)
 {
-	self.items.clear();
-	self.enabled.clear();
+	self.free_items();
 	for (usz i = 0; i < items.len; i++)
 	{
 		self.items.push(items[i].copy(self.allocator));
@@ -108,19 +128,27 @@ fn void Menu.move_selection(&self, int delta)
 
 fn int Menu.width(&self)
 {
-	int width = MENU_MIN_WIDTH;
-	for (sz i = 0; i < self.items.len(); i++)
+	int width = ui::px(MENU_MIN_WIDTH);
+	@pool()
 	{
-		int item_width = rl::measure_text((ZString)self.items[i].ptr, 16) + MENU_PADDING_X * 2;
-		if (item_width > width) width = item_width;
-	}
+		for (sz i = 0; i < self.items.len(); i++)
+		{
+			int item_width = (int)rl::measure_text_ex(
+				ui::font(),
+				self.items[i].zstr_tcopy(),
+				(float)ui::tpx(16),
+				0.0f
+			)[0] + ui::px(MENU_PADDING_X) * 2;
+			if (item_width > width) width = item_width;
+		}
+	};
 	return width;
 }
 
 fn Rect Menu.panel_rect(&self)
 {
 	int width  = self.width();
-	int height = self.rows() * MENU_ROW_HEIGHT + MENU_PADDING_Y * 2;
+	int height = self.rows() * ui::px(MENU_ROW_HEIGHT) + ui::px(MENU_PADDING_Y) * 2;
 	float x    = self.position[0];
 	float y    = self.position[1];
 	if (x + (float)width > (float)rl::get_screen_width()) x = (float)(rl::get_screen_width() - width);
@@ -130,19 +158,30 @@ fn Rect Menu.panel_rect(&self)
 	return { .x = x, .y = y, .width = (float)width, .height = (float)height };
 }
 
-fn int Menu.update(&self)
+fn int Menu.update(&self, keymap::Keymap* keymap)
 {
 	if (!self.open) return -1;
+	self.consumed = false;
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN)) self.move_selection(1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.UP)) self.move_selection(-1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_MENU))
 	{
+		self.consumed = true;
+		self.move_selection(1);
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_MENU))
+	{
+		self.consumed = true;
+		self.move_selection(-1);
+	}
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_MENU))
+	{
+		self.consumed = true;
 		self.open = false;
 		return -1;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed((int)commands::CommandId.LIST_ACCEPT, commands::CTX_MENU))
 	{
+		self.consumed = true;
 		if (self.is_enabled(self.selected))
 		{
 			int chosen = self.selected;
@@ -159,7 +198,7 @@ fn int Menu.update(&self)
 		if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT)) self.open = false;
 		return -1;
 	}
-	int row = (int)((mouse[1] - panel.y - (float)MENU_PADDING_Y) / (float)MENU_ROW_HEIGHT);
+	int row = (int)((mouse[1] - panel.y - (float)ui::px(MENU_PADDING_Y)) / (float)ui::px(MENU_ROW_HEIGHT));
 	if (row >= 0 && row < self.rows() && self.enabled[row]) self.selected = row;
 	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
 	{
@@ -182,22 +221,23 @@ fn void Menu.draw(&self)
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
 	for (int i = 0; i < self.rows(); i++)
 	{
-		float row_y = panel.y + (float)MENU_PADDING_Y + (float)(i * MENU_ROW_HEIGHT);
+		float row_y = panel.y + (float)ui::px(MENU_PADDING_Y) + (float)(i * ui::px(MENU_ROW_HEIGHT));
 		if (i == self.selected)
 		{
 			rl::draw_rectangle(
 				(int)(panel.x + 2.0f),
 				(int)row_y,
 				(int)(panel.width - 4.0f),
-				MENU_ROW_HEIGHT,
+				ui::px(MENU_ROW_HEIGHT),
 				theme::current()
 				.panel_selected);
 		}
-		rl::draw_text(
+		rl::draw_text_ex(
+			ui::font(),
 			(ZString)self.items[(sz)i].ptr,
-			(int)(panel.x + (float)MENU_PADDING_X),
-			(int)(row_y + 4.0f),
-			16,
+			{ panel.x + (float)ui::px(MENU_PADDING_X), row_y + (float)ui::px(4) },
+			(float)ui::tpx(16),
+			0.0f,
 			self.enabled[(sz)i] ? theme::current()
 			.panel_text : theme::current().panel_disabled);
 	}

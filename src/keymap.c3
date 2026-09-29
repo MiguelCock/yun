@@ -6,12 +6,13 @@ import std::core::dstring;
 import std::os::env;
 import yun::commands;
 import yun::config;
+import yun::settings;
 
 const uint MOD_CTRL    = 1;
 const uint MOD_SHIFT   = 2;
 const uint MOD_ALT     = 4;
 const uint MOD_SUPER   = 8;
-const int MAX_COMMANDS = 64;
+const int MAX_COMMANDS = 256;
 
 struct Chord
 {
@@ -60,7 +61,7 @@ fn bool key_from_name(String token, rl::RLKeyboardKey* out)
 	{
 		char c = token[0];
 		if (c >= 'a' && c <= 'z') c = (char)(c - 32);
-		if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
+		if (c >= 33 && c <= 126)
 		{
 			*out = (rl::RLKeyboardKey)(int)c;
 			return true;
@@ -136,6 +137,91 @@ fn bool key_from_name(String token, rl::RLKeyboardKey* out)
 	if (equals_ci(token, "pagedown") || equals_ci(token, "pgdn"))
 	{
 		*out = rl::RLKeyboardKey.PAGE_DOWN;
+		return true;
+	}
+
+	if (equals_ci(token, "insert") || equals_ci(token, "ins"))
+	{
+		*out = rl::RLKeyboardKey.INSERT;
+		return true;
+	}
+	if (equals_ci(token, "caps_lock") || equals_ci(token, "capslock"))
+	{
+		*out = rl::RLKeyboardKey.CAPS_LOCK;
+		return true;
+	}
+	if (equals_ci(token, "scroll_lock"))
+	{
+		*out = rl::RLKeyboardKey.SCROLL_LOCK;
+		return true;
+	}
+	if (equals_ci(token, "num_lock"))
+	{
+		*out = rl::RLKeyboardKey.NUM_LOCK;
+		return true;
+	}
+	if (equals_ci(token, "print_screen") || equals_ci(token, "printscreen"))
+	{
+		*out = rl::RLKeyboardKey.PRINT_SCREEN;
+		return true;
+	}
+	if (equals_ci(token, "pause"))
+	{
+		*out = rl::RLKeyboardKey.PAUSE;
+		return true;
+	}
+	if (equals_ci(token, "kb_menu") || equals_ci(token, "menu"))
+	{
+		*out = rl::RLKeyboardKey.KB_MENU;
+		return true;
+	}
+	if (equals_ci(token, "kp_decimal"))
+	{
+		*out = rl::RLKeyboardKey.KP_DECIMAL;
+		return true;
+	}
+	if (equals_ci(token, "kp_divide"))
+	{
+		*out = rl::RLKeyboardKey.KP_DIVIDE;
+		return true;
+	}
+	if (equals_ci(token, "kp_multiply"))
+	{
+		*out = rl::RLKeyboardKey.KP_MULTIPLY;
+		return true;
+	}
+	if (equals_ci(token, "kp_subtract"))
+	{
+		*out = rl::RLKeyboardKey.KP_SUBTRACT;
+		return true;
+	}
+	if (equals_ci(token, "kp_add"))
+	{
+		*out = rl::RLKeyboardKey.KP_ADD;
+		return true;
+	}
+	if (equals_ci(token, "kp_enter"))
+	{
+		*out = rl::RLKeyboardKey.KP_ENTER;
+		return true;
+	}
+	if (equals_ci(token, "kp_equal"))
+	{
+		*out = rl::RLKeyboardKey.KP_EQUAL;
+		return true;
+	}
+	if (token.len == 3 && lower_ascii(
+		token[0]
+	) == 'k' && lower_ascii(token[1]) == 'p' && token[2] >= '0' && token[2] <= '9')
+	{
+		*out = (rl::RLKeyboardKey)((int)rl::RLKeyboardKey.KP_0 + (token[2] - '0'));
+		return true;
+	}
+	if (token.len == 4 && lower_ascii(
+		token[0]
+	) == 'k' && lower_ascii(token[1]) == 'p' && token[2] == '_' && token[3] >= '0' && token[3] <= '9')
+	{
+		*out = (rl::RLKeyboardKey)((int)rl::RLKeyboardKey.KP_0 + (token[3] - '0'));
 		return true;
 	}
 
@@ -253,12 +339,44 @@ fn String key_name(Allocator allocator, rl::RLKeyboardKey key)
 			return "PageUp";
 		case rl::RLKeyboardKey.PAGE_DOWN:
 			return "PageDown";
+		case rl::RLKeyboardKey.INSERT:
+			return "Insert";
+		case rl::RLKeyboardKey.CAPS_LOCK:
+			return "CapsLock";
+		case rl::RLKeyboardKey.SCROLL_LOCK:
+			return "ScrollLock";
+		case rl::RLKeyboardKey.NUM_LOCK:
+			return "NumLock";
+		case rl::RLKeyboardKey.PRINT_SCREEN:
+			return "PrintScreen";
+		case rl::RLKeyboardKey.PAUSE:
+			return "Pause";
+		case rl::RLKeyboardKey.KB_MENU:
+			return "Menu";
+		case rl::RLKeyboardKey.KP_DECIMAL:
+			return "KP_Decimal";
+		case rl::RLKeyboardKey.KP_DIVIDE:
+			return "KP_Divide";
+		case rl::RLKeyboardKey.KP_MULTIPLY:
+			return "KP_Multiply";
+		case rl::RLKeyboardKey.KP_SUBTRACT:
+			return "KP_Subtract";
+		case rl::RLKeyboardKey.KP_ADD:
+			return "KP_Add";
+		case rl::RLKeyboardKey.KP_ENTER:
+			return "KP_Enter";
+		case rl::RLKeyboardKey.KP_EQUAL:
+			return "KP_Equal";
 		default:
 			break;
 	}
 
 	int k = (int)key;
-	if ((k >= 'A' && k <= 'Z') || (k >= '0' && k <= '9')) return string::format(allocator, "%c", (char)k);
+	if (k >= 33 && k <= 126) return string::format(allocator, "%c", (char)k);
+	if (k >= (int)rl::RLKeyboardKey.KP_0 && k <= (int)rl::RLKeyboardKey.KP_9)
+	{
+		return string::format(allocator, "KP_%d", k - (int)rl::RLKeyboardKey.KP_0);
+	}
 	if (k >= (int)rl::RLKeyboardKey.F1 && k <= (int)rl::RLKeyboardKey.F12)
 	{
 		return string::format(allocator, "F%d", k - (int)rl::RLKeyboardKey.F1 + 1);
@@ -306,11 +424,8 @@ fn void mod_state(bool* ctrl, bool* shift, bool* alt, bool* super)
 	*alt = rl::is_key_down(rl::RLKeyboardKey.LEFT_ALT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_ALT);
 }
 
-fn bool chord_pressed(Chord chord)
+fn bool chord_mods_ok(Chord chord)
 {
-	if (!chord.valid) return false;
-	if (!rl::is_key_pressed(chord.key)) return false;
-
 	bool ctrl;
 	bool shift;
 	bool alt;
@@ -322,6 +437,79 @@ fn bool chord_pressed(Chord chord)
 	if (((chord.mods & MOD_ALT) != 0) != alt) return false;
 	if (((chord.mods & MOD_SUPER) != 0) != super) return false;
 	return true;
+}
+
+fn bool chord_pressed(Chord chord)
+{
+	if (!chord.valid) return false;
+	if (!rl::is_key_pressed(chord.key)) return false;
+	return chord_mods_ok(chord);
+}
+
+fn bool chord_pressed_repeat(Chord chord)
+{
+	if (!chord.valid) return false;
+	if (!rl::is_key_pressed(chord.key) && !rl::is_key_pressed_repeat(chord.key)) return false;
+	return chord_mods_ok(chord);
+}
+
+fn bool is_modifier_key(rl::RLKeyboardKey key)
+{
+	switch (key)
+	{
+		case rl::RLKeyboardKey.LEFT_SHIFT:
+		case rl::RLKeyboardKey.RIGHT_SHIFT:
+		case rl::RLKeyboardKey.LEFT_CONTROL:
+		case rl::RLKeyboardKey.RIGHT_CONTROL:
+		case rl::RLKeyboardKey.LEFT_ALT:
+		case rl::RLKeyboardKey.RIGHT_ALT:
+		case rl::RLKeyboardKey.LEFT_SUPER:
+		case rl::RLKeyboardKey.RIGHT_SUPER:
+			return true;
+		default:
+			return false;
+	}
+}
+
+fn int capture_chord(Chord* out)
+{
+	rl::RLKeyboardKey key = rl::get_key_pressed();
+	while (key != rl::RLKeyboardKey.NONE)
+	{
+		if (key == rl::RLKeyboardKey.ESCAPE) return -1;
+		if (!is_modifier_key(key))
+		{
+			bool ctrl;
+			bool shift;
+			bool alt;
+			bool super;
+			mod_state(&ctrl, &shift, &alt, &super);
+			uint mods = 0;
+			if (ctrl) mods |= MOD_CTRL;
+			if (shift) mods |= MOD_SHIFT;
+			if (alt) mods |= MOD_ALT;
+			if (super) mods |= MOD_SUPER;
+			*out = { .mods = mods, .key = key, .valid = true };
+			return 1;
+		}
+		key = rl::get_key_pressed();
+	}
+	return 0;
+}
+
+fn bool Keymap.conflicts(&self, int id)
+{
+	if (id < 0 || (usz)id >= commands::command_count()) return false;
+	if (!self.bound[id]) return false;
+	for (usz j = 0; j < commands::command_count(); j++)
+	{
+		if ((int)j == id) continue;
+		if (!self.bound[j]) continue;
+		if (!chord_equals(self.chords[id], self.chords[j])) continue;
+		if (contexts_overlap(commands::command_def((commands::CommandId)id)
+			.contexts, commands::command_def((commands::CommandId)j).contexts)) return true;
+	}
+	return false;
 }
 
 fn void Keymap.init(&self, Allocator allocator)
@@ -358,12 +546,43 @@ fn void Keymap.push_warning(&self, String message)
 	self.warnings.push(message);
 }
 
+fn void Keymap.unbind(&self, int id)
+{
+	if (id < 0 || id >= MAX_COMMANDS) return;
+	if (self.display[id].len > 0) self.display[id].free(self.allocator);
+	self.display[id] = "";
+	self.chords[id] = { .valid = false };
+	self.bound[id] = false;
+}
+
 fn void Keymap.set_chord(&self, int id, Chord chord)
 {
 	if (self.display[id].len > 0) self.display[id].free(self.allocator);
 	self.chords[id] = chord;
 	self.bound[id] = true;
 	self.display[id] = format_chord(self.allocator, chord, is_macos());
+}
+
+fn ulong overlay_context_mask()
+{
+	return commands::CTX_PALETTE | commands::CTX_FIND | commands::CTX_SEARCH | commands::CTX_SYMBOLS
+		| commands::CTX_PROBLEMS
+		| commands::CTX_PROMPT
+		| commands::CTX_BROWSER
+		| commands::CTX_SETTINGS
+		| commands::CTX_MENU;
+}
+
+fn bool contexts_overlap(ulong a, ulong b)
+{
+	if ((a & b) != 0) return true;
+	ulong mask    = overlay_context_mask();
+	bool a_global = (a & commands::CTX_GLOBAL) != 0;
+	bool b_global = (b & commands::CTX_GLOBAL) != 0;
+	if (a_global && b_global) return true;
+	if (a_global) return (b & ~mask) != 0;
+	if (b_global) return (a & ~mask) != 0;
+	return false;
 }
 
 fn void Keymap.detect_conflicts(&self)
@@ -375,6 +594,8 @@ fn void Keymap.detect_conflicts(&self)
 		{
 			if (!self.bound[j]) continue;
 			if (!chord_equals(self.chords[i], self.chords[j])) continue;
+			if (!contexts_overlap(commands::command_def((commands::CommandId)i)
+				.contexts, commands::command_def((commands::CommandId)j).contexts)) continue;
 			self.push_warning(
 				string::format(
 					self.allocator,
@@ -396,27 +617,49 @@ fn void Keymap.build(&self, config::Config* config)
 		if (chord.valid) self.set_chord((int)i, chord);
 	}
 
-	for (sz i = 0; i < config.keymap.len(); i++)
+	for (usz i = 0; i < commands::command_count(); i++)
 	{
-		String name = config.keymap[i].command;
-		int id      = commands::command_from_name(name);
-		if (id < 0)
+		String name = commands::command_name((commands::CommandId)i);
+		String text;
+		settings::SettingLayer layer;
+		if (!config.keymap_override(name, &text, &layer)) continue;
+		if (text.len == 0)
 		{
-			self.push_warning(string::format(self.allocator, "Unknown command in keymap: %s", name));
+			self.unbind((int)i);
 			continue;
 		}
-		Chord chord = parse_chord(config.keymap[i].chord);
+		Chord chord = parse_chord(text);
 		if (!chord.valid)
 		{
-			self.push_warning(
-				string::format(self.allocator, "Invalid shortcut for %s: %s", name, config.keymap[i].chord)
-			);
+			self.push_warning(string::format(self.allocator, "Invalid shortcut for %s: %s", name, text));
 			continue;
 		}
-		self.set_chord(id, chord);
+		self.set_chord((int)i, chord);
 	}
 
+	self.warn_unknown_commands(config);
+
 	self.detect_conflicts();
+}
+
+fn void Keymap.warn_unknown_commands(&self, config::Config* config)
+{
+	for (sz i = 0; i < config.keymap_global.len(); i++)
+	{
+		String name = config.keymap_global.get(i).command;
+		if (commands::command_from_name(name) < 0)
+		{
+			self.push_warning(string::format(self.allocator, "Unknown command in keymap: %s", name));
+		}
+	}
+	for (sz i = 0; i < config.keymap_project.len(); i++)
+	{
+		String name = config.keymap_project.get(i).command;
+		if (commands::command_from_name(name) < 0)
+		{
+			self.push_warning(string::format(self.allocator, "Unknown command in keymap: %s", name));
+		}
+	}
 }
 
 fn String Keymap.shortcut(&self, commands::CommandId id)
@@ -426,12 +669,81 @@ fn String Keymap.shortcut(&self, commands::CommandId id)
 	return self.display[i];
 }
 
-fn int Keymap.poll(&self)
+fn bool context_matches(ulong contexts, ulong context)
+{
+	return ((contexts & context) != 0) || ((contexts & commands::CTX_GLOBAL) != 0);
+}
+
+fn bool Keymap.active(&self, int id, ulong context)
+{
+	if (id < 0 || id >= MAX_COMMANDS) return false;
+	if (!self.bound[id]) return false;
+	return context_matches(commands::command_def((commands::CommandId)id).contexts, context);
+}
+
+fn bool Keymap.pressed(&self, int id, ulong context)
+{
+	if (!self.active(id, context)) return false;
+	return chord_pressed(self.chords[id]);
+}
+
+fn bool Keymap.pressed_repeat(&self, int id, ulong context)
+{
+	if (!self.active(id, context)) return false;
+	return chord_pressed_repeat(self.chords[id]);
+}
+
+fn bool chord_mods_ok_ignore_shift(Chord chord)
+{
+	bool ctrl;
+	bool shift;
+	bool alt;
+	bool super;
+	mod_state(&ctrl, &shift, &alt, &super);
+
+	if (((chord.mods & MOD_CTRL) != 0) != ctrl) return false;
+	if (((chord.mods & MOD_ALT) != 0) != alt) return false;
+	if (((chord.mods & MOD_SUPER) != 0) != super) return false;
+	return true;
+}
+
+fn bool Keymap.pressed_move(&self, int id, ulong context)
+{
+	if (!self.active(id, context)) return false;
+	Chord chord = self.chords[id];
+	if (!chord.valid) return false;
+	if (!rl::is_key_pressed(chord.key) && !rl::is_key_pressed_repeat(chord.key)) return false;
+	return chord_mods_ok_ignore_shift(chord);
+}
+
+fn bool Keymap.eligible(&self, int id, ulong context, bool exact)
+{
+	if (id < 0 || id >= MAX_COMMANDS) return false;
+	if (!self.bound[id]) return false;
+	ulong contexts = commands::command_def((commands::CommandId)id).contexts;
+	if (exact) return (contexts & context) != 0;
+	return context_matches(contexts, context);
+}
+
+fn int Keymap.poll_commands(&self, ulong context, bool exact)
 {
 	for (usz i = 0; i < commands::command_count(); i++)
 	{
-		if (!self.bound[i]) continue;
-		if (chord_pressed(self.chords[i])) return (int)i;
+		if (!self.eligible((int)i, context, exact)) continue;
+		Chord chord  = self.chords[i];
+		bool pressed = commands::command_def((commands::CommandId)i)
+			.repeat ? chord_pressed_repeat(chord) : chord_pressed(chord);
+		if (pressed) return (int)i;
 	}
 	return -1;
+}
+
+fn int Keymap.poll(&self, ulong context)
+{
+	return self.poll_commands(context, false);
+}
+
+fn int Keymap.poll_exact(&self, ulong context)
+{
+	return self.poll_commands(context, true);
 }

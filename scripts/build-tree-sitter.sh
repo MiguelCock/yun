@@ -1,54 +1,122 @@
 #!/usr/bin/env bash
-# Builds the tree-sitter runtime and grammar static libraries for one target.
+# Builds the tree-sitter runtime and grammar libraries for one target.
 #
-# Pinned upstream sources live in the git submodules under
-# lib/tree-sitter*.c3l/upstream. This script compiles them into
-# linked-libs/<target>/ so that `c3c build` can link them.
+# Grammars are discovered from lib/tree_sitter_*.c3l (each with an upstream/
+# submodule). Optional per-grammar options live in that directory's
+# grammar.conf (key=value): src, queries, lib. Defaults: src=src, queries=queries,
+# lib=tree-sitter-<stem>.
 #
 # Usage:
-#   scripts/build-tree-sitter.sh [target]
+#   scripts/build-tree-sitter.sh [--static] [target] [grammar...]
 #
-# target defaults to linux-x64. macos-aarch64 / windows-x64 can be produced by
-# running the same logic with a matching cross toolchain (documented, not
-# automated here -- see README.md in each lib).
+# The runtime is always built as a static library (linked into the executable).
+# Grammars build as shared libraries by default (loaded lazily at runtime);
+# --static builds grammar .a libraries instead (for static linking).
+#
+# target defaults to linux-x64. The remaining args filter by grammar stem
+# (e.g. `python c3`); with none, every grammar is built.
+#
+# macos-aarch64 / windows-x64 can be produced with a matching cross toolchain
+# (documented, not automated here -- see docs/tree-sitter.md).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET="${1:-linux-x64}"
+
+MODE="shared"
+POSITIONAL=()
+for arg in "$@"; do
+	case "$arg" in
+		--static) MODE="static" ;;
+		--shared) MODE="shared" ;;
+		*) POSITIONAL+=("$arg") ;;
+	esac
+done
+
+TARGET="${POSITIONAL[0]:-linux-x64}"
+FILTER=()
+if [ "${#POSITIONAL[@]}" -gt 1 ]; then
+	FILTER=("${POSITIONAL[@]:1}")
+fi
+
 CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 AR="${AR:-ar}"
 CFLAGS="${CFLAGS:--O2 -fPIC}"
 
-# runtime: name:submodule-dir:output
+SHARED_FLAG="-shared"
+SHARED_EXT="so"
+case "$TARGET" in
+	macos-*)
+		SHARED_FLAG="-dynamiclib"
+		SHARED_EXT="dylib"
+		;;
+esac
+
 RUNTIME_DIR="$ROOT/lib/tree_sitter.c3l/upstream"
 RUNTIME_INCLUDE="$RUNTIME_DIR/lib/include"
 
+read_conf() {
+	local file="$1"
+	local key="$2"
+	local fallback="$3"
+	local value=""
+	if [ -f "$file" ]; then
+		value="$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "$file" | head -n 1 | tr -d '[:space:]')"
+	fi
+	if [ -z "$value" ]; then echo "$fallback"; else echo "$value"; fi
+}
+
+selected() {
+	local stem="$1"
+	[ "${#FILTER[@]}" -eq 0 ] && return 0
+	for want in "${FILTER[@]}"; do
+		[ "$want" = "$stem" ] && return 0
+	done
+	return 1
+}
+
 build_lib() {
 	local name="$1"
-	local dir="$2"
-	local out="$3"
+	local upstream="$2"
+	local src_root="$3"
+	local out="$4"
 
-	local work="$dir"
+	local work="$upstream"
 	local objects=()
 	pushd "$work" >/dev/null
 
-	local src_root="src"
-	local sources=("$src_root/parser.c")
+	local sources=()
+	[ -f "$src_root/parser.c" ] && sources+=("$src_root/parser.c")
 	[ -f "$src_root/scanner.c" ] && sources+=("$src_root/scanner.c")
 	[ -f "$src_root/scanner.cc" ] && sources+=("$src_root/scanner.cc")
+
+	if [ "${#sources[@]}" -eq 0 ]; then
+		popd >/dev/null
+		echo "warning: no parser.c under $upstream/$src_root; skipping $name" >&2
+		return 0
+	fi
 
 	local i=0
 	for src in "${sources[@]}"; do
 		local obj="$out/$name-$i.o"
-		"$CC" $CFLAGS -I"$RUNTIME_INCLUDE" -I"$work/$src_root" -c "$src" -o "$obj"
+		local compiler="$CC"
+		case "$src" in
+			*.cc|*.cpp) compiler="$CXX" ;;
+		esac
+		"$compiler" $CFLAGS -I"$RUNTIME_INCLUDE" -I"$work/$src_root" -c "$src" -o "$obj"
 		objects+=("$obj")
 		i=$((i + 1))
 	done
 	popd >/dev/null
 
-	"$AR" rcs "$out/lib$name.a" "${objects[@]}"
+	if [ "$MODE" = "shared" ]; then
+		"$CC" $CFLAGS $SHARED_FLAG -o "$out/lib$name.$SHARED_EXT" "${objects[@]}"
+		echo "built $out/lib$name.$SHARED_EXT"
+	else
+		"$AR" rcs "$out/lib$name.a" "${objects[@]}"
+		echo "built $out/lib$name.a"
+	fi
 	rm -f "${objects[@]}"
-	echo "built $out/lib$name.a"
 }
 
 runtime_out="$ROOT/lib/tree_sitter.c3l/linked-libs/$TARGET"
@@ -59,19 +127,25 @@ echo "building tree-sitter runtime for $TARGET"
 rm -f "$runtime_out/libtree-sitter.o"
 echo "built $runtime_out/libtree-sitter.a"
 
-build_dep() {
-	local name="$1"
-	local dep="$2"
-	local sub="$ROOT/lib/$dep/upstream"
-	local out="$ROOT/lib/$dep/linked-libs/$TARGET"
-	mkdir -p "$out"
-	echo "building $name for $TARGET"
-	build_lib "$name" "$sub" "$out"
-}
+for dep in "$ROOT"/lib/tree_sitter_*.c3l; do
+	[ -d "$dep" ] || continue
+	base="$(basename "$dep")"
+	[ "$base" = "tree_sitter.c3l" ] && continue
 
-build_dep tree-sitter-c tree_sitter_c.c3l
-build_dep tree-sitter-python tree_sitter_python.c3l
-build_dep tree-sitter-javascript tree_sitter_javascript.c3l
-build_dep tree-sitter-c3 tree_sitter_c3.c3l
+	stem="${base#tree_sitter_}"
+	stem="${stem%.c3l}"
+	stem="${stem//_/-}"
+
+	selected "$stem" || continue
+
+	conf="$dep/grammar.conf"
+	src_root="$(read_conf "$conf" src src)"
+	lib="$(read_conf "$conf" lib "tree-sitter-$stem")"
+
+	out="$dep/linked-libs/$TARGET"
+	mkdir -p "$out"
+	echo "building $lib for $TARGET ($MODE)"
+	build_lib "$lib" "$dep/upstream" "$src_root" "$out"
+done
 
 echo "done ($TARGET)"

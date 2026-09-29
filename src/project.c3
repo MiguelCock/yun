@@ -10,14 +10,19 @@ import std::io::path;
 import std::math;
 import yun::canvas;
 import yun::card;
+import yun::commands;
 import yun::completion;
 import yun::editor;
 import yun::findbar;
 import yun::gitignore;
 import yun::highlight;
+import yun::keymap;
 import yun::lsp;
+import yun::markdown;
+import yun::spatial;
 import yun::text;
 import yun::theme;
+import yun::ui;
 
 const int ROOT_FOLDER               = -1;
 const double POLL_SECONDS           =  1.0;
@@ -27,8 +32,11 @@ const float CLUSTER_COLLAPSED_WIDTH =  240.0f;
 const float CLUSTER_GAP             =  16.0f;
 const float CARD_GAP                =  16.0f;
 const int CLUSTER_COLUMNS           =  3;
-const String[] IGNORED_NAMES        =  { ".git", ".yun", "build", "out", "node_modules" };
+const String[] IGNORED_NAMES        =  { ".git", ".gitmodules", ".yun", "build", "out", "node_modules" };
 const float DRAW_CULL_MARGIN        =  64.0f;
+const float CARD_MIN_DRAW_PX        =  3.0f;
+const float CARD_LOD_MIN_PX         =  48.0f;
+const float CLUSTER_TEXT_MIN_ZOOM   =  0.45f;
 const double DOUBLE_CLICK_SECONDS   =  0.35;
 const float DOUBLE_CLICK_DIST       =  6.0f;
 const usz OPEN_SCAN_BUDGET          =  64;
@@ -55,6 +63,12 @@ enum Dir : int
 	DOWN,
 }
 
+struct NavItem
+{
+	bool folder;
+	int index;
+}
+
 struct OpenJob
 {
 	Allocator allocator;
@@ -62,9 +76,11 @@ struct OpenJob
 	Path root;
 	PathList entries;
 	List{Path} pending;
+	List{Path} submodules;
 	gitignore::Gitignore ignore;
 	OpenPhase phase;
 	bool cancelled;
+	bool skip_nested;
 	usz scanned_dirs;
 	usz build_cursor;
 }
@@ -90,6 +106,10 @@ struct Project
 	Allocator allocator;
 	int focused;
 	int selected;
+	int selected_cluster;
+	int current_folder;
+	bool grabbing;
+	int hover_card;
 	bool drag_card;
 	int drag_index;
 	bool drag_cluster;
@@ -113,6 +133,19 @@ struct Project
 	double jump_until;
 	int awake_count;
 	int asleep_count;
+	int cards_revision;
+	bool skip_nested_repos;
+	int focus_card;
+	Rect focus_saved_rect;
+	RLCamera2D focus_saved_camera;
+	RLCamera2D focus_saved_target;
+	float focus_screen_w;
+	float focus_screen_h;
+	spatial::Grid grid;
+	bool grid_dirty;
+	bool content_bounds_valid;
+	Rect content_bounds_cache;
+	int hover_cluster;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -123,6 +156,9 @@ fn void Project.init(&self, Allocator allocator)
 	self.folder_index.init(allocator);
 	self.focused = -1;
 	self.selected = -1;
+	self.selected_cluster = -1;
+	self.current_folder = ROOT_FOLDER;
+	self.grabbing = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
@@ -139,6 +175,15 @@ fn void Project.init(&self, Allocator allocator)
 	self.jump_until = 0.0;
 	self.awake_count = 0;
 	self.asleep_count = 0;
+	self.cards_revision = 0;
+	self.skip_nested_repos = true;
+	self.focus_card = -1;
+	self.focus_screen_w = 0.0f;
+	self.focus_screen_h = 0.0f;
+	self.grid.init(allocator, spatial::CELL_SIZE);
+	self.grid_dirty = true;
+	self.content_bounds_valid = false;
+	self.hover_cluster = -1;
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
 	{
@@ -148,19 +193,62 @@ fn void Project.init(&self, Allocator allocator)
 	self.root = cwd;
 }
 
+fn void Project.destroy_card(&self, FileCard* card)
+{
+	editor::destroy_buffer(card, self.allocator);
+	if (((String)card.path).len) ((String)card.path).free(self.allocator);
+	if (card.name.len) card.name.free(self.allocator);
+}
+
+fn void Project.destroy_cards(&self)
+{
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		self.destroy_card(&self.cards[i]);
+	}
+	self.cards.clear();
+}
+
+fn void Project.destroy_folders(&self)
+{
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		if (((String)self.folders[i].path).len) ((String)self.folders[i].path).free(self.allocator);
+	}
+	self.folders.clear();
+	self.folder_index.clear();
+}
+
+fn void Project.destroy(&self)
+{
+	self.destroy_cards();
+	self.destroy_folders();
+	self.cards.free();
+	self.folders.free();
+	self.folder_index.free();
+	self.grid.destroy();
+	self.clear_jump();
+	if (((String)self.root).len) ((String)self.root).free(self.allocator);
+}
+
 fn void Project.reset(&self)
 {
 	self.discard_ephemeral(-1);
-	self.cards.clear();
-	self.folders.clear();
-	self.folder_index.clear();
+	self.destroy_cards();
+	self.destroy_folders();
+	self.cards_revision++;
 	self.focused = -1;
 	self.selected = -1;
+	self.selected_cluster = -1;
+	self.current_folder = ROOT_FOLDER;
+	self.grabbing = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
 	self.cluster_moved = false;
 	self.selecting = false;
+	self.grid_dirty = true;
+	self.content_bounds_valid = false;
 	self.clear_jump();
 }
 
@@ -203,6 +291,8 @@ fn void Project.discard_ephemeral(&self, int keep)
 			(void)libc::remove(((String)card.path).zstr_tcopy());
 		};
 		self.cards.remove_at(index);
+		if (((String)card.path).len) ((String)card.path).free(self.allocator);
+		if (card.name.len) card.name.free(self.allocator);
 		if (self.focused > (int)index)
 		{
 			self.focused--;
@@ -210,6 +300,7 @@ fn void Project.discard_ephemeral(&self, int keep)
 		else if (self.focused == (int)index)
 		{
 			self.focused = -1;
+			self.hover_card = -1;
 		}
 		if (self.selected > (int)index)
 		{
@@ -252,27 +343,6 @@ fn int path_compare(void* a, void* b)
 	Path pa = *(Path*)a;
 	Path pb = *(Path*)b;
 	return ((String)pa).compare_to((String)pb);
-}
-
-fn int layout_columns(int count)
-{
-	if (count <= 1) return 1;
-	float cell_w = CLUSTER_COLLAPSED_WIDTH + CLUSTER_GAP;
-	float cell_h = CLUSTER_TITLE_HEIGHT + CLUSTER_GAP;
-	int columns  = (int)math::ceil(math::sqrt((float)count * cell_h / cell_w));
-	if (columns < 1) columns = 1;
-	if (columns > count) columns = count;
-	return columns;
-}
-
-fn RLVector2 layout_slot(int index, int columns)
-{
-	int col = index % columns;
-	int row = index / columns;
-	return {
-		(float)col * (CLUSTER_COLLAPSED_WIDTH + CLUSTER_GAP),
-		(float)row * (CLUSTER_TITLE_HEIGHT + CLUSTER_GAP),
-	};
 }
 
 fn bool rect_contains(Rect r, RLVector2 point)
@@ -406,13 +476,28 @@ fn void Project.invalidate_bounds(&self)
 	{
 		self.folders[i].bounds_valid = false;
 	}
+	self.grid_dirty = true;
+	self.content_bounds_valid = false;
+}
+
+fn void Project.invalidate_bounds_for_card(&self, int card_index)
+{
+	if (card_index < 0 || card_index >= (int)self.cards.len()) return;
+	int current = self.cards[card_index].folder;
+	while (current != ROOT_FOLDER)
+	{
+		self.folders[current].bounds_valid = false;
+		current = self.folders[current].parent;
+	}
+	self.grid_dirty = true;
+	self.content_bounds_valid = false;
 }
 
 fn int Project.add_folder(&self, String folder_path, int parent)
 {
 	FolderCluster cluster = {
 		.path = (Path)folder_path.copy(self.allocator),
-		.bounds = { .x = 0.0f, .y = 0.0f, .width = 320.0f, .height = 220.0f },
+		.bounds = { .x = 0.0f, .y = 0.0f, .width = ui::pxf(320.0f), .height = ui::pxf(220.0f) },
 		.collapsed = false,
 		.parent = parent,
 		.bounds_valid = false,
@@ -484,22 +569,22 @@ fn Rect Project.compute_cluster_bounds(&self, int index)
 
 	if (!found) return self.folders[index].bounds;
 	return {
-		.x = min_x - CLUSTER_PADDING,
-		.y = min_y - CLUSTER_PADDING - CLUSTER_TITLE_HEIGHT,
-		.width = (max_x - min_x) + CLUSTER_PADDING * 2.0f,
-		.height = (max_y - min_y) + CLUSTER_PADDING * 2.0f + CLUSTER_TITLE_HEIGHT,
+		.x = min_x - ui::pxf(CLUSTER_PADDING),
+		.y = min_y - ui::pxf(CLUSTER_PADDING) - ui::pxf(CLUSTER_TITLE_HEIGHT),
+		.width = (max_x - min_x) + ui::pxf(CLUSTER_PADDING) * 2.0f,
+		.height = (max_y - min_y) + ui::pxf(CLUSTER_PADDING) * 2.0f + ui::pxf(CLUSTER_TITLE_HEIGHT),
 	};
 }
 
 fn Rect Project.cluster_visual_bounds(&self, int index)
 {
-	if (!self.folders[index].collapsed) return self.cluster_bounds(index);
-	Rect b = self.folders[index].bounds;
+	Rect full = self.cluster_bounds(index);
+	if (!self.folders[index].collapsed) return full;
 	return {
-		.x = b.x,
-		.y = b.y,
-		.width = CLUSTER_COLLAPSED_WIDTH,
-		.height = CLUSTER_TITLE_HEIGHT,
+		.x = full.x,
+		.y = full.y,
+		.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH),
+		.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
 	};
 }
 
@@ -510,7 +595,7 @@ fn Rect Project.cluster_title_rect(&self, int index)
 		.x = bounds.x,
 		.y = bounds.y,
 		.width = bounds.width,
-		.height = CLUSTER_TITLE_HEIGHT,
+		.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
 	};
 }
 
@@ -521,6 +606,11 @@ fn bool Project.cluster_title_hit(&self, int index, RLVector2 world)
 
 fn bool Project.content_bounds(&self, Rect* out)
 {
+	if (self.content_bounds_valid)
+	{
+		*out = self.content_bounds_cache;
+		return true;
+	}
 	bool found  = false;
 	float min_x = 0.0f;
 	float min_y = 0.0f;
@@ -571,11 +661,40 @@ fn bool Project.content_bounds(&self, Rect* out)
 
 	if (!found) return false;
 	*out = { .x = min_x, .y = min_y, .width = max_x - min_x, .height = max_y - min_y };
+	self.content_bounds_cache = *out;
+	self.content_bounds_valid = true;
 	return true;
+}
+
+fn void Project.ensure_grid(&self)
+{
+	if (!self.grid_dirty) return;
+	self.grid.clear();
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		if (!self.card_visible((int)i)) continue;
+		self.grid.insert(self.cards[i].rect, (int)i);
+	}
+	self.grid_dirty = false;
+}
+
+fn void Project.visible_cards(&self, Rect visible, List{int}* out)
+{
+	self.ensure_grid();
+	self.grid.query_rect(visible, out);
+	if (out.len() > 1) libc::qsort(out.entries, (usz)out.size, (usz)int::size, &int_compare);
+}
+
+fn int int_compare(void* a, void* b)
+{
+	int va = *(int*)a;
+	int vb = *(int*)b;
+	return va < vb ? -1 : (va > vb ? 1 : 0);
 }
 
 fn int Project.cluster_hit(&self, RLVector2 world)
 {
+	if (self.focus_card >= 0) return ROOT_FOLDER;
 	int best     = ROOT_FOLDER;
 	usz best_len = 0;
 	for (sz i = 0; i < self.folders.len(); i++)
@@ -594,6 +713,7 @@ fn int Project.cluster_hit(&self, RLVector2 world)
 
 fn int Project.folder_at(&self, RLVector2 world)
 {
+	if (self.focus_card >= 0) return ROOT_FOLDER;
 	int best     = ROOT_FOLDER;
 	usz best_len = 0;
 	for (sz i = 0; i < self.folders.len(); i++)
@@ -671,13 +791,14 @@ fn int Project.append_card(&self, String abs, RLVector2 world_pos)
 		.copy(
 			self.allocator
 		), .rect = {
-			.x = world_pos[0] - card::CARD_WIDTH / 2.0f,
-			.y = world_pos[1] - card::CARD_HEIGHT / 2.0f,
-			.width = card::CARD_WIDTH,
-			.height = card::CARD_HEIGHT,
+			.x = world_pos[0] - ui::pxf(card::CARD_WIDTH) / 2.0f,
+			.y = world_pos[1] - ui::pxf(card::CARD_HEIGHT) / 2.0f,
+			.width = ui::pxf(card::CARD_WIDTH),
+			.height = ui::pxf(card::CARD_HEIGHT),
 		}, .open = true, .dirty = false, .folder = self.folder_for(abs), };
 	self.cards.push(card);
 	int index = (int)(self.cards.len() - 1);
+	self.cards_revision++;
 	self.invalidate_bounds();
 	return index;
 }
@@ -711,72 +832,297 @@ fn int Project.add_folder_from_disk(&self, String dir, RLVector2 world_pos)
 	self.folders[index].bounds = {
 		.x = world_pos[0],
 		.y = world_pos[1],
-		.width = 320.0f,
-		.height = 220.0f,
+		.width = ui::pxf(320.0f),
+		.height = ui::pxf(220.0f),
 	};
 	self.invalidate_bounds();
 
 	PathList? entries = path::ls(self.allocator, (Path)dir, no_dirs: true, recursive: false, relative: false);
 	if (catch excuse = entries) return index;
 
-	float x = world_pos[0] + CLUSTER_PADDING;
-	float y = world_pos[1] + CLUSTER_TITLE_HEIGHT + CLUSTER_PADDING;
+	float x = world_pos[0] + ui::pxf(CLUSTER_PADDING);
+	float y = world_pos[1] + ui::pxf(CLUSTER_TITLE_HEIGHT) + ui::pxf(CLUSTER_PADDING);
 	int col = 0;
 	foreach (Path entry : entries)
 	{
-		self.add_card((String)entry, { x + card::CARD_WIDTH / 2.0f, y + card::CARD_HEIGHT / 2.0f });
-		x += card::CARD_WIDTH + CARD_GAP;
+		self.add_card((String)entry, { x + ui::pxf(card::CARD_WIDTH) / 2.0f, y + ui::pxf(card::CARD_HEIGHT) / 2.0f });
+		x += ui::pxf(card::CARD_WIDTH) + ui::pxf((float)CARD_GAP);
 		col++;
 		if (col >= CLUSTER_COLUMNS)
 		{
 			col = 0;
-			x = world_pos[0] + CLUSTER_PADDING;
-			y += card::CARD_HEIGHT + CARD_GAP;
+			x = world_pos[0] + ui::pxf(CLUSTER_PADDING);
+			y += ui::pxf(card::CARD_HEIGHT) + ui::pxf((float)CARD_GAP);
 		}
 	}
 	return index;
 }
 
+fn void Project.place_cards_grid(&self, List{int}* cards, float base_x, float base_y, float cw, float ch, float cg)
+{
+	int count = (int)cards.len();
+	int cols  = count < CLUSTER_COLUMNS ? (count < 1 ? 1 : count) : CLUSTER_COLUMNS;
+	for (int k = 0; k < count; k++)
+	{
+		int col = k % cols;
+		int row = k / cols;
+		self.cards[(*cards)[k]].rect = {
+			.x = base_x + (float)col * (cw + cg),
+			.y = base_y + (float)row * (ch + cg),
+			.width = cw,
+			.height = ch,
+		};
+	}
+}
+
+fn RLVector2 Project.card_block_size(&self, int count, float cw, float ch, float cg)
+{
+	int cols = count < CLUSTER_COLUMNS ? (count < 1 ? 1 : count) : CLUSTER_COLUMNS;
+	int rows = count == 0 ? 0 : (count + cols - 1) / cols;
+	return { count == 0 ? 0.0f : (float)cols * (cw + cg) - cg, rows == 0 ? 0.0f : (float)rows * (ch + cg) - cg };
+}
+
+fn RLVector2 Project.flow_pack(&self, List{RLVector2}* items, float gap, float target_w, RLVector2[] positions)
+{
+	RLVector2 cursor = { 0.0f, 0.0f };
+	float row_h      = 0.0f;
+	float max_x      = 0.0f;
+	for (sz i = 0; i < items.len(); i++)
+	{
+		RLVector2 it = (*items)[i];
+		if (cursor[0] > 0.0f && cursor[0] + it[0] > target_w)
+		{
+			cursor[0] = 0.0f;
+			cursor[1] += row_h + gap;
+			row_h = 0.0f;
+		}
+		if ((usz)i < positions.len) positions[(usz)i] = cursor;
+		cursor[0] += it[0] + gap;
+		row_h = math::max(row_h, it[1]);
+		max_x = math::max(max_x, cursor[0] - gap);
+	}
+	return { max_x, cursor[1] + row_h };
+}
+
+fn RLVector2 Project.chip_size(&self)
+{
+	return { ui::pxf(CLUSTER_COLLAPSED_WIDTH), ui::pxf(CLUSTER_TITLE_HEIGHT) };
+}
+
+fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* cards_by, List{int}[]* children_by)
+{
+	float pad      = ui::pxf(CLUSTER_PADDING);
+	float title    = ui::pxf(CLUSTER_TITLE_HEIGHT);
+	float cw       = ui::pxf(card::CARD_WIDTH);
+	float ch       = ui::pxf(card::CARD_HEIGHT);
+	float cg       = ui::pxf((float)CARD_GAP);
+	float gap      = ui::pxf(CLUSTER_GAP);
+	RLVector2 chip = self.chip_size();
+
+	float content_x = origin[0] + pad;
+	float content_y = origin[1] + title + pad;
+
+	List{int} cards = (*cards_by)[(usz)(index + 1)];
+	List{int} kids  = (*children_by)[(usz)index];
+
+	List{RLVector2} items;
+	items.init(tmem);
+	if (cards.len() > 0) items.push(self.card_block_size((int)cards.len(), cw, ch, cg));
+	for (sz i = 0; i < kids.len(); i++) items.push(chip);
+
+	RLVector2[] positions = alloc::new_array(tmem, RLVector2, (usz)(items.len() == 0 ? 1 : items.len()));
+	float area            = 0.0f;
+	for (sz i = 0; i < items.len(); i++) area += items[i][0] * items[i][1];
+	self.flow_pack(&items, gap, math::sqrt(area), positions);
+	items.free();
+
+	int base = cards.len() > 0 ? 1 : 0;
+	if (cards.len() > 0)
+	{
+		self.place_cards_grid(&cards, content_x + positions[0][0], content_y + positions[0][1], cw, ch, cg);
+	}
+	for (sz i = 0; i < kids.len(); i++)
+	{
+		RLVector2 p = positions[(usz)(base + (int)i)];
+		self.place_level(kids[i], { content_x + p[0], content_y + p[1] }, cards_by, children_by);
+	}
+
+	if (cards.len() == 0 && kids.len() == 0)
+	{
+		self.folders[index].bounds = { .x = origin[0], .y = origin[1], .width = chip[0], .height = chip[1] };
+		self.folders[index].bounds_valid = true;
+	}
+	else
+	{
+		self.folders[index].bounds_valid = false;
+	}
+}
+
 fn void Project.layout(&self)
 {
-	int folder_count = (int)self.folders.len();
-	int columns      = layout_columns(folder_count + 1);
-	for (sz f = 0; f < self.folders.len(); f++)
-	{
-		RLVector2 origin = layout_slot((int)f, columns);
-		self.folders[f].bounds = {
-			.x = origin[0],
-			.y = origin[1],
-			.width = CLUSTER_COLLAPSED_WIDTH,
-			.height = CLUSTER_TITLE_HEIGHT,
-		};
-		self.folders[f].bounds_valid = false;
-	}
-	RLVector2 root_origin = layout_slot(folder_count, columns);
+	int nf         = (int)self.folders.len();
+	float cw       = ui::pxf(card::CARD_WIDTH);
+	float ch       = ui::pxf(card::CARD_HEIGHT);
+	float cg       = ui::pxf((float)CARD_GAP);
+	float gap      = ui::pxf(CLUSTER_GAP);
+	RLVector2 chip = self.chip_size();
 
 	@pool()
 	{
-		usz[] cursor = alloc::new_array(tmem, usz, self.folders.len() + 1);
-		for (sz i = 0; i < self.cards.len(); i++)
+		List{int}[] cards_by = alloc::new_array(tmem, List{int}, (usz)(nf + 1));
+		for (usz i = 0; i < cards_by.len; i++) cards_by[i].init(tmem);
+		for (sz i = 0; i < self.cards.len(); i++) cards_by[(usz)(self.cards[i].folder + 1)].push((int)i);
+
+		List{int}[] children_by = { };
+		if (nf > 0)
 		{
-			int folder = self.cards[i].folder;
-			usz slot   = cursor[(sz)(folder + 1)];
-			cursor[(sz)(folder + 1)] = slot + 1;
+			children_by = alloc::new_array(tmem, List{int}, (usz)nf);
+			for (usz i = 0; i < children_by.len; i++) children_by[i].init(tmem);
+			for (sz i = 0; i < self.folders.len(); i++)
+			{
+				int p = self.folders[i].parent;
+				if (p >= 0 && p < nf) children_by[(usz)p].push((int)i);
+			}
+		}
 
-			RLVector2 origin = root_origin;
-			if (folder != ROOT_FOLDER) origin = { self.folders[folder].bounds.x, self.folders[folder].bounds.y };
+		List{int} root_cards = cards_by[0];
+		List{int} tops;
+		tops.init(tmem);
+		for (sz i = 0; i < self.folders.len(); i++)
+		{
+			if (self.folders[i].parent == ROOT_FOLDER) tops.push((int)i);
+		}
 
-			int col = (int)(slot % (usz)CLUSTER_COLUMNS);
-			int row = (int)(slot / (usz)CLUSTER_COLUMNS);
-			self.cards[i].rect = {
-				.x = origin[0] + CLUSTER_PADDING + (float)col * (card::CARD_WIDTH + CARD_GAP),
-				.y = origin[1] + CLUSTER_TITLE_HEIGHT + CLUSTER_PADDING + (float)row * (card::CARD_HEIGHT + CARD_GAP),
-				.width = card::CARD_WIDTH,
-				.height = card::CARD_HEIGHT,
-			};
+		List{RLVector2} items;
+		items.init(tmem);
+		if (root_cards.len() > 0) items.push(self.card_block_size((int)root_cards.len(), cw, ch, cg));
+		for (sz i = 0; i < tops.len(); i++) items.push(chip);
+
+		if (items.len() > 0)
+		{
+			RLVector2[] positions = alloc::new_array(tmem, RLVector2, (usz)items.len());
+			float area            = 0.0f;
+			for (sz i = 0; i < items.len(); i++) area += items[i][0] * items[i][1];
+			self.flow_pack(&items, gap, math::sqrt(area), positions);
+
+			int base = root_cards.len() > 0 ? 1 : 0;
+			if (root_cards.len() > 0)
+			{
+				self.place_cards_grid(&root_cards, positions[0][0], positions[0][1], cw, ch, cg);
+			}
+			for (sz i = 0; i < tops.len(); i++)
+			{
+				RLVector2 p = positions[(usz)(base + (int)i)];
+				self.place_level(tops[i], p, &cards_by, &children_by);
+			}
 		}
 	};
+}
+
+fn void Project.place_unrestored(&self)
+{
+	@pool()
+	{
+		HashMap{int, int} counts;
+		counts.init(tmem);
+		for (sz i = 0; i < self.cards.len(); i++)
+		{
+			FileCard* card = &self.cards[i];
+			if (card.restored) continue;
+			Rect anchor = { .x = 0.0f, .y = 0.0f, .width = 0.0f, .height = 0.0f };
+			if (card.folder >= 0) anchor = self.folders[card.folder].bounds;
+			int slot       = 0;
+			int*? existing = counts.get_ref(card.folder);
+			if (try v = existing) slot = *v;
+			counts.set(card.folder, slot + 1);
+			int col = slot % CLUSTER_COLUMNS;
+			int row = slot / CLUSTER_COLUMNS;
+			card.rect = {
+				.x = anchor.x + ui::pxf(
+					CLUSTER_PADDING
+				) + (float)col * (ui::pxf(card::CARD_WIDTH) + ui::pxf((float)CARD_GAP)),
+				.y = anchor.y + anchor.height + ui::pxf(
+					(float)CARD_GAP
+				) + (float)row * (ui::pxf(card::CARD_HEIGHT) + ui::pxf((float)CARD_GAP)),
+				.width = ui::pxf(card::CARD_WIDTH),
+				.height = ui::pxf(card::CARD_HEIGHT),
+			};
+			card.restored = true;
+		}
+		counts.free();
+	};
 	self.invalidate_bounds();
+}
+
+fn void Project.scale_geometry(&self, float factor)
+{
+	if (factor == 1.0f) return;
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		self.cards[i].rect.x *= factor;
+		self.cards[i].rect.y *= factor;
+		self.cards[i].rect.width *= factor;
+		self.cards[i].rect.height *= factor;
+	}
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		self.folders[i].bounds.x *= factor;
+		self.folders[i].bounds.y *= factor;
+		self.folders[i].bounds.width *= factor;
+		self.folders[i].bounds.height *= factor;
+		self.folders[i].bounds_valid = false;
+	}
+	self.invalidate_bounds();
+}
+
+fn bool is_nested_repo(String dir)
+{
+	@pool()
+	{
+		Path? git = ((Path)dir).append(tmem, ".git");
+		if (catch excuse = git) return false;
+		return path::exists(git);
+	};
+}
+
+fn bool is_submodule_path(OpenJob* job, String abs)
+{
+	for (sz i = 0; i < job.submodules.len(); i++)
+	{
+		if (((String)job.submodules[i]).compare_to(abs) == 0) return true;
+	}
+	return false;
+}
+
+fn void open_job_load_submodules(OpenJob* job, String root)
+{
+	@pool()
+	{
+		Path? file = ((Path)root).append(tmem, ".gitmodules");
+		if (catch excuse = file) return;
+		char[]? data = file::load(tmem, file);
+		if (catch excuse = data) return;
+		String text = (String)data;
+		usz start   = 0;
+		for (usz i = 0; i <= text.len; i++)
+		{
+			if (i != text.len && text[i] != '\n') continue;
+			String raw = text[start:i - start];
+			start = i + 1;
+			if (raw.len > 0 && raw[raw.len - 1] == '\r') raw = raw[0:raw.len - 1];
+			usz at = 0;
+			while (at < raw.len && (raw[at] == ' ' || raw[at] == '\t')) at++;
+			if (!raw[at:raw.len - at].starts_with("path")) continue;
+			usz eq = at;
+			while (eq < raw.len && raw[eq] != '=') eq++;
+			if (eq >= raw.len) continue;
+			usz value_at = eq + 1;
+			while (value_at < raw.len && (raw[value_at] == ' ' || raw[value_at] == '\t')) value_at++;
+			String value = raw[value_at:raw.len - value_at];
+			if (value.len == 0) continue;
+			job.submodules.push((Path)string::format(job.allocator, "%s/%s", root, value));
+		}
+	};
 }
 
 fn OpenJob* open_job_create(Allocator allocator, Project* project, String root)
@@ -787,18 +1133,26 @@ fn OpenJob* open_job_create(Allocator allocator, Project* project, String root)
 	job.root = (Path)root;
 	job.entries.init(allocator);
 	job.pending.init(allocator);
+	job.submodules.init(allocator);
 	job.ignore.init(allocator);
 	job.phase = OpenPhase.SCAN;
 	job.cancelled = false;
+	job.skip_nested = project.skip_nested_repos;
 	job.scanned_dirs = 0;
 	job.build_cursor = 0;
 	job.pending.push((Path)root);
+	if (job.skip_nested) open_job_load_submodules(job, root);
 	return job;
 }
 
 fn void open_job_destroy(OpenJob* job)
 {
 	if (!job) return;
+	for (sz i = 0; i < job.submodules.len(); i++)
+	{
+		if (((String)job.submodules[i]).len) ((String)job.submodules[i]).free(job.allocator);
+	}
+	job.submodules.free();
 	job.entries.free();
 	job.pending.free();
 	job.ignore.free();
@@ -828,6 +1182,11 @@ fn bool OpenJob.scan_dir(&self, Path dir)
 		bool is_dir = path::is_dir(entry);
 		if (basename_is_ignored((String)entry)) continue;
 		if (self.ignore.is_ignored((String)entry, is_dir)) continue;
+		if (is_dir && self.skip_nested)
+		{
+			if (is_submodule_path(self, (String)entry)) continue;
+			if (is_nested_repo((String)entry)) continue;
+		}
 		self.entries.push(entry);
 		if (is_dir) self.pending.push(entry);
 	}
@@ -900,11 +1259,6 @@ fn bool OpenJob.step(&self, usz budget)
 			return false;
 		case OpenPhase.LAYOUT:
 			self.project.rebuild_folder_index();
-			self.project.layout();
-			for (sz i = 0; i < self.project.folders.len(); i++)
-			{
-				self.project.folders[i].collapsed = true;
-			}
 			self.project.focused = -1;
 			self.phase = OpenPhase.DONE;
 			return true;
@@ -922,6 +1276,11 @@ fn bool Project.open(&self, String new_root)
 	}
 	bool ok = job.phase == OpenPhase.DONE;
 	open_job_destroy(job);
+	if (ok)
+	{
+		self.layout();
+		for (sz i = 0; i < self.folders.len(); i++) self.folders[i].collapsed = true;
+	}
 	return ok;
 }
 
@@ -1006,8 +1365,8 @@ fn int Project.create_folder_on_disk(&self, int parent_index, String name, RLVec
 	self.folders[index].bounds = {
 		.x = world_pos[0],
 		.y = world_pos[1],
-		.width = CLUSTER_COLLAPSED_WIDTH,
-		.height = CLUSTER_TITLE_HEIGHT,
+		.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH),
+		.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
 	};
 	return index;
 }
@@ -1020,6 +1379,7 @@ fn void Project.remove_card(&self, int index)
 	((String)card.path).free(self.allocator);
 	card.name.free(self.allocator);
 	self.cards.remove_at(index);
+	self.cards_revision++;
 	if (self.focused == index)
 	{
 		self.focused = -1;
@@ -1065,6 +1425,7 @@ fn bool Project.rename_card(&self, int index, String new_name)
 	card.name.free(self.allocator);
 	card.name = new_name.copy(self.allocator);
 	card.folder = self.folder_for((String)card.path);
+	self.cards_revision++;
 	self.invalidate_bounds();
 	editor::stamp_file(card);
 	return true;
@@ -1172,64 +1533,286 @@ fn FileCard* Project.selected_card(&self)
 	return &self.cards[self.selected];
 }
 
-fn void Project.ensure_selection(&self)
+fn void Project.select_card(&self, int index)
 {
-	if (self.selected >= 0 && self.selected < (int)self.cards.len() && self.card_visible(self.selected)) return;
-	if (self.focused >= 0 && self.focused < (int)self.cards.len() && self.card_visible(self.focused))
-	{
-		self.selected = self.focused;
-		return;
-	}
-	self.selected = self.next_visible_card(-1, 1);
+	self.selected = index;
+	self.selected_cluster = -1;
 }
 
-fn int Project.card_in_direction(&self, int from, Dir dir)
+fn void Project.select_folder(&self, int index)
 {
-	if (from < 0 || from >= (int)self.cards.len()) return -1;
-	RLVector2 origin =  self.cards[from].center();
-	int best         = -1;
-	float best_score =  0.0f;
+	self.selected = -1;
+	self.selected_cluster = index;
+}
+
+fn void Project.clear_selection(&self)
+{
+	self.selected = -1;
+	self.selected_cluster = -1;
+}
+
+fn void Project.select_nav_item(&self, NavItem item)
+{
+	if (item.folder)
+	{
+		self.select_folder(item.index);
+	}
+	else
+	{
+		self.select_card(item.index);
+	}
+}
+
+fn bool Project.is_selected_item(&self, NavItem item)
+{
+	if (item.folder) return self.selected_cluster == item.index;
+	return self.selected_cluster < 0 && self.selected == item.index;
+}
+
+fn RLVector2 Project.nav_item_center(&self, NavItem item)
+{
+	if (item.folder)
+	{
+		Rect r = self.cluster_visual_bounds(item.index);
+		return { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+	}
+	return self.cards[item.index].center();
+}
+
+fn void Project.nav_items(&self, List{NavItem}* out)
+{
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
-		if ((int)i == from) continue;
+		if (self.cards[i].folder != self.current_folder) continue;
 		if (!self.card_visible((int)i)) continue;
-		RLVector2 c = self.cards[i].center();
-		float dx    = c[0] - origin[0];
-		float dy    = c[1] - origin[1];
-		float primary;
-		float secondary;
-		if (dir == Dir.LEFT)
+		out.push({ .folder = false, .index = (int)i });
+	}
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		if (self.folders[i].parent != self.current_folder) continue;
+		if (!self.cluster_visible((int)i)) continue;
+		out.push({ .folder = true, .index = (int)i });
+	}
+}
+
+fn Rect Project.selected_item_rect(&self)
+{
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+	{
+		return self.cluster_visual_bounds(self.selected_cluster);
+	}
+	FileCard* card = self.selected_card();
+	if (card) return card.rect;
+	return { .x = 0.0f, .y = 0.0f, .width = 0.0f, .height = 0.0f };
+}
+
+fn void Project.ensure_selection(&self)
+{
+	if (self.current_folder != ROOT_FOLDER)
+	{
+		if (self.current_folder < 0 || self.current_folder >= (int)self.folders.len() || !self.cluster_visible(
+			self.current_folder
+		))
 		{
-			if (dx >= -0.5f) continue;
-			primary = -dx;
-			secondary = math::abs(dy);
+			self.current_folder = ROOT_FOLDER;
 		}
-		else if (dir == Dir.RIGHT)
+	}
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len() && self.cluster_visible(
+		self.selected_cluster
+	))
+	{
+		return;
+	}
+	if (self.selected >= 0 && self.selected < (int)self.cards.len() && self.card_visible(self.selected))
+	{
+		self.selected_cluster = -1;
+		return;
+	}
+	if (self.focused >= 0 && self.focused < (int)self.cards.len() && self.card_visible(self.focused))
+	{
+		self.current_folder = self.cards[self.focused].folder;
+		self.select_card(self.focused);
+		return;
+	}
+	@pool()
+	{
+		List{NavItem} items;
+		items.init(tmem);
+		self.nav_items(&items);
+		if (items.len() > 0)
 		{
-			if (dx <= 0.5f) continue;
-			primary = dx;
-			secondary = math::abs(dy);
-		}
-		else if (dir == Dir.UP)
-		{
-			if (dy >= -0.5f) continue;
-			primary = -dy;
-			secondary = math::abs(dx);
+			self.select_nav_item(items[0]);
 		}
 		else
 		{
-			if (dy <= 0.5f) continue;
-			primary = dy;
-			secondary = math::abs(dx);
+			self.clear_selection();
 		}
-		float score = primary + secondary * 2.0f;
-		if (best < 0 || score < best_score)
-		{
-			best = (int)i;
-			best_score = score;
-		}
+	};
+}
+
+fn bool Project.item_in_direction(&self, Dir dir, NavItem* out)
+{
+	RLVector2 origin;
+	bool have_origin = false;
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+	{
+		Rect r = self.cluster_visual_bounds(self.selected_cluster);
+		origin = { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+		have_origin = true;
 	}
+	else if (self.selected >= 0 && self.selected < (int)self.cards.len())
+	{
+		origin = self.cards[self.selected].center();
+		have_origin = true;
+	}
+	if (!have_origin) return false;
+
+	bool best        = false;
+	float best_score = 0.0f;
+	@pool()
+	{
+		List{NavItem} items;
+		items.init(tmem);
+		self.nav_items(&items);
+		for (sz i = 0; i < items.len(); i++)
+		{
+			NavItem item = items[i];
+			if (self.is_selected_item(item)) continue;
+			RLVector2 c = self.nav_item_center(item);
+			float dx    = c[0] - origin[0];
+			float dy    = c[1] - origin[1];
+			float primary;
+			float secondary;
+			if (dir == Dir.LEFT)
+			{
+				if (dx >= -0.5f) continue;
+				primary = -dx;
+				secondary = math::abs(dy);
+			}
+			else if (dir == Dir.RIGHT)
+			{
+				if (dx <= 0.5f) continue;
+				primary = dx;
+				secondary = math::abs(dy);
+			}
+			else if (dir == Dir.UP)
+			{
+				if (dy >= -0.5f) continue;
+				primary = -dy;
+				secondary = math::abs(dx);
+			}
+			else
+			{
+				if (dy <= 0.5f) continue;
+				primary = dy;
+				secondary = math::abs(dx);
+			}
+			float score = primary + secondary * 2.0f;
+			if (!best || score < best_score)
+			{
+				best = true;
+				best_score = score;
+				*out = item;
+			}
+		}
+	};
 	return best;
+}
+
+fn bool Project.cycle_nav_item(&self, int dir, NavItem* out)
+{
+	bool found = false;
+	@pool()
+	{
+		List{NavItem} items;
+		items.init(tmem);
+		self.nav_items(&items);
+		if (items.len() == 0) return false;
+		int current = -1;
+		for (sz i = 0; i < items.len(); i++)
+		{
+			if (self.is_selected_item(items[i]))
+			{
+				current = (int)i;
+				break;
+			}
+		}
+		int count = (int)items.len();
+		int next;
+		if (current < 0)
+		{
+			next = dir >= 0 ? 0 : count - 1;
+		}
+		else
+		{
+			next = (current + (dir >= 0 ? 1 : -1) + count) % count;
+		}
+		*out = items[(usz)next];
+		found = true;
+	};
+	return found;
+}
+
+fn void Project.enter_folder(&self, int index)
+{
+	if (index < 0 || index >= (int)self.folders.len()) return;
+	self.folders[index].collapsed = false;
+	self.current_folder = index;
+	self.grabbing = false;
+	self.selected = -1;
+	self.selected_cluster = -1;
+	@pool()
+	{
+		List{NavItem} items;
+		items.init(tmem);
+		self.nav_items(&items);
+		if (items.len() > 0) self.select_nav_item(items[0]);
+	};
+	self.invalidate_bounds();
+}
+
+fn bool Project.leave_folder(&self)
+{
+	self.grabbing = false;
+	if (self.current_folder == ROOT_FOLDER)
+	{
+		bool had = self.selected >= 0 || self.selected_cluster >= 0;
+		self.clear_selection();
+		return had;
+	}
+	int child = self.current_folder;
+	self.current_folder = self.folders[child].parent;
+	self.select_folder(child);
+	return true;
+}
+
+fn void Project.move_selected(&self, RLVector2 delta)
+{
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+	{
+		self.move_cluster(self.selected_cluster, delta);
+		return;
+	}
+	if (self.selected >= 0 && self.selected < (int)self.cards.len())
+	{
+		self.cards[self.selected].move_by(delta);
+		self.invalidate_bounds();
+	}
+}
+
+fn bool Project.has_selected_item(&self)
+{
+	return self.selected >= 0 || self.selected_cluster >= 0;
+}
+
+fn void Project.minimize_selected(&self, EditorMetrics metrics)
+{
+	if (self.selected_cluster >= 0) return;
+	if (self.selected < 0 || self.selected >= (int)self.cards.len()) return;
+	FileCard* card = &self.cards[self.selected];
+	card.rect.width = editor::min_card_width(metrics);
+	card.rect.height = editor::min_card_height(metrics);
+	self.invalidate_bounds();
 }
 
 fn bool is_double_click(double now, RLVector2 pos, double last_time, RLVector2 last_pos)
@@ -1321,13 +1904,103 @@ fn bool Project.paste_clipboard(&self, double now)
 	return true;
 }
 
+fn bool Project.focused_editor(&self)
+{
+	return self.focus_card >= 0;
+}
+
+fn void Project.apply_focus_rect(&self, Canvas* canvas)
+{
+	int index = self.focus_card;
+	if (index < 0 || index >= (int)self.cards.len()) return;
+	float width  = (float)rl::get_screen_width();
+	float height = (float)rl::get_screen_height() - canvas.top_inset;
+	if (width < 1.0f) width = 1.0f;
+	if (height < 1.0f) height = 1.0f;
+	RLVector2 center = canvas.target.target;
+	self.cards[index].rect = {
+		.x = center[0] - width / 2.0f,
+		.y = center[1] - height / 2.0f,
+		.width = width,
+		.height = height,
+	};
+}
+
+fn bool Project.begin_focus(&self, int index, Canvas* canvas)
+{
+	if (index < 0 || index >= (int)self.cards.len()) return false;
+	int at = self.focus(index);
+	if (at < 0 || at >= (int)self.cards.len()) return false;
+	self.cards[at].open = true;
+	editor::ensure_buffer(&self.cards[at], self.allocator);
+	if (!self.cards[at].buffer) return false;
+
+	self.focus_saved_rect = self.cards[at].rect;
+	self.focus_saved_camera = canvas.camera;
+	self.focus_saved_target = canvas.target;
+	self.focus_screen_w = (float)rl::get_screen_width();
+	self.focus_screen_h = (float)rl::get_screen_height();
+	self.focus_card = at;
+
+	RLVector2 center = self.cards[at].center();
+	canvas.target.target = center;
+	canvas.target.zoom = 1.0f;
+	canvas.camera.target = center;
+	canvas.camera.zoom = 1.0f;
+	self.apply_focus_rect(canvas);
+	self.invalidate_bounds();
+	return true;
+}
+
+fn void Project.update_focus_rect(&self, Canvas* canvas)
+{
+	if (self.focus_card < 0) return;
+	float width  = (float)rl::get_screen_width();
+	float height = (float)rl::get_screen_height();
+	if (width == self.focus_screen_w && height == self.focus_screen_h) return;
+	self.focus_screen_w = width;
+	self.focus_screen_h = height;
+	self.apply_focus_rect(canvas);
+	self.invalidate_bounds();
+}
+
+fn void Project.end_focus(&self, Canvas* canvas)
+{
+	if (self.focus_card < 0) return;
+	if (self.focus_card >= 0 && self.focus_card < (int)self.cards.len())
+	{
+		self.cards[self.focus_card].rect = self.focus_saved_rect;
+	}
+	self.focus_card = -1;
+	canvas.camera = self.focus_saved_camera;
+	canvas.target = self.focus_saved_target;
+	self.invalidate_bounds();
+}
+
 fn int Project.hit_test(&self, RLVector2 world)
 {
-	for (sz i = self.cards.len(); i > 0; i--)
+	if (self.focus_card >= 0)
 	{
-		if (self.card_visible((int)(i - 1)) && self.cards[i - 1].contains(world)) return (int)(i - 1);
+		int index = self.focus_card;
+		if (index >= (int)self.cards.len()) return -1;
+		return self.cards[index].contains(world) ? index : -1;
 	}
-	return -1;
+	self.ensure_grid();
+	int best = -1;
+	@pool()
+	{
+		List{int} candidates;
+		candidates.init(tmem);
+		self.grid.query_point(world, &candidates);
+		for (sz i = 0; i < candidates.len(); i++)
+		{
+			int index = candidates[i];
+			if (!self.card_visible(index)) continue;
+			if (!self.cards[index].contains(world)) continue;
+			if (index > best) best = index;
+		}
+	};
+	return best;
 }
 
 fn void Project.toggle_collapse(&self, int index)
@@ -1338,6 +2011,8 @@ fn void Project.toggle_collapse(&self, int index)
 		self.folders[index].bounds = self.cluster_bounds(index);
 	}
 	self.folders[index].collapsed = !self.folders[index].collapsed;
+	self.grid_dirty = true;
+	self.content_bounds_valid = false;
 }
 
 fn void Project.move_cluster(&self, int index, RLVector2 delta)
@@ -1392,6 +2067,7 @@ fn bool Project.move_card_to_folder(&self, int card_index, int folder_index)
 	self.cards[card_index].path = (Path)dest_str.copy(self.allocator);
 	self.cards[card_index].name = rl::get_file_name((ZString)dest_str.ptr).str_view().copy(self.allocator);
 	self.cards[card_index].folder = self.folder_for(dest_str);
+	self.cards_revision++;
 	self.invalidate_bounds();
 	return true;
 }
@@ -1412,11 +2088,20 @@ fn bool Project.pointer_over_ui(&self, RLVector2 world)
 	return self.drag_card || self.drag_cluster || self.hit_test(world) >= 0 || self.cluster_hit(world) >= 0;
 }
 
-fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointer_blocked, bool* out_changed)
+fn void Project.update(
+	&self,
+	Canvas* canvas,
+	keymap::Keymap* keymap,
+	bool suppress_input,
+	EditorMetrics metrics,
+	bool pointer_blocked,
+	bool* out_changed
+)
 {
 	RLVector2 mouse = rl::get_mouse_position();
 	RLVector2 world = canvas.screen_to_world(mouse);
 	canvas.block_zoom = false;
+	self.hover_card = pointer_blocked ? -1 : self.hit_test(world);
 
 	float wheel = rl::get_mouse_wheel_move();
 	if (wheel != 0.0f && !pointer_blocked)
@@ -1426,12 +2111,32 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 		{
 			int index = self.focus(wheel_hit);
 			editor::ensure_buffer(&self.cards[index], self.allocator);
-			if (self.cards[index].buffer)
+			if (self.cards[index].preview && markdown::is_markdown_path((String)self.cards[index].path))
+			{
+				Rect area = editor::inner_rect(self.cards[index].rect, metrics);
+				float height = markdown::view_content_height(
+					self.cards[index].view,
+					self.cards[index].buffer,
+					area.width,
+					metrics.char_width,
+					metrics.font_size,
+					metrics.line_height
+				);
+				float max = height - area.height;
+				if (max < 0.0f) max = 0.0f;
+				float value = self.cards[index].preview_scroll - wheel * metrics.line_height * (float)editor::settings()
+					.wheel_scroll_lines;
+				if (value < 0.0f) value = 0.0f;
+				if (value > max) value = max;
+				self.cards[index].preview_scroll = value;
+			}
+			else if (self.cards[index].buffer)
 			{
 				usz line_count = self.cards[index].buffer.line_count();
 				Rect text      = editor::text_rect(self.cards[index].rect, metrics, line_count);
 				float max      = editor::max_scroll(line_count, metrics, text.height);
-				float value    = self.cards[index].scroll - wheel * metrics.line_height * 3.0f;
+				float value    = self.cards[index].scroll - wheel * metrics.line_height * (float)editor::settings()
+					.wheel_scroll_lines;
 				if (value < 0.0f) value = 0.0f;
 				if (value > max) value = max;
 				self.cards[index].scroll = value;
@@ -1448,6 +2153,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 		{
 			bool double_click         = self.register_click(rl::get_time(), world);
 			editor::CardRegion region = editor::region_at(&self.cards[card_hit], world, metrics, canvas.camera);
+			if (self.focus_card >= 0 && region != editor::CardRegion.BODY) region = editor::CardRegion.NONE;
 			if (region == editor::CardRegion.HANDLE)
 			{
 				int handle = self.cards[card_hit].resize_handle_at(world, canvas.camera);
@@ -1479,12 +2185,52 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 			{
 				self.cards[card_hit].open = !self.cards[card_hit].open;
 			}
+			else if (region == editor::CardRegion.PREVIEW)
+			{
+				self.toggle_preview(card_hit);
+			}
 			else if (region == editor::CardRegion.BODY)
 			{
 				int index      = self.focus(card_hit);
 				FileCard* card = &self.cards[index];
 				editor::ensure_buffer(card, self.allocator);
-				if (card.buffer)
+				if (card.preview)
+				{
+					if (card.buffer && card.view)
+					{
+						Rect area     = editor::inner_rect(card.rect, metrics);
+						float local_y = world[1] - area.y + card.preview_scroll;
+						usz offset    = markdown::view_block_offset_at(card.view, local_y);
+						if (offset > card.buffer.length()) offset = card.buffer.length();
+						card.preview = false;
+						card.cursor = offset;
+						card.selection_anchor = offset;
+						usz line = card.buffer.line_of(card.cursor);
+						card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
+						Rect text = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+						card.scroll = editor::scroll_to_reveal(
+							card.buffer,
+							metrics,
+							text.height,
+							card.cursor,
+							card.scroll
+						);
+						card.scroll_x = editor::scroll_x_to_reveal(
+							card.buffer,
+							metrics,
+							text.width,
+							card.cursor,
+							card.scroll_x
+						);
+						if (card.history) card.history.break_coalescing();
+						self.last_input_time = rl::get_time();
+					}
+					else
+					{
+						card.preview = false;
+					}
+				}
+				else if (card.buffer)
 				{
 					Rect text       = editor::text_rect(card.rect, metrics, card.buffer.line_count());
 					RLVector2 local = { world[0] - text.x, world[1] - text.y };
@@ -1517,10 +2263,14 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 					{
 						lsp::lsp_request_definition((String)card.path, card.buffer, offset);
 					}
+					if (!ctrl_down()) self.selecting = true;
 				}
-				if (!ctrl_down()) self.selecting = true;
+				else
+				{
+					if (!ctrl_down()) self.selecting = true;
+				}
 			}
-			else
+			else if (region == editor::CardRegion.TITLE)
 			{
 				int index      = self.focus(card_hit);
 				FileCard* card = &self.cards[index];
@@ -1581,7 +2331,7 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 		{
 			RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
 			self.cards[self.drag_index].move_by(delta);
-			self.invalidate_bounds();
+			self.invalidate_bounds_for_card(self.drag_index);
 			self.drag_world = world;
 		}
 	}
@@ -1617,12 +2367,12 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 			float min_w     = editor::min_card_width(metrics);
 			float min_h     = editor::min_card_height(metrics);
 			self.cards[self.resize_card].resize_from(self.resize_handle, delta, min_w, min_h);
-			self.invalidate_bounds();
+			self.invalidate_bounds_for_card(self.resize_card);
 			self.drag_world = world;
 		}
 	}
 
-	if (!pointer_blocked && !self.resizing && !rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
+	if (!pointer_blocked && !self.resizing && self.focus_card < 0 && !rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
 	{
 		int hover  = self.hit_test(world);
 		int handle = hover >= 0 ? self.cards[hover].resize_handle_at(world, canvas.camera) : -1;
@@ -1634,9 +2384,9 @@ fn void Project.update(&self, Canvas* canvas, EditorMetrics metrics, bool pointe
 		}
 	}
 
-	self.refresh_sleep(expand_rect(visible_world_rect(canvas.camera), DRAW_CULL_MARGIN));
+	self.refresh_sleep(expand_rect(visible_world_rect(canvas.camera), DRAW_CULL_MARGIN), canvas.camera.zoom);
 	self.poll_external(rl::get_time());
-	self.handle_keyboard(metrics, out_changed);
+	self.handle_keyboard(keymap, suppress_input, metrics, out_changed);
 }
 
 fn RLMouseCursor cursor_for_handle(int handle)
@@ -1648,16 +2398,17 @@ fn RLMouseCursor cursor_for_handle(int handle)
 	return rl::RLMouseCursor.DEFAULT;
 }
 
-fn void Project.refresh_sleep(&self, Rect visible)
+fn void Project.refresh_sleep(&self, Rect visible, float zoom)
 {
 	int awake  = 0;
 	int asleep = 0;
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
-		bool is_focused = (int)i == self.focused;
+		bool is_focused = (int)i == self.focused || (int)i == self.focus_card;
+		bool big_enough = self.cards[i].rect.width * zoom >= CARD_MIN_DRAW_PX;
 		bool on_screen  = self.card_visible(
 			(int)i
-		) && self.cards[i].open && rect_intersects(self.cards[i].rect, visible);
+		) && self.cards[i].open && big_enough && rect_intersects(self.cards[i].rect, visible);
 		bool wake       = is_focused || on_screen;
 		self.cards[i].sleeping = !wake;
 		if (wake)
@@ -1690,6 +2441,238 @@ fn void Project.poll_external(&self, double now)
 	}
 }
 
+enum EditorMove : int
+{
+	LEFT,
+	RIGHT,
+	UP,
+	DOWN,
+	LINE_START,
+	LINE_END,
+	PAGE_UP,
+	PAGE_DOWN,
+}
+
+fn FileCard* Project.focused_editable_card(&self)
+{
+	if (self.focused < 0 || self.focused >= (int)self.cards.len()) return null;
+	FileCard* card = &self.cards[self.focused];
+	if (!card.open) return null;
+	editor::ensure_buffer(card, self.allocator);
+	if (!card.buffer) return null;
+	return card;
+}
+
+fn void Project.finish_edit(&self, EditorMetrics metrics)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return;
+	card.dirty = true;
+	if (card.highlight) card.highlight.mark_dirty();
+	if (card.view) markdown::view_mark_dirty(card.view);
+	lsp::lsp_did_change((String)card.path, card.buffer);
+	self.last_input_time = rl::get_time();
+	self.reveal_focused(metrics);
+}
+
+fn bool Project.editor_undo(&self)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return false;
+	usz cursor = card.cursor;
+	if (!card.history.undo(card.buffer, &cursor)) return false;
+	card.cursor = cursor;
+	card.selection_anchor = cursor;
+	return true;
+}
+
+fn bool Project.editor_redo(&self)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return false;
+	usz cursor = card.cursor;
+	if (!card.history.redo(card.buffer, &cursor)) return false;
+	card.cursor = cursor;
+	card.selection_anchor = cursor;
+	return true;
+}
+
+fn bool Project.editor_newline(&self)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return false;
+	editor::EditorSettings es = editor::settings();
+	usz start                 = 0;
+	usz end                   = 0;
+	editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+	card.history.break_coalescing();
+	String text = editor::newline_text(
+		card.buffer,
+		start,
+		es.auto_indent,
+		es.indent_spaces,
+		es.indent_width,
+		self.allocator
+	);
+	card.cursor = card.history.replace(card.buffer, start, end - start, text, rl::get_time());
+	text.free(self.allocator);
+	card.selection_anchor = card.cursor;
+	return true;
+}
+
+fn bool Project.editor_indent(&self)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return false;
+	editor::EditorSettings es = editor::settings();
+	usz start                 = 0;
+	usz end                   = 0;
+	editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+	card.history.break_coalescing();
+	String unit = editor::indent_unit(self.allocator, es.indent_spaces, es.indent_width);
+	card.cursor = card.history.replace(card.buffer, start, end - start, unit, rl::get_time());
+	unit.free(self.allocator);
+	card.selection_anchor = card.cursor;
+	return true;
+}
+
+fn bool Project.editor_outdent(&self)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return false;
+	editor::EditorSettings es = editor::settings();
+	usz start                 = card.buffer.line_start(card.buffer.line_of(card.cursor));
+	usz count                 = editor::outdent_count(card.buffer, card.cursor, es.indent_spaces, es.indent_width);
+	if (count == 0) return false;
+	card.history.break_coalescing();
+	card.cursor = card.history.replace(card.buffer, start, count, "", rl::get_time());
+	card.selection_anchor = card.cursor;
+	return true;
+}
+
+fn bool Project.editor_delete(&self, bool back)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return false;
+	PieceTable* table = card.buffer;
+	History* history  = card.history;
+	double now        = rl::get_time();
+	usz start         = 0;
+	usz end           = 0;
+	editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+	if (start < end)
+	{
+		card.cursor = history.replace(table, start, end - start, "", now);
+	}
+	else if (back)
+	{
+		card.cursor = history.backspace(table, card.cursor, now);
+	}
+	else
+	{
+		card.cursor = history.delete_forward(table, card.cursor, now);
+	}
+	card.selection_anchor = card.cursor;
+	return true;
+}
+
+fn void Project.editor_move(&self, EditorMove move, EditorMetrics metrics)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return;
+	PieceTable* table = card.buffer;
+	History* history  = card.history;
+	bool shift        = shift_down();
+	bool vertical     = false;
+	history.break_coalescing();
+	switch (move)
+	{
+		case EditorMove.LEFT:
+			card.cursor = editor::cursor_prev(table, card.cursor);
+			break;
+		case EditorMove.RIGHT:
+			card.cursor = editor::cursor_next(table, card.cursor);
+			break;
+		case EditorMove.LINE_START:
+			card.cursor = editor::cursor_home(table, card.cursor);
+			break;
+		case EditorMove.LINE_END:
+			card.cursor = editor::cursor_end(table, card.cursor);
+			break;
+		case EditorMove.UP:
+			card.cursor = editor::cursor_up(table, card.cursor, card.preferred_column, &card.preferred_column);
+			vertical = true;
+			break;
+		case EditorMove.DOWN:
+			card.cursor = editor::cursor_down(table, card.cursor, card.preferred_column, &card.preferred_column);
+			vertical = true;
+			break;
+		case EditorMove.PAGE_UP:
+
+			{
+				Rect page_text = editor::text_rect(card.rect, metrics, table.line_count());
+				sz rows        = (sz)(page_text.height / metrics.line_height);
+				if (rows < 1) rows = 1;
+				card.cursor = editor::cursor_page(
+					table,
+					card.cursor,
+					-rows,
+					card.preferred_column,
+					&card.preferred_column
+				);
+				vertical = true;
+				break;
+			}
+		case EditorMove.PAGE_DOWN:
+
+			{
+				Rect page_text = editor::text_rect(card.rect, metrics, table.line_count());
+				sz rows        = (sz)(page_text.height / metrics.line_height);
+				if (rows < 1) rows = 1;
+				card.cursor = editor::cursor_page(
+					table,
+					card.cursor,
+					rows,
+					card.preferred_column,
+					&card.preferred_column
+				);
+				vertical = true;
+				break;
+			}
+	}
+	if (!shift) card.selection_anchor = card.cursor;
+	if (!vertical)
+	{
+		usz line = table.line_of(card.cursor);
+		card.preferred_column = editor::column_for_offset(table, line, card.cursor);
+	}
+	self.reveal_focused(metrics);
+}
+
+fn void Project.editor_exit(&self)
+{
+	self.focused = -1;
+}
+
+fn bool Project.completion_accept_cmd(&self, EditorMetrics metrics)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return false;
+	usz new_cursor = completion::completion_accept(card.buffer, card.history, card.cursor, rl::get_time());
+	bool changed   = new_cursor != card.cursor;
+	if (changed)
+	{
+		card.cursor = new_cursor;
+		card.selection_anchor = new_cursor;
+		self.finish_edit(metrics);
+	}
+	else
+	{
+		self.reveal_focused(metrics);
+	}
+	return changed;
+}
+
 fn bool ctrl_down()
 {
 	return rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
@@ -1700,147 +2683,94 @@ fn bool shift_down()
 	return rl::is_key_down(rl::RLKeyboardKey.LEFT_SHIFT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_SHIFT);
 }
 
-fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
+fn void Project.handle_keyboard(
+	&self,
+	keymap::Keymap* keymap,
+	bool suppress_input,
+	EditorMetrics metrics,
+	bool* out_changed
+)
 {
-	if (self.focused < 0 || self.focused >= (int)self.cards.len()) return;
-	FileCard* card = &self.cards[self.focused];
-	if (!card.open) return;
-	editor::ensure_buffer(card, self.allocator);
-	if (!card.buffer) return;
+	if (suppress_input) return;
+
+	FileCard* card = self.focused_editable_card();
+	if (!card) return;
 
 	PieceTable* table = card.buffer;
 	History* history  = card.history;
 	double now        = rl::get_time();
-	bool shift        = shift_down();
 	bool changed      = false;
-	bool moved        = false;
-	bool vertical     = false;
 
 	if (completion::completion_is_open())
 	{
-		if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+		if (keymap.pressed((int)commands::CommandId.COMPLETION_CLOSE, commands::CTX_COMPLETION))
 		{
 			completion::completion_close();
 			return;
 		}
-		if (rl::is_key_pressed(
-			rl::RLKeyboardKey.UP
-		) || rl::is_key_pressed_repeat(
-			rl::RLKeyboardKey.UP
+		if (keymap.pressed_repeat(
+			(int)commands::CommandId.COMPLETION_PREV,
+			commands::CTX_COMPLETION
 		) || (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.P)))
 		{
 			completion::completion_move(-1);
 			return;
 		}
-		if (rl::is_key_pressed(
-			rl::RLKeyboardKey.DOWN
-		) || rl::is_key_pressed_repeat(
-			rl::RLKeyboardKey.DOWN
+		if (keymap.pressed_repeat(
+			(int)commands::CommandId.COMPLETION_NEXT,
+			commands::CTX_COMPLETION
 		) || (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.N)))
 		{
 			completion::completion_move(1);
 			return;
 		}
-		if (rl::is_key_pressed(
-			rl::RLKeyboardKey.ENTER
-		) || rl::is_key_pressed_repeat(
-			rl::RLKeyboardKey.ENTER
+		if (keymap.pressed_repeat(
+			(int)commands::CommandId.COMPLETION_ACCEPT,
+			commands::CTX_COMPLETION
 		) || rl::is_key_pressed(rl::RLKeyboardKey.TAB) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.TAB))
 		{
-			usz new_cursor = completion::completion_accept(table, history, card.cursor, now);
-			if (new_cursor != card.cursor)
-			{
-				card.cursor = new_cursor;
-				card.selection_anchor = new_cursor;
-				card.dirty = true;
-				if (card.highlight) card.highlight.mark_dirty();
-				lsp::lsp_did_change((String)card.path, card.buffer);
-				self.last_input_time = rl::get_time();
-				if (out_changed) *out_changed = true;
-			}
-			self.reveal_focused(metrics);
+			if (self.completion_accept_cmd(metrics) && out_changed) *out_changed = true;
 			return;
 		}
 	}
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.EXIT_EDITOR, commands::CTX_EDIT))
 	{
 		self.focused = -1;
 		return;
 	}
 
-	if (ctrl_down() && !shift && rl::is_key_pressed(rl::RLKeyboardKey.Z))
+	if (keymap.pressed((int)commands::CommandId.UNDO, commands::CTX_EDIT))
 	{
-		usz cursor = card.cursor;
-		if (history.undo(table, &cursor))
-		{
-			card.cursor = cursor;
-			card.selection_anchor = cursor;
-			changed = true;
-		}
+		if (self.editor_undo()) changed = true;
 	}
-	if (ctrl_down() && (rl::is_key_pressed(rl::RLKeyboardKey.Y) || (shift && rl::is_key_pressed(rl::RLKeyboardKey.Z))))
+	if (keymap.pressed(
+		(int)commands::CommandId.REDO,
+		commands::CTX_EDIT
+	) || (ctrl_down() && shift_down() && rl::is_key_pressed(rl::RLKeyboardKey.Z)))
 	{
-		usz cursor = card.cursor;
-		if (history.redo(table, &cursor))
-		{
-			card.cursor = cursor;
-			card.selection_anchor = cursor;
-			changed = true;
-		}
+		if (self.editor_redo()) changed = true;
 	}
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed_repeat((int)commands::CommandId.NEWLINE, commands::CTX_EDIT))
 	{
-		usz start = 0;
-		usz end   = 0;
-		editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
-		history.break_coalescing();
-		card.cursor = history.replace(table, start, end - start, "\n", now);
-		card.selection_anchor = card.cursor;
-		changed = true;
+		if (self.editor_newline()) changed = true;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.TAB) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.TAB))
+	if (keymap.pressed_repeat((int)commands::CommandId.INDENT, commands::CTX_EDIT))
 	{
-		usz start = 0;
-		usz end   = 0;
-		editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
-		history.break_coalescing();
-		card.cursor = history.replace(table, start, end - start, "\t", now);
-		card.selection_anchor = card.cursor;
-		changed = true;
+		if (self.editor_indent()) changed = true;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))
+	if (keymap.pressed_repeat((int)commands::CommandId.OUTDENT, commands::CTX_EDIT))
 	{
-		usz start = 0;
-		usz end   = 0;
-		editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
-		if (start < end)
-		{
-			card.cursor = history.replace(table, start, end - start, "", now);
-		}
-		else
-		{
-			card.cursor = history.backspace(table, card.cursor, now);
-		}
-		card.selection_anchor = card.cursor;
-		changed = true;
+		if (self.editor_outdent()) changed = true;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.DELETE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DELETE))
+	if (keymap.pressed_repeat((int)commands::CommandId.DELETE_BACK, commands::CTX_EDIT))
 	{
-		usz start = 0;
-		usz end   = 0;
-		editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
-		if (start < end)
-		{
-			card.cursor = history.replace(table, start, end - start, "", now);
-		}
-		else
-		{
-			card.cursor = history.delete_forward(table, card.cursor, now);
-		}
-		card.selection_anchor = card.cursor;
-		changed = true;
+		if (self.editor_delete(true)) changed = true;
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.DELETE_FORWARD, commands::CTX_EDIT))
+	{
+		if (self.editor_delete(false)) changed = true;
 	}
 
 	if (!ctrl_down())
@@ -1887,109 +2817,84 @@ fn void Project.handle_keyboard(&self, EditorMetrics metrics, bool* out_changed)
 		}
 	}
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT))
+	if (keymap.pressed_move((int)commands::CommandId.CURSOR_LEFT, commands::CTX_EDIT))
 	{
-		history.break_coalescing();
-		card.cursor = editor::cursor_prev(table, card.cursor);
-		if (!shift) card.selection_anchor = card.cursor;
-		moved = true;
+		self.editor_move(EditorMove.LEFT, metrics);
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT))
+	if (keymap.pressed_move((int)commands::CommandId.CURSOR_RIGHT, commands::CTX_EDIT))
 	{
-		history.break_coalescing();
-		card.cursor = editor::cursor_next(table, card.cursor);
-		if (!shift) card.selection_anchor = card.cursor;
-		moved = true;
+		self.editor_move(EditorMove.RIGHT, metrics);
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.HOME))
+	if (keymap.pressed_move((int)commands::CommandId.CURSOR_UP, commands::CTX_EDIT))
 	{
-		history.break_coalescing();
-		card.cursor = editor::cursor_home(table, card.cursor);
-		if (!shift) card.selection_anchor = card.cursor;
-		moved = true;
+		self.editor_move(EditorMove.UP, metrics);
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.END))
+	if (keymap.pressed_move((int)commands::CommandId.CURSOR_DOWN, commands::CTX_EDIT))
 	{
-		history.break_coalescing();
-		card.cursor = editor::cursor_end(table, card.cursor);
-		if (!shift) card.selection_anchor = card.cursor;
-		moved = true;
+		self.editor_move(EditorMove.DOWN, metrics);
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP))
+	if (keymap.pressed((int)commands::CommandId.LINE_START, commands::CTX_EDIT))
 	{
-		history.break_coalescing();
-		card.cursor = editor::cursor_up(table, card.cursor, card.preferred_column, &card.preferred_column);
-		if (!shift) card.selection_anchor = card.cursor;
-		moved = true;
-		vertical = true;
+		self.editor_move(EditorMove.LINE_START, metrics);
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN))
+	if (keymap.pressed((int)commands::CommandId.LINE_END, commands::CTX_EDIT))
 	{
-		history.break_coalescing();
-		card.cursor = editor::cursor_down(table, card.cursor, card.preferred_column, &card.preferred_column);
-		if (!shift) card.selection_anchor = card.cursor;
-		moved = true;
-		vertical = true;
+		self.editor_move(EditorMove.LINE_END, metrics);
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.PAGE_UP))
+	if (keymap.pressed_move((int)commands::CommandId.PAGE_UP, commands::CTX_EDIT))
 	{
-		Rect page_text = editor::text_rect(card.rect, metrics, table.line_count());
-		sz rows        = (sz)(page_text.height / metrics.line_height);
-		if (rows < 1) rows = 1;
-		history.break_coalescing();
-		card.cursor = editor::cursor_page(table, card.cursor, -rows, card.preferred_column, &card.preferred_column);
-		if (!shift) card.selection_anchor = card.cursor;
-		moved = true;
-		vertical = true;
+		self.editor_move(EditorMove.PAGE_UP, metrics);
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.PAGE_DOWN))
+	if (keymap.pressed_move((int)commands::CommandId.PAGE_DOWN, commands::CTX_EDIT))
 	{
-		Rect page_text = editor::text_rect(card.rect, metrics, table.line_count());
-		sz rows        = (sz)(page_text.height / metrics.line_height);
-		if (rows < 1) rows = 1;
-		history.break_coalescing();
-		card.cursor = editor::cursor_page(table, card.cursor, rows, card.preferred_column, &card.preferred_column);
-		if (!shift) card.selection_anchor = card.cursor;
-		moved = true;
-		vertical = true;
-	}
-
-	if (!vertical)
-	{
-		usz line = table.line_of(card.cursor);
-		card.preferred_column = editor::column_for_offset(table, line, card.cursor);
+		self.editor_move(EditorMove.PAGE_DOWN, metrics);
 	}
 
 	if (completion::completion_is_open()) completion::completion_refilter(table, card.cursor);
 
-	if (changed || moved) self.reveal_focused(metrics);
-
 	if (changed)
 	{
-		card.dirty = true;
-		if (card.highlight) card.highlight.mark_dirty();
-		lsp::lsp_did_change((String)card.path, card.buffer);
-		self.last_input_time = rl::get_time();
+		self.finish_edit(metrics);
 		if (out_changed) *out_changed = true;
 	}
 }
 
-fn void Project.draw_cluster(&self, int index)
+fn void Project.draw_cluster(&self, int index, float zoom)
 {
 	FolderCluster cluster = self.folders[index];
 	Rect bounds           = self.cluster_visual_bounds(index);
 	rl::draw_rectangle_rec(bounds, theme::current().cluster_body);
 	Rect title = self.cluster_title_rect(index);
 	rl::draw_rectangle_rec(title, theme::current().cluster_title);
-	rl::draw_rectangle_lines_ex(bounds, 1.0f, theme::current().cluster_border);
+	rl::draw_rectangle_lines_ex(bounds, card::screen_thickness(1.0f, zoom), theme::current().cluster_border);
+	if ((int)index == self.current_folder)
+	{
+		rl::draw_rectangle_lines_ex(title, card::screen_thickness(1.0f, zoom), theme::current().card_focus);
+	}
+	if ((int)index == self.selected_cluster)
+	{
+		float thickness = card::screen_thickness(self.grabbing ? 3.0f : 2.0f, zoom);
+		rl::draw_rectangle_lines_ex(bounds, thickness, theme::current().card_focus);
+	}
+	if (zoom < CLUSTER_TEXT_MIN_ZOOM) return;
 	String name = rl::get_file_name((ZString)cluster.path.ptr).str_view();
-	rl::draw_text((ZString)name.ptr, (int)(bounds.x + 10.0f), (int)(bounds.y + 5.0f), 16, theme::current()
-		.cluster_text);
-	rl::draw_text(
+	@pool()
+	{
+		rl::draw_text_ex(
+			ui::font(),
+			name.zstr_tcopy(),
+			{ bounds.x + (float)ui::px(10), bounds.y + (float)ui::px(5) },
+			(float)ui::tpx(16),
+			0.0f,
+			theme::current()
+			.cluster_text);
+	};
+	rl::draw_text_ex(
+		ui::font(),
 		cluster.collapsed ? "+" : "-",
-		(int)(bounds.x + bounds.width - 20.0f),
-		(int)(bounds.y + 5.0f),
-		16,
+		{ bounds.x + bounds.width - (float)ui::px(20), bounds.y + (float)ui::px(5) },
+		(float)ui::tpx(16),
+		0.0f,
 		theme::current()
 		.cluster_text);
 }
@@ -2001,7 +2906,7 @@ fn void Project.draw_folders(&self, RLCamera2D camera)
 	{
 		if (!self.cluster_visible((int)i)) continue;
 		if (!rect_intersects(self.cluster_visual_bounds((int)i), visible)) continue;
-		self.draw_cluster((int)i);
+		self.draw_cluster((int)i, camera.zoom);
 	}
 }
 
@@ -2011,140 +2916,218 @@ fn void Project.draw_cards(
 	RLFont font,
 	RLFont editor_font,
 	EditorMetrics metrics,
-	findbar::FindBar* find_bar
+	findbar::FindBar* find_bar,
+	int only_card
 )
 {
 	double elapsed = rl::get_time() - self.last_input_time;
-	bool caret_on  = (elapsed - math::floor(elapsed)) < 0.5;
-	Rect visible   = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
-
-	for (sz i = 0; i < self.cards.len(); i++)
+	int blink_ms   = editor::settings().caret_blink_ms;
+	bool caret_on  = true;
+	if (blink_ms > 0)
 	{
-		if (!self.card_visible((int)i)) continue;
-		FileCard* card  = &self.cards[i];
-		bool is_focused = (int)i == self.focused;
-		if (is_focused) editor::ensure_buffer(card, self.allocator);
-		if (!rect_intersects(card.rect, visible)) continue;
-		card.draw(is_focused);
-		if (!is_focused && (int)i == self.selected)
+		float period = (float)blink_ms / 1000.0f;
+		float phase  = (float)elapsed - math::floor((float)elapsed / period) * period;
+		caret_on = phase < period * 0.5f;
+	}
+	Rect visible = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
+
+	@pool()
+	{
+		List{int} draw_list;
+		draw_list.init(tmem);
+		if (only_card >= 0)
 		{
-			rl::draw_rectangle_lines_ex(card.effective_rect(), 2.0f, theme::current().card_focus);
+			draw_list.push(only_card);
 		}
-		if (!card.open) continue;
-
-		if (!card.buffer)
+		else
 		{
-			editor::draw_placeholder(editor::inner_rect(card.rect, metrics), metrics, camera, theme::current()
-				.editor_placeholder);
-			continue;
+			self.visible_cards(visible, &draw_list);
 		}
-
-		usz line_count = card.buffer.line_count();
-		Rect gutter    = editor::gutter_rect(card.rect, metrics, line_count);
-		Rect text      = editor::text_rect(card.rect, metrics, line_count);
-
-		if (self.jump_path.len > 0 && self.jump_path.compare_to((String)card.path) == 0)
+		for (sz c = 0; c < draw_list.len(); c++)
 		{
-			double now = rl::get_time();
-			if (now < self.jump_until)
+			sz i = (sz)draw_list[c];
+			if (only_card < 0 && !self.card_visible((int)i)) continue;
+			FileCard* card  = &self.cards[i];
+			bool is_focused = (int)i == self.focused;
+			if (is_focused) editor::ensure_buffer(card, self.allocator);
+			if (!rect_intersects(card.rect, visible)) continue;
+			float on_screen_w = card.rect.width * camera.zoom;
+			if (!is_focused && on_screen_w < CARD_MIN_DRAW_PX) continue;
+			if (!is_focused && on_screen_w < CARD_LOD_MIN_PX)
 			{
-				float fade    = jump_fade(now, self.jump_until, JUMP_HIGHLIGHT_SECONDS);
+				card.draw_lod(camera.zoom);
+				continue;
+			}
+			card.draw(is_focused, camera.zoom);
+			if (!is_focused && (int)i == self.selected)
+			{
+				rl::draw_rectangle_lines_ex(
+					card.effective_rect(),
+					card::screen_thickness(2.0f, camera.zoom),
+					theme::current()
+					.card_focus);
+			}
+			else if (!is_focused && self.selected != (int)i && (int)i == self.hover_card)
+			{
 				RLColor base  = theme::current().card_focus;
-				RLColor color = { base[0], base[1], base[2], (char)(fade * (float)JUMP_HIGHLIGHT_ALPHA) };
-				Rect line_rect = {
-					.x = text.x,
-					.y = text.y + editor::line_y(self.jump_line, card.scroll, metrics),
-					.width = text.width,
-					.height = metrics.line_height,
-				};
-				rl::draw_rectangle_rec(line_rect, color);
+				RLColor hover = { base[0], base[1], base[2], (char)140 };
+				rl::draw_rectangle_lines_ex(card.effective_rect(), card::screen_thickness(1.0f, camera.zoom), hover);
 			}
-			else
-			{
-				self.clear_jump();
-			}
-		}
+			if (!card.open) continue;
 
-		if (is_focused) editor::draw_current_line(
-			card.buffer,
-			text,
-			card.scroll,
-			metrics,
-			camera,
-			card.cursor,
-			theme::current()
-			.editor_current_line);
-		if (is_focused && editor::has_selection(card.selection_anchor, card.cursor))
-		{
-			usz sel_start = 0;
-			usz sel_end   = 0;
-			editor::selection_range(card.selection_anchor, card.cursor, &sel_start, &sel_end);
-			editor::draw_selection(
-				card.buffer,
-				text,
-				card.scroll,
-				card.scroll_x,
-				metrics,
-				camera,
-				sel_start,
-				sel_end,
-				theme::current()
-				.editor_selection);
-		}
-		if (is_focused && find_bar) find_bar.draw_matches(
-			card.rect,
-			card.buffer,
-			card.scroll,
-			card.scroll_x,
-			metrics,
-			camera
-		);
-		editor::draw_gutter(
-			card.buffer,
-			gutter,
-			card.scroll,
-			metrics,
-			camera,
-			editor_font,
-			metrics.font_size,
-			theme::current()
-			.editor_gutter_text, theme::current().editor_gutter_bg);
-		editor::draw_text_highlighted(
-			card.highlight,
-			card.buffer,
-			text,
-			card.scroll,
-			card.scroll_x,
-			metrics,
-			camera,
-			editor_font,
-			metrics.font_size,
-			theme::current()
-			.editor_text);
-		if (is_focused)
-		{
-			lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
-			if (diags.len > 0)
+			if (card.preview && markdown::is_markdown_path((String)card.path))
 			{
-				editor::draw_diagnostics(card.buffer, text, card.scroll, card.scroll_x, metrics, camera, diags);
+				editor::ensure_buffer(card, self.allocator);
+				Rect area = editor::inner_rect(card.rect, metrics);
+				float max = 0.0f;
+				if (card.buffer && card.view)
+				{
+					max = markdown::view_draw(
+						card.view,
+						card.buffer,
+						area,
+						card.preview_scroll,
+						camera,
+						editor_font,
+						metrics.font_size,
+						metrics.char_width,
+						metrics.line_height,
+						card.highlight
+					);
+					if (card.preview_scroll > max) card.preview_scroll = max;
+					editor::draw_scrollbar(area, area.height + max, card.preview_scroll, camera, theme::current()
+						.editor_scrollbar);
+				}
+				if (is_focused && self.focus_card < 0) card.draw_handles(camera, theme::current().editor_handle);
+				continue;
 			}
-		}
-		if (is_focused && caret_on)
-		{
-			editor::draw_caret(
+
+			if (!card.buffer)
+			{
+				editor::draw_placeholder(editor::inner_rect(card.rect, metrics), metrics, camera, theme::current()
+					.editor_placeholder);
+				continue;
+			}
+
+			usz line_count = card.buffer.line_count();
+			Rect gutter    = editor::gutter_rect(card.rect, metrics, line_count);
+			Rect text      = editor::text_rect(card.rect, metrics, line_count);
+
+			if (self.jump_path.len > 0 && self.jump_path.compare_to((String)card.path) == 0)
+			{
+				double now = rl::get_time();
+				if (now < self.jump_until)
+				{
+					float fade    = jump_fade(now, self.jump_until, JUMP_HIGHLIGHT_SECONDS);
+					RLColor base  = theme::current().card_focus;
+					RLColor color = { base[0], base[1], base[2], (char)(fade * (float)JUMP_HIGHLIGHT_ALPHA) };
+					Rect line_rect = {
+						.x = text.x,
+						.y = text.y + editor::line_y(self.jump_line, card.scroll, metrics),
+						.width = text.width,
+						.height = metrics.line_height,
+					};
+					rl::draw_rectangle_rec(line_rect, color);
+				}
+				else
+				{
+					self.clear_jump();
+				}
+			}
+
+			if (is_focused) editor::draw_current_line(
 				card.buffer,
 				text,
 				card.scroll,
-				card.scroll_x,
 				metrics,
 				camera,
 				card.cursor,
 				theme::current()
-				.editor_caret);
+				.editor_current_line);
+			if (is_focused && editor::has_selection(card.selection_anchor, card.cursor))
+			{
+				usz sel_start = 0;
+				usz sel_end   = 0;
+				editor::selection_range(card.selection_anchor, card.cursor, &sel_start, &sel_end);
+				editor::draw_selection(
+					card.buffer,
+					text,
+					card.scroll,
+					card.scroll_x,
+					metrics,
+					camera,
+					sel_start,
+					sel_end,
+					theme::current()
+					.editor_selection);
+			}
+			if (is_focused && find_bar) find_bar.draw_matches(
+				card.rect,
+				card.buffer,
+				card.scroll,
+				card.scroll_x,
+				metrics,
+				camera
+			);
+			editor::draw_gutter(
+				card.buffer,
+				gutter,
+				card.scroll,
+				metrics,
+				camera,
+				editor_font,
+				metrics.font_size,
+				theme::current()
+				.editor_gutter_text, theme::current().editor_gutter_bg);
+			editor::draw_text_highlighted(
+				card.highlight,
+				card.buffer,
+				text,
+				card.scroll,
+				card.scroll_x,
+				metrics,
+				camera,
+				editor_font,
+				metrics.font_size,
+				theme::current()
+				.editor_text);
+			if (is_focused)
+			{
+				lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
+				if (diags.len > 0)
+				{
+					editor::draw_diagnostics(card.buffer, text, card.scroll, card.scroll_x, metrics, camera, diags);
+				}
+			}
+			if (is_focused && caret_on)
+			{
+				editor::draw_caret(
+					card.buffer,
+					text,
+					card.scroll,
+					card.scroll_x,
+					metrics,
+					camera,
+					card.cursor,
+					theme::current()
+					.editor_caret);
+			}
+			float content_height = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
+			editor::draw_scrollbar(text, content_height, card.scroll, camera, theme::current().editor_scrollbar);
+			if (is_focused && find_bar) find_bar.draw(card.rect, metrics, font, null);
+			if (is_focused && self.focus_card < 0) card.draw_handles(camera, theme::current().editor_handle);
 		}
-		float content_height = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
-		editor::draw_scrollbar(text, content_height, card.scroll, camera, theme::current().editor_scrollbar);
-		if (is_focused && find_bar) find_bar.draw(card.rect, metrics, font, null);
-		if (is_focused) card.draw_handles(camera, theme::current().editor_handle);
+	};
+}
+fn void Project.toggle_preview(&self, int index)
+{
+	if (index < 0 || index >= (int)self.cards.len()) return;
+	FileCard* card = &self.cards[index];
+	if (!markdown::is_markdown_path((String)card.path)) return;
+	card.preview = !card.preview;
+	if (card.preview)
+	{
+		editor::ensure_buffer(card, self.allocator);
+		card.preview_scroll = 0.0f;
 	}
 }

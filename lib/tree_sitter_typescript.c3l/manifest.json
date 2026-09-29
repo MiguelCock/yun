@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_typescript",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-typescript"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-typescript"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-typescript"
+      ]
+    }
+  }
+}

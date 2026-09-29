@@ -12,10 +12,13 @@ import std::os;
 import std::thread;
 import std::thread::channel;
 import yun::card;
+import yun::commands;
 import yun::editor;
 import yun::find;
+import yun::keymap;
 import yun::project;
 import yun::theme;
+import yun::ui;
 
 const int MAX_MATCHES_PER_FILE = 200;
 const int MAX_RESULTS          = 2000;
@@ -23,6 +26,7 @@ const long MAX_FILE_BYTES      = 2 * 1024 * 1024;
 const int BINARY_SCAN_BYTES    = 8192;
 const int PREVIEW_MAX          = 120;
 const int MAX_SEARCH_WORKERS   = 4;
+const int PUMP_BATCH_BUDGET    = 32;
 const int QUERY_MAX            = 256;
 const double RESTART_DEBOUNCE  = 0.15;
 const float TOP_MARGIN         = 24.0f;
@@ -89,6 +93,7 @@ struct Search
 	bool restart_pending;
 	double restart_at;
 	String root;
+	bool consumed;
 }
 
 fn bool search_match_at(String line, usz at, String query, bool case_sensitive, bool whole_word)
@@ -284,6 +289,7 @@ fn void Search.init(&self, Allocator allocator)
 	self.restart_pending = false;
 	self.restart_at = 0.0;
 	self.root = "";
+	self.consumed = false;
 	self.cancel.store(false);
 	self.results = null;
 	self.pool_ready = false;
@@ -317,6 +323,13 @@ fn void Search.destroy(&self)
 	}
 	if (self.results)
 	{
+		while (true)
+		{
+			SearchBatch? maybe = self.results.try_pop();
+			if (catch excuse = maybe) break;
+			SearchBatch batch = maybe;
+			free_batch(self.allocator, &batch);
+		}
 		self.results.destroy();
 		self.results = null;
 	}
@@ -469,7 +482,8 @@ fn void Search.pump(&self, project::Project* project, double now)
 	}
 	if (self.results)
 	{
-		while (true)
+		int budget = PUMP_BATCH_BUDGET;
+		while (budget-- > 0)
 		{
 			SearchBatch? maybe = self.results.try_pop();
 			if (catch excuse = maybe) break;
@@ -543,7 +557,7 @@ fn int Search.selected_ordinal(&self)
 
 fn float Search.list_y(&self)
 {
-	float s    = editor::text_scale();
+	float s    = ui::scale();
 	Rect panel = self.panel_rect();
 	float pad  = 10.0f * s;
 	Rect case_rect;
@@ -555,7 +569,7 @@ fn float Search.list_y(&self)
 
 fn int Search.visible_rows(&self)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	Rect panel   = self.panel_rect();
 	float pad    = 10.0f * s;
 	float list_y = self.list_y();
@@ -577,7 +591,7 @@ fn void Search.ensure_visible(&self)
 
 fn int Search.row_at_mouse(&self, RLVector2 mouse)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	Rect panel   = self.panel_rect();
 	float list_y = self.list_y();
 	if (mouse[1] < list_y) return -1;
@@ -616,7 +630,7 @@ fn SearchTarget Search.activate(&self)
 
 fn Rect Search.panel_rect(&self)
 {
-	float s      = editor::text_scale();
+	float s      = ui::scale();
 	int screen_w = rl::get_screen_width();
 	int screen_h = rl::get_screen_height();
 	float width  = 780.0f * s;
@@ -629,7 +643,7 @@ fn Rect Search.panel_rect(&self)
 
 fn void Search.chip_rects(&self, Rect* case_rect, Rect* word_rect)
 {
-	float s    = editor::text_scale();
+	float s    = ui::scale();
 	Rect panel = self.panel_rect();
 	float pad  = 10.0f * s;
 	float y    = panel.y + pad + 30.0f * s + 8.0f * s;
@@ -639,40 +653,56 @@ fn void Search.chip_rects(&self, Rect* case_rect, Rect* word_rect)
 	*word_rect = { .x = panel.x + pad + w + 6.0f * s, .y = y, .width = w, .height = h };
 }
 
-fn SearchTarget Search.update(&self, project::Project* project, double now)
+fn SearchTarget Search.update(&self, keymap::Keymap* keymap, project::Project* project, double now)
 {
 	SearchTarget target = { .valid = false, .path = "", .line = 0, .column = 0 };
 	if (!self.open) return target;
+	self.consumed = false;
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_SEARCH))
 	{
+		self.consumed = true;
 		self.close();
 		return target;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.ENTER))
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_ACCEPT, commands::CTX_SEARCH))
 	{
+		self.consumed = true;
 		return self.activate();
 	}
 
 	int visible = self.visible_rows();
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.DOWN
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN)) self.move_selection(1);
-	if (rl::is_key_pressed(
-		rl::RLKeyboardKey.UP
-	) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP)) self.move_selection(-1);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN)) self.move_selection(visible);
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP)) self.move_selection(-visible);
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_SEARCH))
+	{
+		self.consumed = true;
+		self.move_selection(1);
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_SEARCH))
+	{
+		self.consumed = true;
+		self.move_selection(-1);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_DOWN, commands::CTX_SEARCH))
+	{
+		self.consumed = true;
+		self.move_selection(visible);
+	}
+	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_UP, commands::CTX_SEARCH))
+	{
+		self.consumed = true;
+		self.move_selection(-visible);
+	}
 	self.ensure_visible();
 
-	bool alt = rl::is_key_down(rl::RLKeyboardKey.LEFT_ALT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_ALT);
-	if (alt && rl::is_key_pressed(rl::RLKeyboardKey.C))
+	if (keymap.pressed((int)commands::CommandId.SEARCH_TOGGLE_CASE, commands::CTX_SEARCH))
 	{
+		self.consumed = true;
 		self.case_sensitive = !self.case_sensitive;
 		self.schedule_restart(now);
 	}
-	if (alt && rl::is_key_pressed(rl::RLKeyboardKey.W))
+	if (keymap.pressed((int)commands::CommandId.SEARCH_TOGGLE_WORD, commands::CTX_SEARCH))
 	{
+		self.consumed = true;
 		self.whole_word = !self.whole_word;
 		self.schedule_restart(now);
 	}
@@ -761,7 +791,8 @@ fn void Search.draw(&self, RLFont font)
 {
 	if (!self.open) return;
 
-	float s    = editor::text_scale();
+	float s    = ui::scale();
+	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
 	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
 	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
@@ -773,11 +804,11 @@ fn void Search.draw(&self, RLFont font)
 	rl::draw_rectangle_lines_ex(field, 1.0f, theme::current().panel_border);
 
 	String query  = self.query_view();
-	float query_w = text_width(font, query, 15.0f * s);
-	draw_text(font, query, field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * s, theme::current().panel_text);
+	float query_w = text_width(font, query, 15.0f * ts);
+	draw_text(font, query, field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * ts, theme::current().panel_text);
 	if (query.len == 0)
 	{
-		draw_text(font, "Search in project...", field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * s, theme::current()
+		draw_text(font, "Search in project...", field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * ts, theme::current()
 			.panel_dim);
 	}
 	else
@@ -818,7 +849,7 @@ fn void Search.draw(&self, RLFont font)
 		{
 			status = string::format(tmem, "%d matches in %d files", (long)self.total_matches, (long)self.groups.len());
 		}
-		draw_text(font, status, panel.x + pad, status_y, 14.0f * s, theme::current().panel_dim);
+		draw_text(font, status, panel.x + pad, status_y, 14.0f * ts, theme::current().panel_dim);
 	};
 
 	float list_y = self.list_y();
@@ -836,7 +867,13 @@ fn void Search.draw(&self, RLFont font)
 	{
 		if (ordinal >= self.scroll)
 		{
-			draw_text(font, self.relative(self.groups[g].path), panel.x + pad, y + 3.0f * s, 14.0f * s, theme::current()
+			draw_text(
+				font,
+				self.relative(self.groups[g].path),
+				panel.x + pad,
+				y + 3.0f * s,
+				14.0f * ts,
+				theme::current()
 				.panel_header);
 			y += header_h;
 			if (y > panel.y + panel.height) break;
@@ -861,7 +898,7 @@ fn void Search.draw(&self, RLFont font)
 						(long)(match.column + 1),
 						match.preview
 					);
-					draw_text(font, label, panel.x + pad + 12.0f * s, y + 2.0f * s, 14.0f * s, theme::current()
+					draw_text(font, label, panel.x + pad + 12.0f * s, y + 2.0f * s, 14.0f * ts, theme::current()
 						.panel_text);
 				};
 				y += row_h;
@@ -880,11 +917,12 @@ fn void Search.draw(&self, RLFont font)
 
 fn void draw_chip(RLFont font, Rect r, String label, bool on, float s)
 {
+	float ts = ui::text_scale();
 	rl::draw_rectangle_rec(r, on ? theme::current().panel_selected : theme::current().findbar_chip);
 	rl::draw_rectangle_lines_ex(r, 1.0f, theme::current().panel_border);
 	@pool()
 	{
-		float w = text_width(font, label, 14.0f * s);
-		draw_text(font, label, r.x + (r.width - w) / 2.0f, r.y + 4.0f * s, 14.0f * s, theme::current().panel_text);
+		float w = text_width(font, label, 14.0f * ts);
+		draw_text(font, label, r.x + (r.width - w) / 2.0f, r.y + 4.0f * s, 14.0f * ts, theme::current().panel_text);
 	};
 }
