@@ -73,6 +73,7 @@ These work from any mode:
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` / `Ctrl+A` | Copy / cut / paste / select all |
 | `Ctrl+Space` | Trigger completion |
+| `Ctrl+Shift+Enter` | Toggle focus mode: the focused file fills the screen (top bar kept, file minimap bottom-right) |
 | `Ctrl` + scroll | Editor font size |
 | `F3` (hold) | Show the awake/asleep editor counter and frame/update/draw/scan timings |
 

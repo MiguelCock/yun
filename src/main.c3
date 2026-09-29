@@ -416,6 +416,7 @@ struct App
 	bool* project_open;
 	bool* content_changed;
 	UiMode* ui_mode;
+	UiMode* focus_saved_mode;
 	int* edit_grace_frames;
 	topbar::TopBar* bar;
 	keymap::Keymap* keymap;
@@ -981,6 +982,32 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.MINIMIZE_CARD:
 			project.minimize_selected(app.metrics);
 			return;
+		case commands::CommandId.TOGGLE_FOCUS_MODE:
+
+			{
+				if (project.focus_card >= 0)
+				{
+					project.end_focus(app.canvas);
+					*app.ui_mode = *app.focus_saved_mode;
+					return;
+				}
+				int index = project.focused;
+				if (index < 0) index = project.selected;
+				if (index < 0 || index >= (int)project.cards.len())
+				{
+					app.notifier.push("No file to focus");
+					return;
+				}
+				if (!project.begin_focus(index, app.canvas))
+				{
+					app.notifier.push("Could not focus file");
+					return;
+				}
+				*app.focus_saved_mode = *app.ui_mode;
+				*app.ui_mode = UiMode.EDIT;
+				*app.edit_grace_frames = 2;
+				return;
+			}
 		case commands::CommandId.CLOSE_CARD:
 
 			{
@@ -1540,6 +1567,7 @@ fn int main(String[] args)
 	bool content_changed        = false;
 	double font_indicator_until = 0.0;
 	UiMode ui_mode              = UiMode.MOVE;
+	UiMode focus_saved_mode     = UiMode.MOVE;
 	int edit_grace_frames       = 0;
 	bool selftest               = false;
 	bool benchmark_on           = false;
@@ -1669,6 +1697,7 @@ fn int main(String[] args)
 		.project_open = &project_open,
 		.content_changed = &content_changed,
 		.ui_mode = &ui_mode,
+		.focus_saved_mode = &focus_saved_mode,
 		.edit_grace_frames = &edit_grace_frames,
 		.bar = &bar,
 		.keymap = &keymap,
@@ -2300,8 +2329,10 @@ fn int main(String[] args)
 				}
 			}
 
-			bool over_minimap = minimap::contains_screen(&project, &canvas, mouse);
-			if (over_top || over_minimap || project.hit_test(world) >= 0)
+			bool focus_active = project.focus_card >= 0;
+			bool over_minimap = focus_active ? minimap::file_contains_screen(&project, mouse)
+				: minimap::contains_screen(&project, &canvas, mouse);
+			if (focus_active || over_top || over_minimap || project.hit_test(world) >= 0)
 			{
 				import_index.clear_hover();
 				arrow_hovered = false;
@@ -2326,7 +2357,14 @@ fn int main(String[] args)
 			}
 			arrow_hovered_cache = arrow_hovered;
 			canvas.pointer_over_ui = over_top || project.pointer_over_ui(world) || over_minimap || arrow_hovered;
-			minimap::update(&project, &canvas);
+			if (focus_active)
+			{
+				minimap::update_file(&project, metrics);
+			}
+			else
+			{
+				minimap::update(&project, &canvas);
+			}
 
 			if (!over_top && rl::is_mouse_button_pressed(
 				rl::RLMouseButton.RIGHT
@@ -2388,6 +2426,8 @@ fn int main(String[] args)
 				rl::unload_dropped_files(files);
 			}
 
+			if (project.focus_card >= 0) project.update_focus_rect(&canvas);
+
 			content_changed = false;
 			bool suppress_edit_input = ui_mode == UiMode.EDIT && edit_grace_frames > 0;
 			double update_t0         = rl::get_time();
@@ -2396,6 +2436,11 @@ fn int main(String[] args)
 			if (ui_mode == UiMode.EDIT && project.focused < 0)
 			{
 				ui_mode = UiMode.MOVE;
+			}
+			if (project.focus_card >= 0 && project.focused < 0)
+			{
+				project.end_focus(&canvas);
+				ui_mode = focus_saved_mode;
 			}
 			project.discard_ephemeral(project.focused);
 			if (content_changed)
@@ -2413,6 +2458,8 @@ fn int main(String[] args)
 			imports::ImportIndex.pump(&import_index, &project);
 			scan_ms += (rl::get_time() - imports_t0) * 1000.0;
 			if (over_top || font_wheel) canvas.block_zoom = true;
+			canvas.block_pan = project.focus_card >= 0;
+			if (project.focus_card >= 0) canvas.block_zoom = true;
 			canvas.update();
 			hover = compute_hover(&project, &canvas, metrics);
 
@@ -2516,15 +2563,37 @@ fn int main(String[] args)
 
 		rl::@drawing()
 		{
-			canvas.draw();
+			bool focus_active = project.focus_card >= 0;
+			if (focus_active)
+			{
+				rl::clear_background(theme::current().window_bg);
+			}
+			else
+			{
+				canvas.draw();
+			}
 			double draw_t0 = rl::get_time();
 			rl::@mode2d(canvas.camera)
 			{
-				project.draw_folders(canvas.camera);
-				import_index.draw(&project, canvas.camera, font);
-				project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar);
+				if (focus_active)
+				{
+					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, project.focus_card);
+				}
+				else
+				{
+					project.draw_folders(canvas.camera);
+					import_index.draw(&project, canvas.camera, font);
+					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, -1);
+				}
 			};
-			minimap::draw(&project, &canvas);
+			if (focus_active)
+			{
+				minimap::draw_file(&project, metrics);
+			}
+			else
+			{
+				minimap::draw(&project, &canvas);
+			}
 			draw_ms += (rl::get_time() - draw_t0) * 1000.0;
 			if (rl::get_time() < font_indicator_until)
 			{
@@ -2725,6 +2794,7 @@ fn int main(String[] args)
 		}
 	}
 
+	if (project.focus_card >= 0) project.end_focus(&canvas);
 	if (project_open) workspace::save(&project, &canvas);
 	return 0;
 }

@@ -116,6 +116,7 @@ enum CommandId
 	LEAVE_FOLDER,
 	CYCLE_FOCUS,
 	MINIMIZE_CARD,
+	TOGGLE_FOCUS_MODE,
 }
 
 struct CommandDef
@@ -629,6 +630,13 @@ const CommandDef[] COMMAND_DEFS = {
 		.in_top_bar = false,
 		.contexts = CTX_MOVE,
 	},
+	{
+		.id = CommandId.TOGGLE_FOCUS_MODE,
+		.label = "Focus Mode",
+		.shortcut = "Ctrl+Shift+Enter",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL,
+	},
 };
 
 fn usz command_count()
@@ -821,6 +829,8 @@ fn String command_name(CommandId id)
 			return "cycle_focus";
 		case CommandId.MINIMIZE_CARD:
 			return "minimize_card";
+		case CommandId.TOGGLE_FOCUS_MODE:
+			return "toggle_focus_mode";
 	}
 }
 
@@ -932,6 +942,7 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.LEAVE_FOLDER:
 		case CommandId.CYCLE_FOCUS:
 		case CommandId.MINIMIZE_CARD:
+		case CommandId.TOGGLE_FOCUS_MODE:
 			return has_project;
 		case CommandId.FOCUS_TOP_BAR:
 		case CommandId.TOPBAR_LEFT:

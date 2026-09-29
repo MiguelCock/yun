@@ -5,6 +5,7 @@ import std::collections::list;
 import std::io::file;
 import std::io::path;
 import std::math;
+import yun::canvas;
 import yun::card;
 import yun::editor;
 
@@ -1261,6 +1262,49 @@ fn void test_open_skips_submodules()
 		p2.skip_nested_repos = false;
 		assert(p2.open((String)dir));
 		assert(p2.cards.len() == 3);
+
+		(void)path::rmtree(dir);
+	};
+}
+fn void test_focus_mode_restores_rect_and_camera()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_focus_test");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		char[] content = "fn int main() { return 0; }\n";
+		Path? f        = dir.append(tmem, "a.c3");
+		if (catch excuse = f) return;
+		if (catch excuse = file::save(f, content)) return;
+
+		Project p;
+		p.init(tmem);
+		assert(p.open((String)dir));
+		assert(p.cards.len() == 1);
+
+		Canvas canvas;
+		canvas.init();
+		canvas.camera.zoom = 2.0f;
+		canvas.camera.target = { 40.0f, 30.0f };
+		canvas.target = canvas.camera;
+
+		Rect saved = p.cards[0].rect;
+		assert(p.begin_focus(0, &canvas));
+		assert(p.focus_card == 0);
+		assert(p.cards[0].buffer != null);
+		assert(p.cards[0].rect.width != saved.width);
+
+		p.end_focus(&canvas);
+		assert(p.focus_card == -1);
+		assert(p.cards[0].rect.x == saved.x && p.cards[0].rect.y == saved.y);
+		assert(p.cards[0].rect.width == saved.width && p.cards[0].rect.height == saved.height);
+		assert(canvas.camera.zoom == 2.0f);
+		assert(canvas.camera.target[0] == 40.0f && canvas.camera.target[1] == 30.0f);
 
 		(void)path::rmtree(dir);
 	};
