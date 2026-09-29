@@ -22,7 +22,7 @@ fn void test_fit_zoom_centers_and_clamps()
 
 	Rect tiny = { .x = 0.0f, .y = 0.0f, .width = 1.0f, .height = 1.0f };
 	c.fit_zoom(tiny, 1200, 800);
-	assert(c.target.zoom == MAX_ZOOM);
+	assert(c.target.zoom == FIT_MAX_ZOOM);
 
 	Rect empty = { .x = 0.0f, .y = 0.0f, .width = 0.0f, .height = 0.0f };
 	c.target.zoom = 2.0f;
@@ -295,4 +295,20 @@ fn void test_grid_step_uses_cell()
 	while (ratio < 1.0f) ratio *= 2.0f;
 	assert(ratio == 1.0f);
 	set_settings(saved);
+}
+fn void test_fit_zoom_floor_clamps()
+{
+	Canvas c;
+	Rect content = { .x = 0.0f, .y = 0.0f, .width = 100000.0f, .height = 100000.0f };
+	c.fit_zoom_floor(content, 1000, 800, 0.4f);
+	assert(c.target.zoom == 0.4f);
+	assert(c.target.target[0] > 0.0f && c.target.target[1] > 0.0f);
+}
+
+fn void test_fit_zoom_floor_no_clamp()
+{
+	Canvas c;
+	Rect content = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+	c.fit_zoom_floor(content, 1000, 800, 0.4f);
+	assert(c.target.zoom >= 0.4f);
 }

@@ -5,11 +5,12 @@ import std::collections::list;
 import std::encoding::json;
 import std::io::file;
 import std::io::path;
+import std::math;
 import yun::canvas;
 import yun::card;
 import yun::project;
 
-const String WORKSPACE_VERSION = "2";
+const String WORKSPACE_VERSION = "3";
 const String WORKSPACE_DIR     = ".yun";
 const String WORKSPACE_FILE    = "workspace.json";
 const String WORKSPACE_TMP     = "workspace.tmp";
@@ -36,6 +37,10 @@ struct FolderState
 {
 	String path;
 	bool collapsed;
+	float x;
+	float y;
+	float w;
+	float h;
 }
 
 struct WorkspaceState
@@ -96,10 +101,15 @@ fn bool save(project::Project* project, canvas::Canvas* canvas)
 		folders.init(tmem);
 		for (sz i = 0; i < project.folders.len(); i++)
 		{
+			Rect bounds = project.cluster_bounds((int)i);
 			folders.push(
 				{
 					.path = relative_path(tmem, (String)project.root, (String)project.folders[i].path),
 					.collapsed = project.folders[i].collapsed,
+					.x = bounds.x,
+					.y = bounds.y,
+					.w = bounds.width,
+					.h = bounds.height,
 				}
 			);
 		}
@@ -156,6 +166,7 @@ fn bool load(project::Project* project, canvas::Canvas* canvas)
 			};
 			project.cards[index].open = state.cards[i].open;
 			project.cards[index].preview = state.cards[i].preview;
+			project.cards[index].restored = true;
 		}
 
 		for (usz i = 0; i < state.folders.len; i++)
@@ -163,7 +174,17 @@ fn bool load(project::Project* project, canvas::Canvas* canvas)
 			Path? abs = absolute_path(tmem, (String)project.root, state.folders[i].path);
 			if (catch excuse = abs) continue;
 			int index = project.folder_by_path((String)abs);
-			if (index >= 0) project.folders[index].collapsed = state.folders[i].collapsed;
+			if (index >= 0)
+			{
+				project.folders[index].collapsed = state.folders[i].collapsed;
+				project.folders[index].bounds = {
+					.x = state.folders[i].x,
+					.y = state.folders[i].y,
+					.width = state.folders[i].w,
+					.height = state.folders[i].h,
+				};
+				project.folders[index].bounds_valid = false;
+			}
 		}
 
 		canvas.camera.target = { state.camera.target_x, state.camera.target_y };

@@ -35,6 +35,7 @@ struct FileCard
 	bool missing;
 	bool ephemeral;
 	bool sleeping;
+	bool restored;
 	bool preview;
 	float preview_scroll;
 	markdown::View* view;

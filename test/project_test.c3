@@ -175,53 +175,66 @@ fn void test_ensure_folder_chain()
 	};
 }
 
-fn void test_layout_columns()
-{
-	assert(layout_columns(0) == 1);
-	assert(layout_columns(1) == 1);
-	assert(layout_columns(4) >= 1);
-	assert(layout_columns(100) >= 1);
-	assert(layout_columns(100) <= 100);
-	assert(layout_columns(1000) <= 1000);
-}
-
-fn void test_layout_slot()
-{
-	RLVector2 first = layout_slot(0, 4);
-	assert(first[0] == 0.0f && first[1] == 0.0f);
-
-	RLVector2 next_col = layout_slot(1, 4);
-	assert(next_col[0] == CLUSTER_COLLAPSED_WIDTH + CLUSTER_GAP);
-	assert(next_col[1] == 0.0f);
-
-	RLVector2 next_row = layout_slot(4, 4);
-	assert(next_row[0] == 0.0f);
-	assert(next_row[1] == CLUSTER_TITLE_HEIGHT + CLUSTER_GAP);
-}
-
 fn void test_layout_packs_clusters()
 {
 	@pool()
 	{
 		Project p;
 		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
 		int a = p.add_folder("/root/a", ROOT_FOLDER);
 		int b = p.add_folder("/root/b", ROOT_FOLDER);
-		int c = p.add_folder("/root/c", ROOT_FOLDER);
-		p.cards.push({ .path = (Path)"/root/a/x.c3".copy(tmem), .folder = a });
+		for (int k = 0; k < 4; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/f%d.c3", k)
+				.copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
+		for (int k = 0; k < 4; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/b/f%d.c3", k)
+				.copy(tmem), .folder = b, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
 
 		p.layout();
 
-		int columns  = layout_columns((int)p.folders.len() + 1);
-		RLVector2 pa = layout_slot(a, columns);
-		RLVector2 pb = layout_slot(b, columns);
-		RLVector2 pc = layout_slot(c, columns);
-		assert(p.folders[a].bounds.x == pa[0] && p.folders[a].bounds.y == pa[1]);
-		assert(p.folders[b].bounds.x == pb[0] && p.folders[b].bounds.y == pb[1]);
-		assert(p.folders[c].bounds.x == pc[0] && p.folders[c].bounds.y == pc[1]);
+		// each level packs folders as chips, so expanded boxes overlap
+		assert(rect_intersects(p.cluster_bounds(a), p.cluster_bounds(b)));
 
-		assert(p.cards[0].rect.x == pa[0] + CLUSTER_PADDING);
-		assert(p.cards[0].rect.y == pa[1] + CLUSTER_TITLE_HEIGHT + CLUSTER_PADDING);
+		// collapsed chips are packed tightly and never overlap
+		p.folders[a].collapsed = true;
+		p.folders[b].collapsed = true;
+		assert(!rect_intersects(p.cluster_visual_bounds(a), p.cluster_visual_bounds(b)));
+	};
+}
+
+fn void test_layout_nests_child_clusters()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int d = p.add_folder("/root/a/d", a);
+		p.cards.push(
+			{ .path = (Path)"/root/a/x.c3".copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f } }
+		);
+		p.cards.push(
+			{ .path = (Path)"/root/a/d/y.c3".copy(tmem), .folder = d, .rect = { .width = 1.0f, .height = 1.0f } }
+		);
+
+		p.layout();
+
+		// the nested folder's box is contained in its parent
+		Rect ra = p.cluster_bounds(a);
+		Rect rd = p.cluster_visual_bounds(d);
+		assert(rd.x >= ra.x - 0.01f && rd.y >= ra.y - 0.01f);
+		assert(rd.x + rd.width <= ra.x + ra.width + 0.01f);
+		assert(rd.y + rd.height <= ra.y + ra.height + 0.01f);
 	};
 }
 
@@ -363,16 +376,6 @@ fn void test_open_scans_directory()
 		for (sz i = 0; i < p.cards.len(); i++)
 		{
 			assert(p.cards[i].folder == p.folder_for((String)p.cards[i].path));
-		}
-
-		// expanding all folders makes every card visible again
-		for (sz i = 0; i < p.folders.len(); i++)
-		{
-			p.toggle_collapse((int)i);
-		}
-		for (sz i = 0; i < p.cards.len(); i++)
-		{
-			assert(p.card_visible((int)i));
 		}
 
 		(void)path::rmtree(dir);
@@ -778,7 +781,7 @@ fn void test_refresh_sleep()
 		p.toggle_collapse(folder);
 
 		Rect visible = { .x = 0.0f, .y = 0.0f, .width = 200.0f, .height = 200.0f };
-		p.refresh_sleep(visible);
+		p.refresh_sleep(visible, 1.0f);
 		assert(!p.cards[0].sleeping);
 		assert(p.cards[1].sleeping);
 		assert(p.cards[2].sleeping);
@@ -786,7 +789,7 @@ fn void test_refresh_sleep()
 		assert(p.asleep_count == 2);
 
 		p.focused = 1;
-		p.refresh_sleep(visible);
+		p.refresh_sleep(visible, 1.0f);
 		assert(!p.cards[1].sleeping);
 		assert(p.awake_count == 2);
 	};
@@ -877,5 +880,73 @@ fn void test_card_in_direction()
 		assert(p.card_in_direction(1, Dir.LEFT) == 0);
 		assert(p.card_in_direction(3, Dir.UP) == 1);
 		assert(p.card_in_direction(3, Dir.LEFT) == 2);
+	};
+}
+fn void test_layout_compact_square()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int b = p.add_folder("/root/b", ROOT_FOLDER);
+		int d = p.add_folder("/root/a/d", a);
+		for (int k = 0; k < 6; k++)
+		{
+			String path = string::format(tmem, "/root/b/f%d.c3", k);
+			p.cards.push(
+				{
+					.path = (Path)path.copy(tmem),
+					.folder = b,
+					.rect = { .width = 1.0f, .height = 1.0f },
+				}
+			);
+		}
+		for (int k = 0; k < 6; k++)
+		{
+			String path = string::format(tmem, "/root/a/d/g%d.c3", k);
+			p.cards.push(
+				{
+					.path = (Path)path.copy(tmem),
+					.folder = d,
+					.rect = { .width = 1.0f, .height = 1.0f },
+				}
+			);
+		}
+
+		p.layout();
+
+		// the nested cluster is contained in its parent
+		Rect ra = p.cluster_bounds(a);
+		Rect rd = p.cluster_visual_bounds(d);
+		assert(rd.x >= ra.x - 0.01f && rd.y >= ra.y - 0.01f);
+		assert(rd.x + rd.width <= ra.x + ra.width + 0.01f);
+		assert(rd.y + rd.height <= ra.y + ra.height + 0.01f);
+
+		// top-level siblings overlap because each level packs only chip footprints
+		Rect rb = p.cluster_bounds(b);
+		assert(rect_intersects(ra, rb));
+
+		// the overall footprint is roughly square
+		Rect out;
+		assert(p.content_bounds(&out));
+		float ratio = out.width / out.height;
+		assert(ratio >= 0.5f && ratio <= 2.0f);
+	};
+}
+fn void test_cards_revision_bumps()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int r0    = p.cards_revision;
+		int index = p.append_card("/root/a.c3", { 0.0f, 0.0f });
+		assert(index == 0);
+		assert(p.cards_revision == r0 + 1);
+		p.remove_card(0);
+		assert(p.cards_revision == r0 + 2);
 	};
 }

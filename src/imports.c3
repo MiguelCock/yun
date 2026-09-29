@@ -23,6 +23,8 @@ import yun::ui;
 
 const int MAX_SCAN_WORKERS         = 8;
 const float ARROW_HIT_PX           = 6.0f;
+const float ARROW_MIN_DRAW_PX      = 6.0f;
+const float ARROW_LABEL_MIN_ZOOM   = 0.5f;
 const int BEZIER_HIT_STEPS         = 20;
 const double EDIT_DEBOUNCE_SECONDS = 0.15;
 
@@ -159,6 +161,7 @@ struct ImportIndex
 	bool scanning;
 	usz scan_cursor;
 	usz known_cards;
+	int cached_revision;
 	ImportHit hover;
 	bool pending_edit;
 	String pending_path;
@@ -184,6 +187,7 @@ fn void ImportIndex.init(&self, Allocator allocator)
 	self.scanning = false;
 	self.scan_cursor = 0;
 	self.known_cards = 0;
+	self.cached_revision = -1;
 	self.generation = 0;
 	self.pending = 0;
 	self.received = 0;
@@ -1664,11 +1668,13 @@ fn void ImportIndex.free_files(&self)
 
 fn void ImportIndex.refresh_card_paths(&self, project::Project* project)
 {
+	if (self.cached_revision == project.cards_revision) return;
 	self.card_paths.clear();
 	for (sz i = 0; i < project.cards.len(); i++)
 	{
 		self.card_paths.set((String)project.cards[i].path, (int)i);
 	}
+	self.cached_revision = project.cards_revision;
 }
 
 fn void ImportIndex.resolve_file(&self, project::Project* project, CardImports[] all_files, CardImports* file)
@@ -2120,6 +2126,15 @@ fn void draw_bezier(RLVector2 p1, RLVector2 p2, float thick, RLColor color)
 	rl::draw_spline_segment_bezier_cubic(p1, c2, c3, p2, thick, color);
 }
 
+fn int dash_steps(RLVector2 p1, RLVector2 p2, float zoom)
+{
+	float dx         = p2[0] - p1[0];
+	float dy         = p2[1] - p1[1];
+	float screen_len = math::sqrt(dx * dx + dy * dy) * zoom;
+	int steps        = (int)(screen_len / 5.0f);
+	return (int)math::clamp((float)steps, 16.0f, 64.0f);
+}
+
 fn void draw_styled_bezier(RLVector2 p1, RLVector2 p2, float thick, float zoom, ArrowStyle style, RLColor color)
 {
 	if (style == ArrowStyle.SOLID)
@@ -2144,7 +2159,7 @@ fn void draw_styled_bezier(RLVector2 p1, RLVector2 p2, float thick, float zoom, 
 	}
 	float small = 1.0f / zoom;
 
-	int steps       = 128;
+	int steps       = dash_steps(p1, p2, zoom);
 	bool on         = true;
 	bool short_dash = false;
 	float remaining = dash;
@@ -2289,6 +2304,13 @@ fn void draw_one(
 	RLVector2 p2;
 	if (!arrow_geometry(index, project, card, ref, slot, &target, &p1, &c2, &c3, &p2)) return;
 
+	if (!hovered)
+	{
+		float dx = p2[0] - p1[0];
+		float dy = p2[1] - p1[1];
+		if (math::sqrt(dx * dx + dy * dy) * zoom < ARROW_MIN_DRAW_PX) return;
+	}
+
 	bool related = active < 0 || source_index == active || target == active;
 	float thick  = (hovered ? g_import_settings.hover_thickness : g_import_settings.line_thickness) / zoom;
 	if (hovered)
@@ -2314,7 +2336,7 @@ fn void draw_one(
 	float s  = ui::scale();
 	float ts = ui::text_scale();
 	rl::draw_circle_v(p2, 3.0f * s / zoom, line_color);
-	if (g_import_settings.labels)
+	if (g_import_settings.labels && (hovered || zoom >= ARROW_LABEL_MIN_ZOOM))
 	{
 		draw_label(font, ref.specifier, p2[0] + 8.0f * s / zoom, p2[1] - 6.0f * s / zoom, 14.0f * ts, label_color);
 	}

@@ -717,3 +717,11 @@ fn void test_fixture_resolution()
 		};
 	}
 }
+fn void test_dash_steps_scales_with_length()
+{
+	RLVector2 a = { 0.0f, 0.0f };
+	assert(dash_steps(a, { 10.0f, 0.0f }, 1.0f) == 16);
+	assert(dash_steps(a, { 10000.0f, 0.0f }, 1.0f) == 64);
+	assert(dash_steps(a, { 300.0f, 0.0f }, 1.0f) == 60);
+	assert(dash_steps(a, { 300.0f, 0.0f }, 0.1f) == 16);
+}
