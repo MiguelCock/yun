@@ -25,6 +25,8 @@ const int MAX_SCAN_WORKERS         = 8;
 const int RESULT_BATCH_BUDGET      = 32;
 const float ARROW_HIT_PX           = 6.0f;
 const float ARROW_MIN_DRAW_PX      = 6.0f;
+const float ARROW_MIN_DRAW_ZOOM    = 0.3f;
+const int ARROW_MAX_PER_FRAME      = 400;
 const float ARROW_LABEL_MIN_ZOOM   = 0.5f;
 const int BEZIER_HIT_STEPS         = 20;
 const double EDIT_DEBOUNCE_SECONDS = 0.15;
@@ -2445,16 +2447,18 @@ fn bool ImportIndex.hit_test(&self, project::Project* project, RLCamera2D camera
 fn void ImportIndex.draw(&self, project::Project* project, RLCamera2D camera, RLFont font)
 {
 	if (!g_import_settings.enabled) return;
+	if (camera.zoom < ARROW_MIN_DRAW_ZOOM) return;
 	self.refresh_card_paths(project);
 	int active   = project.focused;
 	Rect visible = project::expand_rect(project::visible_world_rect(camera), 64.0f);
 
+	int drawn = 0;
 	@pool()
 	{
 		List{int} draw_list;
 		draw_list.init(tmem);
 		project.visible_cards(visible, &draw_list);
-		for (sz c = 0; c < draw_list.len(); c++)
+		for (sz c = 0; c < draw_list.len() && drawn < ARROW_MAX_PER_FRAME; c++)
 		{
 			sz i           = (sz)draw_list[c];
 			FileCard* card = &project.cards[i];
@@ -2474,6 +2478,8 @@ fn void ImportIndex.draw(&self, project::Project* project, RLCamera2D camera, RL
 				}
 				bool hovered = self.hover.valid && self.hover.source == (int)i && self.hover.ref_index == r;
 				draw_one(self, project, (int)i, card, ref, camera, font, active, slot, hovered);
+				drawn++;
+				if (drawn >= ARROW_MAX_PER_FRAME) break;
 			}
 		}
 	};

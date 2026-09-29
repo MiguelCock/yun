@@ -1209,3 +1209,59 @@ fn void test_content_bounds_cache_invalidates()
 		p.destroy();
 	};
 }
+fn void test_open_skips_submodules()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_submodule_test");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+
+		char[] content = { 'x' };
+		Path? real     = dir.append(tmem, "real.c3");
+		if (catch excuse = real) return;
+		if (catch excuse = file::save(real, content)) return;
+
+		Path? nested = dir.append(tmem, "nested");
+		if (catch excuse = nested) return;
+		Path nested_dir = nested;
+		if (catch excuse = path::mkdir(nested_dir)) return;
+		Path? nested_git = nested_dir.append(tmem, ".git");
+		if (catch excuse = nested_git) return;
+		if (catch excuse = file::save(nested_git, content)) return;
+		Path? inner = nested_dir.append(tmem, "inner.c3");
+		if (catch excuse = inner) return;
+		if (catch excuse = file::save(inner, content)) return;
+
+		Path? vendor = dir.append(tmem, "vendorsub");
+		if (catch excuse = vendor) return;
+		Path vendor_dir = vendor;
+		if (catch excuse = path::mkdir(vendor_dir)) return;
+		Path? vlib = vendor_dir.append(tmem, "lib.c3");
+		if (catch excuse = vlib) return;
+		if (catch excuse = file::save(vlib, content)) return;
+
+		Path? mods = dir.append(tmem, ".gitmodules");
+		if (catch excuse = mods) return;
+		String modules_text = "[submodule \"vendorsub\"]\n\tpath = vendorsub\n\turl = x\n";
+		if (catch excuse = file::save(mods, modules_text.ptr[0:modules_text.len])) return;
+
+		Project p;
+		p.init(tmem);
+		assert(p.open((String)dir));
+		assert(p.cards.len() == 1);
+		assert(p.folders.len() == 0);
+
+		Project p2;
+		p2.init(tmem);
+		p2.skip_nested_repos = false;
+		assert(p2.open((String)dir));
+		assert(p2.cards.len() == 3);
+
+		(void)path::rmtree(dir);
+	};
+}

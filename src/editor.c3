@@ -615,6 +615,25 @@ fn void draw_text(
 	rl::end_scissor_mode();
 }
 
+fn usz advance_columns(String text, usz from, usz to, int tabs, usz col)
+{
+	usz pos = from;
+	while (pos < to)
+	{
+		char c = text[pos];
+		if (c == '\t')
+		{
+			col += (usz)tabs;
+		}
+		else if (((int)c & 0xC0) != 0x80)
+		{
+			col++;
+		}
+		pos++;
+	}
+	return col;
+}
+
 fn void draw_text_highlighted(
 	highlight::Highlighter* highlighter,
 	PieceTable* table,
@@ -669,19 +688,8 @@ fn void draw_text_highlighted(
 			{
 				usz start = run.start - line_start;
 				usz end   = run.end - line_start;
-				while (pos < start)
-				{
-					char c = text[pos];
-					if (c == '\t')
-					{
-						col += (usz)tabs;
-					}
-					else if (((int)c & 0xC0) != 0x80)
-					{
-						col++;
-					}
-					pos++;
-				}
+				col = advance_columns(text, pos, start, tabs, col);
+				pos = start;
 				RLVector2 at  = { area.x + (float)col * metrics.char_width - scroll_x, y };
 				RLColor color = highlight::role_color(run.role);
 				if (has_tab)
@@ -697,6 +705,7 @@ fn void draw_text_highlighted(
 					rl::draw_text_ex(font, (ZString)&raw[start], at, font_size, 0.0f, color);
 					raw[end] = saved;
 				}
+				col = advance_columns(text, pos, end, tabs, col);
 				pos = end;
 			}
 		}

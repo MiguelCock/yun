@@ -164,6 +164,13 @@ fn void FileCard.draw(&self, bool focused, float zoom)
 		theme::current()
 		.card_text);
 }
+
+fn void FileCard.draw_lod(&self, float zoom)
+{
+	Rect r = self.effective_rect();
+	rl::draw_rectangle_rec(r, theme::current().card_body);
+	rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_border);
+}
 fn void FileCard.handle_points(&self, RLVector2[8]* points)
 {
 	Rect r = self.rect;

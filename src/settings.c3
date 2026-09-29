@@ -26,6 +26,7 @@ enum SettingId : int
 	APP_UI_FONT_FAMILY,
 	APP_UI_FONT_SIZE,
 	APP_UI_SCALE,
+	APP_SKIP_SUBMODULES,
 	EDITOR_FONT_SIZE,
 	EDITOR_FONT_FAMILY,
 	EDITOR_LINE_HEIGHT,
@@ -154,6 +155,14 @@ const SettingSpec[] SETTINGS = {
 		.min = 0.5,
 		.max = 2.0,
 		.step = 0.05,
+	},
+	{
+		.section = "app",
+		.key = "skip_submodules",
+		.label = "Skip submodules",
+		.description = "Do not scan nested git repositories (submodules, vendored deps) as project files.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
 	},
 	{
 		.section = "editor",

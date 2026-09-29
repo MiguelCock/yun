@@ -2,4 +2,5 @@ build/
 out/
 .yun/
 lib/tree_sitter_*.c3l/linked-libs/
+lib/**/upstream/
 fixtures/
