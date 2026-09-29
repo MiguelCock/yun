@@ -4,7 +4,7 @@
   "dependency-search-paths":  [ "lib" ],
   "dependencies":  [ "raylib6", "tree_sitter" ],
   "authors":  [ "John Doe <john.doe@example.com>" ],
-  "version": "0.44.0",
+  "version": "0.86.0",
   "sources":  [ "src/**" ],
   "test-sources":  [ "test/**" ],
   "build-dir": "build",

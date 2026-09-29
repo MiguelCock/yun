@@ -152,8 +152,8 @@ Yun is **pre-1.0**: versions are `0.<MINOR>.0`, where `MINOR` is the cumulative 
 Releases are built and published by [`.github/workflows/release.yml`](.github/workflows/release.yml). **Merging a PR never publishes anything** — the workflow only builds. To cut a release, set the version to `0.<closed-issues>.0` and push a matching tag:
 
 ```sh
-git tag v0.44.0
-git push origin v0.44.0
+git tag v0.86.0
+git push origin v0.86.0
 ```
 
 Tagging builds `linux-x64`, `macos-aarch64`, and `windows-x64` and attaches the archives (with SHA-256 checksums) to the GitHub Release. The tag must equal `v<version from project.json>`, otherwise publishing is aborted.
