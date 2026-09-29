@@ -28,6 +28,7 @@ const double POLL_SECONDS           =  1.0;
 const float CLUSTER_PADDING         =  24.0f;
 const float CLUSTER_TITLE_HEIGHT    =  26.0f;
 const float CLUSTER_COLLAPSED_WIDTH =  240.0f;
+const float CLUSTER_GAP             =  16.0f;
 const float CARD_GAP                =  16.0f;
 const int CLUSTER_COLUMNS           =  3;
 const String[] IGNORED_NAMES        =  { ".git", ".yun", "build", "out", "node_modules" };
@@ -726,30 +727,213 @@ fn int Project.add_folder_from_disk(&self, String dir, RLVector2 world_pos)
 	return index;
 }
 
-fn void Project.layout(&self)
+fn void Project.place_cards_grid(&self, List{int}* cards, float base_x, float base_y, float cw, float ch, float cg)
 {
-	int count = (int)self.cards.len();
-	if (count == 0)
-	{
-		self.invalidate_bounds();
-		return;
-	}
-	float cw = ui::pxf(card::CARD_WIDTH);
-	float ch = ui::pxf(card::CARD_HEIGHT);
-	float cg = ui::pxf((float)CARD_GAP);
-	int cols = (int)math::ceil(math::sqrt((float)count));
-	if (cols < 1) cols = 1;
+	int count = (int)cards.len();
+	int cols  = count < CLUSTER_COLUMNS ? (count < 1 ? 1 : count) : CLUSTER_COLUMNS;
 	for (int k = 0; k < count; k++)
 	{
 		int col = k % cols;
 		int row = k / cols;
-		self.cards[k].rect = {
-			.x = (float)col * (cw + cg),
-			.y = (float)row * (ch + cg),
+		self.cards[(*cards)[k]].rect = {
+			.x = base_x + (float)col * (cw + cg),
+			.y = base_y + (float)row * (ch + cg),
 			.width = cw,
 			.height = ch,
 		};
 	}
+}
+
+fn RLVector2 Project.card_block_size(&self, int count, float cw, float ch, float cg)
+{
+	int cols = count < CLUSTER_COLUMNS ? (count < 1 ? 1 : count) : CLUSTER_COLUMNS;
+	int rows = count == 0 ? 0 : (count + cols - 1) / cols;
+	return { count == 0 ? 0.0f : (float)cols * (cw + cg) - cg, rows == 0 ? 0.0f : (float)rows * (ch + cg) - cg };
+}
+
+fn RLVector2 Project.flow_pack(&self, List{RLVector2}* items, float gap, float target_w, RLVector2[] positions)
+{
+	RLVector2 cursor = { 0.0f, 0.0f };
+	float row_h      = 0.0f;
+	float max_x      = 0.0f;
+	for (sz i = 0; i < items.len(); i++)
+	{
+		RLVector2 it = (*items)[i];
+		if (cursor[0] > 0.0f && cursor[0] + it[0] > target_w)
+		{
+			cursor[0] = 0.0f;
+			cursor[1] += row_h + gap;
+			row_h = 0.0f;
+		}
+		if ((usz)i < positions.len) positions[(usz)i] = cursor;
+		cursor[0] += it[0] + gap;
+		row_h = math::max(row_h, it[1]);
+		max_x = math::max(max_x, cursor[0] - gap);
+	}
+	return { max_x, cursor[1] + row_h };
+}
+
+fn RLVector2 Project.measure_folder(
+	&self,
+	int index,
+	List{int}[]* cards_by,
+	List{int}[]* children_by,
+	RLVector2[] sizes
+)
+{
+	float pad   = ui::pxf(CLUSTER_PADDING);
+	float title = ui::pxf(CLUSTER_TITLE_HEIGHT);
+	float cw    = ui::pxf(card::CARD_WIDTH);
+	float ch    = ui::pxf(card::CARD_HEIGHT);
+	float cg    = ui::pxf((float)CARD_GAP);
+	float gap   = ui::pxf(CLUSTER_GAP);
+
+	List{int} cards = (*cards_by)[(usz)(index + 1)];
+	List{int} kids  = (*children_by)[(usz)index];
+
+	RLVector2 size = { pad * 2.0f, title + pad * 2.0f };
+	if (cards.len() == 0 && kids.len() == 0)
+	{
+		sizes[index] = size;
+		return size;
+	}
+
+	List{RLVector2} items;
+	items.init(tmem);
+	if (cards.len() > 0) items.push(self.card_block_size((int)cards.len(), cw, ch, cg));
+	for (sz i = 0; i < kids.len(); i++)
+	{
+		RLVector2 cs = self.measure_folder(kids[i], cards_by, children_by, sizes);
+		sizes[kids[i]] = cs;
+		items.push(cs);
+	}
+
+	float area = 0.0f;
+	for (sz i = 0; i < items.len(); i++) area += items[i][0] * items[i][1];
+	RLVector2 content = self.flow_pack(&items, gap, math::sqrt(area), { });
+	items.free();
+	size = { content[0] + pad * 2.0f, content[1] + title + pad * 2.0f };
+	sizes[index] = size;
+	return size;
+}
+
+fn void Project.place_folder(
+	&self,
+	int index,
+	RLVector2 origin,
+	List{int}[]* cards_by,
+	List{int}[]* children_by,
+	RLVector2[] sizes
+)
+{
+	float pad   = ui::pxf(CLUSTER_PADDING);
+	float title = ui::pxf(CLUSTER_TITLE_HEIGHT);
+	float cw    = ui::pxf(card::CARD_WIDTH);
+	float ch    = ui::pxf(card::CARD_HEIGHT);
+	float cg    = ui::pxf((float)CARD_GAP);
+	float gap   = ui::pxf(CLUSTER_GAP);
+
+	float content_x = origin[0] + pad;
+	float content_y = origin[1] + title + pad;
+
+	List{int} cards = (*cards_by)[(usz)(index + 1)];
+	List{int} kids  = (*children_by)[(usz)index];
+
+	List{RLVector2} items;
+	items.init(tmem);
+	if (cards.len() > 0) items.push(self.card_block_size((int)cards.len(), cw, ch, cg));
+	for (sz i = 0; i < kids.len(); i++) items.push(sizes[kids[i]]);
+
+	RLVector2[] positions = alloc::new_array(tmem, RLVector2, (usz)(items.len() == 0 ? 1 : items.len()));
+	float area            = 0.0f;
+	for (sz i = 0; i < items.len(); i++) area += items[i][0] * items[i][1];
+	RLVector2 content = self.flow_pack(&items, gap, math::sqrt(area), positions);
+	items.free();
+
+	int base = cards.len() > 0 ? 1 : 0;
+	if (cards.len() > 0)
+	{
+		self.place_cards_grid(&cards, content_x + positions[0][0], content_y + positions[0][1], cw, ch, cg);
+	}
+	for (sz i = 0; i < kids.len(); i++)
+	{
+		RLVector2 p = positions[(usz)(base + (int)i)];
+		self.place_folder(kids[i], { content_x + p[0], content_y + p[1] }, cards_by, children_by, sizes);
+	}
+
+	self.folders[index].bounds = {
+		.x = origin[0],
+		.y = origin[1],
+		.width = content[0] + pad * 2.0f,
+		.height = content[1] + title + pad * 2.0f,
+	};
+	self.folders[index].bounds_valid = true;
+}
+
+fn void Project.layout(&self)
+{
+	int nf    = (int)self.folders.len();
+	float cw  = ui::pxf(card::CARD_WIDTH);
+	float ch  = ui::pxf(card::CARD_HEIGHT);
+	float cg  = ui::pxf((float)CARD_GAP);
+	float gap = ui::pxf(CLUSTER_GAP);
+
+	@pool()
+	{
+		List{int}[] cards_by = alloc::new_array(tmem, List{int}, (usz)(nf + 1));
+		for (usz i = 0; i < cards_by.len; i++) cards_by[i].init(tmem);
+		for (sz i = 0; i < self.cards.len(); i++) cards_by[(usz)(self.cards[i].folder + 1)].push((int)i);
+
+		List{int}[] children_by = { };
+		RLVector2[] sizes       = alloc::new_array(tmem, RLVector2, (usz)(nf > 0 ? nf : 1));
+		if (nf > 0)
+		{
+			children_by = alloc::new_array(tmem, List{int}, (usz)nf);
+			for (usz i = 0; i < children_by.len; i++) children_by[i].init(tmem);
+			for (sz i = 0; i < self.folders.len(); i++)
+			{
+				int p = self.folders[i].parent;
+				if (p >= 0 && p < nf) children_by[(usz)p].push((int)i);
+			}
+		}
+
+		List{int} root_cards = cards_by[0];
+		List{int} tops;
+		tops.init(tmem);
+		for (sz i = 0; i < self.folders.len(); i++)
+		{
+			if (self.folders[i].parent == ROOT_FOLDER) tops.push((int)i);
+		}
+
+		List{RLVector2} items;
+		items.init(tmem);
+		if (root_cards.len() > 0) items.push(self.card_block_size((int)root_cards.len(), cw, ch, cg));
+		for (sz i = 0; i < tops.len(); i++)
+		{
+			RLVector2 s = self.measure_folder(tops[i], &cards_by, &children_by, sizes);
+			sizes[tops[i]] = s;
+			items.push(s);
+		}
+
+		if (items.len() > 0)
+		{
+			RLVector2[] positions = alloc::new_array(tmem, RLVector2, (usz)items.len());
+			float area            = 0.0f;
+			for (sz i = 0; i < items.len(); i++) area += items[i][0] * items[i][1];
+			self.flow_pack(&items, gap, math::sqrt(area), positions);
+
+			int base = root_cards.len() > 0 ? 1 : 0;
+			if (root_cards.len() > 0)
+			{
+				self.place_cards_grid(&root_cards, positions[0][0], positions[0][1], cw, ch, cg);
+			}
+			for (sz i = 0; i < tops.len(); i++)
+			{
+				RLVector2 p = positions[(usz)(base + (int)i)];
+				self.place_folder(tops[i], p, &cards_by, &children_by, sizes);
+			}
+		}
+	};
 	self.invalidate_bounds();
 }
 
@@ -950,7 +1134,6 @@ fn bool Project.open(&self, String new_root)
 	if (ok)
 	{
 		self.layout();
-		for (sz i = 0; i < self.folders.len(); i++) self.folders[i].collapsed = true;
 		self.invalidate_bounds();
 	}
 	return ok;

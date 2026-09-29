@@ -369,24 +369,15 @@ fn void test_open_scans_directory()
 		assert(p.folder_by_path((String)src) >= 0);
 		assert(p.folder_by_path((String)subdir) >= 0);
 
-		// opened with every folder collapsed, and cached membership matches folder_for
+		// opened with every folder expanded, and cached membership matches folder_for
 		for (sz i = 0; i < p.folders.len(); i++)
 		{
-			assert(p.folders[i].collapsed);
-		}
-		for (sz i = 0; i < p.cards.len(); i++)
-		{
-			assert(p.cards[i].folder == p.folder_for((String)p.cards[i].path));
-		}
-
-		// expanding all folders makes every card visible again
-		for (sz i = 0; i < p.folders.len(); i++)
-		{
-			p.toggle_collapse((int)i);
+			assert(!p.folders[i].collapsed);
 		}
 		for (sz i = 0; i < p.cards.len(); i++)
 		{
 			assert(p.card_visible((int)i));
+			assert(p.cards[i].folder == p.folder_for((String)p.cards[i].path));
 		}
 
 		(void)path::rmtree(dir);
@@ -893,22 +884,34 @@ fn void test_card_in_direction()
 		assert(p.card_in_direction(3, Dir.LEFT) == 2);
 	};
 }
-fn void test_layout_pile_is_square()
+fn void test_layout_compact_square()
 {
 	@pool()
 	{
 		Project p;
 		p.init(tmem);
 		p.root = (Path)"/root".copy(tmem);
-		int folder = p.add_folder("/root/src", ROOT_FOLDER);
-		int count  = 16;
-		for (int k = 0; k < count; k++)
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int b = p.add_folder("/root/b", ROOT_FOLDER);
+		int d = p.add_folder("/root/a/d", a);
+		for (int k = 0; k < 6; k++)
 		{
-			String path = string::format(tmem, "/root/src/f%d.c3", k);
+			String path = string::format(tmem, "/root/b/f%d.c3", k);
 			p.cards.push(
 				{
 					.path = (Path)path.copy(tmem),
-					.folder = folder,
+					.folder = b,
+					.rect = { .width = 1.0f, .height = 1.0f },
+				}
+			);
+		}
+		for (int k = 0; k < 6; k++)
+		{
+			String path = string::format(tmem, "/root/a/d/g%d.c3", k);
+			p.cards.push(
+				{
+					.path = (Path)path.copy(tmem),
+					.folder = d,
 					.rect = { .width = 1.0f, .height = 1.0f },
 				}
 			);
@@ -916,12 +919,25 @@ fn void test_layout_pile_is_square()
 
 		p.layout();
 
-		// 16 cards -> ceil(sqrt(16)) = 4 columns
-		assert(p.cards[1].rect.y == p.cards[0].rect.y);
-		assert(p.cards[1].rect.x > p.cards[0].rect.x);
-		assert(p.cards[4].rect.x == p.cards[0].rect.x);
-		assert(p.cards[4].rect.y > p.cards[0].rect.y);
+		// the nested cluster is contained in its parent
+		Rect ra = p.cluster_bounds(a);
+		Rect rd = p.cluster_visual_bounds(d);
+		assert(rd.x >= ra.x - 0.01f && rd.y >= ra.y - 0.01f);
+		assert(rd.x + rd.width <= ra.x + ra.width + 0.01f);
+		assert(rd.y + rd.height <= ra.y + ra.height + 0.01f);
 
+		// top-level clusters do not overlap, and no two cards overlap
+		Rect rb = p.cluster_bounds(b);
+		assert(!rect_intersects(ra, rb));
+		for (sz i = 0; i < p.cards.len(); i++)
+		{
+			for (sz j = i + 1; j < p.cards.len(); j++)
+			{
+				assert(!rect_intersects(p.cards[i].rect, p.cards[j].rect));
+			}
+		}
+
+		// the overall footprint is roughly square
 		Rect out;
 		assert(p.content_bounds(&out));
 		float ratio = out.width / out.height;
