@@ -50,6 +50,7 @@ specifiers never resolve and stay external.
 | Julia | `include("x.jl")`, `using A` | relative for `include`; package/file for `using` |
 | Haskell | `import A.B` | module → `src/A/B.hs` (`hs-source-dirs` from the `.cabal`, plus `app/`, `test/`) |
 | Gleam | `import a/b` | `src/a/b.gleam`; `gleam/*` external |
+| SOL | `import a::b` | module-name match, else `src/a/b.sol`; `std::…` external |
 | Erlang | `-include("x.hrl")` | file dir, `include/` (`-include_lib` external) |
 | Elixir | `alias`/`import`/`require A.B` | module → snake_case path under `lib/` |
 | Dart | `import 'x.dart'`, `package:n/…` | relative; `package:` → `lib/…` using `pubspec.yaml` `name` |
@@ -65,6 +66,7 @@ specifiers never resolve and stay external.
 - `pubspec.yaml` (`name`) — Dart package name.
 - `mix.exs` (`app: :name`) — Elixir app (informational).
 - `*.cabal` (`hs-source-dirs`) — Haskell source roots.
+- `sol.toml` — SOL package marker.
 
 When a manifest is missing or unreadable, resolution falls back to the
 conventional roots above and relative paths.
@@ -78,7 +80,7 @@ first ancestor containing the language's manifest/marker wins (`go.mod`,
 fallback — `composer.json`, `pubspec.yaml`, `mix.exs`, `*.cabal`/`stack.yaml`,
 `*.csproj`/`*.sln`, `pom.xml`/`build.gradle*`/`src/main/java`,
 `build.gradle*`/`src/main/kotlin`, `build.sbt`/`src/main/scala`, `Gemfile`,
-`v.mod`, `gleam.toml`, `*.nimble`). With no marker, the opened project root is
+`v.mod`, `gleam.toml`, `sol.toml`, `*.nimble`). With no marker, the opened project root is
 used, and single-project repos behave exactly as before.
 
 Source roots are then searched **nearest-first** from the file's directory up to
