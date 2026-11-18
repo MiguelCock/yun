@@ -169,7 +169,7 @@ grammars are Apache-2.0.
 | tree_sitter_elixir | elixir-lang/tree-sitter-elixir | `v0.3.5` | Apache-2.0 |
 | tree_sitter_erlang | WhatsApp/tree-sitter-erlang | `0.20` | Apache-2.0 |
 | tree_sitter_gleam | gleam-lang/tree-sitter-gleam | `v1.1.0` | Apache-2.0 |
-| tree_sitter_sol | MiguelCock/sol | `37feb74` | MIT |
+| tree_sitter_sol | MiguelCock/sol (vendored) | `37feb74` | MIT |
 | tree_sitter_go | tree-sitter/tree-sitter-go | `v0.25.0` | MIT |
 | tree_sitter_haskell | tree-sitter-grammars/tree-sitter-haskell | `98aedbd` | MIT |
 | tree_sitter_html | tree-sitter/tree-sitter-html | `v0.23.2` | MIT |

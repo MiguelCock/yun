@@ -97,6 +97,3 @@
 [submodule "lib/tree_sitter_markdown_inline.c3l/upstream"]
 	path = lib/tree_sitter_markdown_inline.c3l/upstream
 	url = https://github.com/tree-sitter-grammars/tree-sitter-markdown
-[submodule "lib/tree_sitter_sol.c3l/upstream"]
-	path = lib/tree_sitter_sol.c3l/upstream
-	url = https://github.com/MiguelCock/sol.git
