@@ -2475,6 +2475,51 @@ fn void Project.finish_edit(&self, EditorMetrics metrics)
 	self.reveal_focused(metrics);
 }
 
+fn bool formatting_edit_after(lsp::FormattingEdit a, lsp::FormattingEdit b)
+{
+	if (a.start_line != b.start_line) return a.start_line > b.start_line;
+	return a.start_character > b.start_character;
+}
+
+fn bool Project.apply_formatting(&self, String path, List{lsp::FormattingEdit}* edits, double now)
+{
+	int index = self.find_card(path);
+	if (index < 0) return false;
+	FileCard* card = &self.cards[index];
+	editor::ensure_buffer(card, self.allocator);
+	if (!card.buffer || !card.history) return false;
+
+	for (sz i = 0; i < edits.len(); i++)
+	{
+		for (sz j = i + 1; j < edits.len(); j++)
+		{
+			if (formatting_edit_after(edits.get(j), edits.get(i)))
+			{
+				lsp::FormattingEdit tmp = edits.get(i);
+				edits.set(i, edits.get(j));
+				edits.set(j, tmp);
+			}
+		}
+	}
+
+	card.history.break_coalescing();
+	for (sz i = 0; i < edits.len(); i++)
+	{
+		lsp::FormattingEdit edit = edits.get(i);
+		usz start                = lsp::offset_from_position(card.buffer, edit.start_line, edit.start_character);
+		usz end                  = lsp::offset_from_position(card.buffer, edit.end_line, edit.end_character);
+		if (end < start) end = start;
+		card.cursor = card.history.replace(card.buffer, start, end - start, edit.new_text, now);
+	}
+	if (card.cursor > card.buffer.length()) card.cursor = card.buffer.length();
+	card.selection_anchor = card.cursor;
+	card.dirty = true;
+	if (card.highlight) card.highlight.mark_dirty();
+	if (card.view) markdown::view_mark_dirty(card.view);
+	lsp::lsp_did_change((String)card.path, card.buffer);
+	return true;
+}
+
 fn bool Project.editor_undo(&self)
 {
 	FileCard* card = self.focused_editable_card();
