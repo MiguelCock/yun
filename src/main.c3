@@ -2846,7 +2846,7 @@ fn int main(String[] args)
 			}
 			else
 			{
-				notifier.push("Rename needs all affected files open");
+				notifier.push("Could not apply rename; open all affected files");
 			}
 			lsp::lsp_workspace_edit_free(&rename_edit, mem);
 		}
