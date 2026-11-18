@@ -709,3 +709,325 @@ fn void test_split_command()
 		out.free();
 	};
 }
+fn void test_extended_capabilities_parse()
+{
+	@pool()
+	{
+		String json     = "{\"capabilities\":{\"documentSymbolProvider\":true,\"workspaceSymbolProvider\":true,\"referencesProvider\":true,\"renameProvider\":{\"prepareProvider\":true},\"codeActionProvider\":true,\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]},\"semanticTokensProvider\":{\"legend\":{\"tokenTypes\":[\"keyword\",\"type\",\"function\"]}}}}";
+		Object*? parsed = json::parse(tmem, json);
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			LspCapabilities caps;
+			lsp_capabilities_init(&caps, tmem);
+			lsp_parse_capabilities(tmem, parsed, &caps);
+			assert(caps.document_symbol);
+			assert(caps.workspace_symbol);
+			assert(caps.references);
+			assert(caps.rename);
+			assert(caps.prepare_rename);
+			assert(caps.code_action);
+			assert(caps.signature_help);
+			assert(caps.semantic_tokens);
+			assert(caps.semantic_token_types.len() == 3);
+			assert(caps.semantic_token_types[1].compare_to("type") == 0);
+			lsp_capabilities_free(&caps, tmem);
+		}
+	};
+}
+
+fn void test_workspace_edit_parse()
+{
+	@pool()
+	{
+		String json     = "{\"changes\":{\"file:///a%20b.sol\":[{\"range\":{\"start\":{\"line\":1,\"character\":2},\"end\":{\"line\":1,\"character\":5}},\"newText\":\"next\"}]},\"documentChanges\":[{\"textDocument\":{\"uri\":\"file:///c.sol\"},\"edits\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":1}},\"newText\":\"x\"}]}]}";
+		Object*? parsed = json::parse(tmem, json);
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			WorkspaceEdit edit = { };
+			assert(lsp_parse_workspace_edit(tmem, parsed, &edit));
+			assert(edit.files.len() == 2);
+			assert(edit.files[0].path.compare_to("/a b.sol") == 0);
+			assert(edit.files[0].edits.len() == 1);
+			assert(edit.files[0].edits[0].new_text.compare_to("next") == 0);
+			assert(edit.files[1].path.compare_to("/c.sol") == 0);
+			lsp_workspace_edit_free(&edit, tmem);
+		}
+	};
+}
+
+fn void test_code_actions_parse()
+{
+	@pool()
+	{
+		String json     = "[{\"title\":\"Fix alias\",\"edit\":{\"changes\":{\"file:///a.sol\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":2}},\"newText\":\"x :=\"}]}}},{\"title\":\"No edit\"}]";
+		Object*? parsed = json::parse(tmem, json);
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			List{CodeActionItem} actions;
+			actions.init(tmem);
+			lsp_parse_code_actions(tmem, parsed, &actions);
+			assert(actions.len() == 1);
+			assert(actions[0].title.compare_to("Fix alias") == 0);
+			assert(actions[0].edit.files.len() == 1);
+			lsp_code_action_free(&actions[0], tmem);
+			actions.free();
+		}
+	};
+}
+
+fn void test_document_and_workspace_symbols_parse()
+{
+	@pool()
+	{
+		String document = "[{\"name\":\"main\",\"detail\":\"() -> ()\",\"kind\":12,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":2,\"character\":1}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":5},\"end\":{\"line\":0,\"character\":9}}}]";
+		Object*? parsed = json::parse(tmem, document);
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			List{LspSymbol} symbols;
+			symbols.init(tmem);
+			lsp_parse_document_symbols(tmem, parsed, "/a.sol", &symbols);
+			assert(symbols.len() == 1);
+			assert(symbols[0].name.compare_to("main") == 0);
+			assert(symbols[0].path.compare_to("/a.sol") == 0);
+			assert(symbols[0].line == 0 && symbols[0].character == 5);
+			lsp_symbols_free(&symbols, tmem);
+		}
+
+		String workspace          = "[{\"name\":\"add\",\"kind\":12,\"location\":{\"uri\":\"file:///b.sol\",\"range\":{\"start\":{\"line\":3,\"character\":4},\"end\":{\"line\":3,\"character\":7}}}}]";
+		Object*? workspace_parsed = json::parse(tmem, workspace);
+		if (catch workspace_excuse = workspace_parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			List{LspSymbol} symbols;
+			symbols.init(tmem);
+			lsp_parse_workspace_symbols(tmem, workspace_parsed, &symbols);
+			assert(symbols.len() == 1);
+			assert(symbols[0].path.compare_to("/b.sol") == 0);
+			assert(symbols[0].line == 3 && symbols[0].character == 4);
+			lsp_symbols_free(&symbols, tmem);
+		}
+	};
+}
+
+fn void test_rename_and_signature_parsing()
+{
+	@pool()
+	{
+		Object*? rename = json::parse(
+			tmem,
+			"{\"range\":{\"start\":{\"line\":0,\"character\":1},\"end\":{\"line\":0,\"character\":4}},\"placeholder\":\"old\"}"
+		);
+		if (catch excuse = rename)
+		{
+			assert(false);
+		}
+		else
+		{
+			String placeholder = "";
+			assert(lsp_parse_prepare_rename(tmem, rename, &placeholder));
+			assert(placeholder.compare_to("old") == 0);
+			placeholder.free(tmem);
+		}
+
+		Object*? signature = json::parse(
+			tmem,
+			"{\"signatures\":[{\"label\":\"fn (a: i32, b: i32) -> i32\"},{\"label\":\"other\"}],\"activeSignature\":0,\"activeParameter\":1}"
+		);
+		if (catch signature_excuse = signature)
+		{
+			assert(false);
+		}
+		else
+		{
+			String text = "";
+			lsp_parse_signature_help(tmem, signature, &text);
+			assert(text.compare_to("fn (a: i32, b: i32) -> i32") == 0);
+			text.free(tmem);
+		}
+	};
+}
+
+fn void test_semantic_tokens_parse()
+{
+	@pool()
+	{
+		Object*? parsed = json::parse(tmem, "{\"data\":[0,0,7,0,0,0,8,4,2,0,1,0,6,3,0]}");
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			List{SemanticToken} tokens;
+			tokens.init(tmem);
+			lsp_parse_semantic_tokens(tmem, parsed, &tokens);
+			assert(tokens.len() == 3);
+			assert(tokens[0].line == 0 && tokens[0].character == 0 && tokens[0].length == 7);
+			assert(tokens[1].line == 0 && tokens[1].character == 8 && tokens[1].token_type == 2);
+			assert(tokens[2].line == 1 && tokens[2].character == 0 && tokens[2].token_type == 3);
+			tokens.free();
+		}
+	};
+}
+fn void test_response_state_updates()
+{
+	@pool()
+	{
+		Lsp lsp;
+		lsp.init(tmem, null);
+		LspClient* client = fake::fake_client(tmem);
+		lsp.clients.push(client);
+
+		fake::fake_response(
+			client,
+			1,
+			"textDocument/references",
+			"{\"result\":[{\"uri\":\"file:///a.sol\",\"range\":{\"start\":{\"line\":1,\"character\":2},\"end\":{\"line\":1,\"character\":5}}}]}"
+		);
+		lsp.references_request_id = 1;
+		lsp.update(0.0);
+		List{DefinitionTarget} refs;
+		refs.init(tmem);
+		assert(lsp.take_references(&refs));
+		assert(refs.len() == 1);
+		assert(refs[0].path.compare_to("/a.sol") == 0);
+		fake::clear_targets(&refs);
+		refs.free();
+
+		fake::fake_response(
+			client,
+			2,
+			"textDocument/prepareRename",
+			"{\"result\":{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":3}},\"placeholder\":\"old\"}}"
+		);
+		lsp.prepare_rename_request_id = 2;
+		lsp.update(0.0);
+		String placeholder = "";
+		assert(lsp.take_prepare_rename(&placeholder));
+		assert(placeholder.compare_to("old") == 0);
+		placeholder.free(tmem);
+
+		fake::fake_response(
+			client,
+			3,
+			"textDocument/rename",
+			"{\"result\":{\"changes\":{\"file:///a.sol\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":3}},\"newText\":\"new\"}]}}}"
+		);
+		lsp.rename_request_id = 3;
+		lsp.update(0.0);
+		WorkspaceEdit rename_edit = { };
+		assert(lsp.take_rename(&rename_edit));
+		assert(rename_edit.files.len() == 1);
+		assert(rename_edit.files[0].edits[0].new_text.compare_to("new") == 0);
+		lsp_workspace_edit_free(&rename_edit, tmem);
+
+		fake::fake_response(
+			client,
+			4,
+			"textDocument/codeAction",
+			"{\"result\":[{\"title\":\"Fix\",\"edit\":{\"changes\":{\"file:///a.sol\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":1}},\"newText\":\"x\"}]}}}]}"
+		);
+		lsp.code_action_request_id = 4;
+		lsp.update(0.0);
+		List{CodeActionItem} actions;
+		actions.init(tmem);
+		assert(lsp.take_code_actions(&actions));
+		assert(actions.len() == 1);
+		assert(actions[0].title.compare_to("Fix") == 0);
+		lsp_code_action_free(&actions[0], tmem);
+		actions.free();
+
+		fake::fake_response(
+			client,
+			5,
+			"textDocument/signatureHelp",
+			"{\"result\":{\"signatures\":[{\"label\":\"f(a: i32)\"}],\"activeSignature\":0,\"activeParameter\":0}}"
+		);
+		lsp.signature_path = "/a.sol".copy(tmem);
+		lsp.signature_offset = 7;
+		lsp.signature_request_id = 5;
+		lsp.update(0.0);
+		assert(lsp.signature_valid("/a.sol", 7));
+		assert(lsp.signature_message().compare_to("f(a: i32)") == 0);
+
+		lsp.document_symbol_path = "/a.sol".copy(tmem);
+		fake::fake_response(
+			client,
+			6,
+			"textDocument/documentSymbol",
+			"{\"result\":[{\"name\":\"main\",\"kind\":12,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":1,\"character\":1}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":5},\"end\":{\"line\":0,\"character\":9}}}]}"
+		);
+		lsp.document_symbol_request_id = 6;
+		lsp.update(0.0);
+		String symbol_path = "";
+		List{LspSymbol} symbols;
+		symbols.init(tmem);
+		assert(lsp.take_document_symbols(&symbol_path, &symbols));
+		assert(symbol_path.compare_to("/a.sol") == 0);
+		assert(symbols.len() == 1);
+		assert(symbols[0].name.compare_to("main") == 0);
+		lsp_symbols_free(&symbols, tmem);
+		symbol_path.free(tmem);
+
+		fake::fake_response(
+			client,
+			7,
+			"workspace/symbol",
+			"{\"result\":[{\"name\":\"add\",\"kind\":12,\"location\":{\"uri\":\"file:///b.sol\",\"range\":{\"start\":{\"line\":2,\"character\":3},\"end\":{\"line\":2,\"character\":6}}}}]}"
+		);
+		lsp.workspace_symbol_request_id = 7;
+		lsp.update(0.0);
+		List{LspSymbol} workspace_symbols;
+		workspace_symbols.init(tmem);
+		assert(lsp.take_workspace_symbols(&workspace_symbols));
+		assert(workspace_symbols.len() == 1);
+		assert(workspace_symbols[0].path.compare_to("/b.sol") == 0);
+		lsp_symbols_free(&workspace_symbols, tmem);
+
+		LspDoc doc;
+		doc.path = "/a.sol".copy(tmem);
+		doc.uri = "file:///a.sol".copy(tmem);
+		doc.language = "c".copy(tmem);
+		doc.text = "";
+		doc.version = 1;
+		doc.opened = true;
+		doc.symbols_requested = true;
+		lsp.docs.push(doc);
+		lsp.semantic_path = "/a.sol".copy(tmem);
+		lsp.semantic_request_version = 1;
+		fake::fake_response(client, 8, "textDocument/semanticTokens/full", "{\"result\":{\"data\":[0,0,4,0,0]}}");
+		lsp.semantic_request_id = 8;
+		lsp.update(0.0);
+		String semantic_path = "";
+		List{SemanticToken} tokens;
+		tokens.init(tmem);
+		assert(lsp.take_semantic_tokens(&semantic_path, &tokens));
+		assert(semantic_path.compare_to("/a.sol") == 0);
+		assert(tokens.len() == 1 && tokens[0].length == 4);
+		tokens.free();
+		semantic_path.free(tmem);
+
+		client.status = LspStatus.STOPPED;
+		lsp.shutdown_all();
+		lsp.destroy();
+	};
+}

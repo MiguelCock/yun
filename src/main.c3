@@ -428,6 +428,7 @@ struct App
 	int context_offset;
 	int pending_rename_card;
 	int pending_delete_card;
+	usz* pending_rename_offset;
 	int* pending_kind;
 	int* pending_parent;
 	RLVector2* pending_world;
@@ -731,6 +732,52 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.REFERENCES:
+
+			{
+				FileCard* card = project.focused_card();
+				if (!card || !card.buffer)
+				{
+					app.notifier.push("No file to search");
+					return;
+				}
+				if (!lsp::lsp_request_references((String)card.path, card.buffer, card.cursor))
+				{
+					app.notifier.push("No references provider");
+				}
+				return;
+			}
+		case commands::CommandId.RENAME_SYMBOL:
+
+			{
+				FileCard* card = project.focused_card();
+				if (!card || !card.buffer)
+				{
+					app.notifier.push("No file to rename");
+					return;
+				}
+				*app.pending_rename_offset = card.cursor;
+				if (!lsp::lsp_request_prepare_rename((String)card.path, card.buffer, card.cursor))
+				{
+					app.notifier.push("No rename provider");
+				}
+				return;
+			}
+		case commands::CommandId.CODE_ACTIONS:
+
+			{
+				FileCard* card = project.focused_card();
+				if (!card || !card.buffer)
+				{
+					app.notifier.push("No file for code actions");
+					return;
+				}
+				if (!lsp::lsp_request_code_actions((String)card.path, card.buffer, card.cursor))
+				{
+					app.notifier.push("No code action provider");
+				}
+				return;
+			}
 		case commands::CommandId.SELECT_THEME:
 
 			{
@@ -773,6 +820,7 @@ fn void run_command(commands::CommandId id, App* app)
 					return;
 				}
 				close_overlays(app);
+				(void)lsp::lsp_request_workspace_symbols("");
 				app.symbols.show();
 				while (rl::get_char_pressed() != 0)
 				{
@@ -1237,6 +1285,39 @@ fn void clear_pending_definitions(List{lsp::DefinitionTarget}* list)
 	list.free();
 }
 
+fn void clear_actions(List{lsp::CodeActionItem}* list)
+{
+	for (sz i = 0; i < list.len(); i++)
+	{
+		lsp::lsp_code_action_free(&(*list)[i], mem);
+	}
+	list.clear();
+}
+
+fn void clear_pending_actions(List{lsp::CodeActionItem}* list)
+{
+	clear_actions(list);
+	list.free();
+}
+
+fn bool draw_signature_help(
+	project::Project* project,
+	canvas::Canvas* canvas,
+	editor::EditorMetrics metrics,
+	RLFont font
+)
+{
+	FileCard* card = project.focused_card();
+	if (!card || !card.buffer) return false;
+	if (!lsp::lsp_signature_valid((String)card.path, card.cursor)) return false;
+	Rect text        = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+	Rect caret       = editor::caret_rect(card.buffer, text, card.scroll, card.scroll_x, metrics, card.cursor);
+	Rect screen      = editor::world_rect_to_screen(caret, canvas.camera);
+	RLVector2 anchor = { screen.x, screen.y + screen.height + 4.0f };
+	hover::draw_hover(lsp::lsp_signature_message(), anchor, font);
+	return true;
+}
+
 struct HoverInfo
 {
 	bool over;
@@ -1539,14 +1620,18 @@ fn int main(String[] args)
 	fonts.init(mem);
 	settings::set_font_options(fonts.labels());
 
-	int pending_kind        = 0;
-	int pending_parent      = project::ROOT_FOLDER;
-	RLVector2 pending_world = { 0.0f, 0.0f };
+	int pending_kind          = 0;
+	int pending_parent        = project::ROOT_FOLDER;
+	usz pending_rename_offset = 0;
+	RLVector2 pending_world   = { 0.0f, 0.0f };
 
 	menu::Menu definition_menu;
 	definition_menu.init(mem);
 	List{lsp::DefinitionTarget} pending_definitions;
 	pending_definitions.init(mem);
+	List{lsp::CodeActionItem} pending_actions;
+	pending_actions.init(mem);
+	int definition_menu_kind = 0;
 
 	// Teardown: registered here so LIFO order is exactly the reverse of this list.
 	defer rl::unload_font(editor_font);
@@ -1562,6 +1647,7 @@ fn int main(String[] args)
 	defer import_index.destroy();
 	defer lsp.destroy();
 	defer clear_pending_definitions(&pending_definitions);
+	defer clear_pending_actions(&pending_actions);
 	defer notifier.destroy();
 	defer context_menu.destroy();
 	defer reload_menu.destroy();
@@ -1723,6 +1809,7 @@ fn int main(String[] args)
 		.context_offset = -1,
 		.pending_rename_card = -1,
 		.pending_delete_card = -1,
+		.pending_rename_offset = &pending_rename_offset,
 		.pending_kind = &pending_kind,
 		.pending_parent = &pending_parent,
 		.pending_world = &pending_world,
@@ -1891,14 +1978,34 @@ fn int main(String[] args)
 		else if (definition_menu.open)
 		{
 			int chosen = definition_menu.update(&keymap);
-			if (chosen >= 0 && chosen < (int)pending_definitions.len())
+			if (chosen >= 0)
 			{
-				lsp::DefinitionTarget target = pending_definitions[(sz)chosen];
-				navigate_to_location(&project, &canvas, metrics, target.path, target.line, target.character);
+				if (definition_menu_kind == 1)
+				{
+					if (chosen < (int)pending_actions.len())
+					{
+						lsp::CodeActionItem* action = &pending_actions[(sz)chosen];
+						if (project.apply_workspace_edit(&action.edit, rl::get_time()))
+						{
+							notifier.push("Applied code action");
+						}
+						else
+						{
+							notifier.push("Code action needs all affected files open");
+						}
+					}
+				}
+				else if (chosen < (int)pending_definitions.len())
+				{
+					lsp::DefinitionTarget target = pending_definitions[(sz)chosen];
+					navigate_to_location(&project, &canvas, metrics, target.path, target.line, target.character);
+				}
 			}
 			if (!definition_menu.open)
 			{
 				clear_definitions(&pending_definitions);
+				clear_actions(&pending_actions);
+				definition_menu_kind = 0;
 			}
 			if (!definition_menu.consumed) poll_global(&keymap, &app);
 		}
@@ -1910,6 +2017,34 @@ fn int main(String[] args)
 				if (!project::is_valid_name(name))
 				{
 					notifier.push("Invalid name");
+				}
+				else if (pending_kind == 3)
+				{
+					if (app.pending_rename_card < 0 || app.pending_rename_card >= (int)project.cards.len())
+					{
+						notifier.push("No file to rename");
+					}
+					else
+					{
+						FileCard* rename_card = &project.cards[app.pending_rename_card];
+						if (!rename_card.buffer)
+						{
+							notifier.push("No file to rename");
+						}
+						else if (!lsp::lsp_request_rename(
+							(String)rename_card.path,
+							rename_card.buffer,
+							*app.pending_rename_offset,
+							name
+						))
+						{
+							notifier.push("No rename provider");
+						}
+						else
+						{
+							name_prompt.close();
+						}
+					}
 				}
 				else if (pending_kind == 2)
 				{
@@ -2123,6 +2258,50 @@ fn int main(String[] args)
 										cc.buffer,
 										cc.cursor
 									)) notifier.push("No definition provider");
+								}
+							}
+							break;
+						}
+					case context::ContextAction.REFERENCES:
+
+						{
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len()
+								&& app.context_offset >= 0)
+							{
+								int index    = project.focus(app.context_card);
+								FileCard* cc = &project.cards[index];
+								editor::ensure_buffer(cc, project.allocator);
+								if (cc.buffer)
+								{
+									cc.cursor = (usz)app.context_offset;
+									cc.selection_anchor = cc.cursor;
+									if (!lsp::lsp_request_references(
+										(String)cc.path,
+										cc.buffer,
+										cc.cursor
+									)) notifier.push("No references provider");
+								}
+							}
+							break;
+						}
+					case context::ContextAction.CODE_ACTIONS:
+
+						{
+							if (app.context_card >= 0 && app.context_card < (int)project.cards.len()
+								&& app.context_offset >= 0)
+							{
+								int index    = project.focus(app.context_card);
+								FileCard* cc = &project.cards[index];
+								editor::ensure_buffer(cc, project.allocator);
+								if (cc.buffer)
+								{
+									cc.cursor = (usz)app.context_offset;
+									cc.selection_anchor = cc.cursor;
+									if (!lsp::lsp_request_code_actions(
+										(String)cc.path,
+										cc.buffer,
+										cc.cursor
+									)) notifier.push("No code action provider");
 								}
 							}
 							break;
@@ -2569,8 +2748,9 @@ fn int main(String[] args)
 			}
 			else
 			{
-				pending_definitions.free();
+				clear_definitions(&pending_definitions);
 				pending_definitions = definitions;
+				definition_menu_kind = 0;
 				@pool()
 				{
 					String[32] labels;
@@ -2594,6 +2774,172 @@ fn int main(String[] args)
 				};
 			}
 		}
+
+		List{lsp::DefinitionTarget} references = { };
+		if (lsp::lsp_take_references(&references))
+		{
+			if (references.len() == 0)
+			{
+				notifier.push("No references found");
+				references.free();
+			}
+			else if (references.len() == 1)
+			{
+				lsp::DefinitionTarget target = references[0];
+				navigate_to_location(&project, &canvas, metrics, target.path, target.line, target.character);
+				clear_definitions(&references);
+				references.free();
+			}
+			else
+			{
+				clear_definitions(&pending_definitions);
+				pending_definitions = references;
+				definition_menu_kind = 0;
+				@pool()
+				{
+					String[32] labels;
+					bool[32] enabled;
+					int shown = (int)pending_definitions.len();
+					if (shown > 32) shown = 32;
+					for (int i = 0; i < shown; i++)
+					{
+						lsp::DefinitionTarget target = pending_definitions[(sz)i];
+						String base                  = rl::get_file_name((ZString)target.path.ptr).str_view();
+						labels[i] = string::format(
+							tmem,
+							"%s:%d:%d",
+							base,
+							(long)(target.line + 1),
+							(long)(target.character + 1)
+						);
+						enabled[i] = true;
+					}
+					definition_menu.open_with(rl::get_mouse_position(), labels[0:shown], enabled[0:shown]);
+				};
+			}
+		}
+
+		String rename_placeholder = "";
+		if (lsp::lsp_take_prepare_rename(&rename_placeholder))
+		{
+			FileCard* rename_card = project.focused_card();
+			if (!rename_card || !rename_card.buffer)
+			{
+				notifier.push("No file to rename");
+			}
+			else
+			{
+				*app.pending_kind = 3;
+				app.pending_rename_card = project.focused;
+				*app.pending_rename_offset = rename_card.cursor;
+				name_prompt.open_with("Rename Symbol", rename_placeholder);
+			}
+			if (rename_placeholder.len) rename_placeholder.free(mem);
+		}
+
+		lsp::WorkspaceEdit rename_edit = { };
+		if (lsp::lsp_take_rename(&rename_edit))
+		{
+			if (project.apply_workspace_edit(&rename_edit, rl::get_time()))
+			{
+				notifier.push("Renamed");
+			}
+			else
+			{
+				notifier.push("Rename needs all affected files open");
+			}
+			lsp::lsp_workspace_edit_free(&rename_edit, mem);
+		}
+
+		List{lsp::CodeActionItem} code_actions = { };
+		if (lsp::lsp_take_code_actions(&code_actions))
+		{
+			if (code_actions.len() == 0)
+			{
+				notifier.push("No code actions");
+				code_actions.free();
+			}
+			else
+			{
+				clear_actions(&pending_actions);
+				pending_actions = code_actions;
+				definition_menu_kind = 1;
+				@pool()
+				{
+					String[32] labels;
+					bool[32] enabled;
+					int shown = (int)pending_actions.len();
+					if (shown > 32) shown = 32;
+					for (int i = 0; i < shown; i++)
+					{
+						labels[i] = pending_actions[(sz)i].title;
+						enabled[i] = true;
+					}
+					definition_menu.open_with(rl::get_mouse_position(), labels[0:shown], enabled[0:shown]);
+				};
+			}
+		}
+
+		String document_path                  = "";
+		List{lsp::LspSymbol} document_symbols = { };
+		if (lsp::lsp_take_document_symbols(&document_path, &document_symbols))
+		{
+			symbols.merge_lsp(&document_symbols);
+			lsp::lsp_symbols_free(&document_symbols, mem);
+			if (document_path.len) document_path.free(mem);
+		}
+
+		List{lsp::LspSymbol} workspace_symbols = { };
+		if (lsp::lsp_take_workspace_symbols(&workspace_symbols))
+		{
+			symbols.merge_lsp(&workspace_symbols);
+			lsp::lsp_symbols_free(&workspace_symbols, mem);
+		}
+
+		String semantic_path                     = "";
+		List{lsp::SemanticToken} semantic_tokens = { };
+		if (lsp::lsp_take_semantic_tokens(&semantic_path, &semantic_tokens))
+		{
+			int semantic_index = project.find_card(semantic_path);
+			if (semantic_index >= 0)
+			{
+				FileCard* semantic_card = &project.cards[semantic_index];
+				if (semantic_card.highlight && semantic_card.buffer)
+				{
+					List{highlight::Span} spans;
+					spans.init(project.allocator);
+					for (sz i = 0; i < semantic_tokens.len(); i++)
+					{
+						lsp::SemanticToken token   = semantic_tokens.get(i);
+						String token_type          = lsp::lsp_semantic_token_type(semantic_path, token.token_type);
+						highlight::SyntaxRole role = highlight::role_for_semantic_token(token_type);
+						if (role == highlight::SyntaxRole.NONE) continue;
+						usz start = lsp::offset_from_position(semantic_card.buffer, token.line, token.character);
+						usz end = lsp::offset_from_position(
+							semantic_card.buffer,
+							token.line,
+							token.character + token.length
+						);
+						if (end > start)
+						{
+							spans.push({ .start = (uint)start, .end = (uint)end, .role = role });
+						}
+					}
+					semantic_card.highlight.set_semantic_spans(&spans);
+				}
+			}
+			semantic_tokens.free();
+			if (semantic_path.len) semantic_path.free(mem);
+		}
+
+		FileCard* lsp_card = project.focused_card();
+		if (lsp_card && lsp_card.buffer)
+		{
+			lsp::lsp_update_document_symbols((String)lsp_card.path);
+			lsp::lsp_update_semantic_tokens(rl::get_time(), (String)lsp_card.path);
+			lsp::lsp_update_signature(rl::get_time(), (String)lsp_card.path, lsp_card.buffer, lsp_card.cursor);
+		}
+
 		notifier.update(dt);
 
 		rl::@drawing()
@@ -2663,6 +3009,9 @@ fn int main(String[] args)
 				else if (hover.diagnostic.len > 0)
 				{
 					problems::draw_tooltip(hover.diagnostic, hover.anchor, font);
+				}
+				else if (draw_signature_help(&project, &canvas, metrics, font))
+				{
 				}
 				else if (hover.over && lsp.hover_is_valid())
 				{

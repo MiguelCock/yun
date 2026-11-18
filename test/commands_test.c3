@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 90);
+	assert(command_count() == 93);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -21,6 +21,18 @@ fn void test_command_defs()
 	CommandDef format = command_def(CommandId.FORMAT_DOCUMENT);
 	assert(format.label.compare_to("Format Document") == 0);
 	assert(format.shortcut.compare_to("Ctrl+Alt+F") == 0);
+
+	CommandDef references = command_def(CommandId.REFERENCES);
+	assert(references.label.compare_to("Find References") == 0);
+	assert(references.shortcut.compare_to("Shift+F12") == 0);
+
+	CommandDef rename = command_def(CommandId.RENAME_SYMBOL);
+	assert(rename.label.compare_to("Rename Symbol") == 0);
+	assert(rename.shortcut.compare_to("F2") == 0);
+
+	CommandDef code_actions = command_def(CommandId.CODE_ACTIONS);
+	assert(code_actions.label.compare_to("Code Actions") == 0);
+	assert(code_actions.shortcut.compare_to("Ctrl+.") == 0);
 
 	CommandDef save = command_def(CommandId.SAVE);
 	assert(save.label.compare_to("Save") == 0);
@@ -125,6 +137,9 @@ fn void test_command_from_name()
 	assert(command_from_name("select_theme") == (int)CommandId.SELECT_THEME);
 	assert(command_from_name("search_project") == (int)CommandId.SEARCH_PROJECT);
 	assert(command_from_name("symbols_project") == (int)CommandId.SYMBOLS_PROJECT);
+	assert(command_from_name("references") == (int)CommandId.REFERENCES);
+	assert(command_from_name("rename_symbol") == (int)CommandId.RENAME_SYMBOL);
+	assert(command_from_name("code_actions") == (int)CommandId.CODE_ACTIONS);
 	assert(command_from_name("toggle_settings") == (int)CommandId.TOGGLE_SETTINGS);
 	assert(command_from_name("toggle_preview") == (int)CommandId.TOGGLE_PREVIEW);
 	assert(command_from_name("nope") == -1);

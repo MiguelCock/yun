@@ -19,6 +19,7 @@ struct LspDoc
 	String text;
 	long version;
 	bool opened;
+	bool symbols_requested;
 }
 
 struct FileDiagnostics
@@ -61,6 +62,39 @@ struct Lsp
 	String formatting_path;
 	List{FormattingEdit} formatting_edits;
 	bool formatting_ready;
+	int references_request_id;
+	List{DefinitionTarget} reference_results;
+	bool references_ready;
+	int prepare_rename_request_id;
+	bool prepare_rename_ready;
+	String rename_placeholder;
+	int rename_request_id;
+	WorkspaceEdit rename_edit;
+	bool rename_ready;
+	int code_action_request_id;
+	List{CodeActionItem} code_actions;
+	bool code_actions_ready;
+	int signature_request_id;
+	String signature_text;
+	String signature_path;
+	usz signature_offset;
+	double signature_send_at;
+	bool signature_ready;
+	int document_symbol_request_id;
+	String document_symbol_path;
+	List{LspSymbol} document_symbol_list;
+	bool document_symbols_ready;
+	int workspace_symbol_request_id;
+	List{LspSymbol} workspace_symbol_list;
+	bool workspace_symbols_ready;
+	int semantic_request_id;
+	String semantic_path;
+	long semantic_request_version;
+	long semantic_requested_version;
+	long semantic_change_version;
+	double semantic_send_at;
+	List{SemanticToken} semantic_tokens;
+	bool semantic_ready;
 }
 
 Lsp* active_lsp;
@@ -96,6 +130,39 @@ fn void Lsp.init(&self, Allocator allocator, config::Config* config)
 	self.formatting_path = "";
 	self.formatting_edits.init(allocator);
 	self.formatting_ready = false;
+	self.references_request_id = -1;
+	self.reference_results.init(allocator);
+	self.references_ready = false;
+	self.prepare_rename_request_id = -1;
+	self.prepare_rename_ready = false;
+	self.rename_placeholder = "";
+	self.rename_request_id = -1;
+	lsp_workspace_edit_init(&self.rename_edit, allocator);
+	self.rename_ready = false;
+	self.code_action_request_id = -1;
+	self.code_actions.init(allocator);
+	self.code_actions_ready = false;
+	self.signature_request_id = -1;
+	self.signature_text = "";
+	self.signature_path = "";
+	self.signature_offset = 0;
+	self.signature_send_at = 0.0;
+	self.signature_ready = false;
+	self.document_symbol_request_id = -1;
+	self.document_symbol_path = "";
+	self.document_symbol_list.init(allocator);
+	self.document_symbols_ready = false;
+	self.workspace_symbol_request_id = -1;
+	self.workspace_symbol_list.init(allocator);
+	self.workspace_symbols_ready = false;
+	self.semantic_request_id = -1;
+	self.semantic_path = "";
+	self.semantic_request_version = -1;
+	self.semantic_requested_version = -1;
+	self.semantic_change_version = -1;
+	self.semantic_send_at = 0.0;
+	self.semantic_tokens.init(allocator);
+	self.semantic_ready = false;
 }
 
 fn void Lsp.free_diagnostics(&self)
@@ -123,6 +190,14 @@ fn void Lsp.shutdown_all(&self)
 	self.clear_definition_results();
 	self.clear_completion();
 	self.clear_formatting();
+	self.clear_references();
+	self.clear_prepare_rename();
+	self.clear_rename();
+	self.clear_code_actions();
+	self.clear_signature();
+	self.clear_document_symbols();
+	self.clear_workspace_symbols();
+	self.clear_semantic_tokens();
 	for (sz i = 0; i < self.clients.len(); i++)
 	{
 		LspClient* client = self.clients[i];
@@ -154,6 +229,12 @@ fn void Lsp.destroy(&self)
 	self.definition_results.free();
 	self.completion_items.free();
 	self.formatting_edits.free();
+	self.reference_results.free();
+	lsp_workspace_edit_free(&self.rename_edit, self.allocator);
+	self.code_actions.free();
+	self.document_symbol_list.free();
+	self.workspace_symbol_list.free();
+	self.semantic_tokens.free();
 }
 
 fn void Lsp.set_root(&self, String root)
@@ -403,6 +484,429 @@ fn bool Lsp.take_formatting(&self, List{FormattingEdit}* out, String* path)
 	return true;
 }
 
+fn void Lsp.clear_references(&self)
+{
+	for (sz i = 0; i < self.reference_results.len(); i++)
+	{
+		if (self.reference_results[i].path.len)
+		{
+			self.reference_results[i].path.free(self.allocator);
+		}
+	}
+	self.reference_results.clear();
+	self.references_ready = false;
+	self.references_request_id = -1;
+}
+
+fn bool Lsp.request_references(&self, String path, PieceTable* table, usz offset)
+{
+	self.clear_references();
+
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY || !client.caps.references) return false;
+
+	uint line      = 0;
+	uint character = 0;
+	position_from_offset(table, offset, &line, &character);
+	@pool()
+	{
+		String uri     = path_to_uri(tmem, path);
+		Object* params = lsp_reference_params(tmem, uri, line, character, true);
+		self.references_request_id = client.send_request("textDocument/references", params);
+	};
+	return true;
+}
+
+fn bool Lsp.take_references(&self, List{DefinitionTarget}* out)
+{
+	if (!self.references_ready) return false;
+	self.references_ready = false;
+	self.references_request_id = -1;
+	*out = self.reference_results;
+	self.reference_results.init(self.allocator);
+	return true;
+}
+
+fn void Lsp.clear_prepare_rename(&self)
+{
+	if (self.rename_placeholder.len) self.rename_placeholder.free(self.allocator);
+	self.rename_placeholder = "";
+	self.prepare_rename_ready = false;
+	self.prepare_rename_request_id = -1;
+}
+
+fn bool Lsp.request_prepare_rename(&self, String path, PieceTable* table, usz offset)
+{
+	self.clear_prepare_rename();
+
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY || !client.caps.rename) return false;
+	if (!client.caps.prepare_rename)
+	{
+		self.prepare_rename_ready = true;
+		return true;
+	}
+
+	uint line      = 0;
+	uint character = 0;
+	position_from_offset(table, offset, &line, &character);
+	@pool()
+	{
+		String uri     = path_to_uri(tmem, path);
+		Object* params = lsp_document_position_params(tmem, uri, line, character);
+		self.prepare_rename_request_id = client.send_request("textDocument/prepareRename", params);
+	};
+	return true;
+}
+
+fn bool Lsp.take_prepare_rename(&self, String* placeholder)
+{
+	if (!self.prepare_rename_ready) return false;
+	self.prepare_rename_ready = false;
+	self.prepare_rename_request_id = -1;
+	*placeholder = self.rename_placeholder;
+	self.rename_placeholder = "";
+	return true;
+}
+
+fn void Lsp.clear_rename(&self)
+{
+	lsp_workspace_edit_free(&self.rename_edit, self.allocator);
+	lsp_workspace_edit_init(&self.rename_edit, self.allocator);
+	self.rename_ready = false;
+	self.rename_request_id = -1;
+}
+
+fn bool Lsp.request_rename(&self, String path, PieceTable* table, usz offset, String new_name)
+{
+	self.clear_rename();
+
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY || !client.caps.rename) return false;
+
+	uint line      = 0;
+	uint character = 0;
+	position_from_offset(table, offset, &line, &character);
+	@pool()
+	{
+		String uri     = path_to_uri(tmem, path);
+		Object* params = lsp_rename_params(tmem, uri, line, character, new_name);
+		self.rename_request_id = client.send_request("textDocument/rename", params);
+	};
+	return true;
+}
+
+fn bool Lsp.take_rename(&self, WorkspaceEdit* edit)
+{
+	if (!self.rename_ready) return false;
+	self.rename_ready = false;
+	self.rename_request_id = -1;
+	*edit = self.rename_edit;
+	lsp_workspace_edit_init(&self.rename_edit, self.allocator);
+	return true;
+}
+
+fn void Lsp.clear_code_actions(&self)
+{
+	for (sz i = 0; i < self.code_actions.len(); i++)
+	{
+		lsp_code_action_free(&self.code_actions[i], self.allocator);
+	}
+	self.code_actions.clear();
+	self.code_actions_ready = false;
+	self.code_action_request_id = -1;
+}
+
+fn bool Lsp.request_code_actions(&self, String path, PieceTable* table, usz offset)
+{
+	self.clear_code_actions();
+
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY || !client.caps.code_action) return false;
+
+	uint line      = 0;
+	uint character = 0;
+	position_from_offset(table, offset, &line, &character);
+	@pool()
+	{
+		String uri = path_to_uri(tmem, path);
+		LspDiagnostic[] file_diagnostics = self.diagnostics_for(path);
+		Object* params = lsp_code_action_params(tmem, uri, line, character, line, character, file_diagnostics);
+		self.code_action_request_id = client.send_request("textDocument/codeAction", params);
+	};
+	return true;
+}
+
+fn bool Lsp.take_code_actions(&self, List{CodeActionItem}* out)
+{
+	if (!self.code_actions_ready) return false;
+	self.code_actions_ready = false;
+	self.code_action_request_id = -1;
+	*out = self.code_actions;
+	self.code_actions.init(self.allocator);
+	return true;
+}
+
+fn void Lsp.clear_signature(&self)
+{
+	if (self.signature_text.len) self.signature_text.free(self.allocator);
+	if (self.signature_path.len) self.signature_path.free(self.allocator);
+	self.signature_text = "";
+	self.signature_path = "";
+	self.signature_offset = 0;
+	self.signature_send_at = 0.0;
+	self.signature_ready = false;
+	self.signature_request_id = -1;
+}
+
+fn bool lsp_inside_call(PieceTable* table, usz offset, usz* open_offset)
+{
+	int depth = 0;
+	usz i     = offset;
+	while (i > 0)
+	{
+		i--;
+		char c = table.byte_at(i);
+		if (c == ')')
+		{
+			depth++;
+			continue;
+		}
+		if (c == '(')
+		{
+			if (depth == 0)
+			{
+				*open_offset = i;
+				return true;
+			}
+			depth--;
+			continue;
+		}
+		if (depth == 0 && (c == ';' || c == '{' || c == '}'))
+		{
+			return false;
+		}
+	}
+	return false;
+}
+
+fn void Lsp.update_signature(&self, double now, String path, PieceTable* table, usz offset)
+{
+	usz open_offset = 0;
+	if (!lsp_inside_call(table, offset, &open_offset))
+	{
+		self.clear_signature();
+		return;
+	}
+	if (self.signature_path.compare_to(path) == 0 && self.signature_offset == offset)
+	{
+		if (self.signature_ready || self.signature_request_id >= 0) return;
+		if (now < self.signature_send_at) return;
+	}
+	else
+	{
+		if (self.signature_text.len) self.signature_text.free(self.allocator);
+		if (self.signature_path.len) self.signature_path.free(self.allocator);
+		self.signature_text = "";
+		self.signature_path = path.copy(self.allocator);
+		self.signature_offset = offset;
+		self.signature_send_at = now + 0.12;
+		self.signature_ready = false;
+		self.signature_request_id = -1;
+		return;
+	}
+
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY || !client.caps.signature_help)
+	{
+		return;
+	}
+
+	uint line      = 0;
+	uint character = 0;
+	position_from_offset(table, offset, &line, &character);
+	@pool()
+	{
+		String uri     = path_to_uri(tmem, path);
+		Object* params = lsp_document_position_params(tmem, uri, line, character);
+		self.signature_request_id = client.send_request("textDocument/signatureHelp", params);
+	};
+}
+
+fn void Lsp.clear_document_symbols(&self)
+{
+	if (self.document_symbol_path.len) self.document_symbol_path.free(self.allocator);
+	self.document_symbol_path = "";
+	lsp_symbols_free(&self.document_symbol_list, self.allocator);
+	self.document_symbol_list.init(self.allocator);
+	self.document_symbols_ready = false;
+	self.document_symbol_request_id = -1;
+}
+
+fn void Lsp.update_document_symbols(&self, String path)
+{
+	sz index = self.doc_index(path);
+	if (index < 0) return;
+	LspDoc* doc = &self.docs[index];
+	if (doc.symbols_requested || !doc.opened) return;
+
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY || !client.caps.document_symbol) return;
+
+	doc.symbols_requested = true;
+	if (self.document_symbol_path.len) self.document_symbol_path.free(self.allocator);
+	self.document_symbol_path = path.copy(self.allocator);
+	@pool()
+	{
+		String uri     = path_to_uri(tmem, path);
+		Object* params = lsp_document_symbol_params(tmem, uri);
+		self.document_symbol_request_id = client.send_request("textDocument/documentSymbol", params);
+	};
+}
+
+fn bool Lsp.take_document_symbols(&self, String* path, List{LspSymbol}* out)
+{
+	if (!self.document_symbols_ready) return false;
+	self.document_symbols_ready = false;
+	self.document_symbol_request_id = -1;
+	*out = self.document_symbol_list;
+	self.document_symbol_list.init(self.allocator);
+	*path = self.document_symbol_path;
+	self.document_symbol_path = "";
+	return true;
+}
+
+fn void Lsp.clear_workspace_symbols(&self)
+{
+	lsp_symbols_free(&self.workspace_symbol_list, self.allocator);
+	self.workspace_symbol_list.init(self.allocator);
+	self.workspace_symbols_ready = false;
+	self.workspace_symbol_request_id = -1;
+}
+
+fn bool Lsp.request_workspace_symbols(&self, String query)
+{
+	self.clear_workspace_symbols();
+
+	LspClient* client = null;
+	for (sz i = 0; i < self.clients.len(); i++)
+	{
+		if (self.clients[i].status == LspStatus.READY && self.clients[i].caps.workspace_symbol)
+		{
+			client = self.clients[i];
+			break;
+		}
+	}
+	if (!client) return false;
+
+	@pool()
+	{
+		Object* params = lsp_workspace_symbol_params(tmem, query);
+		self.workspace_symbol_request_id = client.send_request("workspace/symbol", params);
+	};
+	return true;
+}
+
+fn bool Lsp.take_workspace_symbols(&self, List{LspSymbol}* out)
+{
+	if (!self.workspace_symbols_ready) return false;
+	self.workspace_symbols_ready = false;
+	self.workspace_symbol_request_id = -1;
+	*out = self.workspace_symbol_list;
+	self.workspace_symbol_list.init(self.allocator);
+	return true;
+}
+
+fn void Lsp.clear_semantic_tokens(&self)
+{
+	if (self.semantic_path.len) self.semantic_path.free(self.allocator);
+	self.semantic_path = "";
+	self.semantic_tokens.clear();
+	self.semantic_ready = false;
+	self.semantic_request_id = -1;
+	self.semantic_request_version = -1;
+	self.semantic_requested_version = -1;
+	self.semantic_change_version = -1;
+	self.semantic_send_at = 0.0;
+}
+
+fn void Lsp.update_semantic_tokens(&self, double now, String path)
+{
+	sz index = self.doc_index(path);
+	if (index < 0) return;
+	LspDoc* doc = &self.docs[index];
+
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY || !client.caps.semantic_tokens) return;
+
+	if (self.semantic_path.compare_to(path) != 0)
+	{
+		if (self.semantic_path.len) self.semantic_path.free(self.allocator);
+		self.semantic_path = path.copy(self.allocator);
+		self.semantic_change_version = -1;
+		self.semantic_requested_version = -1;
+		self.semantic_ready = false;
+	}
+
+	if (doc.version != self.semantic_change_version)
+	{
+		self.semantic_change_version = doc.version;
+		self.semantic_send_at = now + 0.25;
+		return;
+	}
+	if (doc.version == self.semantic_requested_version) return;
+	if (now < self.semantic_send_at) return;
+
+	if (self.semantic_path.len) self.semantic_path.free(self.allocator);
+	self.semantic_path = path.copy(self.allocator);
+	self.semantic_request_version = doc.version;
+	self.semantic_requested_version = doc.version;
+	self.semantic_ready = false;
+	@pool()
+	{
+		String uri     = path_to_uri(tmem, path);
+		Object* params = lsp_document_symbol_params(tmem, uri);
+		self.semantic_request_id = client.send_request("textDocument/semanticTokens/full", params);
+	};
+}
+
+fn bool Lsp.take_semantic_tokens(&self, String* path, List{SemanticToken}* out)
+{
+	if (!self.semantic_ready) return false;
+	self.semantic_ready = false;
+	*path = self.semantic_path;
+	self.semantic_path = "";
+	*out = self.semantic_tokens;
+	self.semantic_tokens.init(self.allocator);
+	self.semantic_request_id = -1;
+	return true;
+}
+
+fn String Lsp.semantic_token_type(&self, String path, int token_type)
+{
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || token_type < 0 || token_type >= (int)client.caps.semantic_token_types.len()) return "";
+	return client.caps.semantic_token_types[(sz)token_type];
+}
+
+fn bool Lsp.signature_valid(&self, String path, usz offset)
+{
+	return self.signature_ready && self.signature_path.compare_to(path) == 0 && self.signature_offset == offset;
+}
+
+fn String Lsp.signature_message(&self)
+{
+	return self.signature_text;
+}
+
 fn String[] Lsp.completion_triggers(&self, String path)
 {
 	String language   = lsp_language_for_path(path);
@@ -619,6 +1123,7 @@ fn void Lsp.handle_open(&self, String path, PieceTable* table)
 	doc.text = table.slice(0, table.length(), self.allocator);
 	doc.version = 1;
 	doc.opened = false;
+	doc.symbols_requested = false;
 	self.docs.push(doc);
 }
 
@@ -662,6 +1167,7 @@ fn void Lsp.handle_close(&self, String path)
 		}
 	}
 	self.clear_diagnostics(doc.path);
+	if (self.semantic_path.compare_to(doc.path) == 0) self.clear_semantic_tokens();
 	doc.path.free(self.allocator);
 	doc.uri.free(self.allocator);
 	doc.language.free(self.allocator);
@@ -677,6 +1183,7 @@ fn void Lsp.mark_language_reopen(&self, String language)
 		{
 			self.docs[i].opened = false;
 			self.docs[i].version++;
+			self.docs[i].symbols_requested = false;
 		}
 	}
 }
@@ -771,6 +1278,131 @@ fn void Lsp.update(&self, double now)
 				}
 				self.formatting_ready = true;
 				self.formatting_request_id = -1;
+			}
+			else if (self.references_request_id >= 0 && response.id == self.references_request_id
+				&& response.method.compare_to(
+				"textDocument/references"
+			) == 0)
+			{
+				self.clear_references();
+				Object*? result_opt = response.message.get("result");
+				if (try result = result_opt)
+				{
+					lsp_normalize_definition(self.allocator, result, &self.reference_results);
+				}
+				self.references_ready = true;
+				self.references_request_id = -1;
+			}
+			else if (self.prepare_rename_request_id >= 0 && response.id == self.prepare_rename_request_id
+				&& response.method.compare_to(
+				"textDocument/prepareRename"
+			) == 0)
+			{
+				self.clear_prepare_rename();
+				Object*? result_opt = response.message.get("result");
+				if (try result = result_opt)
+				{
+					(void)lsp_parse_prepare_rename(self.allocator, result, &self.rename_placeholder);
+				}
+				self.prepare_rename_ready = true;
+				self.prepare_rename_request_id = -1;
+			}
+			else if (self.rename_request_id >= 0 && response.id == self.rename_request_id && response.method.compare_to(
+				"textDocument/rename"
+			) == 0)
+			{
+				self.clear_rename();
+				Object*? result_opt = response.message.get("result");
+				if (try result = result_opt)
+				{
+					(void)lsp_parse_workspace_edit(self.allocator, result, &self.rename_edit);
+				}
+				self.rename_ready = true;
+				self.rename_request_id = -1;
+			}
+			else if (self.code_action_request_id >= 0 && response.id == self.code_action_request_id
+				&& response.method.compare_to(
+				"textDocument/codeAction"
+			) == 0)
+			{
+				self.clear_code_actions();
+				Object*? result_opt = response.message.get("result");
+				if (try result = result_opt)
+				{
+					lsp_parse_code_actions(self.allocator, result, &self.code_actions);
+				}
+				self.code_actions_ready = true;
+				self.code_action_request_id = -1;
+			}
+			else if (self.signature_request_id >= 0 && response.id == self.signature_request_id
+				&& response.method.compare_to(
+				"textDocument/signatureHelp"
+			) == 0)
+			{
+				if (self.signature_text.len) self.signature_text.free(self.allocator);
+				self.signature_text = "";
+				Object*? result_opt = response.message.get("result");
+				if (try result = result_opt)
+				{
+					lsp_parse_signature_help(self.allocator, result, &self.signature_text);
+				}
+				self.signature_ready = self.signature_text.len > 0;
+				self.signature_request_id = -1;
+			}
+			else if (self.document_symbol_request_id >= 0 && response.id == self.document_symbol_request_id
+				&& response.method.compare_to(
+				"textDocument/documentSymbol"
+			) == 0)
+			{
+				String path = self.document_symbol_path;
+				self.document_symbol_path = "";
+				lsp_symbols_free(&self.document_symbol_list, self.allocator);
+				self.document_symbol_list.init(self.allocator);
+				Object*? result_opt = response.message.get("result");
+				if (try result = result_opt)
+				{
+					lsp_parse_document_symbols(self.allocator, result, path, &self.document_symbol_list);
+				}
+				self.document_symbol_path = path;
+				self.document_symbols_ready = true;
+				self.document_symbol_request_id = -1;
+			}
+			else if (self.workspace_symbol_request_id >= 0 && response.id == self.workspace_symbol_request_id
+				&& response.method.compare_to(
+				"workspace/symbol"
+			) == 0)
+			{
+				self.clear_workspace_symbols();
+				Object*? result_opt = response.message.get("result");
+				if (try result = result_opt)
+				{
+					lsp_parse_workspace_symbols(self.allocator, result, &self.workspace_symbol_list);
+				}
+				self.workspace_symbols_ready = true;
+				self.workspace_symbol_request_id = -1;
+			}
+			else if (self.semantic_request_id >= 0 && response.id == self.semantic_request_id
+				&& response.method.compare_to(
+				"textDocument/semanticTokens/full"
+			) == 0)
+			{
+				bool current = false;
+				sz doc_index = self.doc_index(self.semantic_path);
+				if (doc_index >= 0 && self.docs[doc_index].version == self.semantic_request_version)
+				{
+					current = true;
+				}
+				self.semantic_tokens.clear();
+				if (current)
+				{
+					Object*? result_opt = response.message.get("result");
+					if (try result = result_opt)
+					{
+						lsp_parse_semantic_tokens(self.allocator, result, &self.semantic_tokens);
+					}
+					self.semantic_ready = true;
+				}
+				self.semantic_request_id = -1;
 			}
 			response.method.free(client.allocator);
 			response.message.free();
@@ -919,6 +1551,111 @@ fn String[] lsp_completion_triggers(String path)
 {
 	if (!active_lsp) return NO_TRIGGERS;
 	return active_lsp.completion_triggers(path);
+}
+
+fn bool lsp_request_references(String path, PieceTable* table, usz offset)
+{
+	if (!active_lsp) return false;
+	return active_lsp.request_references(path, table, offset);
+}
+
+fn bool lsp_take_references(List{DefinitionTarget}* out)
+{
+	if (!active_lsp) return false;
+	return active_lsp.take_references(out);
+}
+
+fn bool lsp_request_prepare_rename(String path, PieceTable* table, usz offset)
+{
+	if (!active_lsp) return false;
+	return active_lsp.request_prepare_rename(path, table, offset);
+}
+
+fn bool lsp_take_prepare_rename(String* placeholder)
+{
+	if (!active_lsp) return false;
+	return active_lsp.take_prepare_rename(placeholder);
+}
+
+fn bool lsp_request_rename(String path, PieceTable* table, usz offset, String new_name)
+{
+	if (!active_lsp) return false;
+	return active_lsp.request_rename(path, table, offset, new_name);
+}
+
+fn bool lsp_take_rename(WorkspaceEdit* edit)
+{
+	if (!active_lsp) return false;
+	return active_lsp.take_rename(edit);
+}
+
+fn bool lsp_request_code_actions(String path, PieceTable* table, usz offset)
+{
+	if (!active_lsp) return false;
+	return active_lsp.request_code_actions(path, table, offset);
+}
+
+fn bool lsp_take_code_actions(List{CodeActionItem}* out)
+{
+	if (!active_lsp) return false;
+	return active_lsp.take_code_actions(out);
+}
+
+fn void lsp_update_signature(double now, String path, PieceTable* table, usz offset)
+{
+	if (active_lsp) active_lsp.update_signature(now, path, table, offset);
+}
+
+fn bool lsp_signature_valid(String path, usz offset)
+{
+	if (!active_lsp) return false;
+	return active_lsp.signature_valid(path, offset);
+}
+
+fn String lsp_signature_message()
+{
+	if (!active_lsp) return "";
+	return active_lsp.signature_message();
+}
+
+fn void lsp_update_document_symbols(String path)
+{
+	if (active_lsp) active_lsp.update_document_symbols(path);
+}
+
+fn bool lsp_take_document_symbols(String* path, List{LspSymbol}* out)
+{
+	if (!active_lsp) return false;
+	return active_lsp.take_document_symbols(path, out);
+}
+
+fn bool lsp_request_workspace_symbols(String query)
+{
+	if (!active_lsp) return false;
+	return active_lsp.request_workspace_symbols(query);
+}
+
+fn bool lsp_take_workspace_symbols(List{LspSymbol}* out)
+{
+	if (!active_lsp) return false;
+	return active_lsp.take_workspace_symbols(out);
+}
+
+fn void lsp_update_semantic_tokens(double now, String path)
+{
+	if (active_lsp) active_lsp.update_semantic_tokens(now, path);
+}
+
+fn bool lsp_take_semantic_tokens(String* path, List{SemanticToken}* out)
+{
+	if (!active_lsp) return false;
+	return active_lsp.take_semantic_tokens(path, out);
+}
+
+fn String lsp_semantic_token_type(String path, int token_type)
+{
+	if (!active_lsp) return "";
+	return active_lsp.semantic_token_type(path, token_type);
 }
 
 fn bool lsp_request_formatting(String path)

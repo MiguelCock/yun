@@ -2520,6 +2520,64 @@ fn bool Project.apply_formatting(&self, String path, List{lsp::FormattingEdit}* 
 	return true;
 }
 
+fn bool workspace_text_edit_after(lsp::WorkspaceTextEdit a, lsp::WorkspaceTextEdit b)
+{
+	if (a.start_line != b.start_line) return a.start_line > b.start_line;
+	return a.start_character > b.start_character;
+}
+
+fn bool Project.apply_workspace_edit(&self, lsp::WorkspaceEdit* edit, double now)
+{
+	if (edit.files.len() == 0) return false;
+	for (sz f = 0; f < edit.files.len(); f++)
+	{
+		lsp::WorkspaceFileEdit* file = &edit.files[f];
+		if (self.find_card(file.path) < 0) return false;
+	}
+
+	bool applied = false;
+	for (sz f = 0; f < edit.files.len(); f++)
+	{
+		lsp::WorkspaceFileEdit* file = &edit.files[f];
+		int index                    = self.find_card(file.path);
+		if (index < 0) return false;
+		FileCard* card = &self.cards[index];
+		editor::ensure_buffer(card, self.allocator);
+		if (!card.buffer || !card.history) return false;
+
+		for (sz i = 0; i < file.edits.len(); i++)
+		{
+			for (sz j = i + 1; j < file.edits.len(); j++)
+			{
+				if (workspace_text_edit_after(file.edits.get(j), file.edits.get(i)))
+				{
+					lsp::WorkspaceTextEdit tmp = file.edits.get(i);
+					file.edits.set(i, file.edits.get(j));
+					file.edits.set(j, tmp);
+				}
+			}
+		}
+
+		card.history.break_coalescing();
+		for (sz e = 0; e < file.edits.len(); e++)
+		{
+			lsp::WorkspaceTextEdit text_edit = file.edits.get(e);
+			usz start = lsp::offset_from_position(card.buffer, text_edit.start_line, text_edit.start_character);
+			usz end = lsp::offset_from_position(card.buffer, text_edit.end_line, text_edit.end_character);
+			if (end < start) end = start;
+			card.cursor = card.history.replace(card.buffer, start, end - start, text_edit.new_text, now);
+		}
+		if (card.cursor > card.buffer.length()) card.cursor = card.buffer.length();
+		card.selection_anchor = card.cursor;
+		card.dirty = true;
+		if (card.highlight) card.highlight.mark_dirty();
+		if (card.view) markdown::view_mark_dirty(card.view);
+		lsp::lsp_did_change((String)card.path, card.buffer);
+		applied = true;
+	}
+	return applied;
+}
+
 fn bool Project.editor_undo(&self)
 {
 	FileCard* card = self.focused_editable_card();

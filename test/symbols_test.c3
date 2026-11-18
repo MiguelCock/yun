@@ -204,3 +204,13 @@ fn void test_all_symbols_queries_compile()
 		if (q) tree_sitter::ts_query_delete(q);
 	}
 }
+fn void test_lsp_kind_mapping()
+{
+	assert(kind_from_lsp(5) == SymbolKind.CLASS);
+	assert(kind_from_lsp(6) == SymbolKind.METHOD);
+	assert(kind_from_lsp(10) == SymbolKind.ENUM);
+	assert(kind_from_lsp(12) == SymbolKind.FUNCTION);
+	assert(kind_from_lsp(13) == SymbolKind.VARIABLE);
+	assert(kind_from_lsp(14) == SymbolKind.CONST);
+	assert(kind_from_lsp(23) == SymbolKind.TYPE);
+}
