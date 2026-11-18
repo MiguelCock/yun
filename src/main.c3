@@ -716,6 +716,21 @@ fn void run_command(commands::CommandId id, App* app)
 				completion::completion_request((String)card.path, card.buffer, card.cursor, 1, "");
 				return;
 			}
+		case commands::CommandId.FORMAT_DOCUMENT:
+
+			{
+				FileCard* card = project.focused_card();
+				if (!card || !card.buffer)
+				{
+					app.notifier.push("No file to format");
+					return;
+				}
+				if (!lsp::lsp_request_formatting((String)card.path))
+				{
+					app.notifier.push("No formatter");
+				}
+				return;
+			}
 		case commands::CommandId.SELECT_THEME:
 
 			{
@@ -2508,6 +2523,26 @@ fn int main(String[] args)
 		}
 
 		lsp.update(rl::get_time());
+
+		List{lsp::FormattingEdit} formatting_edits = { };
+		String formatting_path                     = "";
+		if (lsp::lsp_take_formatting(&formatting_edits, &formatting_path))
+		{
+			if (project.apply_formatting(formatting_path, &formatting_edits, rl::get_time()))
+			{
+				notifier.push("Formatted");
+			}
+			else
+			{
+				notifier.push("Could not apply formatting");
+			}
+			for (sz i = 0; i < formatting_edits.len(); i++)
+			{
+				if (formatting_edits[i].new_text.len) formatting_edits[i].new_text.free(project.allocator);
+			}
+			formatting_edits.free();
+			if (formatting_path.len) formatting_path.free(project.allocator);
+		}
 
 		FileCard* completion_card = project.focused_card();
 		if (completion_card && completion_card.buffer)

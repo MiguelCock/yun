@@ -42,6 +42,7 @@ enum CommandId
 	PROBLEMS,
 	GO_TO_DEFINITION,
 	COMPLETE,
+	FORMAT_DOCUMENT,
 	SELECT_THEME,
 	SEARCH_PROJECT,
 	SYMBOLS_PROJECT,
@@ -171,6 +172,13 @@ const CommandDef[] COMMAND_DEFS = {
 		.id = CommandId.COMPLETE,
 		.label = "Complete",
 		.shortcut = "Ctrl+Space",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.FORMAT_DOCUMENT,
+		.label = "Format Document",
+		.shortcut = "Ctrl+Alt+F",
 		.in_top_bar = false,
 		.contexts = CTX_GLOBAL
 	},
@@ -681,6 +689,8 @@ fn String command_name(CommandId id)
 			return "go_to_definition";
 		case CommandId.COMPLETE:
 			return "complete";
+		case CommandId.FORMAT_DOCUMENT:
+			return "format_document";
 		case CommandId.SELECT_THEME:
 			return "select_theme";
 		case CommandId.SEARCH_PROJECT:
@@ -882,6 +892,8 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.FIND:
 			return has_buffer;
 		case CommandId.REPLACE:
+			return has_buffer;
+		case CommandId.FORMAT_DOCUMENT:
 			return has_buffer;
 		case CommandId.COPY:
 			return has_buffer;

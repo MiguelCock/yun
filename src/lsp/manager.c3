@@ -57,6 +57,10 @@ struct Lsp
 	List{CompletionItem} completion_items;
 	bool completion_ready;
 	bool completion_incomplete;
+	int formatting_request_id;
+	String formatting_path;
+	List{FormattingEdit} formatting_edits;
+	bool formatting_ready;
 }
 
 Lsp* active_lsp;
@@ -88,6 +92,10 @@ fn void Lsp.init(&self, Allocator allocator, config::Config* config)
 	self.completion_items.init(allocator);
 	self.completion_ready = false;
 	self.completion_incomplete = false;
+	self.formatting_request_id = -1;
+	self.formatting_path = "";
+	self.formatting_edits.init(allocator);
+	self.formatting_ready = false;
 }
 
 fn void Lsp.free_diagnostics(&self)
@@ -114,6 +122,7 @@ fn void Lsp.shutdown_all(&self)
 	self.clear_hover();
 	self.clear_definition_results();
 	self.clear_completion();
+	self.clear_formatting();
 	for (sz i = 0; i < self.clients.len(); i++)
 	{
 		LspClient* client = self.clients[i];
@@ -144,6 +153,7 @@ fn void Lsp.destroy(&self)
 	self.diag_index.free();
 	self.definition_results.free();
 	self.completion_items.free();
+	self.formatting_edits.free();
 }
 
 fn void Lsp.set_root(&self, String root)
@@ -342,6 +352,54 @@ fn bool Lsp.take_completion(&self, List{CompletionItem}* out, bool* incomplete)
 	self.completion_items.init(self.allocator);
 	*incomplete = self.completion_incomplete;
 	self.completion_incomplete = false;
+	return true;
+}
+
+fn void Lsp.clear_formatting_edits(&self)
+{
+	for (sz i = 0; i < self.formatting_edits.len(); i++)
+	{
+		if (self.formatting_edits[i].new_text.len) self.formatting_edits[i].new_text.free(self.allocator);
+	}
+	self.formatting_edits.clear();
+}
+
+fn void Lsp.clear_formatting(&self)
+{
+	self.clear_formatting_edits();
+	if (self.formatting_path.len) self.formatting_path.free(self.allocator);
+	self.formatting_path = "";
+	self.formatting_ready = false;
+	self.formatting_request_id = -1;
+}
+
+fn bool Lsp.request_formatting(&self, String path)
+{
+	self.clear_formatting();
+
+	String language   = lsp_language_for_path(path);
+	LspClient* client = self.client_for(language);
+	if (!client || client.status != LspStatus.READY || !client.caps.formatting) return false;
+
+	@pool()
+	{
+		String uri     = path_to_uri(tmem, path);
+		Object* params = lsp_formatting_params(tmem, uri);
+		self.formatting_request_id = client.send_request("textDocument/formatting", params);
+	};
+	self.formatting_path = path.copy(self.allocator);
+	return true;
+}
+
+fn bool Lsp.take_formatting(&self, List{FormattingEdit}* out, String* path)
+{
+	if (!self.formatting_ready) return false;
+	self.formatting_ready = false;
+	self.formatting_request_id = -1;
+	*out = self.formatting_edits;
+	self.formatting_edits.init(self.allocator);
+	*path = self.formatting_path;
+	self.formatting_path = "";
 	return true;
 }
 
@@ -700,6 +758,20 @@ fn void Lsp.update(&self, double now)
 				self.completion_ready = true;
 				self.completion_request_id = -1;
 			}
+			else if (self.formatting_request_id >= 0 && response.id == self.formatting_request_id
+				&& response.method.compare_to(
+				"textDocument/formatting"
+			) == 0)
+			{
+				self.clear_formatting_edits();
+				Object*? result_opt = response.message.get("result");
+				if (try result = result_opt)
+				{
+					lsp_parse_formatting(self.allocator, result, &self.formatting_edits);
+				}
+				self.formatting_ready = true;
+				self.formatting_request_id = -1;
+			}
 			response.method.free(client.allocator);
 			response.message.free();
 		}
@@ -847,4 +919,16 @@ fn String[] lsp_completion_triggers(String path)
 {
 	if (!active_lsp) return NO_TRIGGERS;
 	return active_lsp.completion_triggers(path);
+}
+
+fn bool lsp_request_formatting(String path)
+{
+	if (!active_lsp) return false;
+	return active_lsp.request_formatting(path);
+}
+
+fn bool lsp_take_formatting(List{FormattingEdit}* out, String* path)
+{
+	if (!active_lsp) return false;
+	return active_lsp.take_formatting(out, path);
 }

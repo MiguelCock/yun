@@ -15,6 +15,7 @@ struct LspCapabilities
 	bool hover;
 	bool definition;
 	bool completion;
+	bool formatting;
 	List{String} trigger_characters;
 }
 
@@ -50,6 +51,15 @@ struct CompletionItem
 	uint edit_end_character;
 }
 
+struct FormattingEdit
+{
+	String new_text;
+	uint start_line;
+	uint start_character;
+	uint end_line;
+	uint end_character;
+}
+
 const int DIAGNOSTIC_ERROR   = 1;
 const int DIAGNOSTIC_WARNING = 2;
 const int DIAGNOSTIC_INFO    = 3;
@@ -60,6 +70,7 @@ fn void lsp_capabilities_init(LspCapabilities* caps, Allocator allocator)
 	caps.hover = false;
 	caps.definition = false;
 	caps.completion = false;
+	caps.formatting = false;
 	caps.trigger_characters.init(allocator);
 }
 
@@ -155,6 +166,9 @@ fn Object* lsp_initialize_params(Allocator allocator, String root_uri)
 	Object* item       = completion.get_or_create_obj("completionItem");
 	item.set("snippetSupport", false);
 
+	Object* formatting = td.get_or_create_obj("formatting");
+	formatting.set("dynamicRegistration", false);
+
 	Object* diagnostics = td.get_or_create_obj("publishDiagnostics");
 	diagnostics.set("relatedInformation", true);
 
@@ -219,6 +233,17 @@ fn Object* lsp_completion_params(
 	Object* context = root.get_or_create_obj("context");
 	context.set("triggerKind", (long)trigger_kind);
 	if (trigger_char.len > 0) context.set("triggerCharacter", trigger_char);
+	return root;
+}
+
+fn Object* lsp_formatting_params(Allocator allocator, String uri)
+{
+	Object* root = object::new_obj(allocator);
+	Object* doc  = root.get_or_create_obj("textDocument");
+	doc.set("uri", uri);
+	Object* options = root.get_or_create_obj("options");
+	options.set("tabSize", (long)4);
+	options.set("insertSpaces", true);
 	return root;
 }
 
@@ -494,6 +519,43 @@ fn void lsp_normalize_completion(Allocator allocator, Object* result, List{Compl
 	}
 }
 
+fn void lsp_parse_formatting(Allocator allocator, Object* result, List{FormattingEdit}* out)
+{
+	if (!result.is_array()) return;
+	for (sz i = 0; i < result.get_len(); i++)
+	{
+		Object* entry = result.get_at(i);
+		if (!entry.is_map()) continue;
+
+		FormattingEdit edit = { };
+		Object*? range_opt  = entry.get("range");
+		if (try range = range_opt)
+		{
+			if (range.is_map())
+			{
+				Object*? start_opt = range.get("start");
+				if (try start = start_opt)
+				{
+					edit.start_line = lsp_object_uint(start, "line");
+					edit.start_character = lsp_object_uint(start, "character");
+				}
+				Object*? end_opt = range.get("end");
+				if (try end = end_opt)
+				{
+					edit.end_line = lsp_object_uint(end, "line");
+					edit.end_character = lsp_object_uint(end, "character");
+				}
+			}
+		}
+
+		Object*? text_opt = entry.get("newText");
+		if (catch excuse = text_opt) continue;
+		if (!text_opt.is_string()) continue;
+		edit.new_text = text_opt.s.copy(allocator);
+		out.push(edit);
+	}
+}
+
 fn void lsp_parse_capabilities(Allocator allocator, Object* result, LspCapabilities* out)
 {
 	if (!result.is_map()) return;
@@ -504,6 +566,7 @@ fn void lsp_parse_capabilities(Allocator allocator, Object* result, LspCapabilit
 	out.hover = caps.has_key("hoverProvider");
 	out.definition = caps.has_key("definitionProvider");
 	out.completion = caps.has_key("completionProvider");
+	out.formatting = caps.has_key("documentFormattingProvider");
 
 	Object*? provider_opt = caps.get("completionProvider");
 	if (catch excuse = provider_opt) return;
