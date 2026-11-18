@@ -593,6 +593,10 @@ fn void lsp_parse_capabilities(Allocator allocator, Object* result, LspCapabilit
 	Object*? caps_opt = result.get("capabilities");
 	if (catch excuse = caps_opt) return;
 	Object* caps = caps_opt;
+	for (sz i = 0; i < out.trigger_characters.len(); i++) out.trigger_characters[i].free(allocator);
+	out.trigger_characters.clear();
+	for (sz i = 0; i < out.semantic_token_types.len(); i++) out.semantic_token_types[i].free(allocator);
+	out.semantic_token_types.clear();
 
 	out.hover = lsp_provider_enabled(caps, "hoverProvider");
 	out.definition = lsp_provider_enabled(caps, "definitionProvider");
