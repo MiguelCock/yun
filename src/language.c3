@@ -38,6 +38,7 @@ enum Language : int
 	DART,
 	MARKDOWN,
 	MARKDOWN_INLINE,
+	SOL,
 	COUNT,
 }
 
@@ -405,6 +406,25 @@ const LanguageSpec[] LANGUAGES = {
 		.module_query = "",
 		.symbols_query = "",
 	},
+	{
+		.name = "sol",
+		.extensions = { ".sol" },
+		.lib = "tree-sitter-sol",
+		.symbol = "tree_sitter_sol",
+		.highlights_path = "lib/tree_sitter_sol.c3l/queries/highlights.scm",
+		.injections_path = "",
+		.import_query = "(import_declaration (import_item (module_path) @path))",
+		.module_query = "(module_declaration) @module",
+		.symbols_query = "(function_declaration name: (identifier) @function)\n"
+			"(operator_function_declaration name: (operator_symbol) @function)\n"
+			"(struct_declaration name: (type_identifier) @type)\n"
+			"(enum_declaration name: (type_identifier) @enum)\n"
+			"(fault_declaration name: (type_identifier) @type)\n"
+			"(interface_declaration name: (type_identifier) @type)\n"
+			"(protocol_declaration name: (type_identifier) @type)\n"
+			"(const_declaration name: (identifier) @const)\n"
+			"(const_declaration name: (type_identifier) @const)",
+	},
 };
 
 fn String path_extension(String path)
@@ -711,6 +731,11 @@ const LspSpec[] LSP_LANGUAGES = {
 		.id = "markdown",
 		.extensions = { ".md", ".markdown" },
 		.command = "marksman server",
+	},
+	{
+		.id = "sol",
+		.extensions = { ".sol" },
+		.command = "sol lsp",
 	},
 };
 
