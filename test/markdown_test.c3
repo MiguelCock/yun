@@ -288,3 +288,120 @@ fn void test_view_rebuilds_on_line_height()
 		t.destroy();
 	};
 }
+
+fn void test_parse_table()
+{
+	@pool()
+	{
+		MdDocument* doc = parse(tmem, "| Name | Type |\n| :--- | ---: |\n| x | i32 |\n\nAfter\n");
+		assert(doc.blocks.len() == 2);
+		assert(doc.blocks[0].kind == MdBlockKind.TABLE);
+		assert(doc.blocks[0].text.compare_to("| Name | Type |\n| :--- | ---: |\n| x | i32 |\n") == 0);
+		assert(doc.blocks[1].kind == MdBlockKind.PARAGRAPH);
+		assert(doc.blocks[1].text.compare_to("After") == 0);
+		free_document(doc, tmem);
+	};
+}
+
+fn void test_table_cells_and_alignment()
+{
+	@pool()
+	{
+		List{String} cells;
+		cells.init(tmem);
+		split_table_row("| a | b\\|c |", &cells);
+		assert(cells.len() == 2);
+		assert(cells[0].compare_to("a") == 0);
+		assert(cells[1].compare_to("b\\|c") == 0);
+
+		List{MdAlign} aligns;
+		aligns.init(tmem);
+		split_table_row("| :--- | :--: | ---: |", &cells);
+		assert(table_delimiter(&cells, &aligns));
+		assert(aligns.len() == 3);
+		assert(aligns[0] == MdAlign.LEFT);
+		assert(aligns[1] == MdAlign.CENTER);
+		assert(aligns[2] == MdAlign.RIGHT);
+
+		cells.free();
+		aligns.free();
+	};
+}
+
+fn void test_malformed_table_is_a_paragraph()
+{
+	@pool()
+	{
+		MdDocument* doc = parse(tmem, "a | b\nnot a delimiter\n");
+		assert(doc.blocks.len() == 1);
+		assert(doc.blocks[0].kind == MdBlockKind.PARAGRAPH);
+		free_document(doc, tmem);
+	};
+}
+
+fn void test_layout_table()
+{
+	@pool()
+	{
+		MdDocument* doc = parse(tmem, "| A | B |\n| --- | --- |\n| one | two |\n| **bold** | `code` |\n");
+		MdLayout* l     = layout(tmem, doc, 160.0f, 8.0f, 10.0f, 10.0f);
+
+		int headers = 0;
+		int borders = 0;
+		foreach (MdRect r : l.rects)
+		{
+			if (r.kind == MdRectKind.TABLE_HEADER) headers++;
+			if (r.kind == MdRectKind.TABLE_BORDER) borders++;
+		}
+		assert(headers == 1);
+		assert(borders >= 4);
+
+		bool strong = false;
+		bool code   = false;
+		foreach (MdRun run : l.runs)
+		{
+			if (run.style == MdStyle.STRONG && run.text.compare_to("bold") == 0) strong = true;
+			if (run.style == MdStyle.CODE && run.text.compare_to("code") == 0) code = true;
+		}
+		assert(strong);
+		assert(code);
+		assert(l.height > 0.0f);
+
+		free_layout(l, tmem);
+		free_document(doc, tmem);
+	};
+}
+
+fn void test_table_wraps_in_narrow_cards()
+{
+	@pool()
+	{
+		MdDocument* doc = parse(tmem, "| A | B |\n| --- | --- |\n| this is a long cell | second cell |\n");
+		MdLayout* l     = layout(tmem, doc, 20.0f, 8.0f, 10.0f, 10.0f);
+		assert(l.height > 20.0f);
+		free_layout(l, tmem);
+		free_document(doc, tmem);
+	};
+}
+
+fn void test_table_utf8_columns()
+{
+	assert(inline_columns(tmem, "éé") == 2);
+	assert(inline_columns(tmem, "**é**") == 1);
+}
+
+fn void test_table_alignment_runs()
+{
+	@pool()
+	{
+		MdLayout l;
+		l.runs.init(tmem);
+		l.runs.push({ .text = "x", .x = 0.0f, .y = 0.0f });
+		align_runs(&l, 0, 0.0f, 10.0f, MdAlign.RIGHT, 1.0f);
+		assert(l.runs[0].x == 9.0f);
+		l.runs[0].x = 0.0f;
+		align_runs(&l, 0, 0.0f, 10.0f, MdAlign.CENTER, 1.0f);
+		assert(l.runs[0].x == 4.5f);
+		l.runs.free();
+	};
+}
