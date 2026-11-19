@@ -325,36 +325,42 @@ fn void Config.ensure_defaults(&self, Path dir, Path file)
 
 fn void Config.load_global(&self)
 {
-	Path? config_dir = env::get_config_dir(self.allocator);
-	if (catch excuse = config_dir)
+	@pool()
 	{
-		self.add_warning("Could not resolve config directory");
-		return;
-	}
-	Path? dir = config_dir.append(self.allocator, CONFIG_DIR);
-	if (catch excuse = dir)
-	{
-		self.add_warning("Could not resolve config directory");
-		return;
-	}
-	Path? file = dir.append(self.allocator, CONFIG_FILE);
-	if (catch excuse = file)
-	{
-		self.add_warning("Could not resolve config path");
-		return;
-	}
-	self.ensure_defaults(dir, file);
-	self.load_path(file, settings::SettingLayer.GLOBAL);
+		Path? config_dir = env::get_config_dir(tmem);
+		if (catch excuse = config_dir)
+		{
+			self.add_warning("Could not resolve config directory");
+			return;
+		}
+		Path? dir = config_dir.append(tmem, CONFIG_DIR);
+		if (catch excuse = dir)
+		{
+			self.add_warning("Could not resolve config directory");
+			return;
+		}
+		Path? file = dir.append(tmem, CONFIG_FILE);
+		if (catch excuse = file)
+		{
+			self.add_warning("Could not resolve config path");
+			return;
+		}
+		self.ensure_defaults(dir, file);
+		self.load_path(file, settings::SettingLayer.GLOBAL);
+	};
 }
 
 fn void Config.load_project(&self, String project_root)
 {
 	if (project_root.len == 0) return;
-	Path? dir = ((Path)project_root).append(self.allocator, PROJECT_DIR);
-	if (catch excuse = dir) return;
-	Path? file = dir.append(self.allocator, CONFIG_FILE);
-	if (catch excuse = file) return;
-	self.load_path(file, settings::SettingLayer.PROJECT);
+	@pool()
+	{
+		Path? dir = ((Path)project_root).append(tmem, PROJECT_DIR);
+		if (catch excuse = dir) return;
+		Path? file = dir.append(tmem, CONFIG_FILE);
+		if (catch excuse = file) return;
+		self.load_path(file, settings::SettingLayer.PROJECT);
+	};
 }
 
 fn void Config.load(&self, String project_root)
@@ -432,23 +438,29 @@ fn void Config.save_path(&self, Path path, settings::SettingLayer scope)
 
 fn void Config.save_global(&self)
 {
-	Path? config_dir = env::get_config_dir(self.allocator);
-	if (catch excuse = config_dir) return;
-	Path? dir = config_dir.append(self.allocator, CONFIG_DIR);
-	if (catch excuse = dir) return;
-	if (catch excuse = path::mkdir(dir, recursive: true)) return;
-	Path? file = dir.append(self.allocator, CONFIG_FILE);
-	if (catch excuse = file) return;
-	self.save_path(file, settings::SettingLayer.GLOBAL);
+	@pool()
+	{
+		Path? config_dir = env::get_config_dir(tmem);
+		if (catch excuse = config_dir) return;
+		Path? dir = config_dir.append(tmem, CONFIG_DIR);
+		if (catch excuse = dir) return;
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? file = dir.append(tmem, CONFIG_FILE);
+		if (catch excuse = file) return;
+		self.save_path(file, settings::SettingLayer.GLOBAL);
+	};
 }
 
 fn void Config.save_project(&self, String project_root)
 {
 	if (project_root.len == 0) return;
-	Path? dir = ((Path)project_root).append(self.allocator, PROJECT_DIR);
-	if (catch excuse = dir) return;
-	Path? file = dir.append(self.allocator, CONFIG_FILE);
-	if (catch excuse = file) return;
-	if (catch excuse = path::mkdir(dir, recursive: true)) return;
-	self.save_path(file, settings::SettingLayer.PROJECT);
+	@pool()
+	{
+		Path? dir = ((Path)project_root).append(tmem, PROJECT_DIR);
+		if (catch excuse = dir) return;
+		Path? file = dir.append(tmem, CONFIG_FILE);
+		if (catch excuse = file) return;
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		self.save_path(file, settings::SettingLayer.PROJECT);
+	};
 }
