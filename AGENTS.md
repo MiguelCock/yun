@@ -40,7 +40,7 @@
 
 ## Workflow
 - Branch model: `main` (release) <- `development` (integration) <- `<issue>-<slug>` feature branches. Details in `CONTRIBUTING.md`.
-- Commit with the issue prefix (`#1 ...`), push, and open a PR into `development`. **Never merge a PR** — the maintainer reviews every PR and merges it (squash) themselves.
+- Commit with the issue prefix (`#1 ...`), push, and open a PR into `development`. The maintainer reviews and merges PRs (squash); an authorized agent may also merge when the user explicitly asks.
 - opencode commands: `start-issue` (branch off `development`) and `finish-issue` (verify, commit, push, open PR).
 - CI (`.github/workflows/ci.yml`) runs `c3c build`, `c3c test`, and `c3fmt --check` on PRs.
 
