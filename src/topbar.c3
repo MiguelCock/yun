@@ -155,11 +155,42 @@ fn float bar_text_y(float text_height)
 	return (ui::pxf(TOP_BAR_HEIGHT) - text_height) / 2.0f;
 }
 
+fn usz next_utf8(String text, usz i)
+{
+	i++;
+	while (i < text.len && ((int)text[i] & 0xC0) == 0x80) i++;
+	return i;
+}
+
+fn String elide_text(RLFont font, String text, float size, float max_width)
+{
+	if (text.len == 0 || max_width <= 0.0f) return "";
+	if (rl::measure_text_ex(font, (ZString)text.ptr, size, 0.0f)[0] <= max_width) return text;
+
+	String ellipsis      = "...";
+	float ellipsis_width = rl::measure_text_ex(font, (ZString)ellipsis.ptr, size, 0.0f)[0];
+	if (max_width <= ellipsis_width) return "";
+
+	usz end       = 0;
+	usz last_good = 0;
+	while (end < text.len)
+	{
+		end = next_utf8(text, end);
+		String prefix = text[0:end];
+		if (rl::measure_text_ex(font, (ZString)prefix.ptr, size, 0.0f)[0] + ellipsis_width > max_width) break;
+		last_good = end;
+	}
+	if (last_good == 0) return "";
+	return string::format(tmem, "%s...", text[0:last_good]);
+}
+
 fn void TopBar.draw(
 	&self,
 	bool has_project,
 	bool has_buffer,
 	String project_name,
+	String mode,
+	String folder,
 	float zoom,
 	String lsp_status,
 	int errors,
@@ -210,32 +241,97 @@ fn void TopBar.draw(
 	{
 		rl::draw_rectangle_lines_ex(button_rect((usz)self.selected), 2.0f, theme::current().card_focus);
 	}
-	if (has_project && project_name.len > 0)
+	@pool()
 	{
+		String zoom_label = string::format(tmem, "%d%%", (int)(zoom * 100.0f));
+		float zoom_width  = rl::measure_text_ex(font, (ZString)zoom_label.ptr, text_size, 0.0f)[0];
+		float zoom_x      = (float)rl::get_screen_width() - (float)ui::px(12) - zoom_width;
+		float right_start = zoom_x;
+
+		float lsp_width = 0.0f;
+		if (lsp_status.len > 0)
+		{
+			lsp_width = rl::measure_text_ex(font, (ZString)lsp_status.ptr, text_size, 0.0f)[0];
+			right_start -= (float)ui::px(24) + lsp_width;
+		}
+
+		String counts     = "";
+		float counts_size = 0.0f;
+		if (errors > 0 || warnings > 0)
+		{
+			counts = string::format(tmem, "E%d W%d", errors, warnings);
+			counts_size = rl::measure_text_ex(font, (ZString)counts.ptr, text_size, 0.0f)[0];
+			right_start -= (float)ui::px(24) + counts_size;
+		}
+
+		if (has_project && project_name.len > 0)
+		{
+			String name      = project_name;
+			float name_width = rl::measure_text_ex(font, (ZString)name.ptr, text_size, 0.0f)[0];
+			float name_max   = right_start - name_x - (float)ui::px(12);
+			if (name_max > 0.0f && name_width > name_max) name = elide_text(font, name, text_size, name_max);
+			if (name.len > 0)
+			{
+				name_width = rl::measure_text_ex(font, (ZString)name.ptr, text_size, 0.0f)[0];
+				rl::draw_text_ex(
+					font,
+					(ZString)name.ptr,
+					{ name_x, bar_text_y(text_size) },
+					text_size,
+					0.0f,
+					theme::current()
+					.topbar_name);
+				if (mode.len > 0)
+				{
+					float status_x   = name_x + name_width + (float)ui::px(16);
+					float status_max = right_start - status_x - (float)ui::px(12);
+					if (status_max > 0.0f)
+					{
+						rl::draw_text_ex(
+							font,
+							(ZString)mode.ptr,
+							{ status_x, bar_text_y(text_size) },
+							text_size,
+							0.0f,
+							theme::current()
+							.topbar_name);
+						float mode_width = rl::measure_text_ex(font, (ZString)mode.ptr, text_size, 0.0f)[0];
+						float folder_x   = status_x + mode_width + (float)ui::px(12);
+						float folder_max = right_start - folder_x - (float)ui::px(12);
+						if (folder.len > 0 && folder_max > 0.0f)
+						{
+							String shown = elide_text(font, folder, text_size, folder_max);
+							if (shown.len > 0)
+							{
+								rl::draw_text_ex(
+									font,
+									(ZString)shown.ptr,
+									{ folder_x, bar_text_y(text_size) },
+									text_size,
+									0.0f,
+									theme::current()
+									.topbar_disabled);
+							}
+						}
+					}
+				}
+			}
+		}
+
 		rl::draw_text_ex(
 			font,
-			(ZString)project_name.ptr,
-			{ name_x, bar_text_y(text_size) },
+			(ZString)zoom_label.ptr,
+			{ zoom_x, bar_text_y(text_size) },
 			text_size,
 			0.0f,
 			theme::current()
-			.topbar_name);
-	}
-
-	@pool()
-	{
-		String label   = string::format(tmem, "%d%%", (int)(zoom * 100.0f));
-		RLVector2 size = rl::measure_text_ex(font, (ZString)label.ptr, text_size, 0.0f);
-		float zoom_x   = (float)rl::get_screen_width() - (float)ui::px(12) - size[0];
-		rl::draw_text_ex(font, (ZString)label.ptr, { zoom_x, bar_text_y(text_size) }, text_size, 0.0f, theme::current()
 			.topbar_name);
 
 		float cursor_x = zoom_x;
 		self.counter_hit = { };
 		if (lsp_status.len > 0)
 		{
-			RLVector2 lsp_size = rl::measure_text_ex(font, (ZString)lsp_status.ptr, text_size, 0.0f);
-			cursor_x -= (float)ui::px(24) + lsp_size[0];
+			cursor_x -= (float)ui::px(24) + lsp_width;
 			rl::draw_text_ex(
 				font,
 				(ZString)lsp_status.ptr,
@@ -245,11 +341,9 @@ fn void TopBar.draw(
 				theme::current()
 				.topbar_disabled);
 		}
-		if (errors > 0 || warnings > 0)
+		if (counts.len > 0)
 		{
-			String counts        = string::format(tmem, "E%d W%d", errors, warnings);
-			RLVector2 count_size = rl::measure_text_ex(font, (ZString)counts.ptr, text_size, 0.0f);
-			cursor_x -= (float)ui::px(24) + count_size[0];
+			cursor_x -= (float)ui::px(24) + counts_size;
 			rl::draw_text_ex(
 				font,
 				(ZString)counts.ptr,
@@ -261,7 +355,7 @@ fn void TopBar.draw(
 			self.counter_hit = {
 				.x = cursor_x,
 				.y = bar_text_y(text_size),
-				.width = count_size[0],
+				.width = counts_size,
 				.height = text_size,
 			};
 		}
