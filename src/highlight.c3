@@ -58,7 +58,9 @@ struct Highlighter
 	TSQuery* query;
 	String source;
 	List{Span} spans;
+	List{Span} semantic_spans;
 	sz run_cursor;
+	sz semantic_cursor;
 	usz last_line_start;
 	bool dirty;
 	bool has_tree;
@@ -728,8 +730,10 @@ fn Highlighter* create(Allocator allocator, PieceTable* table, String path)
 	highlighter.has_tree = false;
 	highlighter.dirty = true;
 	highlighter.run_cursor = 0;
+	highlighter.semantic_cursor = 0;
 	highlighter.last_line_start = 0;
 	highlighter.spans.init(allocator);
+	highlighter.semantic_spans.init(allocator);
 	highlighter.parser = tree_sitter::ts_parser_new();
 	if (!highlighter.parser)
 	{
@@ -754,6 +758,7 @@ fn void destroy(Highlighter* highlighter, Allocator allocator)
 	if (highlighter.parser) tree_sitter::ts_parser_delete(highlighter.parser);
 	if (highlighter.source.len) highlighter.source.free(allocator);
 	highlighter.spans.free();
+	highlighter.semantic_spans.free();
 	alloc::free(allocator, highlighter);
 }
 
@@ -784,6 +789,7 @@ fn void shutdown()
 fn void Highlighter.mark_dirty(&self)
 {
 	self.dirty = true;
+	self.semantic_spans.clear();
 }
 
 fn void Highlighter.rebuild_spans(&self)
@@ -797,6 +803,37 @@ fn void Highlighter.rebuild_spans(&self)
 	{
 		libc::qsort(self.spans.entries, (usz)self.spans.size, Span::size, &span_compare);
 	}
+}
+
+fn SyntaxRole role_for_semantic_token(String name)
+{
+	if (name.compare_to("keyword") == 0) return SyntaxRole.KEYWORD;
+	if (name.compare_to("type") == 0) return SyntaxRole.TYPE;
+	if (name.compare_to("struct") == 0) return SyntaxRole.TYPE;
+	if (name.compare_to("interface") == 0) return SyntaxRole.TYPE;
+	if (name.compare_to("enumMember") == 0) return SyntaxRole.CONSTANT;
+	if (name.compare_to("function") == 0) return SyntaxRole.FUNCTION;
+	if (name.compare_to("method") == 0) return SyntaxRole.FUNCTION;
+	if (name.compare_to("property") == 0) return SyntaxRole.PROPERTY;
+	if (name.compare_to("variable") == 0) return SyntaxRole.VARIABLE;
+	if (name.compare_to("parameter") == 0) return SyntaxRole.PARAMETER;
+	if (name.compare_to("number") == 0) return SyntaxRole.NUMBER;
+	if (name.compare_to("string") == 0) return SyntaxRole.STRING;
+	if (name.compare_to("comment") == 0) return SyntaxRole.COMMENT;
+	if (name.compare_to("operator") == 0) return SyntaxRole.OPERATOR;
+	return SyntaxRole.NONE;
+}
+
+fn void Highlighter.set_semantic_spans(&self, List{Span}* spans)
+{
+	self.semantic_spans.free();
+	self.semantic_spans = *spans;
+	if (self.semantic_spans.len() > 1)
+	{
+		libc::qsort(self.semantic_spans.entries, (usz)self.semantic_spans.size, Span::size, &span_compare);
+	}
+	self.run_cursor = 0;
+	self.semantic_cursor = 0;
 }
 
 fn void Highlighter.ensure_parsed(&self)
@@ -822,6 +859,7 @@ fn void Highlighter.ensure_parsed(&self)
 fn void Highlighter.begin_runs(&self)
 {
 	self.run_cursor = 0;
+	self.semantic_cursor = 0;
 	self.last_line_start = 0;
 }
 
@@ -844,7 +882,17 @@ fn void Highlighter.runs_for_line(&self, usz line_start, usz line_end, List{Span
 	sz first = self.run_cursor;
 	sz last  = first;
 	while (last < self.spans.len() && (usz)self.spans[last].start < line_end) last++;
-	if (first >= last) return;
+
+	while (self.semantic_cursor < self.semantic_spans.len()
+		&& (usz)self.semantic_spans[self.semantic_cursor].end <= line_start)
+	{
+		self.semantic_cursor++;
+	}
+	sz semantic_first = self.semantic_cursor;
+	sz semantic_last  = semantic_first;
+	while (semantic_last < self.semantic_spans.len()
+		&& (usz)self.semantic_spans[semantic_last].start < line_end) semantic_last++;
+	if (first >= last && semantic_first >= semantic_last) return;
 
 	usz pos = line_start;
 	while (pos < line_end)
@@ -855,10 +903,21 @@ fn void Highlighter.runs_for_line(&self, usz line_start, usz line_end, List{Span
 			Span s = self.spans[i];
 			if ((usz)s.start <= pos && (usz)s.end > pos) role = s.role;
 		}
+		for (sz i = semantic_first; i < semantic_last; i++)
+		{
+			Span s = self.semantic_spans[i];
+			if ((usz)s.start <= pos && (usz)s.end > pos) role = s.role;
+		}
 		usz next = line_end;
 		for (sz i = first; i < last; i++)
 		{
 			Span s = self.spans[i];
+			if ((usz)s.start > pos && (usz)s.start < next) next = (usz)s.start;
+			if ((usz)s.end > pos && (usz)s.end < next) next = (usz)s.end;
+		}
+		for (sz i = semantic_first; i < semantic_last; i++)
+		{
+			Span s = self.semantic_spans[i];
 			if ((usz)s.start > pos && (usz)s.start < next) next = (usz)s.start;
 			if ((usz)s.end > pos && (usz)s.end < next) next = (usz)s.end;
 		}

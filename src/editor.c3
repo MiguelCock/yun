@@ -195,13 +195,70 @@ fn usz column_for_offset(PieceTable* table, usz line, usz offset)
 	return column;
 }
 
+fn uint text_columns(String text)
+{
+	uint columns = 0;
+	for (usz i = 0; i < text.len; i++)
+	{
+		if (((int)text[i] & 0xC0) != 0x80) columns++;
+	}
+	return columns;
+}
+
+fn usz inlay_offset(PieceTable* table, lsp::InlayHint hint)
+{
+	return lsp::offset_from_position(table, hint.line, hint.character);
+}
+
+fn uint hint_columns_before(PieceTable* table, lsp::InlayHint[] hints, usz line, usz offset, bool inclusive)
+{
+	uint columns = 0;
+	for (usz i = 0; i < hints.len; i++)
+	{
+		lsp::InlayHint hint = hints[i];
+		if ((usz)hint.line != line) continue;
+		usz at = inlay_offset(table, hint);
+		if (inclusive ? at <= offset : at < offset) columns += text_columns(hint.label);
+	}
+	return columns;
+}
+
+fn usz visual_column_for_offset(PieceTable* table, usz line, usz offset, lsp::InlayHint[] hints)
+{
+	return column_for_offset(table, line, offset) + hint_columns_before(table, hints, line, offset, true);
+}
+
+fn usz offset_for_visual_column(PieceTable* table, usz line, usz target, lsp::InlayHint[] hints)
+{
+	usz start  = table.line_start(line);
+	usz end    = start + line_length_bytes(table, line);
+	usz pos    = start;
+	usz visual = 0;
+	int tabs   = tab_columns();
+	while (pos < end)
+	{
+		if (target <= visual) return pos;
+		uint before = hint_columns_before(table, hints, line, pos, false);
+		uint gap    = hint_columns_before(table, hints, line, pos, true) - before;
+		if (gap > 0 && target <= visual + gap) return pos;
+		visual += gap;
+		usz next   = table.next_boundary(pos);
+		uint width = table.byte_at(pos) == '\t' ? (uint)tabs : 1u;
+		if (target <= visual + width) return target == visual ? pos : next;
+		visual += width;
+		pos = next;
+	}
+	return end;
+}
+
 fn usz offset_for_point(
 	PieceTable* table,
 	float local_x,
 	float local_y,
 	float scroll_y,
 	float scroll_x,
-	EditorMetrics metrics
+	EditorMetrics metrics,
+	lsp::InlayHint[] hints
 )
 {
 	if (metrics.line_height <= 0.0f || metrics.char_width <= 0.0f) return 0;
@@ -217,10 +274,7 @@ fn usz offset_for_point(
 	sz column       = (sz)math::round(content_x / metrics.char_width);
 	if (column < 0) column = 0;
 
-	usz start   = table.line_start((usz)line);
-	usz max_col = column_for_offset(table, (usz)line, start + line_length_bytes(table, (usz)line));
-	if ((usz)column > max_col) column = (sz)max_col;
-	return offset_for_column(table, (usz)line, (usz)column);
+	return offset_for_visual_column(table, (usz)line, (usz)column, hints);
 }
 
 fn void selection_range(usz anchor, usz cursor, usz* start, usz* end)
@@ -644,6 +698,7 @@ fn void draw_text_highlighted(
 	RLCamera2D camera,
 	RLFont font,
 	float font_size,
+	lsp::InlayHint[] hints,
 	RLColor base
 )
 {
@@ -690,8 +745,9 @@ fn void draw_text_highlighted(
 				usz end   = run.end - line_start;
 				col = advance_columns(text, pos, start, tabs, col);
 				pos = start;
-				RLVector2 at  = { area.x + (float)col * metrics.char_width - scroll_x, y };
-				RLColor color = highlight::role_color(run.role);
+				usz visual_col = visual_column_for_offset(table, line, line_start + start, hints);
+				RLVector2 at   = { area.x + (float)visual_col * metrics.char_width - scroll_x, y };
+				RLColor color  = highlight::role_color(run.role);
 				if (has_tab)
 				{
 					String span = text[start:end - start];
@@ -707,6 +763,19 @@ fn void draw_text_highlighted(
 				}
 				col = advance_columns(text, pos, end, tabs, col);
 				pos = end;
+			}
+			for (usz h = 0; h < hints.len; h++)
+			{
+				lsp::InlayHint hint = hints[h];
+				if ((usz)hint.line != line) continue;
+				usz at = inlay_offset(table, hint);
+				if (at < line_start || at > line_start + len) continue;
+				usz hint_col = column_for_offset(table, line, at) + hint_columns_before(table, hints, line, at, false);
+				RLVector2 hint_at = {
+					area.x + (float)hint_col * metrics.char_width - scroll_x,
+					y,
+				};
+				rl::draw_text_ex(font, hint.label.zstr_tcopy(), hint_at, font_size, 0.0f, theme::current().syn_comment);
 			}
 		}
 		runs.free();
@@ -873,10 +942,18 @@ fn usz delete_forward(PieceTable* table, usz cursor)
 	return cursor;
 }
 
-fn Rect caret_rect(PieceTable* table, Rect area, float scroll_y, float scroll_x, EditorMetrics metrics, usz cursor)
+fn Rect caret_rect(
+	PieceTable* table,
+	Rect area,
+	float scroll_y,
+	float scroll_x,
+	EditorMetrics metrics,
+	usz cursor,
+	lsp::InlayHint[] hints
+)
 {
 	usz line    = table.line_of(cursor);
-	usz column  = column_for_offset(table, line, cursor);
+	usz column  = visual_column_for_offset(table, line, cursor, hints);
 	float x     = area.x + (float)column * metrics.char_width - scroll_x;
 	float y     = area.y + (float)line * metrics.line_height - scroll_y;
 	float width = metrics.char_width > 0.0f ? metrics.char_width : 1.0f;
@@ -890,14 +967,15 @@ fn Rect match_rect(
 	float scroll_x,
 	EditorMetrics metrics,
 	usz start,
-	usz end
+	usz end,
+	lsp::InlayHint[] hints
 )
 {
 	usz line        = table.line_of(start);
-	usz col         = column_for_offset(table, line, start);
+	usz col         = visual_column_for_offset(table, line, start, hints);
 	usz line_end    = table.line_start(line) + line_length_bytes(table, line);
 	usz end_clamped = end > line_end ? line_end : end;
-	usz end_col     = end_clamped > start ? column_for_offset(table, line, end_clamped) : col;
+	usz end_col     = end_clamped > start ? visual_column_for_offset(table, line, end_clamped, hints) : col;
 	float x         = area.x + (float)col * metrics.char_width - scroll_x;
 	float y         = area.y + (float)line * metrics.line_height - scroll_y;
 	float width     = (float)(end_col - col) * metrics.char_width;
@@ -916,6 +994,7 @@ fn void draw_matches(
 	usz count,
 	usz query_len,
 	usz current,
+	lsp::InlayHint[] hints,
 	RLColor normal,
 	RLColor selected
 )
@@ -928,7 +1007,7 @@ fn void draw_matches(
 		usz start = starts[i];
 		usz line  = table.line_of(start);
 		if (line < range.first || line >= range.last) continue;
-		Rect r = match_rect(table, area, scroll_y, scroll_x, metrics, start, start + query_len);
+		Rect r = match_rect(table, area, scroll_y, scroll_x, metrics, start, start + query_len, hints);
 		rl::draw_rectangle_rec(r, i == current ? selected : normal);
 	}
 	rl::end_scissor_mode();
@@ -960,6 +1039,7 @@ fn void draw_selection(
 	RLCamera2D camera,
 	usz start,
 	usz end,
+	lsp::InlayHint[] hints,
 	RLColor color
 )
 {
@@ -975,8 +1055,8 @@ fn void draw_selection(
 		usz line_end   = line_start + line_length_bytes(table, line);
 		usz s          = start > line_start ? start : line_start;
 		usz e          = end < line_end ? end : line_end;
-		usz start_col  = column_for_offset(table, line, s);
-		usz end_col    = column_for_offset(table, line, e);
+		usz start_col  = visual_column_for_offset(table, line, s, hints);
+		usz end_col    = visual_column_for_offset(table, line, e, hints);
 		Rect r         = selection_rect_for_line(start_col, end_col, line, area, scroll_y, scroll_x, metrics);
 		if (end > line_end) r.width = area.x + area.width - r.x;
 		rl::draw_rectangle_rec(r, color);
@@ -1042,6 +1122,7 @@ fn void draw_diagnostics(
 	float scroll_x,
 	EditorMetrics metrics,
 	RLCamera2D camera,
+	lsp::InlayHint[] hints,
 	lsp::LspDiagnostic[] diags
 )
 {
@@ -1063,8 +1144,8 @@ fn void draw_diagnostics(
 			usz line_end   = line_start + line_length_bytes(table, line);
 			usz s          = start > line_start ? start : line_start;
 			usz e          = end < line_end ? end : line_end;
-			usz start_col  = column_for_offset(table, line, s);
-			usz end_col    = column_for_offset(table, line, e);
+			usz start_col  = visual_column_for_offset(table, line, s, hints);
+			usz end_col    = visual_column_for_offset(table, line, e, hints);
 			float x0       = area.x + (float)start_col * metrics.char_width - scroll_x;
 			float x1       = area.x + (float)end_col * metrics.char_width - scroll_x;
 			if (e >= line_end || end_col <= start_col) x1 = x0 + metrics.char_width;
@@ -1099,11 +1180,12 @@ fn float scroll_x_to_reveal(
 	EditorMetrics metrics,
 	float area_width,
 	usz cursor,
-	float current_scroll_x
+	float current_scroll_x,
+	lsp::InlayHint[] hints
 )
 {
 	usz line     = table.line_of(cursor);
-	usz column   = column_for_offset(table, line, cursor);
+	usz column   = visual_column_for_offset(table, line, cursor, hints);
 	float left   = (float)column * metrics.char_width;
 	float right  = left + metrics.char_width;
 	float margin = metrics.char_width * 4.0f;
@@ -1122,11 +1204,12 @@ fn void draw_caret(
 	EditorMetrics metrics,
 	RLCamera2D camera,
 	usz cursor,
+	lsp::InlayHint[] hints,
 	RLColor color
 )
 {
 	apply_scissor(area, camera);
-	rl::draw_rectangle_rec(caret_rect(table, area, scroll_y, scroll_x, metrics, cursor), color);
+	rl::draw_rectangle_rec(caret_rect(table, area, scroll_y, scroll_x, metrics, cursor, hints), color);
 	rl::end_scissor_mode();
 }
 fn Rect gutter_rect(Rect card_rect, EditorMetrics metrics, usz line_count)

@@ -5,6 +5,7 @@ import std::collections::list;
 import std::math;
 import yun::commands;
 import yun::editor;
+import yun::lsp;
 import yun::find;
 import yun::keymap;
 import yun::text;
@@ -353,7 +354,8 @@ fn void FindBar.draw_matches(
 	float scroll_y,
 	float scroll_x,
 	EditorMetrics metrics,
-	RLCamera2D camera
+	RLCamera2D camera,
+	lsp::InlayHint[] hints
 )
 {
 	if (!self.open || self.total == 0) return;
@@ -368,7 +370,7 @@ fn void FindBar.draw_matches(
 		self.starts.entries[0:self.starts.len()],
 		(usz)self.total,
 		self.query_view()
-		.len, (usz)self.current, theme::current().editor_match, theme::current().editor_match_current);
+		.len, (usz)self.current, hints, theme::current().editor_match, theme::current().editor_match_current);
 }
 
 fn void FindBar.draw(&self, Rect card_rect, EditorMetrics metrics, RLFont font, keymap::Keymap* keymap)

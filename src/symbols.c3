@@ -14,6 +14,7 @@ import tree_sitter;
 import yun::commands;
 import yun::editor;
 import yun::language;
+import yun::lsp;
 import yun::keymap;
 import yun::project;
 import yun::theme;
@@ -453,6 +454,95 @@ fn void Symbols.note_edit(&self, String path, double now)
 	}
 	self.pending_edit = true;
 	self.pending_since = now;
+}
+
+fn SymbolKind kind_from_lsp(int kind)
+{
+	switch (kind)
+	{
+		case 5:
+			return SymbolKind.CLASS;
+		case 6:
+		case 9:
+			return SymbolKind.METHOD;
+		case 10:
+			return SymbolKind.ENUM;
+		case 12:
+		case 25:
+			return SymbolKind.FUNCTION;
+		case 14:
+		case 22:
+			return SymbolKind.CONST;
+		case 13:
+		case 7:
+		case 8:
+			return SymbolKind.VARIABLE;
+		default:
+			return SymbolKind.TYPE;
+	}
+}
+
+fn void Symbols.merge_lsp(&self, List{lsp::LspSymbol}* symbols)
+{
+	if (symbols.len() == 0) return;
+	@pool()
+	{
+		HashMap{String, int} group_index;
+		group_index.init(tmem);
+		List{CardSymbols} groups;
+		groups.init(self.allocator);
+		for (sz i = 0; i < symbols.len(); i++)
+		{
+			lsp::LspSymbol source = symbols.get(i);
+			int*? existing        = group_index.get_ref(source.path);
+			sz group              = 0;
+			if (catch excuse = existing)
+			{
+				CardSymbols created;
+				created.path = source.path.copy(self.allocator);
+				created.symbols.init(self.allocator);
+				groups.push(created);
+				group = groups.len() - 1;
+				group_index.set(groups[group].path, (int)group);
+			}
+			else
+			{
+				group = (sz)*existing;
+			}
+
+			CardSymbols* target = &groups[group];
+			bool duplicate      = false;
+			for (sz s = 0; s < target.symbols.len(); s++)
+			{
+				if (target.symbols[s].line == (usz)source.line && target.symbols[s].column == (usz)source.character
+					&& target.symbols[s].name.compare_to(
+					source.name
+				) == 0)
+				{
+					duplicate = true;
+					break;
+				}
+			}
+			if (duplicate) continue;
+			target.symbols.push(
+				{
+					.name = source.name.copy(self.allocator),
+					.kind = kind_from_lsp(source.kind),
+					.line = source.line,
+					.column = source.character,
+				}
+			);
+		}
+		for (sz g = 0; g < groups.len(); g++)
+		{
+			CardSymbols* group = &groups[g];
+			if (group.symbols.len() == 0) continue;
+			self.store(group.path, &group.symbols);
+			group.path.free(self.allocator);
+		}
+		groups.free();
+	};
+	self.dirty = true;
 }
 
 fn void Symbols.store(&self, String path, List{Symbol}* symbols)

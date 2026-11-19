@@ -21,6 +21,8 @@ enum ContextAction
 	NEW_FOLDER,
 	OPEN_PROJECT,
 	GO_TO_DEFINITION,
+	REFERENCES,
+	CODE_ACTIONS,
 }
 
 struct ContextItem
@@ -30,7 +32,7 @@ struct ContextItem
 	bool enabled;
 }
 
-const int CONTEXT_MAX_ITEMS = 8;
+const int CONTEXT_MAX_ITEMS = 10;
 
 fn usz build(
 	ContextTarget target,
@@ -67,6 +69,18 @@ fn usz build(
 				.enabled = can_define,
 			};
 			count++;
+			out[count] = {
+				.label = "Find References",
+				.action = ContextAction.REFERENCES,
+				.enabled = can_define,
+			};
+			count++;
+			out[count] = {
+				.label = "Code Actions",
+				.action = ContextAction.CODE_ACTIONS,
+				.enabled = can_define,
+			};
+			count++;
 			break;
 		case ContextTarget.CLUSTER:
 			out[count] = { .label = "New File", .action = ContextAction.NEW_FILE, .enabled = has_project };
@@ -98,6 +112,10 @@ fn int command_for(ContextAction action)
 			return (int)commands::CommandId.OPEN;
 		case ContextAction.GO_TO_DEFINITION:
 			return (int)commands::CommandId.GO_TO_DEFINITION;
+		case ContextAction.REFERENCES:
+			return (int)commands::CommandId.REFERENCES;
+		case ContextAction.CODE_ACTIONS:
+			return (int)commands::CommandId.CODE_ACTIONS;
 		case ContextAction.TOGGLE_CARD:
 			return (int)commands::CommandId.TOGGLE_CARD;
 		case ContextAction.RENAME_CARD:
