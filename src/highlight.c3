@@ -40,6 +40,10 @@ enum SyntaxRole : int
 	LITERAL,
 	URI,
 	REFERENCE,
+	MACRO,
+	IMPORT,
+	TYPE_KEYWORD,
+	DOC_COMMENT,
 	NONE,
 }
 
@@ -605,7 +609,11 @@ fn void collect_spans(
 
 fn SyntaxRole role_for_name(String name)
 {
+	if (name.starts_with("keyword.import")) return SyntaxRole.IMPORT;
+	if (name.starts_with("keyword.type")) return SyntaxRole.TYPE_KEYWORD;
+	if (name.starts_with("keyword.operator")) return SyntaxRole.OPERATOR;
 	if (name.starts_with("keyword")) return SyntaxRole.KEYWORD;
+	if (name.starts_with("comment.documentation")) return SyntaxRole.DOC_COMMENT;
 	if (name.starts_with("comment")) return SyntaxRole.COMMENT;
 	if (name.starts_with("string.escape")) return SyntaxRole.ESCAPE;
 	if (name.starts_with("string.special")) return SyntaxRole.ESCAPE;
@@ -615,9 +623,10 @@ fn SyntaxRole role_for_name(String name)
 	if (name.starts_with("boolean")) return SyntaxRole.BOOLEAN;
 	if (name.starts_with("constant.builtin")) return SyntaxRole.BUILTIN;
 	if (name.starts_with("constant")) return SyntaxRole.CONSTANT;
-	if (name.starts_with("type.builtin")) return SyntaxRole.TYPE;
+	if (name.starts_with("type.builtin")) return SyntaxRole.BUILTIN;
 	if (name.starts_with("type")) return SyntaxRole.TYPE;
 	if (name.starts_with("constructor")) return SyntaxRole.TYPE;
+	if (name.starts_with("function.macro")) return SyntaxRole.MACRO;
 	if (name.starts_with("function")) return SyntaxRole.FUNCTION;
 	if (name.starts_with("method")) return SyntaxRole.FUNCTION;
 	if (name.starts_with("variable.parameter")) return SyntaxRole.PARAMETER;
@@ -629,6 +638,7 @@ fn SyntaxRole role_for_name(String name)
 	if (name.starts_with("operator")) return SyntaxRole.OPERATOR;
 	if (name.starts_with("punctuation")) return SyntaxRole.PUNCTUATION;
 	if (name.starts_with("attribute")) return SyntaxRole.ATTRIBUTE;
+	if (name.starts_with("module.builtin")) return SyntaxRole.BUILTIN;
 	if (name.starts_with("module")) return SyntaxRole.MODULE;
 	if (name.starts_with("namespace")) return SyntaxRole.MODULE;
 	if (name.starts_with("label")) return SyntaxRole.LABEL;
@@ -691,6 +701,14 @@ fn RLColor role_color(SyntaxRole role)
 			return t.syn_property;
 		case SyntaxRole.BUILTIN:
 			return t.syn_builtin;
+		case SyntaxRole.MACRO:
+			return t.syn_macro;
+		case SyntaxRole.IMPORT:
+			return t.syn_import;
+		case SyntaxRole.TYPE_KEYWORD:
+			return t.syn_keyword_type;
+		case SyntaxRole.DOC_COMMENT:
+			return t.syn_doc_comment;
 		case SyntaxRole.TITLE:
 			return t.syn_keyword;
 		case SyntaxRole.EMPHASIS:
@@ -807,20 +825,17 @@ fn void Highlighter.rebuild_spans(&self)
 
 fn SyntaxRole role_for_semantic_token(String name)
 {
-	if (name.compare_to("keyword") == 0) return SyntaxRole.KEYWORD;
 	if (name.compare_to("type") == 0) return SyntaxRole.TYPE;
 	if (name.compare_to("struct") == 0) return SyntaxRole.TYPE;
 	if (name.compare_to("interface") == 0) return SyntaxRole.TYPE;
 	if (name.compare_to("enumMember") == 0) return SyntaxRole.CONSTANT;
 	if (name.compare_to("function") == 0) return SyntaxRole.FUNCTION;
 	if (name.compare_to("method") == 0) return SyntaxRole.FUNCTION;
+	if (name.compare_to("macro") == 0) return SyntaxRole.MACRO;
+	if (name.compare_to("decorator") == 0) return SyntaxRole.ATTRIBUTE;
+	if (name.compare_to("namespace") == 0) return SyntaxRole.MODULE;
 	if (name.compare_to("property") == 0) return SyntaxRole.PROPERTY;
-	if (name.compare_to("variable") == 0) return SyntaxRole.VARIABLE;
 	if (name.compare_to("parameter") == 0) return SyntaxRole.PARAMETER;
-	if (name.compare_to("number") == 0) return SyntaxRole.NUMBER;
-	if (name.compare_to("string") == 0) return SyntaxRole.STRING;
-	if (name.compare_to("comment") == 0) return SyntaxRole.COMMENT;
-	if (name.compare_to("operator") == 0) return SyntaxRole.OPERATOR;
 	return SyntaxRole.NONE;
 }
 

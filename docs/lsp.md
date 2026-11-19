@@ -130,7 +130,7 @@ Override the command for a language id under the `lsp` section of the config
 | rename | `F2`; `prepareRename` fills the prompt, then a `WorkspaceEdit` is applied to open cards. |
 | code actions | `Ctrl+.`; quick fixes are listed and their edits applied. |
 | signature help | Requested inside call parentheses after a short debounce. |
-| semantic tokens | Full-document tokens overlay tree-sitter highlighting. |
+| semantic tokens | Identifier-only tokens augment tree-sitter; keywords, operators, strings, numbers, and comments keep their grammar colors. |
 | inlay hints | Inferred types for `let` and `$` alias bindings, rendered inline after the binding name. |
 
 Rename and code action edits apply only when every affected file has an open

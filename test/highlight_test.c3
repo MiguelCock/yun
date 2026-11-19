@@ -86,9 +86,13 @@ fn void test_role_for_name()
 	assert(role_for_name("string") == SyntaxRole.STRING);
 	assert(role_for_name("string.escape") == SyntaxRole.ESCAPE);
 	assert(role_for_name("comment") == SyntaxRole.COMMENT);
-	assert(role_for_name("comment.documentation") == SyntaxRole.COMMENT);
+	assert(role_for_name("comment.documentation") == SyntaxRole.DOC_COMMENT);
 	assert(role_for_name("number") == SyntaxRole.NUMBER);
-	assert(role_for_name("type.builtin") == SyntaxRole.TYPE);
+	assert(role_for_name("type.builtin") == SyntaxRole.BUILTIN);
+	assert(role_for_name("keyword.import") == SyntaxRole.IMPORT);
+	assert(role_for_name("keyword.type") == SyntaxRole.TYPE_KEYWORD);
+	assert(role_for_name("keyword.operator") == SyntaxRole.OPERATOR);
+	assert(role_for_name("function.macro") == SyntaxRole.MACRO);
 	assert(role_for_name("type") == SyntaxRole.TYPE);
 	assert(role_for_name("function.call") == SyntaxRole.FUNCTION);
 	assert(role_for_name("variable.parameter") == SyntaxRole.PARAMETER);
@@ -99,6 +103,21 @@ fn void test_role_for_name()
 	assert(role_for_name("punctuation.bracket") == SyntaxRole.PUNCTUATION);
 	assert(role_for_name("spell") == SyntaxRole.NONE);
 	assert(role_for_name("local.definition") == SyntaxRole.NONE);
+}
+
+fn void test_semantic_tokens_are_augmenting()
+{
+	assert(role_for_semantic_token("keyword") == SyntaxRole.NONE);
+	assert(role_for_semantic_token("operator") == SyntaxRole.NONE);
+	assert(role_for_semantic_token("string") == SyntaxRole.NONE);
+	assert(role_for_semantic_token("number") == SyntaxRole.NONE);
+	assert(role_for_semantic_token("comment") == SyntaxRole.NONE);
+	assert(role_for_semantic_token("variable") == SyntaxRole.NONE);
+	assert(role_for_semantic_token("parameter") == SyntaxRole.PARAMETER);
+	assert(role_for_semantic_token("property") == SyntaxRole.PROPERTY);
+	assert(role_for_semantic_token("function") == SyntaxRole.FUNCTION);
+	assert(role_for_semantic_token("type") == SyntaxRole.TYPE);
+	assert(role_for_semantic_token("macro") == SyntaxRole.MACRO);
 }
 
 fn void test_runs_cover_line_and_inner_wins()
@@ -162,7 +181,7 @@ fn void test_parse_highlights_c3()
 
 		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.COMMENT));
 		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.KEYWORD));
-		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.TYPE));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.BUILTIN));
 		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.NUMBER));
 
 		destroy(highlighter, tmem);
