@@ -11,6 +11,7 @@ import yun::canvas;
 import yun::card;
 import yun::commands;
 import yun::completion;
+import yun::connections;
 import yun::config;
 import yun::context;
 import yun::editor;
@@ -404,6 +405,7 @@ struct App
 	settings_panel::Panel* settings_panel;
 	findbar::FindBar* find_bar;
 	problems::Problems* problems;
+	connections::Connections* connections;
 	menu::Menu* theme_menu;
 	menu::Menu* context_menu;
 	menu::Menu* close_menu;
@@ -1071,6 +1073,24 @@ fn void run_command(commands::CommandId id, App* app)
 				*app.edit_grace_frames = 2;
 				return;
 			}
+		case commands::CommandId.TOGGLE_CONNECTIONS:
+
+			{
+				if (!*app.project_open)
+				{
+					app.notifier.push("No project open");
+					return;
+				}
+				if (app.connections.open)
+				{
+					app.connections.close();
+				}
+				else
+				{
+					app.connections.show();
+				}
+				return;
+			}
 		case commands::CommandId.CLOSE_CARD:
 
 			{
@@ -1628,6 +1648,9 @@ fn int main(String[] args)
 	problems::Problems problems;
 	problems.init(mem);
 
+	connections::Connections connections;
+	connections.init(mem);
+
 	settings_panel::Panel settings_panel;
 	settings_panel.init(mem);
 
@@ -1683,6 +1706,7 @@ fn int main(String[] args)
 	defer palette.destroy();
 	defer find_bar.destroy();
 	defer problems.destroy();
+	defer connections.destroy();
 	defer completion::completion_destroy();
 	defer project.destroy();
 
@@ -1810,6 +1834,7 @@ fn int main(String[] args)
 		.settings_panel = &settings_panel,
 		.find_bar = &find_bar,
 		.problems = &problems,
+		.connections = &connections,
 		.theme_menu = &theme_menu,
 		.context_menu = &context_menu,
 		.close_menu = &close_menu,
@@ -2410,10 +2435,11 @@ fn int main(String[] args)
 				}
 				edit_grace_frames--;
 			}
-			RLVector2 mouse = rl::get_mouse_position();
-			RLVector2 world = canvas.screen_to_world(mouse);
-			bool over_top   = topbar::contains_screen(mouse);
-			bool has_buffer = has_focused_buffer(&project);
+			RLVector2 mouse       = rl::get_mouse_position();
+			RLVector2 world       = canvas.screen_to_world(mouse);
+			bool over_connections = connections.contains_screen(mouse);
+			bool over_top         = topbar::contains_screen(mouse) || over_connections;
+			bool has_buffer       = has_focused_buffer(&project);
 
 			bool font_wheel = false;
 			if (!over_top && project::ctrl_down())
@@ -2575,6 +2601,18 @@ fn int main(String[] args)
 				}
 			}
 			arrow_hovered_cache = arrow_hovered;
+			connections::ConnectionTarget connection = connections.update_input(&project, &import_index);
+			if (connection.valid)
+			{
+				navigate_to_location(
+					&project,
+					&canvas,
+					metrics,
+					connection.path,
+					(uint)connection.line,
+					(uint)connection.column
+				);
+			}
 			canvas.pointer_over_ui = over_top || project.pointer_over_ui(world) || over_minimap || arrow_hovered;
 			if (focus_active)
 			{
@@ -3079,6 +3117,7 @@ fn int main(String[] args)
 				font,
 				ui_mode == UiMode.TOP_BAR
 			);
+			connections.draw(font, &project, &import_index);
 			browser.draw();
 			close_menu.draw();
 			delete_menu.draw();
