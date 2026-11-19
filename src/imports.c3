@@ -123,6 +123,12 @@ struct ImportHit
 	RLVector2 world;
 }
 
+struct ImporterRef
+{
+	int file;
+	usz ref;
+}
+
 struct CardImports
 {
 	String path;
@@ -2034,6 +2040,22 @@ fn void ImportIndex.rescan(&self, project::Project* project, int card_index)
 			self.resolve_one(project, path);
 		}
 	};
+}
+
+fn void ImportIndex.importers_of(&self, String target_path, List{ImporterRef}* out)
+{
+	out.clear();
+	if (target_path.len == 0) return;
+	for (sz i = 0; i < self.files.len(); i++)
+	{
+		for (sz r = 0; r < self.files[i].imports.len(); r++)
+		{
+			ImportRef ref = self.files[i].imports[r];
+			if (!ref.resolved) continue;
+			if (ref.target_path.compare_to(target_path) != 0) continue;
+			out.push({ .file = (int)i, .ref = (usz)r });
+		}
+	}
 }
 
 fn ImportRef[] ImportIndex.imports_for(&self, String path)
