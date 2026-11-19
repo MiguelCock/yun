@@ -60,3 +60,10 @@ fn void test_keyboard_selection()
 	assert(bar.activate(true, false) == -1); // disabled without a buffer
 	assert(bar.activate(true, true) == (int)commands::CommandId.SAVE);
 }
+fn void test_next_utf8()
+{
+	String text = "aé…";
+	assert(next_utf8(text, 0) == 1);
+	assert(next_utf8(text, 1) == 3);
+	assert(next_utf8(text, 3) == 6);
+}

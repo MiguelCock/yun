@@ -26,7 +26,7 @@ Lua mods (#33–#36), large-file support (#14), very-large-project perf (#45), c
 
 ## Keyboard and modes
 
-Yun is keyboard-first and Vim-inspired. There are three modes, shown by an indicator next to the FPS counter (`-- MOVE --`, `-- EDIT --`, `-- TOP BAR --`), plus a `-- GRAB --` sub-state in MOVE. The indicator also shows the current folder as a breadcrumb. Overlays (command palette, search, symbol palette, problems panel, find bar, menus, prompts) are modal and handle their own keys.
+Yun is keyboard-first and Vim-inspired. There are three modes, shown in the top bar (`-- MOVE --`, `-- EDIT --`, `-- TOP BAR --`), plus a `-- GRAB --` sub-state in MOVE. The status area also shows the current folder as a breadcrumb and elides it when space is tight. The FPS counter is hidden by default; hold `F3` to show it with the performance overlay. Overlays (command palette, search, symbol palette, problems panel, find bar, menus, prompts) are modal and handle their own keys.
 
 ### MOVE (default)
 
