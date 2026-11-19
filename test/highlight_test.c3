@@ -745,3 +745,38 @@ fn void test_runs_for_line_matches_reference()
 	runs.free();
 	highlighter.spans.free();
 }
+
+fn void test_runs_for_line_covers_plain_text()
+{
+	Highlighter highlighter;
+	highlighter.spans.init(tmem);
+	highlighter.semantic_spans.init(tmem);
+	highlighter.begin_runs();
+
+	List{Span} runs;
+	runs.init(tmem);
+
+	highlighter.runs_for_line(0, 5, &runs);
+	assert(runs.len() == 1);
+	assert((usz)runs[0].start == 0);
+	assert((usz)runs[0].end == 5);
+	assert(runs[0].role == SyntaxRole.TEXT);
+
+	highlighter.spans.push({ .start = 2, .end = 4, .role = SyntaxRole.KEYWORD });
+	highlighter.begin_runs();
+	highlighter.runs_for_line(0, 5, &runs);
+	assert(runs.len() == 3);
+	assert((usz)runs[0].start == 0);
+	assert((usz)runs[0].end == 2);
+	assert(runs[0].role == SyntaxRole.TEXT);
+	assert((usz)runs[1].start == 2);
+	assert((usz)runs[1].end == 4);
+	assert(runs[1].role == SyntaxRole.KEYWORD);
+	assert((usz)runs[2].start == 4);
+	assert((usz)runs[2].end == 5);
+	assert(runs[2].role == SyntaxRole.TEXT);
+
+	runs.free();
+	highlighter.spans.free();
+	highlighter.semantic_spans.free();
+}
