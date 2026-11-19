@@ -766,3 +766,73 @@ fn void test_dash_steps_scales_with_length()
 	assert(dash_steps(a, { 300.0f, 0.0f }, 1.0f) == 60);
 	assert(dash_steps(a, { 300.0f, 0.0f }, 0.1f) == 16);
 }
+fn void test_importers_of()
+{
+	@pool()
+	{
+		ImportIndex index;
+		index.files.init(tmem);
+
+		CardImports a;
+		a.path = "/a.c3".copy(tmem);
+		a.module_name = "a".copy(tmem);
+		a.is_test = false;
+		a.imports.init(tmem);
+		a.imports.push(
+			{
+				.specifier = "/b.c3".copy(tmem),
+				.target_path = "/b.c3".copy(tmem),
+				.kind = "import".copy(tmem),
+				.resolved = true,
+				.line = 3,
+				.column = 8,
+			}
+		);
+		index.files.push(a);
+
+		CardImports b;
+		b.path = "/b.c3".copy(tmem);
+		b.module_name = "b".copy(tmem);
+		b.is_test = false;
+		b.imports.init(tmem);
+		b.imports.push(
+			{
+				.specifier = "/c.c3".copy(tmem),
+				.target_path = "/c.c3".copy(tmem),
+				.kind = "import".copy(tmem),
+				.resolved = true,
+				.line = 1,
+				.column = 0,
+			}
+		);
+		b.imports.push(
+			{
+				.specifier = "missing".copy(tmem),
+				.target_path = "/d.c3".copy(tmem),
+				.kind = "import".copy(tmem),
+				.resolved = false,
+				.line = 2,
+				.column = 0,
+			}
+		);
+		index.files.push(b);
+
+		List{ImporterRef} out;
+		out.init(tmem);
+
+		index.importers_of("/b.c3", &out);
+		assert(out.len() == 1);
+		assert(out[0].file == 0);
+		assert(out[0].ref == 0);
+
+		index.importers_of("/c.c3", &out);
+		assert(out.len() == 1);
+		assert(out[0].file == 1);
+		assert(out[0].ref == 0);
+
+		index.importers_of("/d.c3", &out);
+		assert(out.len() == 0);
+
+		out.free();
+	};
+}
