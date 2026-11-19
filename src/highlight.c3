@@ -907,8 +907,6 @@ fn void Highlighter.runs_for_line(&self, usz line_start, usz line_end, List{Span
 	sz semantic_last  = semantic_first;
 	while (semantic_last < self.semantic_spans.len()
 		&& (usz)self.semantic_spans[semantic_last].start < line_end) semantic_last++;
-	if (first >= last && semantic_first >= semantic_last) return;
-
 	usz pos = line_start;
 	while (pos < line_end)
 	{
