@@ -42,6 +42,10 @@ enum CommandId
 	PROBLEMS,
 	GO_TO_DEFINITION,
 	COMPLETE,
+	FORMAT_DOCUMENT,
+	REFERENCES,
+	RENAME_SYMBOL,
+	CODE_ACTIONS,
 	SELECT_THEME,
 	SEARCH_PROJECT,
 	SYMBOLS_PROJECT,
@@ -173,6 +177,34 @@ const CommandDef[] COMMAND_DEFS = {
 		.shortcut = "Ctrl+Space",
 		.in_top_bar = false,
 		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.FORMAT_DOCUMENT,
+		.label = "Format Document",
+		.shortcut = "Ctrl+Alt+F",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.REFERENCES,
+		.label = "Find References",
+		.shortcut = "Shift+F12",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{
+		.id = CommandId.RENAME_SYMBOL,
+		.label = "Rename Symbol",
+		.shortcut = "F2",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{
+		.id = CommandId.CODE_ACTIONS,
+		.label = "Code Actions",
+		.shortcut = "Ctrl+.",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
 	},
 	{
 		.id = CommandId.SELECT_THEME,
@@ -681,6 +713,14 @@ fn String command_name(CommandId id)
 			return "go_to_definition";
 		case CommandId.COMPLETE:
 			return "complete";
+		case CommandId.FORMAT_DOCUMENT:
+			return "format_document";
+		case CommandId.REFERENCES:
+			return "references";
+		case CommandId.RENAME_SYMBOL:
+			return "rename_symbol";
+		case CommandId.CODE_ACTIONS:
+			return "code_actions";
 		case CommandId.SELECT_THEME:
 			return "select_theme";
 		case CommandId.SEARCH_PROJECT:
@@ -883,6 +923,8 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 			return has_buffer;
 		case CommandId.REPLACE:
 			return has_buffer;
+		case CommandId.FORMAT_DOCUMENT:
+			return has_buffer;
 		case CommandId.COPY:
 			return has_buffer;
 		case CommandId.CUT:
@@ -896,6 +938,10 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.GO_TO_DEFINITION:
 			return has_buffer;
 		case CommandId.COMPLETE:
+			return has_buffer;
+		case CommandId.REFERENCES:
+		case CommandId.RENAME_SYMBOL:
+		case CommandId.CODE_ACTIONS:
 			return has_buffer;
 		case CommandId.SELECT_THEME:
 			return true;

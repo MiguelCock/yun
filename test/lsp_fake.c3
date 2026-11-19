@@ -1,6 +1,9 @@
 module yun::lsp::fake;
 
 import std::collections::list;
+import std::collections::object;
+import std::core::mem::alloc;
+import std::encoding::json;
 import yun::lsp;
 
 struct FakeTransport
@@ -61,4 +64,27 @@ fn LspTransport fake_transport(FakeTransport* fake)
 		.is_alive = &fake_alive,
 		.close = &fake_close,
 	};
+}
+fn LspClient* fake_client(Allocator allocator)
+{
+	LspClient* client = alloc::new(allocator, LspClient);
+	client.init(allocator, "c", "file:///root");
+	client.status = LspStatus.READY;
+	return client;
+}
+
+fn void fake_response(LspClient* client, int id, String method, String json_text)
+{
+	Object*? parsed = json::parse(client.allocator, json_text);
+	if (catch excuse = parsed) return;
+	client.responses.push({ .id = id, .method = method.copy(client.allocator), .message = parsed });
+}
+
+fn void clear_targets(List{DefinitionTarget}* list)
+{
+	for (sz i = 0; i < list.len(); i++)
+	{
+		if ((*list)[i].path.len) (*list)[i].path.free(list.allocator);
+	}
+	list.clear();
 }

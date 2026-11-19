@@ -1,0 +1,16 @@
+(block) @fold
+(field_list) @fold
+(enum_declaration) @fold
+(interface_declaration) @fold
+(protocol_declaration) @fold
+(impl_declaration) @fold
+(function_declaration) @fold
+(operator_function_declaration) @fold
+(struct_declaration) @fold
+(match_expression) @fold
+(if_statement) @fold
+(for_statement) @fold
+(for_borrow_statement) @fold
+(for_condition) @fold
+(scope_expression) @fold
+(comment)+ @fold

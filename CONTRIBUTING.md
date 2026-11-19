@@ -23,7 +23,7 @@ Prefix every commit with the issue number:
 2. Implement against the issue's acceptance criteria; keep its task checklist updated.
 3. Verify locally (below).
 4. Push and open a PR into `development` using the template; link `Closes #N`.
-5. Stop at the open PR. The maintainer reviews it (with CI green) and merges with **Squash and merge**, then deletes the branch. Agents must never merge a PR themselves.
+5. Wait for CI to be green. The maintainer reviews and merges with **Squash and merge**, then deletes the branch. An authorized agent may also merge when the user explicitly asks.
 
 Merging a PR auto-closes any issue referenced with a closing keyword in the PR body (`Closes #N`, `Fixes #N`, `Resolves #N`) via `.github/workflows/close-linked-issues.yml`, since feature PRs merge into `development` rather than the default branch.
 

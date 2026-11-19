@@ -1838,7 +1838,14 @@ fn void Project.reveal_focused(&self, EditorMetrics metrics)
 	if (!card || !card.buffer) return;
 	Rect text = editor::text_rect(card.rect, metrics, card.buffer.line_count());
 	card.scroll = editor::scroll_to_reveal(card.buffer, metrics, text.height, card.cursor, card.scroll);
-	card.scroll_x = editor::scroll_x_to_reveal(card.buffer, metrics, text.width, card.cursor, card.scroll_x);
+	card.scroll_x = editor::scroll_x_to_reveal(
+		card.buffer,
+		metrics,
+		text.width,
+		card.cursor,
+		card.scroll_x,
+		lsp::lsp_inlay_hints_for((String)card.path)
+	);
 }
 
 fn bool Project.has_selection(&self)
@@ -2220,7 +2227,8 @@ fn void Project.update(
 							metrics,
 							text.width,
 							card.cursor,
-							card.scroll_x
+							card.scroll_x,
+							lsp::lsp_inlay_hints_for((String)card.path)
 						);
 						if (card.history) card.history.break_coalescing();
 						self.last_input_time = rl::get_time();
@@ -2240,7 +2248,8 @@ fn void Project.update(
 						local[1],
 						card.scroll,
 						card.scroll_x,
-						metrics
+						metrics,
+						lsp::lsp_inlay_hints_for((String)card.path)
 					);
 					if (double_click)
 					{
@@ -2313,7 +2322,8 @@ fn void Project.update(
 					local[1],
 					card.scroll,
 					card.scroll_x,
-					metrics
+					metrics,
+					lsp::lsp_inlay_hints_for((String)card.path)
 				);
 				usz line = card.buffer.line_of(card.cursor);
 				card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
@@ -2473,6 +2483,109 @@ fn void Project.finish_edit(&self, EditorMetrics metrics)
 	lsp::lsp_did_change((String)card.path, card.buffer);
 	self.last_input_time = rl::get_time();
 	self.reveal_focused(metrics);
+}
+
+fn bool formatting_edit_after(lsp::FormattingEdit a, lsp::FormattingEdit b)
+{
+	if (a.start_line != b.start_line) return a.start_line > b.start_line;
+	return a.start_character > b.start_character;
+}
+
+fn bool Project.apply_formatting(&self, String path, List{lsp::FormattingEdit}* edits, double now)
+{
+	int index = self.find_card(path);
+	if (index < 0) return false;
+	FileCard* card = &self.cards[index];
+	editor::ensure_buffer(card, self.allocator);
+	if (!card.buffer || !card.history) return false;
+
+	for (sz i = 0; i < edits.len(); i++)
+	{
+		for (sz j = i + 1; j < edits.len(); j++)
+		{
+			if (formatting_edit_after(edits.get(j), edits.get(i)))
+			{
+				lsp::FormattingEdit tmp = edits.get(i);
+				edits.set(i, edits.get(j));
+				edits.set(j, tmp);
+			}
+		}
+	}
+
+	card.history.break_coalescing();
+	for (sz i = 0; i < edits.len(); i++)
+	{
+		lsp::FormattingEdit edit = edits.get(i);
+		usz start                = lsp::offset_from_position(card.buffer, edit.start_line, edit.start_character);
+		usz end                  = lsp::offset_from_position(card.buffer, edit.end_line, edit.end_character);
+		if (end < start) end = start;
+		card.cursor = card.history.replace(card.buffer, start, end - start, edit.new_text, now);
+	}
+	if (card.cursor > card.buffer.length()) card.cursor = card.buffer.length();
+	card.selection_anchor = card.cursor;
+	card.dirty = true;
+	if (card.highlight) card.highlight.mark_dirty();
+	if (card.view) markdown::view_mark_dirty(card.view);
+	lsp::lsp_did_change((String)card.path, card.buffer);
+	return true;
+}
+
+fn bool workspace_text_edit_after(lsp::WorkspaceTextEdit a, lsp::WorkspaceTextEdit b)
+{
+	if (a.start_line != b.start_line) return a.start_line > b.start_line;
+	return a.start_character > b.start_character;
+}
+
+fn bool Project.apply_workspace_edit(&self, lsp::WorkspaceEdit* edit, double now)
+{
+	if (edit.files.len() == 0) return false;
+	for (sz f = 0; f < edit.files.len(); f++)
+	{
+		lsp::WorkspaceFileEdit* file = &edit.files[f];
+		if (self.find_card(file.path) < 0) return false;
+	}
+
+	bool applied = false;
+	for (sz f = 0; f < edit.files.len(); f++)
+	{
+		lsp::WorkspaceFileEdit* file = &edit.files[f];
+		int index                    = self.find_card(file.path);
+		if (index < 0) return false;
+		FileCard* card = &self.cards[index];
+		editor::ensure_buffer(card, self.allocator);
+		if (!card.buffer || !card.history) return false;
+
+		for (sz i = 0; i < file.edits.len(); i++)
+		{
+			for (sz j = i + 1; j < file.edits.len(); j++)
+			{
+				if (workspace_text_edit_after(file.edits.get(j), file.edits.get(i)))
+				{
+					lsp::WorkspaceTextEdit tmp = file.edits.get(i);
+					file.edits.set(i, file.edits.get(j));
+					file.edits.set(j, tmp);
+				}
+			}
+		}
+
+		card.history.break_coalescing();
+		for (sz e = 0; e < file.edits.len(); e++)
+		{
+			lsp::WorkspaceTextEdit text_edit = file.edits.get(e);
+			usz start = lsp::offset_from_position(card.buffer, text_edit.start_line, text_edit.start_character);
+			usz end = lsp::offset_from_position(card.buffer, text_edit.end_line, text_edit.end_character);
+			if (end < start) end = start;
+			card.cursor = card.history.replace(card.buffer, start, end - start, text_edit.new_text, now);
+		}
+		if (card.cursor > card.buffer.length()) card.cursor = card.buffer.length();
+		card.selection_anchor = card.cursor;
+		card.dirty = true;
+		if (card.highlight) card.highlight.mark_dirty();
+		if (card.view) markdown::view_mark_dirty(card.view);
+		lsp::lsp_did_change((String)card.path, card.buffer);
+		applied = true;
+	}
+	return applied;
 }
 
 fn bool Project.editor_undo(&self)
@@ -3044,6 +3157,7 @@ fn void Project.draw_cards(
 				card.cursor,
 				theme::current()
 				.editor_current_line);
+			lsp::InlayHint[] inlay_hints = lsp::lsp_inlay_hints_for((String)card.path);
 			if (is_focused && editor::has_selection(card.selection_anchor, card.cursor))
 			{
 				usz sel_start = 0;
@@ -3058,6 +3172,7 @@ fn void Project.draw_cards(
 					camera,
 					sel_start,
 					sel_end,
+					inlay_hints,
 					theme::current()
 					.editor_selection);
 			}
@@ -3067,7 +3182,8 @@ fn void Project.draw_cards(
 				card.scroll,
 				card.scroll_x,
 				metrics,
-				camera
+				camera,
+				inlay_hints
 			);
 			editor::draw_gutter(
 				card.buffer,
@@ -3089,6 +3205,7 @@ fn void Project.draw_cards(
 				camera,
 				editor_font,
 				metrics.font_size,
+				inlay_hints,
 				theme::current()
 				.editor_text);
 			if (is_focused)
@@ -3096,7 +3213,16 @@ fn void Project.draw_cards(
 				lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
 				if (diags.len > 0)
 				{
-					editor::draw_diagnostics(card.buffer, text, card.scroll, card.scroll_x, metrics, camera, diags);
+					editor::draw_diagnostics(
+						card.buffer,
+						text,
+						card.scroll,
+						card.scroll_x,
+						metrics,
+						camera,
+						inlay_hints,
+						diags
+					);
 				}
 			}
 			if (is_focused && caret_on)
@@ -3109,6 +3235,7 @@ fn void Project.draw_cards(
 					metrics,
 					camera,
 					card.cursor,
+					inlay_hints,
 					theme::current()
 					.editor_caret);
 			}

@@ -15,7 +15,18 @@ struct LspCapabilities
 	bool hover;
 	bool definition;
 	bool completion;
+	bool formatting;
+	bool document_symbol;
+	bool workspace_symbol;
+	bool references;
+	bool rename;
+	bool prepare_rename;
+	bool code_action;
+	bool signature_help;
+	bool semantic_tokens;
+	bool inlay_hint;
 	List{String} trigger_characters;
+	List{String} semantic_token_types;
 }
 
 struct LspDiagnostic
@@ -50,6 +61,23 @@ struct CompletionItem
 	uint edit_end_character;
 }
 
+struct FormattingEdit
+{
+	String new_text;
+	uint start_line;
+	uint start_character;
+	uint end_line;
+	uint end_character;
+}
+
+struct InlayHint
+{
+	String label;
+	uint line;
+	uint character;
+	int kind;
+}
+
 const int DIAGNOSTIC_ERROR   = 1;
 const int DIAGNOSTIC_WARNING = 2;
 const int DIAGNOSTIC_INFO    = 3;
@@ -60,7 +88,18 @@ fn void lsp_capabilities_init(LspCapabilities* caps, Allocator allocator)
 	caps.hover = false;
 	caps.definition = false;
 	caps.completion = false;
+	caps.formatting = false;
+	caps.document_symbol = false;
+	caps.workspace_symbol = false;
+	caps.references = false;
+	caps.rename = false;
+	caps.prepare_rename = false;
+	caps.code_action = false;
+	caps.signature_help = false;
+	caps.semantic_tokens = false;
+	caps.inlay_hint = false;
 	caps.trigger_characters.init(allocator);
+	caps.semantic_token_types.init(allocator);
 }
 
 fn void lsp_capabilities_free(LspCapabilities* caps, Allocator allocator)
@@ -70,6 +109,11 @@ fn void lsp_capabilities_free(LspCapabilities* caps, Allocator allocator)
 		caps.trigger_characters[i].free(allocator);
 	}
 	caps.trigger_characters.free();
+	for (sz i = 0; i < caps.semantic_token_types.len(); i++)
+	{
+		caps.semantic_token_types[i].free(allocator);
+	}
+	caps.semantic_token_types.free();
 }
 
 fn String lsp_message(Allocator allocator, bool has_id, long id, String method, Object* params)
@@ -155,6 +199,9 @@ fn Object* lsp_initialize_params(Allocator allocator, String root_uri)
 	Object* item       = completion.get_or_create_obj("completionItem");
 	item.set("snippetSupport", false);
 
+	Object* formatting = td.get_or_create_obj("formatting");
+	formatting.set("dynamicRegistration", false);
+
 	Object* diagnostics = td.get_or_create_obj("publishDiagnostics");
 	diagnostics.set("relatedInformation", true);
 
@@ -219,6 +266,32 @@ fn Object* lsp_completion_params(
 	Object* context = root.get_or_create_obj("context");
 	context.set("triggerKind", (long)trigger_kind);
 	if (trigger_char.len > 0) context.set("triggerCharacter", trigger_char);
+	return root;
+}
+
+fn Object* lsp_formatting_params(Allocator allocator, String uri)
+{
+	Object* root = object::new_obj(allocator);
+	Object* doc  = root.get_or_create_obj("textDocument");
+	doc.set("uri", uri);
+	Object* options = root.get_or_create_obj("options");
+	options.set("tabSize", (long)4);
+	options.set("insertSpaces", true);
+	return root;
+}
+
+fn Object* lsp_inlay_hint_params(Allocator allocator, String uri, uint end_line, uint end_character)
+{
+	Object* root = object::new_obj(allocator);
+	Object* doc  = root.get_or_create_obj("textDocument");
+	doc.set("uri", uri);
+	Object* range = root.get_or_create_obj("range");
+	Object* start = range.get_or_create_obj("start");
+	start.set("line", (long)0);
+	start.set("character", (long)0);
+	Object* end = range.get_or_create_obj("end");
+	end.set("line", (long)end_line);
+	end.set("character", (long)end_character);
 	return root;
 }
 
@@ -494,28 +567,127 @@ fn void lsp_normalize_completion(Allocator allocator, Object* result, List{Compl
 	}
 }
 
+fn void lsp_parse_formatting(Allocator allocator, Object* result, List{FormattingEdit}* out)
+{
+	if (!result.is_array()) return;
+	for (sz i = 0; i < result.get_len(); i++)
+	{
+		Object* entry = result.get_at(i);
+		if (!entry.is_map()) continue;
+
+		FormattingEdit edit = { };
+		Object*? range_opt  = entry.get("range");
+		if (try range = range_opt)
+		{
+			if (range.is_map())
+			{
+				Object*? start_opt = range.get("start");
+				if (try start = start_opt)
+				{
+					edit.start_line = lsp_object_uint(start, "line");
+					edit.start_character = lsp_object_uint(start, "character");
+				}
+				Object*? end_opt = range.get("end");
+				if (try end = end_opt)
+				{
+					edit.end_line = lsp_object_uint(end, "line");
+					edit.end_character = lsp_object_uint(end, "character");
+				}
+			}
+		}
+
+		Object*? text_opt = entry.get("newText");
+		if (catch excuse = text_opt) continue;
+		if (!text_opt.is_string()) continue;
+		edit.new_text = text_opt.s.copy(allocator);
+		out.push(edit);
+	}
+}
+
+fn bool lsp_provider_enabled(Object* caps, String key)
+{
+	Object*? value_opt = caps.get(key);
+	if (catch excuse = value_opt) return false;
+	if (value_opt.is_bool()) return value_opt.b;
+	return true;
+}
+
 fn void lsp_parse_capabilities(Allocator allocator, Object* result, LspCapabilities* out)
 {
 	if (!result.is_map()) return;
 	Object*? caps_opt = result.get("capabilities");
 	if (catch excuse = caps_opt) return;
 	Object* caps = caps_opt;
+	for (sz i = 0; i < out.trigger_characters.len(); i++) out.trigger_characters[i].free(allocator);
+	out.trigger_characters.clear();
+	for (sz i = 0; i < out.semantic_token_types.len(); i++) out.semantic_token_types[i].free(allocator);
+	out.semantic_token_types.clear();
 
-	out.hover = caps.has_key("hoverProvider");
-	out.definition = caps.has_key("definitionProvider");
-	out.completion = caps.has_key("completionProvider");
+	out.hover = lsp_provider_enabled(caps, "hoverProvider");
+	out.definition = lsp_provider_enabled(caps, "definitionProvider");
+	out.completion = lsp_provider_enabled(caps, "completionProvider");
+	out.formatting = lsp_provider_enabled(caps, "documentFormattingProvider");
+	out.document_symbol = lsp_provider_enabled(caps, "documentSymbolProvider");
+	out.workspace_symbol = lsp_provider_enabled(caps, "workspaceSymbolProvider");
+	out.references = lsp_provider_enabled(caps, "referencesProvider");
+	out.rename = lsp_provider_enabled(caps, "renameProvider");
+	out.code_action = lsp_provider_enabled(caps, "codeActionProvider");
+	out.signature_help = lsp_provider_enabled(caps, "signatureHelpProvider");
+	out.semantic_tokens = lsp_provider_enabled(caps, "semanticTokensProvider");
+	out.inlay_hint = lsp_provider_enabled(caps, "inlayHintProvider");
+
+	Object*? rename_opt = caps.get("renameProvider");
+	if (try rename = rename_opt)
+	{
+		if (rename.is_map())
+		{
+			Object*? prepare_opt = rename.get("prepareProvider");
+			if (try prepare = prepare_opt)
+			{
+				out.prepare_rename = prepare.is_bool() && prepare.b;
+			}
+		}
+	}
 
 	Object*? provider_opt = caps.get("completionProvider");
-	if (catch excuse = provider_opt) return;
-
-	Object*? triggers_opt = provider_opt.get("triggerCharacters");
-	if (catch excuse = triggers_opt) return;
-	if (!triggers_opt.is_array()) return;
-
-	for (sz i = 0; i < triggers_opt.get_len(); i++)
+	if (try provider = provider_opt)
 	{
-		Object* entry = triggers_opt.get_at(i);
-		if (entry.is_string()) out.trigger_characters.push(entry.s.copy(allocator));
+		Object*? triggers_opt = provider.get("triggerCharacters");
+		if (try triggers = triggers_opt)
+		{
+			if (triggers.is_array())
+			{
+				for (sz i = 0; i < triggers.get_len(); i++)
+				{
+					Object* entry = triggers.get_at(i);
+					if (entry.is_string()) out.trigger_characters.push(entry.s.copy(allocator));
+				}
+			}
+		}
+	}
+
+	Object*? semantic_opt = caps.get("semanticTokensProvider");
+	if (try semantic = semantic_opt)
+	{
+		Object*? legend_opt = semantic.get("legend");
+		if (try legend = legend_opt)
+		{
+			Object*? types_opt = legend.get("tokenTypes");
+			if (try types = types_opt)
+			{
+				if (types.is_array())
+				{
+					for (sz i = 0; i < types.get_len(); i++)
+					{
+						Object* entry = types.get_at(i);
+						if (entry.is_string())
+						{
+							out.semantic_token_types.push(entry.s.copy(allocator));
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -526,6 +698,66 @@ fn uint lsp_object_uint(Object* obj, String key)
 	uint? number = value_opt.to_value(uint);
 	if (catch excuse = number) return 0;
 	return number;
+}
+
+fn void lsp_free_inlay_hints(List{InlayHint}* hints, Allocator allocator)
+{
+	for (sz i = 0; i < hints.len(); i++)
+	{
+		InlayHint hint = hints.get(i);
+		if (hint.label.len) hint.label.free(allocator);
+	}
+	hints.clear();
+}
+
+fn void lsp_parse_inlay_hints(Allocator allocator, Object* result, List{InlayHint}* out)
+{
+	if (!result.is_array()) return;
+	for (sz i = 0; i < result.get_len(); i++)
+	{
+		Object* value = result.get_at(i);
+		if (!value.is_map()) continue;
+		Object*? position_opt = value.get("position");
+		if (catch excuse = position_opt) continue;
+		if (!position_opt.is_map()) continue;
+		uint line          = lsp_object_uint(position_opt, "line");
+		uint character     = lsp_object_uint(position_opt, "character");
+		String label       = "";
+		Object*? label_opt = value.get("label");
+		if (try label_value = label_opt)
+		{
+			if (label_value.is_string())
+			{
+				label = label_value.s.copy(allocator);
+			}
+			else if (label_value.is_array())
+			{
+				DString joined;
+				joined.init(allocator, 32);
+				for (sz p = 0; p < label_value.get_len(); p++)
+				{
+					Object* part = label_value.get_at(p);
+					if (!part.is_map()) continue;
+					Object*? part_value_opt = part.get("value");
+					if (try part_value = part_value_opt)
+					{
+						if (part_value.is_string()) joined.append_string(part_value.s);
+					}
+				}
+				label = joined.str_view().copy(allocator);
+				joined.free();
+			}
+		}
+		if (label.len == 0) continue;
+		out.push(
+			{
+				.label = label,
+				.line = line,
+				.character = character,
+				.kind = (int)lsp_object_uint(value, "kind"),
+			}
+		);
+	}
 }
 
 fn void lsp_parse_diagnostics(Allocator allocator, Object* params, List{LspDiagnostic}* out)

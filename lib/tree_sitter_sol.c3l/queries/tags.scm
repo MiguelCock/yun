@@ -1,0 +1,9 @@
+(function_declaration name: (identifier) @name) @definition.function
+(operator_function_declaration name: (operator_symbol) @name) @definition.function
+(struct_declaration name: (type_identifier) @name) @definition.type
+(enum_declaration name: (type_identifier) @name) @definition.type
+(fault_declaration name: (type_identifier) @name) @definition.type
+(interface_declaration name: (type_identifier) @name) @definition.type
+(protocol_declaration name: (type_identifier) @name) @definition.type
+(const_declaration name: (identifier) @name) @definition.constant
+(const_declaration name: (type_identifier) @name) @definition.constant

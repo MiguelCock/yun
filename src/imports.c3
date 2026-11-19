@@ -1128,6 +1128,8 @@ fn bool has_manifest(String dir, language::Language language)
 				return path::exists((Path)string::format(tmem, "%s/v.mod", dir));
 			case language::Language.GLEAM:
 				return path::exists((Path)string::format(tmem, "%s/gleam.toml", dir));
+			case language::Language.SOL:
+				return path::exists((Path)string::format(tmem, "%s/sol.toml", dir));
 			case language::Language.JAVA:
 				return path::exists(
 					(Path)string::format(tmem, "%s/pom.xml", dir)
@@ -1344,6 +1346,21 @@ fn bool resolve_import(
 				String rel = module_rel(allocator, specifier);
 				if (try_roots(paths, allocator, roots, rel, { ".c3", ".c3i" }, "", out_targets)) return true;
 				return false;
+			}
+		case language::Language.SOL:
+
+			{
+				if (specifier.starts_with("std::")) return false;
+				for (sz i = 0; i < files.len; i++)
+				{
+					if (files[i].is_test) continue;
+					if (files[i].module_name.len == 0) continue;
+					if (files[i].module_name.compare_to(specifier) != 0) continue;
+					out_targets.push(((String)files[i].path).copy(allocator));
+				}
+				if (out_targets.len() > 0) return true;
+				String rel = module_rel(allocator, specifier);
+				return try_roots(paths, allocator, roots, rel, { ".sol" }, "", out_targets);
 			}
 		case language::Language.GO:
 

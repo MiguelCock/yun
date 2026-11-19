@@ -7,7 +7,7 @@ fn void test_card_items()
 	ContextItem[CONTEXT_MAX_ITEMS] items;
 
 	usz count = build(ContextTarget.CARD, true, false, true, true, items[0:CONTEXT_MAX_ITEMS]);
-	assert(count == 7);
+	assert(count == 9);
 	assert(items[0].action == ContextAction.TOGGLE_CARD);
 	assert(items[0].label.compare_to("Close") == 0);
 	assert(items[1].action == ContextAction.RENAME_CARD);
@@ -18,9 +18,11 @@ fn void test_card_items()
 	assert(items[5].enabled);
 	assert(items[6].action == ContextAction.GO_TO_DEFINITION);
 	assert(items[6].enabled);
+	assert(items[7].action == ContextAction.REFERENCES);
+	assert(items[8].action == ContextAction.CODE_ACTIONS);
 
 	usz closed = build(ContextTarget.CARD, false, true, true, false, items[0:CONTEXT_MAX_ITEMS]);
-	assert(closed == 7);
+	assert(closed == 9);
 	assert(items[0].label.compare_to("Open") == 0);
 	assert(!items[1].enabled);
 	assert(!items[4].enabled);

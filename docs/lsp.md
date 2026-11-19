@@ -1,8 +1,10 @@
 # Language servers (LSP)
 
-Yun drives hover, go-to-definition, completion, and diagnostics through language
-servers. Servers are optional: if the binary is not installed, the language just
-has no LSP features (no error, no crash).
+Yun drives hover, go-to-definition, context-aware completion, diagnostics,
+document/workspace symbols, references, rename, code actions, signature help,
+semantic tokens, and inline type hints through language servers. Servers are optional: if the binary is not installed,
+the language just has no LSP features (no error, no crash). Each feature is
+enabled only when the server advertises the corresponding capability.
 
 ## How it works
 
@@ -42,6 +44,7 @@ The id is also the key used to override the command in config.
 | `julia` | `.jl` | `julia --startup-file=no --history-file=no -e "using LanguageServer; LanguageServer.runserver()"` |
 | `haskell` | `.hs` | `haskell-language-server-wrapper --lsp` |
 | `gleam` | `.gleam` | `gleam lsp` |
+| `sol` | `.sol` | `sol lsp` |
 | `erlang` | `.erl` `.hrl` | `elp server` |
 | `elixir` | `.ex` `.exs` | `elixir-ls` |
 | `dart` | `.dart` | `dart language-server --protocol=lsp` |
@@ -79,6 +82,7 @@ a project file, or a matching version.
 | Julia | `julia` with `LanguageServer.jl` installed in a Julia environment. |
 | Haskell | `haskell-language-server-wrapper` (e.g. via GHCup) and a Cabal/Stack project. |
 | Gleam | the Gleam toolchain (`gleam lsp` is built in) and a `gleam.toml` project. |
+| SOL | the SOL compiler (`sol lsp`) on `PATH`, built from the SOL repository. |
 | Erlang | `elp` (Erlang Language Platform) and a rebar3/OTP project. |
 | Elixir | `elixir-ls` (or its `language_server.sh`) and a `mix.exs` project. |
 | Dart / Flutter | `dart language-server` from the Dart or Flutter SDK (Flutter users may need `flutter/bin/dart` via the `lsp` override) and a `pubspec.yaml` project. |
@@ -111,6 +115,27 @@ Override the command for a language id under the `lsp` section of the config
 - An override takes precedence over the default command.
 - A key that is not a detected language id is accepted but unused (unless a
   future language uses that id).
+
+## Features
+
+| feature | Yun integration |
+| --- | --- |
+| hover | Tooltip on hover. |
+| definition | `F12`; multiple results open a chooser. |
+| completion | `Ctrl+Space` and completion trigger characters. |
+| diagnostics | Problems panel and editor squiggles. |
+| document symbols | Merged into the symbol palette when a document opens. |
+| workspace symbols | Requested when the symbol palette opens. |
+| references | `Shift+F12`; multiple results open a chooser. |
+| rename | `F2`; `prepareRename` fills the prompt, then a `WorkspaceEdit` is applied to open cards. |
+| code actions | `Ctrl+.`; quick fixes are listed and their edits applied. |
+| signature help | Requested inside call parentheses after a short debounce. |
+| semantic tokens | Full-document tokens overlay tree-sitter highlighting. |
+| inlay hints | Inferred types for `let` and `$` alias bindings, rendered inline after the binding name. |
+
+Rename and code action edits apply only when every affected file has an open
+card. Missing providers, empty results, and errors are reported without blocking
+editing.
 
 ## Notes
 

@@ -53,10 +53,26 @@ fn void test_columns_and_points()
 		assert(column_for_offset(&t, 0, end0) == 2);
 		assert(x_for_column(2, metrics) == 25.0f);
 
-		usz off = offset_for_point(&t, x_for_column(1, metrics), line_y(1, 0.0f, metrics), 0.0f, 0.0f, metrics);
+		usz off = offset_for_point(
+			&t,
+			x_for_column(1, metrics),
+			line_y(1, 0.0f, metrics),
+			0.0f,
+			0.0f,
+			metrics,
+			lsp::NO_INLAY_HINTS
+		);
 		assert(off == t.line_start(1) + 1);
 
-		usz clamped = offset_for_point(&t, x_for_column(50, metrics), line_y(1, 0.0f, metrics), 0.0f, 0.0f, metrics);
+		usz clamped = offset_for_point(
+			&t,
+			x_for_column(50, metrics),
+			line_y(1, 0.0f, metrics),
+			0.0f,
+			0.0f,
+			metrics,
+			lsp::NO_INLAY_HINTS
+		);
 		assert(clamped == t.line_start(1) + line_length_bytes(&t, 1));
 		t.destroy();
 	};
@@ -157,7 +173,7 @@ fn void test_caret_rect_and_scroll()
 		Rect area             = { .x = 10.0f, .y = 20.0f, .width = 100.0f, .height = 50.0f };
 
 		usz cursor = 5;
-		Rect caret = caret_rect(&t, area, 0.0f, 0.0f, metrics, cursor);
+		Rect caret = caret_rect(&t, area, 0.0f, 0.0f, metrics, cursor, lsp::NO_INLAY_HINTS);
 		assert(caret.x == 26.0f && caret.y == 36.0f);
 		assert(caret.height == 16.0f);
 		t.destroy();
@@ -525,12 +541,12 @@ fn void test_match_rect()
 		EditorMetrics metrics = { .char_width = 8.0f, .line_height = 20.0f, .padding_x = 8.0f, .padding_y = 6.0f };
 		Rect area             = { .x = 100.0f, .y = 50.0f, .width = 400.0f, .height = 200.0f };
 
-		Rect r = match_rect(&t, area, 0.0f, 0.0f, metrics, 0, 5);
+		Rect r = match_rect(&t, area, 0.0f, 0.0f, metrics, 0, 5, lsp::NO_INLAY_HINTS);
 		assert(r.x == 100.0f);
 		assert(r.y == 50.0f);
 		assert(r.width == 40.0f);
 
-		Rect second = match_rect(&t, area, 0.0f, 0.0f, metrics, 6, 11);
+		Rect second = match_rect(&t, area, 0.0f, 0.0f, metrics, 6, 11, lsp::NO_INLAY_HINTS);
 		assert(second.x == 100.0f);
 		assert(second.y == 70.0f);
 		assert(second.width == 40.0f);
@@ -615,8 +631,8 @@ fn void test_scroll_x_to_reveal()
 		t.init_from_buffer(tmem, "abcdefghij");
 		EditorMetrics metrics = { .char_width = 8.0f, .line_height = 16.0f, .padding_x = 0.0f, .padding_y = 0.0f };
 
-		assert(scroll_x_to_reveal(&t, metrics, 40.0f, 0, 0.0f) == 0.0f);
-		assert(scroll_x_to_reveal(&t, metrics, 40.0f, 9, 0.0f) == 72.0f);
+		assert(scroll_x_to_reveal(&t, metrics, 40.0f, 0, 0.0f, lsp::NO_INLAY_HINTS) == 0.0f);
+		assert(scroll_x_to_reveal(&t, metrics, 40.0f, 9, 0.0f, lsp::NO_INLAY_HINTS) == 72.0f);
 		t.destroy();
 	};
 }
@@ -818,4 +834,29 @@ fn void test_advance_columns()
 	assert(col == 9);
 	col = advance_columns(text, 6, 8, 4, col);
 	assert(col == 10);
+}
+fn void test_inlay_hint_visual_columns()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "abc");
+		EditorMetrics metrics = { .char_width = 10.0f, .line_height = 20.0f };
+		lsp::InlayHint[1] hints = {
+			{
+				.label = ": X",
+				.line = 0,
+				.character = 1,
+				.kind = 1,
+			},
+		};
+		lsp::InlayHint[] slice = hints[0:1];
+		usz after_a            = t.line_start(0) + 1;
+		assert(visual_column_for_offset(&t, 0, after_a, slice) == 4);
+		assert(offset_for_visual_column(&t, 0, 4, slice) == after_a);
+		assert(offset_for_visual_column(&t, 0, 4, slice) == after_a);
+		assert(offset_for_visual_column(&t, 0, 1, slice) == after_a);
+		assert(column_for_offset(&t, 0, t.length()) == 3);
+		t.destroy();
+	};
 }
