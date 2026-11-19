@@ -307,86 +307,123 @@ fn Chord parse_chord(String text)
 	return chord;
 }
 
-fn String key_name(Allocator allocator, rl::RLKeyboardKey key)
+fn void append_string(DString* out, String text)
+{
+	out.append_bytes(text.ptr[0:text.len]);
+}
+
+fn void append_key_name(DString* out, Allocator allocator, rl::RLKeyboardKey key)
 {
 	switch (key)
 	{
 		case rl::RLKeyboardKey.ENTER:
-			return "Enter";
+			append_string(out, "Enter");
+			return;
 		case rl::RLKeyboardKey.ESCAPE:
-			return "Esc";
+			append_string(out, "Esc");
+			return;
 		case rl::RLKeyboardKey.TAB:
-			return "Tab";
+			append_string(out, "Tab");
+			return;
 		case rl::RLKeyboardKey.SPACE:
-			return "Space";
+			append_string(out, "Space");
+			return;
 		case rl::RLKeyboardKey.BACKSPACE:
-			return "Backspace";
+			append_string(out, "Backspace");
+			return;
 		case rl::RLKeyboardKey.DELETE:
-			return "Delete";
+			append_string(out, "Delete");
+			return;
 		case rl::RLKeyboardKey.UP:
-			return "Up";
+			append_string(out, "Up");
+			return;
 		case rl::RLKeyboardKey.DOWN:
-			return "Down";
+			append_string(out, "Down");
+			return;
 		case rl::RLKeyboardKey.LEFT:
-			return "Left";
+			append_string(out, "Left");
+			return;
 		case rl::RLKeyboardKey.RIGHT:
-			return "Right";
+			append_string(out, "Right");
+			return;
 		case rl::RLKeyboardKey.HOME:
-			return "Home";
+			append_string(out, "Home");
+			return;
 		case rl::RLKeyboardKey.END:
-			return "End";
+			append_string(out, "End");
+			return;
 		case rl::RLKeyboardKey.PAGE_UP:
-			return "PageUp";
+			append_string(out, "PageUp");
+			return;
 		case rl::RLKeyboardKey.PAGE_DOWN:
-			return "PageDown";
+			append_string(out, "PageDown");
+			return;
 		case rl::RLKeyboardKey.INSERT:
-			return "Insert";
+			append_string(out, "Insert");
+			return;
 		case rl::RLKeyboardKey.CAPS_LOCK:
-			return "CapsLock";
+			append_string(out, "CapsLock");
+			return;
 		case rl::RLKeyboardKey.SCROLL_LOCK:
-			return "ScrollLock";
+			append_string(out, "ScrollLock");
+			return;
 		case rl::RLKeyboardKey.NUM_LOCK:
-			return "NumLock";
+			append_string(out, "NumLock");
+			return;
 		case rl::RLKeyboardKey.PRINT_SCREEN:
-			return "PrintScreen";
+			append_string(out, "PrintScreen");
+			return;
 		case rl::RLKeyboardKey.PAUSE:
-			return "Pause";
+			append_string(out, "Pause");
+			return;
 		case rl::RLKeyboardKey.KB_MENU:
-			return "Menu";
+			append_string(out, "Menu");
+			return;
 		case rl::RLKeyboardKey.KP_DECIMAL:
-			return "KP_Decimal";
+			append_string(out, "KP_Decimal");
+			return;
 		case rl::RLKeyboardKey.KP_DIVIDE:
-			return "KP_Divide";
+			append_string(out, "KP_Divide");
+			return;
 		case rl::RLKeyboardKey.KP_MULTIPLY:
-			return "KP_Multiply";
+			append_string(out, "KP_Multiply");
+			return;
 		case rl::RLKeyboardKey.KP_SUBTRACT:
-			return "KP_Subtract";
+			append_string(out, "KP_Subtract");
+			return;
 		case rl::RLKeyboardKey.KP_ADD:
-			return "KP_Add";
+			append_string(out, "KP_Add");
+			return;
 		case rl::RLKeyboardKey.KP_ENTER:
-			return "KP_Enter";
+			append_string(out, "KP_Enter");
+			return;
 		case rl::RLKeyboardKey.KP_EQUAL:
-			return "KP_Equal";
+			append_string(out, "KP_Equal");
+			return;
 		default:
 			break;
 	}
 
 	int k = (int)key;
-	if (k >= 33 && k <= 126) return string::format(allocator, "%c", (char)k);
-	if (k >= (int)rl::RLKeyboardKey.KP_0 && k <= (int)rl::RLKeyboardKey.KP_9)
+	String name;
+	if (k >= 33 && k <= 126)
 	{
-		return string::format(allocator, "KP_%d", k - (int)rl::RLKeyboardKey.KP_0);
+		name = string::format(allocator, "%c", (char)k);
 	}
-	if (k >= (int)rl::RLKeyboardKey.F1 && k <= (int)rl::RLKeyboardKey.F12)
+	else if (k >= (int)rl::RLKeyboardKey.KP_0 && k <= (int)rl::RLKeyboardKey.KP_9)
 	{
-		return string::format(allocator, "F%d", k - (int)rl::RLKeyboardKey.F1 + 1);
+		name = string::format(allocator, "KP_%d", k - (int)rl::RLKeyboardKey.KP_0);
 	}
-	return string::format(allocator, "Key%d", k);
-}
-
-fn void append_string(DString* out, String text)
-{
-	out.append_bytes(text.ptr[0:text.len]);
+	else if (k >= (int)rl::RLKeyboardKey.F1 && k <= (int)rl::RLKeyboardKey.F12)
+	{
+		name = string::format(allocator, "F%d", k - (int)rl::RLKeyboardKey.F1 + 1);
+	}
+	else
+	{
+		name = string::format(allocator, "Key%d", k);
+	}
+	append_string(out, name);
+	name.free(allocator);
 }
 
 fn String format_chord(Allocator allocator, Chord chord, bool macos)
@@ -399,7 +436,7 @@ fn String format_chord(Allocator allocator, Chord chord, bool macos)
 	if ((chord.mods & MOD_SUPER) != 0) append_string(&out, "Super+");
 	if ((chord.mods & MOD_SHIFT) != 0) append_string(&out, "Shift+");
 	if ((chord.mods & MOD_ALT) != 0) append_string(&out, "Alt+");
-	append_string(&out, key_name(allocator, chord.key));
+	append_key_name(&out, allocator, chord.key);
 
 	String result = out.str_view().copy(allocator);
 	out.free();
