@@ -595,10 +595,10 @@ fn Theme theme_build(ThemeSpec spec)
 	t.syn_operator = spec.syn_operator;
 	t.syn_punctuation = spec.syn_punctuation;
 	t.syn_attribute = spec.syn_attribute;
-	t.syn_module = mix(spec.syn_module, spec.syn_function, 0.25f);
+	t.syn_module = mix(spec.syn_module, spec.syn_function, 0.6f);
 	t.syn_import = mix(spec.syn_keyword, t.syn_module, 0.45f);
 	t.syn_keyword_type = mix(spec.syn_keyword, spec.syn_type, 0.45f);
-	t.syn_macro = mix(spec.syn_keyword, spec.syn_function, 0.5f);
+	t.syn_macro = mix(spec.syn_constant, spec.syn_keyword, 0.45f);
 	t.syn_doc_comment = mix(spec.syn_comment, spec.syn_string, 0.18f);
 	t.syn_label = spec.syn_label;
 	t.syn_boolean = spec.syn_boolean;
