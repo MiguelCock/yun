@@ -860,3 +860,33 @@ fn void test_inlay_hint_visual_columns()
 		t.destroy();
 	};
 }
+
+fn void test_inlay_hint_hides_binding_colon()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "x := foo");
+		lsp::InlayHint[1] hints = {
+			{ .label = ": T", .line = 0, .character = 1, .kind = 1 },
+		};
+		lsp::InlayHint[] slice = hints[0:1];
+		assert(visual_column_for_offset(&t, 0, 3, slice) == 5);
+		assert(visual_column_for_offset(&t, 0, 5, slice) == 7);
+		assert(offset_for_visual_column(&t, 0, 5, slice) == 3);
+		assert(offset_for_visual_column(&t, 0, 7, slice) == 5);
+		t.destroy();
+	};
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "$io :: init.io");
+		lsp::InlayHint[1] hints = {
+			{ .label = ": Io", .line = 0, .character = 3, .kind = 1 },
+		};
+		lsp::InlayHint[] slice = hints[0:1];
+		assert(visual_column_for_offset(&t, 0, 5, slice) == 8);
+		assert(offset_for_visual_column(&t, 0, 8, slice) == 5);
+		t.destroy();
+	};
+}

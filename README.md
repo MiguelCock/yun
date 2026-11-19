@@ -14,9 +14,9 @@ The project is early and evolving quickly. The roadmap is the flat GitHub issue 
 - **Editor** — a piece-table text buffer with undo/redo, line numbers and gutter, caret navigation and scrolling, UTF-8 input, in-file find (and replace), adjustable font size, and external-edit reload.
 - **Syntax highlighting** — tree-sitter grammars for C3, C, C++, Java, Kotlin, Scala, C#, Go, Rust, Zig, Odin, V, Nim, Python, JavaScript, TypeScript, CSS, HTML, Lua, PHP, Ruby, R, Julia, Haskell, Gleam, SOL, Erlang, Elixir, Dart, and Markdown, loaded lazily from shared libraries, with embedded-language injections (PHP/HTML, HTML script/style, C++ raw strings, JS tagged templates, Haskell quasiquotes, Elixir sigils).
 - **Search** — in-file find/replace, project-wide search, and a fuzzy symbol palette.
-- **Dependencies** — import arrows between cards (configurable solid/dashed/dotted/long-dash/dash-dot line styles, independently for internal and external), with animated, line-highlighted jumps to results, definitions, and symbols. Card, selected, and cluster outlines stay a constant on-screen thickness when zoomed out.
+- **Dependencies** — import arrows between cards (configurable solid/dashed/dotted/long-dash/dash-dot line styles, independently for internal and external), with animated, line-highlighted jumps to results, definitions, and symbols. Card, selected, and cluster outlines stay a constant on-screen thickness when zoomed out. `Ctrl+Shift+I` opens a right-side **connections panel** with outgoing and incoming imports for the focused card or the hovered arrow; click a row to jump to the import.
 - **LSP** — hover, go-to-definition, completion, and a problems panel, driven by per-language servers configured in the config.
-- **Markdown preview** — toggle a rendered view of a Markdown card (headings, lists, fenced code, blockquotes, links, inline emphasis) with `Ctrl+Shift+V`, the command palette, or the card-title `M` marker; click the preview to jump back to the source.
+- **Markdown preview** — toggle a rendered view of a Markdown card (headings, lists, tables, fenced code, blockquotes, links, inline emphasis) with `Ctrl+Shift+V`, the command palette, or the card-title `M` marker; click the preview to jump back to the source.
 - **Themes** — nine built-in palettes with a picker.
 - **App** — top bar actions, Vim-like keyboard modes (see [Keyboard and modes](#keyboard-and-modes)), command palette, customizable keybindings, notifications, layered config (global + project), and `.yun/workspace.json` persistence. A freshly opened project starts with every folder collapsed: each level packs its files and folder chips tightly (wrapping at `sqrt` of their area into a roughly square footprint). Opening a folder reveals its contents overlapping its siblings on that level instead of pushing them aside, so arranging the canvas is left to you. The camera fits the visible content, never zooming past 100% (`canvas.fit_on_open` / `canvas.fit_min_zoom`); sub-3px cards are culled at low zoom and import arrows drop dashes/labels as they shrink. Folder positions and the camera are restored unchanged on reopen.
 
@@ -26,7 +26,7 @@ Lua mods (#33–#36), large-file support (#14), very-large-project perf (#45), c
 
 ## Keyboard and modes
 
-Yun is keyboard-first and Vim-inspired. There are three modes, shown by an indicator next to the FPS counter (`-- MOVE --`, `-- EDIT --`, `-- TOP BAR --`), plus a `-- GRAB --` sub-state in MOVE. The indicator also shows the current folder as a breadcrumb. Overlays (command palette, search, symbol palette, problems panel, find bar, menus, prompts) are modal and handle their own keys.
+Yun is keyboard-first and Vim-inspired. There are three modes, shown in the top bar (`-- MOVE --`, `-- EDIT --`, `-- TOP BAR --`), plus a `-- GRAB --` sub-state in MOVE. The status area also shows the current folder as a breadcrumb and elides it when space is tight. The FPS counter is hidden by default; hold `F3` to show it with the performance overlay. Overlays (command palette, search, symbol palette, problems panel, find bar, menus, prompts) are modal and handle their own keys.
 
 ### MOVE (default)
 
@@ -68,6 +68,7 @@ These work from any mode:
 | `Ctrl+Shift+O` | Go to symbol |
 | `F12` | Go to definition |
 | `Ctrl+Shift+M` | Problems panel |
+| `Ctrl+Shift+I` | Connections panel |
 | `Ctrl+Shift+T` | Theme picker |
 | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` | New / open / save |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
@@ -147,13 +148,19 @@ Keybindings use chords like `Ctrl+Shift+P`. Modifiers are `Ctrl` (shown as `Cmd`
 
 ## Versioning and releases
 
-Yun is **pre-1.0**: versions are `0.<MINOR>.0`, where `MINOR` is the cumulative number of closed issues at release time (it only ever increases), and `PATCH` stays `0`. Once the API and UX are stable we will move to [semantic versioning](https://semver.org/). The version lives in [`project.json`](project.json) (and `yun::version.APP_VERSION`, kept in sync by a test).
+Yun is **pre-1.0** and version numbers communicate the size of a release:
 
-Releases are built and published by [`.github/workflows/release.yml`](.github/workflows/release.yml). **Merging a PR never publishes anything** — the workflow only builds. To cut a release, set the version to `0.<closed-issues>.0` and push a matching tag:
+- `0.0.x` — small change releases (patch).
+- `0.x.0` — a large, stable batch of changes (minor).
+- `1.0.0` — the first stable release.
+
+The version lives in [`project.json`](project.json) (and `yun::version.APP_VERSION`, kept in sync by a test).
+
+Releases are built and published by [`.github/workflows/release.yml`](.github/workflows/release.yml). **Merging a PR never publishes anything** — the workflow only builds. To cut a release, set the version in `project.json` and `src/version.c3` and push a matching tag:
 
 ```sh
-git tag v0.86.0
-git push origin v0.86.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 Tagging builds `linux-x64`, `macos-aarch64`, and `windows-x64` and attaches the archives (with SHA-256 checksums) to the GitHub Release. The tag must equal `v<version from project.json>`, otherwise publishing is aborted.

@@ -18,6 +18,8 @@ const float ZOOM_STEP                  = 1.1f;
 const float PAN_RESPONSIVENESS         = 20.0f;
 const float ZOOM_RESPONSIVENESS        = 16.0f;
 const float INERTIA_FRICTION_PER_FRAME = 0.9f;
+const float EDGE_PAN_MARGIN            = 48.0f;
+const float EDGE_PAN_SPEED             = 900.0f;
 const float INERTIA_MIN_SPEED          = 5.0f;
 const float MAX_FRAME_DT               = 0.05f;
 const float CAMERA_SNAP_EPSILON        = 0.001f;
@@ -231,6 +233,54 @@ fn void Canvas.apply_inertia(&self, float dt)
 	float decay = math::pow(g_canvas_settings.inertia_friction, dt * 60.0f);
 	self.velocity[0] *= decay;
 	self.velocity[1] *= decay;
+}
+
+fn RLVector2 edge_pan_delta(
+	RLVector2 mouse,
+	float width,
+	float height,
+	float top_inset,
+	float margin,
+	float speed,
+	float zoom,
+	float dt
+)
+{
+	RLVector2 delta = { 0.0f, 0.0f };
+	if (zoom <= 0.0f) zoom = 1.0f;
+	if (margin <= 0.0f) return delta;
+
+	if (width < margin * 2.0f) margin = width * 0.5f;
+	float usable_height = height - top_inset;
+	if (usable_height < margin * 2.0f) margin = usable_height * 0.5f;
+	if (margin <= 0.0f) return delta;
+
+	float left   = margin;
+	float right  = width - margin;
+	float top    = top_inset + margin;
+	float bottom = height - margin;
+
+	if (mouse[0] < left)
+	{
+		delta[0] = -math::min(left - mouse[0], margin) / margin;
+	}
+	else if (mouse[0] > right)
+	{
+		delta[0] = math::min(mouse[0] - right, margin) / margin;
+	}
+	if (mouse[1] < top)
+	{
+		delta[1] = -math::min(top - mouse[1], margin) / margin;
+	}
+	else if (mouse[1] > bottom)
+	{
+		delta[1] = math::min(mouse[1] - bottom, margin) / margin;
+	}
+
+	float step = speed * dt / zoom;
+	delta[0] *= step;
+	delta[1] *= step;
+	return delta;
 }
 
 fn void Canvas.ease_camera(&self, float dt)

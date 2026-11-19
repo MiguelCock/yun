@@ -223,9 +223,73 @@ fn uint hint_columns_before(PieceTable* table, lsp::InlayHint[] hints, usz line,
 	return columns;
 }
 
+fn sz hint_hidden_offset(PieceTable* table, lsp::InlayHint hint)
+{
+	if (hint.kind != 1) return -1;
+	usz len = table.length();
+	usz pos = inlay_offset(table, hint);
+	while (pos < len && (table.byte_at(pos) == ' ' || table.byte_at(pos) == '\t')) pos++;
+	if (pos + 1 >= len) return -1;
+	if (table.byte_at(pos) != ':') return -1;
+	char next = table.byte_at(pos + 1);
+	if (next != '=' && next != ':') return -1;
+	return (sz)pos;
+}
+
+fn uint hidden_columns_before(PieceTable* table, lsp::InlayHint[] hints, usz line, usz offset, bool inclusive)
+{
+	uint columns = 0;
+	for (usz i = 0; i < hints.len; i++)
+	{
+		lsp::InlayHint hint = hints[i];
+		if ((usz)hint.line != line) continue;
+		sz hidden = hint_hidden_offset(table, hint);
+		if (hidden < 0) continue;
+		usz at = (usz)hidden;
+		if (inclusive ? at <= offset : at < offset) columns++;
+	}
+	return columns;
+}
+
+fn bool is_hidden_offset(PieceTable* table, lsp::InlayHint[] hints, usz line, usz offset)
+{
+	for (usz i = 0; i < hints.len; i++)
+	{
+		lsp::InlayHint hint = hints[i];
+		if ((usz)hint.line != line) continue;
+		sz hidden = hint_hidden_offset(table, hint);
+		if (hidden >= 0 && (usz)hidden == offset) return true;
+	}
+	return false;
+}
+
+fn sz hint_hidden_in_range(PieceTable* table, lsp::InlayHint[] hints, usz line, usz start, usz end)
+{
+	for (usz i = 0; i < hints.len; i++)
+	{
+		lsp::InlayHint hint = hints[i];
+		if ((usz)hint.line != line) continue;
+		sz hidden = hint_hidden_offset(table, hint);
+		if (hidden < 0) continue;
+		usz at = (usz)hidden;
+		if (at >= start && at < end) return hidden;
+	}
+	return -1;
+}
+
 fn usz visual_column_for_offset(PieceTable* table, usz line, usz offset, lsp::InlayHint[] hints)
 {
-	return column_for_offset(table, line, offset) + hint_columns_before(table, hints, line, offset, true);
+	return column_for_offset(
+		table,
+		line,
+		offset
+	) + hint_columns_before(
+		table,
+		hints,
+		line,
+		offset,
+		true
+	) - hidden_columns_before(table, hints, line, offset, false);
 }
 
 fn usz offset_for_visual_column(PieceTable* table, usz line, usz target, lsp::InlayHint[] hints)
@@ -237,16 +301,22 @@ fn usz offset_for_visual_column(PieceTable* table, usz line, usz target, lsp::In
 	int tabs   = tab_columns();
 	while (pos < end)
 	{
-		if (target <= visual) return pos;
+		if (is_hidden_offset(table, hints, line, pos))
+		{
+			pos = table.next_boundary(pos);
+			continue;
+		}
 		uint before = hint_columns_before(table, hints, line, pos, false);
 		uint gap    = hint_columns_before(table, hints, line, pos, true) - before;
-		if (gap > 0 && target <= visual + gap) return pos;
-		visual += gap;
-		usz next   = table.next_boundary(pos);
+		if (gap > 0)
+		{
+			if (target < visual + gap) return pos;
+			visual += gap;
+		}
 		uint width = table.byte_at(pos) == '\t' ? (uint)tabs : 1u;
-		if (target <= visual + width) return target == visual ? pos : next;
+		if (target < visual + width) return pos;
 		visual += width;
-		pos = next;
+		pos = table.next_boundary(pos);
 	}
 	return end;
 }
@@ -688,6 +758,37 @@ fn usz advance_columns(String text, usz from, usz to, int tabs, usz col)
 	return col;
 }
 
+fn void draw_span_text(
+	RLFont font,
+	char* raw,
+	String text,
+	usz start,
+	usz end,
+	float x,
+	float y,
+	float font_size,
+	RLColor color,
+	bool has_tab,
+	int tabs,
+	Allocator allocator
+)
+{
+	if (end <= start) return;
+	if (has_tab)
+	{
+		String span = text[start:end - start];
+		String vis  = expand_tabs(span, tabs, allocator);
+		rl::draw_text_ex(font, vis.zstr_tcopy(), { x, y }, font_size, 0.0f, color);
+	}
+	else
+	{
+		char saved = raw[end];
+		raw[end] = 0;
+		rl::draw_text_ex(font, (ZString)&raw[start], { x, y }, font_size, 0.0f, color);
+		raw[end] = saved;
+	}
+}
+
 fn void draw_text_highlighted(
 	highlight::Highlighter* highlighter,
 	PieceTable* table,
@@ -746,20 +847,32 @@ fn void draw_text_highlighted(
 				col = advance_columns(text, pos, start, tabs, col);
 				pos = start;
 				usz visual_col = visual_column_for_offset(table, line, line_start + start, hints);
-				RLVector2 at   = { area.x + (float)visual_col * metrics.char_width - scroll_x, y };
+				float x        = area.x + (float)visual_col * metrics.char_width - scroll_x;
 				RLColor color  = highlight::role_color(run.role);
-				if (has_tab)
+				sz hidden      = hint_hidden_in_range(table, hints, line, line_start + start, line_start + end);
+				if (hidden >= 0)
 				{
-					String span = text[start:end - start];
-					String vis  = expand_tabs(span, tabs, tmem);
-					rl::draw_text_ex(font, vis.zstr_tcopy(), at, font_size, 0.0f, color);
+					usz hs = (usz)hidden - line_start;
+					draw_span_text(font, raw, text, start, hs, x, y, font_size, color, has_tab, tabs, tmem);
+					usz second_col = visual_column_for_offset(table, line, (usz)hidden + 1, hints);
+					draw_span_text(
+						font,
+						raw,
+						text,
+						hs + 1,
+						end,
+						area.x + (float)second_col * metrics.char_width - scroll_x,
+						y,
+						font_size,
+						color,
+						has_tab,
+						tabs,
+						tmem
+					);
 				}
 				else
 				{
-					char saved = raw[end];
-					raw[end] = 0;
-					rl::draw_text_ex(font, (ZString)&raw[start], at, font_size, 0.0f, color);
-					raw[end] = saved;
+					draw_span_text(font, raw, text, start, end, x, y, font_size, color, has_tab, tabs, tmem);
 				}
 				col = advance_columns(text, pos, end, tabs, col);
 				pos = end;
