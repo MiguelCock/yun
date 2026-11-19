@@ -20,6 +20,11 @@ struct LspDoc
 	long version;
 	bool opened;
 	bool symbols_requested;
+	List{InlayHint} hints;
+	long hints_version;
+	long hints_request_version;
+	double hints_send_at;
+	int hints_request_id;
 }
 
 struct FileDiagnostics
@@ -100,6 +105,7 @@ struct Lsp
 Lsp* active_lsp;
 
 const LspDiagnostic[] NO_DIAGNOSTICS = { };
+const InlayHint[] NO_INLAY_HINTS     = { };
 const String[] NO_TRIGGERS           = { };
 
 fn void Lsp.init(&self, Allocator allocator, config::Config* config)
@@ -212,6 +218,8 @@ fn void Lsp.shutdown_all(&self)
 		self.docs[i].uri.free(self.allocator);
 		self.docs[i].language.free(self.allocator);
 		if (self.docs[i].text.len) self.docs[i].text.free(self.allocator);
+		lsp_free_inlay_hints(&self.docs[i].hints, self.allocator);
+		self.docs[i].hints.free();
 	}
 	self.docs.clear();
 	if (self.root_uri.len) self.root_uri.free(self.allocator);
@@ -1124,6 +1132,11 @@ fn void Lsp.handle_open(&self, String path, PieceTable* table)
 	doc.version = 1;
 	doc.opened = false;
 	doc.symbols_requested = false;
+	doc.hints.init(self.allocator);
+	doc.hints_version = -1;
+	doc.hints_request_version = -1;
+	doc.hints_send_at = 0.0;
+	doc.hints_request_id = -1;
 	self.docs.push(doc);
 }
 
@@ -1133,6 +1146,9 @@ fn void Lsp.handle_change(&self, String path, PieceTable* table)
 	if (index < 0) return;
 	LspDoc* doc = &self.docs[index];
 	doc.version++;
+	lsp_free_inlay_hints(&doc.hints, self.allocator);
+	doc.hints_send_at = 0.0;
+	doc.hints_request_id = -1;
 	if (!doc.opened)
 	{
 		if (doc.text.len) doc.text.free(self.allocator);
@@ -1168,6 +1184,8 @@ fn void Lsp.handle_close(&self, String path)
 	}
 	self.clear_diagnostics(doc.path);
 	if (self.semantic_path.compare_to(doc.path) == 0) self.clear_semantic_tokens();
+	lsp_free_inlay_hints(&doc.hints, self.allocator);
+	doc.hints.free();
 	doc.path.free(self.allocator);
 	doc.uri.free(self.allocator);
 	doc.language.free(self.allocator);
@@ -1184,8 +1202,48 @@ fn void Lsp.mark_language_reopen(&self, String language)
 			self.docs[i].opened = false;
 			self.docs[i].version++;
 			self.docs[i].symbols_requested = false;
+			lsp_free_inlay_hints(&self.docs[i].hints, self.allocator);
+			self.docs[i].hints_version = -1;
+			self.docs[i].hints_request_id = -1;
+			self.docs[i].hints_send_at = 0.0;
 		}
 	}
+}
+
+fn void Lsp.update_inlay_hints(&self, double now)
+{
+	for (sz i = 0; i < self.docs.len(); i++)
+	{
+		LspDoc* doc = &self.docs[i];
+		if (!doc.opened || doc.version == doc.hints_version) continue;
+		if (doc.hints_send_at == 0.0)
+		{
+			doc.hints_send_at = now + 0.2;
+			continue;
+		}
+		if (now < doc.hints_send_at) continue;
+		LspClient* client = self.client_for(doc.language);
+		if (!client || client.status != LspStatus.READY || !client.caps.inlay_hint) continue;
+
+		lsp_free_inlay_hints(&doc.hints, self.allocator);
+		@pool()
+		{
+			String uri     = path_to_uri(tmem, doc.path);
+			Object* params = lsp_inlay_hint_params(tmem, uri, 1000000, 0);
+			doc.hints_request_id = client.send_request("textDocument/inlayHint", params);
+		};
+		doc.hints_request_version = doc.version;
+		doc.hints_version = doc.version;
+		doc.hints_send_at = 0.0;
+	}
+}
+
+fn InlayHint[] Lsp.inlay_hints_for(&self, String path)
+{
+	sz index = self.doc_index(path);
+	if (index < 0) return NO_INLAY_HINTS;
+	List{InlayHint}* hints = &self.docs[index].hints;
+	return hints.entries[0:hints.len()];
 }
 
 fn void Lsp.update(&self, double now)
@@ -1404,6 +1462,25 @@ fn void Lsp.update(&self, double now)
 				}
 				self.semantic_request_id = -1;
 			}
+			else if (response.method.compare_to("textDocument/inlayHint") == 0)
+			{
+				for (sz d = 0; d < self.docs.len(); d++)
+				{
+					LspDoc* doc = &self.docs[d];
+					if (doc.hints_request_id != response.id) continue;
+					if (doc.version == doc.hints_request_version)
+					{
+						lsp_free_inlay_hints(&doc.hints, self.allocator);
+						Object*? result_opt = response.message.get("result");
+						if (try result = result_opt)
+						{
+							lsp_parse_inlay_hints(self.allocator, result, &doc.hints);
+						}
+					}
+					doc.hints_request_id = -1;
+					break;
+				}
+			}
 			response.method.free(client.allocator);
 			response.message.free();
 		}
@@ -1466,6 +1543,7 @@ fn void Lsp.update(&self, double now)
 			doc.text = "";
 		}
 	}
+	self.update_inlay_hints(now);
 }
 
 fn String Lsp.status_text(&self)
@@ -1650,6 +1728,12 @@ fn bool lsp_take_semantic_tokens(String* path, List{SemanticToken}* out)
 {
 	if (!active_lsp) return false;
 	return active_lsp.take_semantic_tokens(path, out);
+}
+
+fn InlayHint[] lsp_inlay_hints_for(String path)
+{
+	if (!active_lsp) return NO_INLAY_HINTS;
+	return active_lsp.inlay_hints_for(path);
 }
 
 fn String lsp_semantic_token_type(String path, int token_type)

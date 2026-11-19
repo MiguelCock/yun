@@ -1,8 +1,8 @@
 # Language servers (LSP)
 
-Yun drives hover, go-to-definition, completion, diagnostics, document/workspace
-symbols, references, rename, code actions, signature help, and semantic tokens
-through language servers. Servers are optional: if the binary is not installed,
+Yun drives hover, go-to-definition, context-aware completion, diagnostics,
+document/workspace symbols, references, rename, code actions, signature help,
+semantic tokens, and inline type hints through language servers. Servers are optional: if the binary is not installed,
 the language just has no LSP features (no error, no crash). Each feature is
 enabled only when the server advertises the corresponding capability.
 
@@ -131,6 +131,7 @@ Override the command for a language id under the `lsp` section of the config
 | code actions | `Ctrl+.`; quick fixes are listed and their edits applied. |
 | signature help | Requested inside call parentheses after a short debounce. |
 | semantic tokens | Full-document tokens overlay tree-sitter highlighting. |
+| inlay hints | Inferred types for `let` and `$` alias bindings, rendered inline after the binding name. |
 
 Rename and code action edits apply only when every affected file has an open
 card. Missing providers, empty results, and errors are reported without blocking

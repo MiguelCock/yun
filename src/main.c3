@@ -1266,7 +1266,14 @@ fn void navigate_to_location(
 	card.preferred_column = editor::column_for_offset(card.buffer, card_line, card.cursor);
 	Rect text = editor::text_rect(card.rect, metrics, card.buffer.line_count());
 	card.scroll = editor::scroll_to_reveal(card.buffer, metrics, text.height, card.cursor, card.scroll);
-	card.scroll_x = editor::scroll_x_to_reveal(card.buffer, metrics, text.width, card.cursor, card.scroll_x);
+	card.scroll_x = editor::scroll_x_to_reveal(
+		card.buffer,
+		metrics,
+		text.width,
+		card.cursor,
+		card.scroll_x,
+		lsp::lsp_inlay_hints_for((String)card.path)
+	);
 	focus_camera_on_line(project, canvas, metrics, card, card_line);
 }
 
@@ -1310,8 +1317,16 @@ fn bool draw_signature_help(
 	FileCard* card = project.focused_card();
 	if (!card || !card.buffer) return false;
 	if (!lsp::lsp_signature_valid((String)card.path, card.cursor)) return false;
-	Rect text        = editor::text_rect(card.rect, metrics, card.buffer.line_count());
-	Rect caret       = editor::caret_rect(card.buffer, text, card.scroll, card.scroll_x, metrics, card.cursor);
+	Rect text = editor::text_rect(card.rect, metrics, card.buffer.line_count());
+	Rect caret = editor::caret_rect(
+		card.buffer,
+		text,
+		card.scroll,
+		card.scroll_x,
+		metrics,
+		card.cursor,
+		lsp::lsp_inlay_hints_for((String)card.path)
+	);
 	Rect screen      = editor::world_rect_to_screen(caret, canvas.camera);
 	RLVector2 anchor = { screen.x, screen.y + screen.height + 4.0f };
 	hover::draw_hover(lsp::lsp_signature_message(), anchor, font);
@@ -1357,7 +1372,8 @@ fn HoverInfo compute_hover(project::Project* project, canvas::Canvas* canvas, ed
 			world[1] - text.y,
 			card.scroll,
 			card.scroll_x,
-			metrics
+			metrics,
+			lsp::lsp_inlay_hints_for((String)card.path)
 		);
 		lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
 		for (usz i = 0; i < diags.len; i++)
@@ -1381,7 +1397,15 @@ fn HoverInfo compute_hover(project::Project* project, canvas::Canvas* canvas, ed
 	info.path = (String)card.path;
 	info.table = card.buffer;
 	info.offset = card.cursor;
-	Rect caret  = editor::caret_rect(card.buffer, text, card.scroll, card.scroll_x, metrics, card.cursor);
+	Rect caret = editor::caret_rect(
+		card.buffer,
+		text,
+		card.scroll,
+		card.scroll_x,
+		metrics,
+		card.cursor,
+		lsp::lsp_inlay_hints_for((String)card.path)
+	);
 	Rect screen = editor::world_rect_to_screen(caret, canvas.camera);
 	info.anchor = { screen.x, screen.y + screen.height };
 	return info;
@@ -2363,7 +2387,8 @@ fn int main(String[] args)
 							metrics,
 							text.width,
 							reveal,
-							card.scroll_x
+							card.scroll_x,
+							lsp::lsp_inlay_hints_for((String)card.path)
 						);
 					}
 					if (replaced) card.dirty = true;
@@ -2591,7 +2616,8 @@ fn int main(String[] args)
 							world[1] - text.y,
 							cc.scroll,
 							cc.scroll_x,
-							metrics
+							metrics,
+							lsp::lsp_inlay_hints_for((String)cc.path)
 						);
 					}
 				}

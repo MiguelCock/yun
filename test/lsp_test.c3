@@ -713,7 +713,7 @@ fn void test_extended_capabilities_parse()
 {
 	@pool()
 	{
-		String json     = "{\"capabilities\":{\"documentSymbolProvider\":true,\"workspaceSymbolProvider\":true,\"referencesProvider\":true,\"renameProvider\":{\"prepareProvider\":true},\"codeActionProvider\":true,\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]},\"semanticTokensProvider\":{\"legend\":{\"tokenTypes\":[\"keyword\",\"type\",\"function\"]}}}}";
+		String json     = "{\"capabilities\":{\"documentSymbolProvider\":true,\"workspaceSymbolProvider\":true,\"referencesProvider\":true,\"renameProvider\":{\"prepareProvider\":true},\"codeActionProvider\":true,\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]},\"inlayHintProvider\":true,\"semanticTokensProvider\":{\"legend\":{\"tokenTypes\":[\"keyword\",\"type\",\"function\"]}}}}";
 		Object*? parsed = json::parse(tmem, json);
 		if (catch excuse = parsed)
 		{
@@ -732,6 +732,7 @@ fn void test_extended_capabilities_parse()
 			assert(caps.code_action);
 			assert(caps.signature_help);
 			assert(caps.semantic_tokens);
+			assert(caps.inlay_hint);
 			assert(caps.semantic_token_types.len() == 3);
 			assert(caps.semantic_token_types[1].compare_to("type") == 0);
 			lsp_capabilities_free(&caps, tmem);
@@ -1011,6 +1012,11 @@ fn void test_response_state_updates()
 		doc.version = 1;
 		doc.opened = true;
 		doc.symbols_requested = true;
+		doc.hints.init(tmem);
+		doc.hints_version = -1;
+		doc.hints_request_version = 1;
+		doc.hints_send_at = 0.0;
+		doc.hints_request_id = 9;
 		lsp.docs.push(doc);
 		lsp.semantic_path = "/a.sol".copy(tmem);
 		lsp.semantic_request_version = 1;
@@ -1026,8 +1032,45 @@ fn void test_response_state_updates()
 		tokens.free();
 		semantic_path.free(tmem);
 
+		fake::fake_response(
+			client,
+			9,
+			"textDocument/inlayHint",
+			"{\"result\":[{\"position\":{\"line\":0,\"character\":1},\"label\":\": Io\",\"kind\":1}]}"
+		);
+		lsp.update(0.0);
+		InlayHint[] hints = lsp.inlay_hints_for("/a.sol");
+		assert(hints.len == 1);
+		assert(hints[0].label.compare_to(": Io") == 0);
+
 		client.status = LspStatus.STOPPED;
 		lsp.shutdown_all();
 		lsp.destroy();
+	};
+}
+fn void test_inlay_hints_parse()
+{
+	@pool()
+	{
+		Object*? parsed = json::parse(
+			tmem,
+			"[{\"position\":{\"line\":1,\"character\":2},\"label\":[{\"value\":\": \"},{\"value\":\"Io\"}],\"kind\":1},{\"position\":{\"line\":3,\"character\":4},\"label\":\": Point\",\"kind\":1}]"
+		);
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			List{InlayHint} hints;
+			hints.init(tmem);
+			lsp_parse_inlay_hints(tmem, parsed, &hints);
+			assert(hints.len() == 2);
+			assert(hints[0].line == 1 && hints[0].character == 2);
+			assert(hints[0].label.compare_to(": Io") == 0);
+			assert(hints[1].label.compare_to(": Point") == 0);
+			lsp_free_inlay_hints(&hints, tmem);
+			hints.free();
+		}
 	};
 }

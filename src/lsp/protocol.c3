@@ -24,6 +24,7 @@ struct LspCapabilities
 	bool code_action;
 	bool signature_help;
 	bool semantic_tokens;
+	bool inlay_hint;
 	List{String} trigger_characters;
 	List{String} semantic_token_types;
 }
@@ -69,6 +70,14 @@ struct FormattingEdit
 	uint end_character;
 }
 
+struct InlayHint
+{
+	String label;
+	uint line;
+	uint character;
+	int kind;
+}
+
 const int DIAGNOSTIC_ERROR   = 1;
 const int DIAGNOSTIC_WARNING = 2;
 const int DIAGNOSTIC_INFO    = 3;
@@ -88,6 +97,7 @@ fn void lsp_capabilities_init(LspCapabilities* caps, Allocator allocator)
 	caps.code_action = false;
 	caps.signature_help = false;
 	caps.semantic_tokens = false;
+	caps.inlay_hint = false;
 	caps.trigger_characters.init(allocator);
 	caps.semantic_token_types.init(allocator);
 }
@@ -267,6 +277,21 @@ fn Object* lsp_formatting_params(Allocator allocator, String uri)
 	Object* options = root.get_or_create_obj("options");
 	options.set("tabSize", (long)4);
 	options.set("insertSpaces", true);
+	return root;
+}
+
+fn Object* lsp_inlay_hint_params(Allocator allocator, String uri, uint end_line, uint end_character)
+{
+	Object* root = object::new_obj(allocator);
+	Object* doc  = root.get_or_create_obj("textDocument");
+	doc.set("uri", uri);
+	Object* range = root.get_or_create_obj("range");
+	Object* start = range.get_or_create_obj("start");
+	start.set("line", (long)0);
+	start.set("character", (long)0);
+	Object* end = range.get_or_create_obj("end");
+	end.set("line", (long)end_line);
+	end.set("character", (long)end_character);
 	return root;
 }
 
@@ -609,6 +634,7 @@ fn void lsp_parse_capabilities(Allocator allocator, Object* result, LspCapabilit
 	out.code_action = lsp_provider_enabled(caps, "codeActionProvider");
 	out.signature_help = lsp_provider_enabled(caps, "signatureHelpProvider");
 	out.semantic_tokens = lsp_provider_enabled(caps, "semanticTokensProvider");
+	out.inlay_hint = lsp_provider_enabled(caps, "inlayHintProvider");
 
 	Object*? rename_opt = caps.get("renameProvider");
 	if (try rename = rename_opt)
@@ -672,6 +698,66 @@ fn uint lsp_object_uint(Object* obj, String key)
 	uint? number = value_opt.to_value(uint);
 	if (catch excuse = number) return 0;
 	return number;
+}
+
+fn void lsp_free_inlay_hints(List{InlayHint}* hints, Allocator allocator)
+{
+	for (sz i = 0; i < hints.len(); i++)
+	{
+		InlayHint hint = hints.get(i);
+		if (hint.label.len) hint.label.free(allocator);
+	}
+	hints.clear();
+}
+
+fn void lsp_parse_inlay_hints(Allocator allocator, Object* result, List{InlayHint}* out)
+{
+	if (!result.is_array()) return;
+	for (sz i = 0; i < result.get_len(); i++)
+	{
+		Object* value = result.get_at(i);
+		if (!value.is_map()) continue;
+		Object*? position_opt = value.get("position");
+		if (catch excuse = position_opt) continue;
+		if (!position_opt.is_map()) continue;
+		uint line          = lsp_object_uint(position_opt, "line");
+		uint character     = lsp_object_uint(position_opt, "character");
+		String label       = "";
+		Object*? label_opt = value.get("label");
+		if (try label_value = label_opt)
+		{
+			if (label_value.is_string())
+			{
+				label = label_value.s.copy(allocator);
+			}
+			else if (label_value.is_array())
+			{
+				DString joined;
+				joined.init(allocator, 32);
+				for (sz p = 0; p < label_value.get_len(); p++)
+				{
+					Object* part = label_value.get_at(p);
+					if (!part.is_map()) continue;
+					Object*? part_value_opt = part.get("value");
+					if (try part_value = part_value_opt)
+					{
+						if (part_value.is_string()) joined.append_string(part_value.s);
+					}
+				}
+				label = joined.str_view().copy(allocator);
+				joined.free();
+			}
+		}
+		if (label.len == 0) continue;
+		out.push(
+			{
+				.label = label,
+				.line = line,
+				.character = character,
+				.kind = (int)lsp_object_uint(value, "kind"),
+			}
+		);
+	}
 }
 
 fn void lsp_parse_diagnostics(Allocator allocator, Object* params, List{LspDiagnostic}* out)

@@ -1838,7 +1838,14 @@ fn void Project.reveal_focused(&self, EditorMetrics metrics)
 	if (!card || !card.buffer) return;
 	Rect text = editor::text_rect(card.rect, metrics, card.buffer.line_count());
 	card.scroll = editor::scroll_to_reveal(card.buffer, metrics, text.height, card.cursor, card.scroll);
-	card.scroll_x = editor::scroll_x_to_reveal(card.buffer, metrics, text.width, card.cursor, card.scroll_x);
+	card.scroll_x = editor::scroll_x_to_reveal(
+		card.buffer,
+		metrics,
+		text.width,
+		card.cursor,
+		card.scroll_x,
+		lsp::lsp_inlay_hints_for((String)card.path)
+	);
 }
 
 fn bool Project.has_selection(&self)
@@ -2220,7 +2227,8 @@ fn void Project.update(
 							metrics,
 							text.width,
 							card.cursor,
-							card.scroll_x
+							card.scroll_x,
+							lsp::lsp_inlay_hints_for((String)card.path)
 						);
 						if (card.history) card.history.break_coalescing();
 						self.last_input_time = rl::get_time();
@@ -2240,7 +2248,8 @@ fn void Project.update(
 						local[1],
 						card.scroll,
 						card.scroll_x,
-						metrics
+						metrics,
+						lsp::lsp_inlay_hints_for((String)card.path)
 					);
 					if (double_click)
 					{
@@ -2313,7 +2322,8 @@ fn void Project.update(
 					local[1],
 					card.scroll,
 					card.scroll_x,
-					metrics
+					metrics,
+					lsp::lsp_inlay_hints_for((String)card.path)
 				);
 				usz line = card.buffer.line_of(card.cursor);
 				card.preferred_column = editor::column_for_offset(card.buffer, line, card.cursor);
@@ -3147,6 +3157,7 @@ fn void Project.draw_cards(
 				card.cursor,
 				theme::current()
 				.editor_current_line);
+			lsp::InlayHint[] inlay_hints = lsp::lsp_inlay_hints_for((String)card.path);
 			if (is_focused && editor::has_selection(card.selection_anchor, card.cursor))
 			{
 				usz sel_start = 0;
@@ -3161,6 +3172,7 @@ fn void Project.draw_cards(
 					camera,
 					sel_start,
 					sel_end,
+					inlay_hints,
 					theme::current()
 					.editor_selection);
 			}
@@ -3170,7 +3182,8 @@ fn void Project.draw_cards(
 				card.scroll,
 				card.scroll_x,
 				metrics,
-				camera
+				camera,
+				inlay_hints
 			);
 			editor::draw_gutter(
 				card.buffer,
@@ -3192,6 +3205,7 @@ fn void Project.draw_cards(
 				camera,
 				editor_font,
 				metrics.font_size,
+				inlay_hints,
 				theme::current()
 				.editor_text);
 			if (is_focused)
@@ -3199,7 +3213,16 @@ fn void Project.draw_cards(
 				lsp::LspDiagnostic[] diags = lsp::lsp_diagnostics_for((String)card.path);
 				if (diags.len > 0)
 				{
-					editor::draw_diagnostics(card.buffer, text, card.scroll, card.scroll_x, metrics, camera, diags);
+					editor::draw_diagnostics(
+						card.buffer,
+						text,
+						card.scroll,
+						card.scroll_x,
+						metrics,
+						camera,
+						inlay_hints,
+						diags
+					);
 				}
 			}
 			if (is_focused && caret_on)
@@ -3212,6 +3235,7 @@ fn void Project.draw_cards(
 					metrics,
 					camera,
 					card.cursor,
+					inlay_hints,
 					theme::current()
 					.editor_caret);
 			}
