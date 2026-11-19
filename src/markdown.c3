@@ -111,6 +111,7 @@ struct View
 	float layout_width;
 	float layout_char_width;
 	float layout_font_size;
+	float layout_line_height;
 	bool dirty;
 }
 
@@ -124,6 +125,23 @@ fn usz line_end_at(String text, usz start)
 	usz i = start;
 	while (i < text.len && text[i] != '\n') i++;
 	return i;
+}
+
+fn usz utf8_next(String text, usz i)
+{
+	i++;
+	while (i < text.len && ((int)text[i] & 0xC0) == 0x80) i++;
+	return i;
+}
+
+fn usz utf8_columns(String text)
+{
+	usz columns = 0;
+	for (usz i = 0; i < text.len; i++)
+	{
+		if (((int)text[i] & 0xC0) != 0x80) columns++;
+	}
+	return columns;
 }
 
 fn String trim_view(String s)
@@ -566,7 +584,7 @@ fn void layout_inline(
 			while (p < s.len && s[p] == ' ') p++;
 			if (p > ws)
 			{
-				col += (float)(p - ws);
+				col += (float)utf8_columns(s[ws:p - ws]);
 				if (col > max_cols)
 				{
 					*y += lh;
@@ -578,7 +596,7 @@ fn void layout_inline(
 			while (p < s.len && s[p] != ' ') p++;
 			if (p == w0) continue;
 			String word = s[w0:p - w0];
-			float wlen  = (float)word.len;
+			float wlen  = (float)utf8_columns(word);
 			if (line_used && col + wlen > max_cols)
 			{
 				*y += lh;
@@ -590,12 +608,19 @@ fn void layout_inline(
 				usz off = 0;
 				while (off < word.len)
 				{
-					float room = max_cols - col;
-					usz take   = room > 1.0f ? (usz)room : 1;
-					if (off + take > word.len) take = word.len - off;
-					add_run(out, word[off:take], x0 + col * cw, *y, size, st, bold);
-					off += take;
-					col += (float)take;
+					float room    = max_cols - col;
+					usz max_take  = room > 1.0f ? (usz)room : 1;
+					usz take      = off;
+					usz take_cols = 0;
+					while (take < word.len && take_cols < max_take)
+					{
+						take = utf8_next(word, take);
+						take_cols++;
+					}
+					if (take == off) take = utf8_next(word, off);
+					add_run(out, word[off:take - off], x0 + col * cw, *y, size, st, bold);
+					off = take;
+					col += (float)take_cols;
 					line_used = true;
 					if (off < word.len)
 					{
@@ -637,9 +662,13 @@ fn void layout_code_block(
 	{
 		usz e = line_end_at(text, i);
 		if (!first) *y += lh;
+		sz before = out.runs.len();
 		add_run(out, text[i:e - i], code_x, *y, size, MdStyle.CODE, false);
-		out.runs[out.runs.len() - 1].src_start = src;
-		out.runs[out.runs.len() - 1].src_end = src + (uint)(e - i);
+		if (out.runs.len() > before)
+		{
+			out.runs[out.runs.len() - 1].src_start = src;
+			out.runs[out.runs.len() - 1].src_end = src + (uint)(e - i);
+		}
 		src += (uint)(e - i) + 1;
 		first = false;
 		i = e < text.len ? e + 1 : e;
@@ -832,6 +861,7 @@ fn View* view_create(Allocator allocator)
 	view.layout_width = -1.0f;
 	view.layout_char_width = 0.0f;
 	view.layout_font_size = 0.0f;
+	view.layout_line_height = 0.0f;
 	view.dirty = true;
 	return view;
 }
@@ -853,7 +883,8 @@ fn void view_ensure(View* view, PieceTable* table, float width, float char_width
 {
 	if (!view) return;
 	if (!view.dirty && view.layout && view.layout_width == width && view.layout_char_width == char_width
-		&& view.layout_font_size == font_size) return;
+		&& view.layout_font_size == font_size
+		&& view.layout_line_height == line_height) return;
 
 	if (view.doc) free_document(view.doc, view.allocator);
 	if (view.layout) free_layout(view.layout, view.allocator);
@@ -872,6 +903,7 @@ fn void view_ensure(View* view, PieceTable* table, float width, float char_width
 	view.layout_width = width;
 	view.layout_char_width = char_width;
 	view.layout_font_size = font_size;
+	view.layout_line_height = line_height;
 	view.dirty = false;
 }
 
