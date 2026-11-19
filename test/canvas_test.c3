@@ -312,3 +312,27 @@ fn void test_fit_zoom_floor_no_clamp()
 	c.fit_zoom_floor(content, 1000, 800, 0.4f);
 	assert(c.target.zoom >= 0.4f);
 }
+fn void test_edge_pan_delta()
+{
+	RLVector2 inside = { 500.0f, 400.0f };
+	RLVector2 d      = edge_pan_delta(inside, 1000.0f, 800.0f, 40.0f, 48.0f, 900.0f, 1.0f, 0.1f);
+	assert(d[0] == 0.0f && d[1] == 0.0f);
+
+	d = edge_pan_delta({ 0.0f, 400.0f }, 1000.0f, 800.0f, 40.0f, 48.0f, 900.0f, 1.0f, 0.1f);
+	assert(d[0] == -90.0f && d[1] == 0.0f);
+
+	d = edge_pan_delta({ 1000.0f, 400.0f }, 1000.0f, 800.0f, 40.0f, 48.0f, 900.0f, 1.0f, 0.1f);
+	assert(d[0] == 90.0f && d[1] == 0.0f);
+
+	d = edge_pan_delta({ 500.0f, 40.0f }, 1000.0f, 800.0f, 40.0f, 48.0f, 900.0f, 1.0f, 0.1f);
+	assert(d[0] == 0.0f && d[1] == -90.0f);
+
+	d = edge_pan_delta({ 500.0f, 800.0f }, 1000.0f, 800.0f, 40.0f, 48.0f, 900.0f, 1.0f, 0.1f);
+	assert(d[0] == 0.0f && d[1] == 90.0f);
+
+	d = edge_pan_delta({ 0.0f, 400.0f }, 1000.0f, 800.0f, 40.0f, 48.0f, 900.0f, 2.0f, 0.1f);
+	assert(d[0] == -45.0f);
+
+	d = edge_pan_delta({ 0.0f, 400.0f }, 1000.0f, 800.0f, 40.0f, 48.0f, 900.0f, 1.0f, 0.0f);
+	assert(d[0] == 0.0f && d[1] == 0.0f);
+}
