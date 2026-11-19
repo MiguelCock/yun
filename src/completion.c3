@@ -302,8 +302,16 @@ fn void Completion.draw(
 {
 	if (!self.open || self.order.len() == 0) return;
 
-	Rect text      = editor::text_rect(card_rect, metrics, table.line_count());
-	Rect caret     = editor::caret_rect(table, text, scroll_y, scroll_x, metrics, cursor);
+	Rect text = editor::text_rect(card_rect, metrics, table.line_count());
+	Rect caret = editor::caret_rect(
+		table,
+		text,
+		scroll_y,
+		scroll_x,
+		metrics,
+		cursor,
+		lsp::lsp_inlay_hints_for(self.path)
+	);
 	Rect caret_scr = editor::world_rect_to_screen(caret, camera);
 
 	int rows = (int)self.order.len();
