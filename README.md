@@ -147,13 +147,19 @@ Keybindings use chords like `Ctrl+Shift+P`. Modifiers are `Ctrl` (shown as `Cmd`
 
 ## Versioning and releases
 
-Yun is **pre-1.0**: versions are `0.<MINOR>.0`, where `MINOR` is the cumulative number of closed issues at release time (it only ever increases), and `PATCH` stays `0`. Once the API and UX are stable we will move to [semantic versioning](https://semver.org/). The version lives in [`project.json`](project.json) (and `yun::version.APP_VERSION`, kept in sync by a test).
+Yun is **pre-1.0** and version numbers communicate the size of a release:
 
-Releases are built and published by [`.github/workflows/release.yml`](.github/workflows/release.yml). **Merging a PR never publishes anything** — the workflow only builds. To cut a release, set the version to `0.<closed-issues>.0` and push a matching tag:
+- `0.0.x` — small change releases (patch).
+- `0.x.0` — a large, stable batch of changes (minor).
+- `1.0.0` — the first stable release.
+
+The version lives in [`project.json`](project.json) (and `yun::version.APP_VERSION`, kept in sync by a test).
+
+Releases are built and published by [`.github/workflows/release.yml`](.github/workflows/release.yml). **Merging a PR never publishes anything** — the workflow only builds. To cut a release, set the version in `project.json` and `src/version.c3` and push a matching tag:
 
 ```sh
-git tag v0.86.0
-git push origin v0.86.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 Tagging builds `linux-x64`, `macos-aarch64`, and `windows-x64` and attaches the archives (with SHA-256 checksums) to the GitHub Release. The tag must equal `v<version from project.json>`, otherwise publishing is aborted.
