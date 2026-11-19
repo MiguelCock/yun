@@ -2090,6 +2090,24 @@ fn void Project.end_card_drag(&self)
 	}
 }
 
+fn void Project.edge_pan_during_drag(&self, Canvas* canvas)
+{
+	if (!self.drag_card && !self.drag_cluster) return;
+	float dt = math::min(rl::get_frame_time(), canvas::MAX_FRAME_DT);
+	RLVector2 delta = canvas::edge_pan_delta(
+		rl::get_mouse_position(),
+		(float)rl::get_screen_width(),
+		(float)rl::get_screen_height(),
+		canvas.top_inset,
+		canvas::EDGE_PAN_MARGIN,
+		canvas::EDGE_PAN_SPEED,
+		canvas.camera.zoom,
+		dt
+	);
+	canvas.target.target[0] += delta[0];
+	canvas.target.target[1] += delta[1];
+}
+
 fn bool Project.pointer_over_ui(&self, RLVector2 world)
 {
 	return self.drag_card || self.drag_cluster || self.hit_test(world) >= 0 || self.cluster_hit(world) >= 0;
@@ -2364,6 +2382,8 @@ fn void Project.update(
 			}
 		}
 	}
+
+	self.edge_pan_during_drag(canvas);
 
 	if (self.resizing)
 	{
