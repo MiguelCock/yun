@@ -27,6 +27,9 @@ The preview is off by default. It is only available for Markdown cards.
 - ATX headings (`#`..`######`), scaled up and bold.
 - Paragraphs (word-wrapped), unordered and ordered lists (indented, with
   bullets/numbers), single-level blockquotes (bar + indent), thematic breaks.
+- GitHub-flavored tables with a header row, alignment (`:---`, `:--:`, `---:`),
+  column separators, a header background/underline, and wrapped cells. Cell text
+  supports the inline styles below, and escaped pipes (`\|`) stay in one cell.
 - Fenced code blocks (no wrapping) on a code background; the fence body is
   syntax-highlighted by reusing the block highlighter's injected spans when the
   fence language is supported, otherwise drawn in the code color.
@@ -35,8 +38,8 @@ The preview is off by default. It is only available for Markdown cards.
 
 ## Out of scope (v1)
 
-Setext headings (`Title\n=====`), nested blockquotes (`> >`), images, tables,
-math, HTML passthrough, and true italic/bold font faces (the bundled font is
+Setext headings (`Title\n=====`), nested blockquotes (`> >`), images, math,
+HTML passthrough, and true italic/bold font faces (the bundled font is
 JetBrains Mono Regular, so bold is drawn twice with a 1px offset).
 
 ## Persistence

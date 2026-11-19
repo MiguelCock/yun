@@ -16,6 +16,8 @@ const float BLOCK_GAP       = 0.5f;
 const float CODE_PAD        = 8.0f;
 const float QUOTE_INDENT    = 14.0f;
 const float LIST_INDENT     = 16.0f;
+const float TABLE_GAP_COLS  = 2.0f;
+const float TABLE_PAD_COLS  = 0.5f;
 
 enum MdBlockKind : int
 {
@@ -25,6 +27,14 @@ enum MdBlockKind : int
 	CODE,
 	QUOTE,
 	RULE,
+	TABLE,
+}
+
+enum MdAlign : int
+{
+	LEFT,
+	CENTER,
+	RIGHT,
 }
 
 enum MdStyle : int
@@ -44,6 +54,8 @@ enum MdRectKind : int
 	QUOTE_BAR,
 	BULLET,
 	RULE,
+	TABLE_HEADER,
+	TABLE_BORDER,
 }
 
 struct MdBlock
@@ -62,6 +74,11 @@ struct MdDocument
 {
 	Allocator allocator;
 	List{MdBlock} blocks;
+}
+
+struct MdTableRow
+{
+	List{String} cells;
 }
 
 struct MdInline
@@ -264,6 +281,86 @@ fn bool list_marker(String s, bool* ordered, int* index, usz* content_start, int
 	return false;
 }
 
+fn bool has_table_pipe(String line)
+{
+	for (usz i = 0; i < line.len; i++)
+	{
+		if (line[i] == '\\')
+		{
+			i++;
+			continue;
+		}
+		if (line[i] == '|') return true;
+	}
+	return false;
+}
+
+fn void split_table_row(String line, List{String}* cells)
+{
+	cells.clear();
+	String t = trim_view(line);
+	if (t.len == 0) return;
+	usz start = 0;
+	usz end   = t.len;
+	if (t[start] == '|') start++;
+	if (end > start && t[end - 1] == '|') end--;
+	if (start >= end) return;
+
+	usz cell_start = start;
+	for (usz i = start; i < end; i++)
+	{
+		if (t[i] == '\\')
+		{
+			i++;
+			continue;
+		}
+		if (t[i] != '|') continue;
+		cells.push(trim_view(t[cell_start:i - cell_start]));
+		cell_start = i + 1;
+	}
+	cells.push(trim_view(t[cell_start:end - cell_start]));
+}
+
+fn bool table_delimiter(List{String}* cells, List{MdAlign}* aligns)
+{
+	aligns.clear();
+	foreach (String raw : cells)
+	{
+		String c = trim_view(raw);
+		if (c.len == 0) return false;
+
+		usz start = 0;
+		usz end   = c.len;
+		bool left = false;
+		bool right;
+		if (c[start] == ':')
+		{
+			left = true;
+			start++;
+		}
+		right = end > start && c[end - 1] == ':';
+		if (right) end--;
+		if (end <= start) return false;
+		for (usz i = start; i < end; i++)
+		{
+			if (c[i] != '-') return false;
+		}
+		if (left && right)
+		{
+			aligns.push(MdAlign.CENTER);
+		}
+		else if (right)
+		{
+			aligns.push(MdAlign.RIGHT);
+		}
+		else
+		{
+			aligns.push(MdAlign.LEFT);
+		}
+	}
+	return aligns.len() > 0;
+}
+
 fn void push_block(
 	MdDocument* doc,
 	MdBlockKind kind,
@@ -418,6 +515,56 @@ fn MdDocument* parse(Allocator allocator, String text)
 			);
 			i = next;
 			continue;
+		}
+
+		if (has_table_pipe(line))
+		{
+			usz ne           = next < text.len ? line_end_at(text, next) : next;
+			String next_line = ne > next ? text[next:ne - next] : "";
+			bool table_found = false;
+			usz table_next   = next;
+			@pool()
+			{
+				List{String} header;
+				header.init(tmem);
+				List{String} delim;
+				delim.init(tmem);
+				List{MdAlign} aligns;
+				aligns.init(tmem);
+				split_table_row(line, &header);
+				split_table_row(next_line, &delim);
+				if (header.len() > 0 && delim.len() == header.len() && table_delimiter(&delim, &aligns))
+				{
+					flush_paragraph(doc, &para, &para_start, &have_para);
+					DString table;
+					table.init(allocator, 128);
+					table.append_string(trim_view(line));
+					table.append_char('\n');
+					table.append_string(trim_view(next_line));
+					table.append_char('\n');
+					uint table_end = (uint)ne;
+					usz j          = ne < text.len ? ne + 1 : ne;
+					while (j < text.len)
+					{
+						usz je     = line_end_at(text, j);
+						String row = text[j:je - j];
+						if (is_blank(row) || !has_table_pipe(row)) break;
+						table.append_string(trim_view(row));
+						table.append_char('\n');
+						table_end = (uint)je;
+						j = je < text.len ? je + 1 : je;
+					}
+					push_block(doc, MdBlockKind.TABLE, 0, false, 0, table.str_view(), "", off, table_end);
+					table.free();
+					table_found = true;
+					table_next = j;
+				}
+			};
+			if (table_found)
+			{
+				i = table_next;
+				continue;
+			}
 		}
 
 		if (!have_para)
@@ -683,6 +830,204 @@ fn void layout_code_block(
 	);
 }
 
+fn usz inline_columns(Allocator allocator, String text)
+{
+	List{MdInline} inlines;
+	parse_inlines(allocator, text, &inlines);
+	usz columns = 0;
+	foreach (MdInline in : inlines) columns += utf8_columns(in.text);
+	inlines.free();
+	return columns;
+}
+
+fn void align_runs(MdLayout* out, usz first, float x0, float width, MdAlign align, float cw)
+{
+	if (align == MdAlign.LEFT) return;
+	sz i = (sz)first;
+	while (i < out.runs.len())
+	{
+		float y        = out.runs[i].y;
+		float line_end = out.runs[i].x + (float)utf8_columns(out.runs[i].text) * cw;
+		sz j           = i + 1;
+		while (j < out.runs.len() && out.runs[j].y == y)
+		{
+			float end = out.runs[j].x + (float)utf8_columns(out.runs[j].text) * cw;
+			if (end > line_end) line_end = end;
+			j++;
+		}
+		float line_width = line_end - x0;
+		float shift      = align == MdAlign.CENTER ? (width - line_width) * 0.5f : width - line_width;
+		if (shift > 0.0f)
+		{
+			for (sz k = i; k < j; k++) out.runs[k].x += shift;
+		}
+		i = j;
+	}
+}
+
+fn void layout_table(MdLayout* out, MdBlock* block, float x0, float* y, float cw, float lh, float size, float max_x)
+{
+	@pool()
+	{
+		List{MdTableRow} rows;
+		rows.init(tmem);
+		usz pos = 0;
+		while (pos < block.text.len)
+		{
+			usz e       = line_end_at(block.text, pos);
+			String line = block.text[pos:e - pos];
+			MdTableRow row;
+			row.cells.init(tmem);
+			split_table_row(line, &row.cells);
+			rows.push(row);
+			pos = e < block.text.len ? e + 1 : e;
+		}
+		if (rows.len() < 2) return;
+
+		sz columns = 0;
+		foreach (MdTableRow row : rows)
+		{
+			if (row.cells.len() > columns) columns = row.cells.len();
+		}
+		if (columns == 0) return;
+
+		List{MdAlign} aligns;
+		aligns.init(tmem);
+		if (!table_delimiter(&rows[1].cells, &aligns)) return;
+		while (aligns.len() < columns) aligns.push(MdAlign.LEFT);
+
+		List{float} widths;
+		widths.init(tmem);
+		for (sz c = 0; c < columns; c++) widths.push(0.0f);
+		for (sz r = 0; r < rows.len(); r++)
+		{
+			if (r == 1) continue;
+			for (sz c = 0; c < rows[r].cells.len(); c++)
+			{
+				float width = (float)inline_columns(tmem, rows[r].cells[c]) + TABLE_PAD_COLS * 2.0f;
+				if (width > widths[c]) widths[c] = width;
+			}
+		}
+
+		float gap   = TABLE_GAP_COLS;
+		float avail = (max_x - x0) / cw;
+		if (avail < 1.0f) avail = 1.0f;
+		float gaps       = gap * (float)(columns - 1);
+		float avail_text = avail - gaps;
+		if (avail_text < 1.0f) avail_text = 1.0f;
+
+		float total = 0.0f;
+		for (sz c = 0; c < columns; c++) total += widths[c];
+		if (total > avail_text && total > 0.0f)
+		{
+			float scale = avail_text / total;
+			float used  = 0.0f;
+			for (sz c = 0; c < columns; c++)
+			{
+				widths[c] *= scale;
+				if (widths[c] < 3.0f) widths[c] = 3.0f;
+				used += widths[c];
+			}
+			if (used > avail_text)
+			{
+				float equal = avail_text / (float)columns;
+				if (equal < 1.0f) equal = 1.0f;
+				for (sz c = 0; c < columns; c++) widths[c] = equal;
+			}
+		}
+		else
+		{
+			for (sz c = 0; c < columns; c++)
+			{
+				if (widths[c] < 3.0f) widths[c] = 3.0f;
+			}
+		}
+
+		float table_width = gaps;
+		for (sz c = 0; c < columns; c++) table_width += widths[c];
+		table_width *= cw;
+
+		float row_y = *y;
+		for (sz r = 0; r < rows.len(); r++)
+		{
+			if (r == 1) continue;
+			bool header   = r == 0;
+			float row_top = row_y;
+			float row_h   = lh;
+			float cell_x  = x0;
+			for (sz c = 0; c < columns; c++)
+			{
+				String cell = c < rows[r].cells.len() ? rows[r].cells[c] : "";
+				List{MdInline} inlines;
+				parse_inlines(tmem, cell, &inlines);
+				usz first    = (usz)out.runs.len();
+				float cell_y = row_y;
+				layout_inline(
+					out,
+					&inlines,
+					cell_x + TABLE_PAD_COLS * cw,
+					&cell_y,
+					cw,
+					lh,
+					size,
+					cell_x + widths[c] * cw - TABLE_PAD_COLS * cw,
+					MdStyle.TEXT,
+					header
+				);
+				align_runs(
+					out,
+					first,
+					cell_x + TABLE_PAD_COLS * cw,
+					(widths[c] - TABLE_PAD_COLS * 2.0f) * cw,
+					aligns[c],
+					cw
+				);
+				inlines.free();
+				float cell_h = cell_y - row_y;
+				if (cell_h > row_h) row_h = cell_h;
+				cell_x += (widths[c] + gap) * cw;
+			}
+
+			if (header)
+			{
+				out.rects.push(
+					{
+						.rect = { .x = x0, .y = row_top, .width = table_width, .height = row_h },
+						.kind = MdRectKind.TABLE_HEADER,
+					}
+				);
+			}
+
+			for (sz c = 0; c <= columns; c++)
+			{
+				float line_x = x0 + table_width;
+				if (c < columns)
+				{
+					line_x = x0;
+					for (sz k = 0; k < c; k++) line_x += (widths[k] + gap) * cw;
+				}
+				out.rects.push(
+					{
+						.rect = { .x = line_x - 0.5f, .y = row_top, .width = 1.0f, .height = row_h },
+						.kind = MdRectKind.TABLE_BORDER,
+					}
+				);
+			}
+			if (header)
+			{
+				out.rects.push(
+					{
+						.rect = { .x = x0, .y = row_top + row_h - 1.0f, .width = table_width, .height = 1.0f },
+						.kind = MdRectKind.TABLE_BORDER,
+					}
+				);
+			}
+			row_y += row_h;
+		}
+		*y = row_y;
+	};
+}
+
 fn MdLayout* layout(
 	Allocator allocator,
 	MdDocument* doc,
@@ -835,6 +1180,13 @@ fn MdLayout* layout(
 					);
 					y += line_height * 0.5f;
 				}
+			case MdBlockKind.TABLE:
+
+				{
+					y += line_height * 0.3f;
+					layout_table(out, &block, 0.0f, &y, char_width, line_height, font_size, width);
+					y += line_height * BLOCK_GAP;
+				}
 		}
 		out.anchors.push({ .y = block_y, .offset = block.start });
 	}
@@ -973,6 +1325,10 @@ fn RLColor rect_color(MdRectKind kind)
 		case MdRectKind.BULLET:
 			return t.panel_dim;
 		case MdRectKind.RULE:
+			return t.panel_border;
+		case MdRectKind.TABLE_HEADER:
+			return t.panel_bg_alt;
+		case MdRectKind.TABLE_BORDER:
 			return t.panel_border;
 	}
 }
