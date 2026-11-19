@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 89);
+	assert(command_count() == 90);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -17,6 +17,10 @@ fn void test_command_defs()
 	CommandDef open = command_def(CommandId.OPEN);
 	assert(open.label.compare_to("Open") == 0);
 	assert(open.shortcut.compare_to("Ctrl+O") == 0);
+
+	CommandDef format = command_def(CommandId.FORMAT_DOCUMENT);
+	assert(format.label.compare_to("Format Document") == 0);
+	assert(format.shortcut.compare_to("Ctrl+Alt+F") == 0);
 
 	CommandDef save = command_def(CommandId.SAVE);
 	assert(save.label.compare_to("Save") == 0);

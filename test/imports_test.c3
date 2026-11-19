@@ -72,6 +72,40 @@ fn void test_extract_c3_test_module()
 	module_name.free(mem);
 }
 
+fn void test_extract_sol_module_and_imports()
+{
+	TSParser* parser = tree_sitter::ts_parser_new();
+	defer tree_sitter::ts_parser_delete(parser);
+	assert(tree_sitter::ts_parser_set_language(parser, language::grammar_language(language::Language.SOL)));
+
+	TSQuery* import_query = make_query(language::Language.SOL, language::import_query_text(language::Language.SOL));
+	TSQuery* module_query = make_query(language::Language.SOL, language::module_query_text(language::Language.SOL));
+	assert(import_query != null);
+	assert(module_query != null);
+	defer tree_sitter::ts_query_delete(import_query);
+	defer tree_sitter::ts_query_delete(module_query);
+
+	String source = "module app\n\nimport std::io\nimport geo::shape\n";
+	List{ImportRef} refs;
+	refs.init(mem);
+	String module_name = "";
+	bool is_test       = false;
+	extract_imports(mem, parser, import_query, module_query, source, &refs, &module_name, &is_test);
+
+	assert(module_name.compare_to("app") == 0);
+	assert(!is_test);
+	assert(refs.len() == 2);
+	assert(refs[0].specifier.compare_to("std::io") == 0);
+	assert(refs[1].specifier.compare_to("geo::shape") == 0);
+
+	for (sz i = 0; i < refs.len(); i++)
+	{
+		refs.get_ref(i).specifier.free(mem);
+	}
+	refs.free();
+	module_name.free(mem);
+}
+
 fn void test_module_rel_converts_separators()
 {
 	@pool()
@@ -599,6 +633,13 @@ fn void test_fixture_resolution()
 			.source = "src/app.gleam",
 			.specifier = "my/mod",
 			.target = "src/my/mod.gleam"
+		},
+		{
+			.lang = language::Language.SOL,
+			.dir = "sol",
+			.source = "src/app.sol",
+			.specifier = "geo::shape",
+			.target = "src/geo/shape.sol"
 		},
 		{
 			.lang = language::Language.ERLANG,

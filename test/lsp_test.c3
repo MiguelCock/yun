@@ -174,7 +174,7 @@ fn void test_capabilities_parse()
 {
 	@pool()
 	{
-		String json     = "{\"capabilities\":{\"hoverProvider\":true,\"definitionProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\".\",\":\"]}}}";
+		String json     = "{\"capabilities\":{\"hoverProvider\":true,\"definitionProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\".\",\":\"]},\"documentFormattingProvider\":true}}";
 		Object*? parsed = json::parse(tmem, json);
 		if (catch excuse = parsed)
 		{
@@ -188,6 +188,7 @@ fn void test_capabilities_parse()
 			assert(caps.hover);
 			assert(caps.definition);
 			assert(caps.completion);
+			assert(caps.formatting);
 			assert(caps.trigger_characters.len() == 2);
 			assert(caps.trigger_characters[0].compare_to(".") == 0);
 			lsp_capabilities_free(&caps, tmem);
@@ -517,6 +518,34 @@ fn void test_normalize_completion()
 		assert(out[0].edit_end_character == 5);
 		assert(incomplete);
 		out.free();
+	};
+}
+
+fn void test_formatting_parse()
+{
+	@pool()
+	{
+		Object*? parsed = json::parse(
+			tmem,
+			"[{\"newText\":\"one\",\"range\":{\"start\":{\"line\":1,\"character\":2},\"end\":{\"line\":1,\"character\":5}}},{\"newText\":\"two\",\"range\":{\"start\":{\"line\":3,\"character\":0},\"end\":{\"line\":4,\"character\":1}}}]"
+		);
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			List{FormattingEdit} edits;
+			edits.init(tmem);
+			lsp_parse_formatting(tmem, parsed, &edits);
+			assert(edits.len() == 2);
+			assert(edits[0].new_text.compare_to("one") == 0);
+			assert(edits[0].start_line == 1 && edits[0].start_character == 2);
+			assert(edits[0].end_line == 1 && edits[0].end_character == 5);
+			assert(edits[1].new_text.compare_to("two") == 0);
+			assert(edits[1].start_line == 3 && edits[1].end_line == 4);
+			edits.free();
+		}
 	};
 }
 

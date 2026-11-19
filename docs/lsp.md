@@ -42,6 +42,7 @@ The id is also the key used to override the command in config.
 | `julia` | `.jl` | `julia --startup-file=no --history-file=no -e "using LanguageServer; LanguageServer.runserver()"` |
 | `haskell` | `.hs` | `haskell-language-server-wrapper --lsp` |
 | `gleam` | `.gleam` | `gleam lsp` |
+| `sol` | `.sol` | `sol lsp` |
 | `erlang` | `.erl` `.hrl` | `elp server` |
 | `elixir` | `.ex` `.exs` | `elixir-ls` |
 | `dart` | `.dart` | `dart language-server --protocol=lsp` |
@@ -79,6 +80,7 @@ a project file, or a matching version.
 | Julia | `julia` with `LanguageServer.jl` installed in a Julia environment. |
 | Haskell | `haskell-language-server-wrapper` (e.g. via GHCup) and a Cabal/Stack project. |
 | Gleam | the Gleam toolchain (`gleam lsp` is built in) and a `gleam.toml` project. |
+| SOL | the SOL compiler (`sol lsp`) on `PATH`, built from the SOL repository. |
 | Erlang | `elp` (Erlang Language Platform) and a rebar3/OTP project. |
 | Elixir | `elixir-ls` (or its `language_server.sh`) and a `mix.exs` project. |
 | Dart / Flutter | `dart language-server` from the Dart or Flutter SDK (Flutter users may need `flutter/bin/dart` via the `lsp` override) and a `pubspec.yaml` project. |
