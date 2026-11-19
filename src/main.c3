@@ -3101,6 +3101,30 @@ fn int main(String[] args)
 			}
 			String project_name = "";
 			if (project_open) project_name = rl::get_file_name((ZString)project.root.ptr).str_view();
+			String mode_label   = "";
+			String folder_label = "";
+			if (project_open)
+			{
+				mode_label = "-- MOVE --";
+				if (ui_mode == UiMode.EDIT)
+				{
+					mode_label = "-- EDIT --";
+				}
+				else if (ui_mode == UiMode.TOP_BAR)
+				{
+					mode_label = "-- TOP BAR --";
+				}
+				else if (project.grabbing)
+				{
+					mode_label = "-- GRAB --";
+				}
+				if (project.current_folder != project::ROOT_FOLDER
+					&& project.current_folder < (int)project.folders.len())
+				{
+					String fp = (String)project.folders[project.current_folder].path;
+					folder_label = fp.len > project.root.len + 1 ? fp[project.root.len + 1..] : fp;
+				}
+			}
 			int lsp_errors   = 0;
 			int lsp_warnings = 0;
 			int lsp_infos    = 0;
@@ -3110,6 +3134,8 @@ fn int main(String[] args)
 				project_open,
 				has_focused_buffer(&project),
 				project_name,
+				mode_label,
+				folder_label,
 				canvas.camera.zoom,
 				lsp.status_text(),
 				lsp_errors,
@@ -3133,77 +3159,45 @@ fn int main(String[] args)
 			definition_menu.draw();
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
-			rl::draw_fps(10, (int)ui::pxf(topbar::TOP_BAR_HEIGHT) + 10);
-			if (project_open)
+			if (rl::is_key_down(rl::RLKeyboardKey.F3))
 			{
-				String mode_label = "-- MOVE --";
-				if (ui_mode == UiMode.EDIT)
+				rl::draw_fps(10, (int)ui::pxf(topbar::TOP_BAR_HEIGHT) + 10);
+				if (project_open)
 				{
-					mode_label = "-- EDIT --";
-				}
-				else if (ui_mode == UiMode.TOP_BAR)
-				{
-					mode_label = "-- TOP BAR --";
-				}
-				else if (project.grabbing)
-				{
-					mode_label = "-- GRAB --";
-				}
-				@pool()
-				{
-					String label = mode_label;
-					if (project.current_folder != project::ROOT_FOLDER
-						&& project.current_folder < (int)project.folders.len())
+					@pool()
 					{
-						String fp  = (String)project.folders[project.current_folder].path;
-						String rel = fp.len > project.root.len + 1 ? fp[project.root.len + 1..] : fp;
-						label = string::format(tmem, "%s  %s", mode_label, rel);
-					}
-					rl::draw_text_ex(
-						font,
-						label.zstr_tcopy(),
-						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(34) },
-						(float)ui::tpx(15),
-						0.0f,
-						theme::current()
-						.topbar_name);
-				};
-			}
-			if (project_open && rl::is_key_down(rl::RLKeyboardKey.F3))
-			{
-				@pool()
-				{
-					String counter = string::format(
-						tmem,
-						"editors: %d awake / %d asleep",
-						(long)project.awake_count,
-						(long)project.asleep_count
-					);
-					rl::draw_text_ex(
-						font,
-						counter.zstr_tcopy(),
-						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(54) },
-						(float)ui::tpx(14),
-						0.0f,
-						theme::current()
-						.panel_dim);
-					String perf = string::format(
-						tmem,
-						"frame %.2fms  update %.2f  draw %.2f  scan %.2f",
-						prof_frame,
-						prof_update,
-						prof_draw,
-						prof_scan
-					);
-					rl::draw_text_ex(
-						font,
-						perf.zstr_tcopy(),
-						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(74) },
-						(float)ui::tpx(14),
-						0.0f,
-						theme::current()
-						.panel_dim);
-				};
+						String counter = string::format(
+							tmem,
+							"editors: %d awake / %d asleep",
+							(long)project.awake_count,
+							(long)project.asleep_count
+						);
+						rl::draw_text_ex(
+							font,
+							counter.zstr_tcopy(),
+							{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(54) },
+							(float)ui::tpx(14),
+							0.0f,
+							theme::current()
+							.panel_dim);
+						String perf = string::format(
+							tmem,
+							"frame %.2fms  update %.2f  draw %.2f  scan %.2f",
+							prof_frame,
+							prof_update,
+							prof_draw,
+							prof_scan
+						);
+						rl::draw_text_ex(
+							font,
+							perf.zstr_tcopy(),
+							{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(74) },
+							(float)ui::tpx(14),
+							0.0f,
+							theme::current()
+							.panel_dim);
+					};
+				}
 			}
 		};
 		prof_update += (update_ms - prof_update) * 0.1;
