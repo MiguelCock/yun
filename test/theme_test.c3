@@ -52,3 +52,21 @@ fn void test_next_cycles()
 	prev();
 	assert(index() == 0);
 }
+macro bool same_color(a, b)
+{
+	return (a)[0] == (b)[0] && (a)[1] == (b)[1] && (a)[2] == (b)[2];
+}
+
+fn void test_derived_syntax_colors()
+{
+	for (int i = 0; i < count(); i++)
+	{
+		set_index(i);
+		Theme* t = current();
+		assert(!same_color(t.syn_module, t.syn_type));
+		assert(!same_color(t.syn_import, t.syn_keyword));
+		assert(!same_color(t.syn_keyword_type, t.syn_keyword));
+		assert(!same_color(t.syn_macro, t.syn_keyword));
+		assert(!same_color(t.syn_doc_comment, t.syn_comment));
+	}
+}

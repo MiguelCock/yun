@@ -121,6 +121,7 @@ enum CommandId
 	CYCLE_FOCUS,
 	MINIMIZE_CARD,
 	TOGGLE_FOCUS_MODE,
+	TOGGLE_CONNECTIONS,
 }
 
 struct CommandDef
@@ -669,6 +670,13 @@ const CommandDef[] COMMAND_DEFS = {
 		.in_top_bar = false,
 		.contexts = CTX_GLOBAL,
 	},
+	{
+		.id = CommandId.TOGGLE_CONNECTIONS,
+		.label = "Connections",
+		.shortcut = "Ctrl+Shift+I",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL,
+	},
 };
 
 fn usz command_count()
@@ -871,6 +879,8 @@ fn String command_name(CommandId id)
 			return "minimize_card";
 		case CommandId.TOGGLE_FOCUS_MODE:
 			return "toggle_focus_mode";
+		case CommandId.TOGGLE_CONNECTIONS:
+			return "toggle_connections";
 	}
 }
 
@@ -989,6 +999,7 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.CYCLE_FOCUS:
 		case CommandId.MINIMIZE_CARD:
 		case CommandId.TOGGLE_FOCUS_MODE:
+		case CommandId.TOGGLE_CONNECTIONS:
 			return has_project;
 		case CommandId.FOCUS_TOP_BAR:
 		case CommandId.TOPBAR_LEFT:

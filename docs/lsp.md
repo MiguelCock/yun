@@ -130,7 +130,7 @@ Override the command for a language id under the `lsp` section of the config
 | rename | `F2`; `prepareRename` fills the prompt, then a `WorkspaceEdit` is applied to open cards. |
 | code actions | `Ctrl+.`; quick fixes are listed and their edits applied. |
 | signature help | Requested inside call parentheses after a short debounce. |
-| semantic tokens | Full-document tokens overlay tree-sitter highlighting. |
+| semantic tokens | Identifier-only tokens augment tree-sitter; keywords, operators, strings, numbers, and comments keep their grammar colors. |
 | inlay hints | Inferred types for `let` and `$` alias bindings, rendered inline after the binding name. |
 
 Rename and code action edits apply only when every affected file has an open
@@ -151,3 +151,7 @@ editing.
 - Outgoing messages always include a `params` object (empty when there is none);
   some servers (e.g. Dart) require it on the `initialized` notification and
   otherwise reject every request with `ServerNotInitialized`.
+- Type inlay hints (`: <type>` after a binding name) hide the first colon of the
+  binding operator that follows, so an inferred local reads `x: T = value` (from
+  `x := value`) and an alias reads `$io: Io : value` (from `$io :: value`).
+  Explicit-typed declarations and constants get no type hint.

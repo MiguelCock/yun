@@ -1,6 +1,7 @@
 module yun::markdown @test;
 
 import std::collections::list;
+import yun::text;
 
 fn void test_parse_blocks()
 {
@@ -206,4 +207,201 @@ fn void test_is_markdown_path()
 	assert(is_markdown_path("README.md"));
 	assert(is_markdown_path("doc.markdown"));
 	assert(!is_markdown_path("main.c"));
+}
+
+fn void test_utf8_columns()
+{
+	assert(utf8_columns("abc") == 3);
+	assert(utf8_columns("éé") == 2);
+	assert(utf8_columns("aé") == 2);
+	assert(utf8_next("é", 0) == 2);
+	assert(utf8_next("abc", 0) == 1);
+}
+
+fn void test_layout_code_block_empty_lines()
+{
+	@pool()
+	{
+		MdDocument* doc = parse(tmem, "```\n\nfirst\n\nsecond\n```\n");
+		MdLayout* l     = layout(tmem, doc, 80.0f, 8.0f, 10.0f, 10.0f);
+		int code_runs   = 0;
+		foreach (MdRun run : l.runs)
+		{
+			if (run.style != MdStyle.CODE) continue;
+			code_runs++;
+			assert(run.src_end >= run.src_start);
+			assert(run.text.len > 0);
+		}
+		assert(code_runs == 2);
+		assert(l.height > 0.0f);
+		free_layout(l, tmem);
+		free_document(doc, tmem);
+	};
+}
+
+fn void test_layout_wraps_utf8_by_columns()
+{
+	@pool()
+	{
+		MdDocument* doc = parse(tmem, "ééé ééé ééé\n");
+		MdLayout* l     = layout(tmem, doc, 4.0f, 1.0f, 10.0f, 10.0f);
+		assert(l.runs.len() == 3);
+		foreach (MdRun run : l.runs)
+		{
+			assert(((int)run.text[0] & 0xC0) != 0x80);
+			assert(utf8_columns(run.text) <= 4);
+		}
+		free_layout(l, tmem);
+		free_document(doc, tmem);
+	};
+}
+
+fn void test_parse_unterminated_fence()
+{
+	@pool()
+	{
+		MdDocument* doc = parse(tmem, "```\ncode\n");
+		int codes       = 0;
+		foreach (MdBlock b : doc.blocks)
+		{
+			if (b.kind != MdBlockKind.CODE) continue;
+			codes++;
+			assert(b.text.compare_to("code\n") == 0);
+		}
+		assert(codes == 1);
+		free_document(doc, tmem);
+	};
+}
+
+fn void test_view_rebuilds_on_line_height()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "# A\n\nhello\n");
+		View* view = view_create(tmem);
+		view_ensure(view, &t, 80.0f, 8.0f, 10.0f, 10.0f);
+		float first = view.layout.height;
+		view_ensure(view, &t, 80.0f, 8.0f, 10.0f, 20.0f);
+		assert(view.layout.height > first);
+		view_destroy(view, tmem);
+		t.destroy();
+	};
+}
+
+fn void test_parse_table()
+{
+	@pool()
+	{
+		MdDocument* doc = parse(tmem, "| Name | Type |\n| :--- | ---: |\n| x | i32 |\n\nAfter\n");
+		assert(doc.blocks.len() == 2);
+		assert(doc.blocks[0].kind == MdBlockKind.TABLE);
+		assert(doc.blocks[0].text.compare_to("| Name | Type |\n| :--- | ---: |\n| x | i32 |\n") == 0);
+		assert(doc.blocks[1].kind == MdBlockKind.PARAGRAPH);
+		assert(doc.blocks[1].text.compare_to("After") == 0);
+		free_document(doc, tmem);
+	};
+}
+
+fn void test_table_cells_and_alignment()
+{
+	@pool()
+	{
+		List{String} cells;
+		cells.init(tmem);
+		split_table_row("| a | b\\|c |", &cells);
+		assert(cells.len() == 2);
+		assert(cells[0].compare_to("a") == 0);
+		assert(cells[1].compare_to("b\\|c") == 0);
+
+		List{MdAlign} aligns;
+		aligns.init(tmem);
+		split_table_row("| :--- | :--: | ---: |", &cells);
+		assert(table_delimiter(&cells, &aligns));
+		assert(aligns.len() == 3);
+		assert(aligns[0] == MdAlign.LEFT);
+		assert(aligns[1] == MdAlign.CENTER);
+		assert(aligns[2] == MdAlign.RIGHT);
+
+		cells.free();
+		aligns.free();
+	};
+}
+
+fn void test_malformed_table_is_a_paragraph()
+{
+	@pool()
+	{
+		MdDocument* doc = parse(tmem, "a | b\nnot a delimiter\n");
+		assert(doc.blocks.len() == 1);
+		assert(doc.blocks[0].kind == MdBlockKind.PARAGRAPH);
+		free_document(doc, tmem);
+	};
+}
+
+fn void test_layout_table()
+{
+	@pool()
+	{
+		MdDocument* doc = parse(tmem, "| A | B |\n| --- | --- |\n| one | two |\n| **bold** | `code` |\n");
+		MdLayout* l     = layout(tmem, doc, 160.0f, 8.0f, 10.0f, 10.0f);
+
+		int headers = 0;
+		int borders = 0;
+		foreach (MdRect r : l.rects)
+		{
+			if (r.kind == MdRectKind.TABLE_HEADER) headers++;
+			if (r.kind == MdRectKind.TABLE_BORDER) borders++;
+		}
+		assert(headers == 1);
+		assert(borders >= 4);
+
+		bool strong = false;
+		bool code   = false;
+		foreach (MdRun run : l.runs)
+		{
+			if (run.style == MdStyle.STRONG && run.text.compare_to("bold") == 0) strong = true;
+			if (run.style == MdStyle.CODE && run.text.compare_to("code") == 0) code = true;
+		}
+		assert(strong);
+		assert(code);
+		assert(l.height > 0.0f);
+
+		free_layout(l, tmem);
+		free_document(doc, tmem);
+	};
+}
+
+fn void test_table_wraps_in_narrow_cards()
+{
+	@pool()
+	{
+		MdDocument* doc = parse(tmem, "| A | B |\n| --- | --- |\n| this is a long cell | second cell |\n");
+		MdLayout* l     = layout(tmem, doc, 20.0f, 8.0f, 10.0f, 10.0f);
+		assert(l.height > 20.0f);
+		free_layout(l, tmem);
+		free_document(doc, tmem);
+	};
+}
+
+fn void test_table_utf8_columns()
+{
+	assert(inline_columns(tmem, "éé") == 2);
+	assert(inline_columns(tmem, "**é**") == 1);
+}
+
+fn void test_table_alignment_runs()
+{
+	@pool()
+	{
+		MdLayout l;
+		l.runs.init(tmem);
+		l.runs.push({ .text = "x", .x = 0.0f, .y = 0.0f });
+		align_runs(&l, 0, 0.0f, 10.0f, MdAlign.RIGHT, 1.0f);
+		assert(l.runs[0].x == 9.0f);
+		l.runs[0].x = 0.0f;
+		align_runs(&l, 0, 0.0f, 10.0f, MdAlign.CENTER, 1.0f);
+		assert(l.runs[0].x == 4.5f);
+		l.runs.free();
+	};
 }

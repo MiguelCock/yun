@@ -11,6 +11,7 @@ import yun::canvas;
 import yun::card;
 import yun::commands;
 import yun::completion;
+import yun::connections;
 import yun::config;
 import yun::context;
 import yun::editor;
@@ -404,6 +405,7 @@ struct App
 	settings_panel::Panel* settings_panel;
 	findbar::FindBar* find_bar;
 	problems::Problems* problems;
+	connections::Connections* connections;
 	menu::Menu* theme_menu;
 	menu::Menu* context_menu;
 	menu::Menu* close_menu;
@@ -1071,6 +1073,24 @@ fn void run_command(commands::CommandId id, App* app)
 				*app.edit_grace_frames = 2;
 				return;
 			}
+		case commands::CommandId.TOGGLE_CONNECTIONS:
+
+			{
+				if (!*app.project_open)
+				{
+					app.notifier.push("No project open");
+					return;
+				}
+				if (app.connections.open)
+				{
+					app.connections.close();
+				}
+				else
+				{
+					app.connections.show();
+				}
+				return;
+			}
 		case commands::CommandId.CLOSE_CARD:
 
 			{
@@ -1628,6 +1648,9 @@ fn int main(String[] args)
 	problems::Problems problems;
 	problems.init(mem);
 
+	connections::Connections connections;
+	connections.init(mem);
+
 	settings_panel::Panel settings_panel;
 	settings_panel.init(mem);
 
@@ -1683,6 +1706,7 @@ fn int main(String[] args)
 	defer palette.destroy();
 	defer find_bar.destroy();
 	defer problems.destroy();
+	defer connections.destroy();
 	defer completion::completion_destroy();
 	defer project.destroy();
 
@@ -1810,6 +1834,7 @@ fn int main(String[] args)
 		.settings_panel = &settings_panel,
 		.find_bar = &find_bar,
 		.problems = &problems,
+		.connections = &connections,
 		.theme_menu = &theme_menu,
 		.context_menu = &context_menu,
 		.close_menu = &close_menu,
@@ -2410,10 +2435,11 @@ fn int main(String[] args)
 				}
 				edit_grace_frames--;
 			}
-			RLVector2 mouse = rl::get_mouse_position();
-			RLVector2 world = canvas.screen_to_world(mouse);
-			bool over_top   = topbar::contains_screen(mouse);
-			bool has_buffer = has_focused_buffer(&project);
+			RLVector2 mouse       = rl::get_mouse_position();
+			RLVector2 world       = canvas.screen_to_world(mouse);
+			bool over_connections = connections.contains_screen(mouse);
+			bool over_top         = topbar::contains_screen(mouse) || over_connections;
+			bool has_buffer       = has_focused_buffer(&project);
 
 			bool font_wheel = false;
 			if (!over_top && project::ctrl_down())
@@ -2575,6 +2601,18 @@ fn int main(String[] args)
 				}
 			}
 			arrow_hovered_cache = arrow_hovered;
+			connections::ConnectionTarget connection = connections.update_input(&project, &import_index);
+			if (connection.valid)
+			{
+				navigate_to_location(
+					&project,
+					&canvas,
+					metrics,
+					connection.path,
+					(uint)connection.line,
+					(uint)connection.column
+				);
+			}
 			canvas.pointer_over_ui = over_top || project.pointer_over_ui(world) || over_minimap || arrow_hovered;
 			if (focus_active)
 			{
@@ -3063,6 +3101,30 @@ fn int main(String[] args)
 			}
 			String project_name = "";
 			if (project_open) project_name = rl::get_file_name((ZString)project.root.ptr).str_view();
+			String mode_label   = "";
+			String folder_label = "";
+			if (project_open)
+			{
+				mode_label = "-- MOVE --";
+				if (ui_mode == UiMode.EDIT)
+				{
+					mode_label = "-- EDIT --";
+				}
+				else if (ui_mode == UiMode.TOP_BAR)
+				{
+					mode_label = "-- TOP BAR --";
+				}
+				else if (project.grabbing)
+				{
+					mode_label = "-- GRAB --";
+				}
+				if (project.current_folder != project::ROOT_FOLDER
+					&& project.current_folder < (int)project.folders.len())
+				{
+					String fp = (String)project.folders[project.current_folder].path;
+					folder_label = fp.len > project.root.len + 1 ? fp[project.root.len + 1..] : fp;
+				}
+			}
 			int lsp_errors   = 0;
 			int lsp_warnings = 0;
 			int lsp_infos    = 0;
@@ -3072,6 +3134,8 @@ fn int main(String[] args)
 				project_open,
 				has_focused_buffer(&project),
 				project_name,
+				mode_label,
+				folder_label,
 				canvas.camera.zoom,
 				lsp.status_text(),
 				lsp_errors,
@@ -3079,6 +3143,7 @@ fn int main(String[] args)
 				font,
 				ui_mode == UiMode.TOP_BAR
 			);
+			connections.draw(font, &project, &import_index);
 			browser.draw();
 			close_menu.draw();
 			delete_menu.draw();
@@ -3094,77 +3159,45 @@ fn int main(String[] args)
 			definition_menu.draw();
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
-			rl::draw_fps(10, (int)ui::pxf(topbar::TOP_BAR_HEIGHT) + 10);
-			if (project_open)
+			if (rl::is_key_down(rl::RLKeyboardKey.F3))
 			{
-				String mode_label = "-- MOVE --";
-				if (ui_mode == UiMode.EDIT)
+				rl::draw_fps(10, (int)ui::pxf(topbar::TOP_BAR_HEIGHT) + 10);
+				if (project_open)
 				{
-					mode_label = "-- EDIT --";
-				}
-				else if (ui_mode == UiMode.TOP_BAR)
-				{
-					mode_label = "-- TOP BAR --";
-				}
-				else if (project.grabbing)
-				{
-					mode_label = "-- GRAB --";
-				}
-				@pool()
-				{
-					String label = mode_label;
-					if (project.current_folder != project::ROOT_FOLDER
-						&& project.current_folder < (int)project.folders.len())
+					@pool()
 					{
-						String fp  = (String)project.folders[project.current_folder].path;
-						String rel = fp.len > project.root.len + 1 ? fp[project.root.len + 1..] : fp;
-						label = string::format(tmem, "%s  %s", mode_label, rel);
-					}
-					rl::draw_text_ex(
-						font,
-						label.zstr_tcopy(),
-						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(34) },
-						(float)ui::tpx(15),
-						0.0f,
-						theme::current()
-						.topbar_name);
-				};
-			}
-			if (project_open && rl::is_key_down(rl::RLKeyboardKey.F3))
-			{
-				@pool()
-				{
-					String counter = string::format(
-						tmem,
-						"editors: %d awake / %d asleep",
-						(long)project.awake_count,
-						(long)project.asleep_count
-					);
-					rl::draw_text_ex(
-						font,
-						counter.zstr_tcopy(),
-						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(54) },
-						(float)ui::tpx(14),
-						0.0f,
-						theme::current()
-						.panel_dim);
-					String perf = string::format(
-						tmem,
-						"frame %.2fms  update %.2f  draw %.2f  scan %.2f",
-						prof_frame,
-						prof_update,
-						prof_draw,
-						prof_scan
-					);
-					rl::draw_text_ex(
-						font,
-						perf.zstr_tcopy(),
-						{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(74) },
-						(float)ui::tpx(14),
-						0.0f,
-						theme::current()
-						.panel_dim);
-				};
+						String counter = string::format(
+							tmem,
+							"editors: %d awake / %d asleep",
+							(long)project.awake_count,
+							(long)project.asleep_count
+						);
+						rl::draw_text_ex(
+							font,
+							counter.zstr_tcopy(),
+							{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(54) },
+							(float)ui::tpx(14),
+							0.0f,
+							theme::current()
+							.panel_dim);
+						String perf = string::format(
+							tmem,
+							"frame %.2fms  update %.2f  draw %.2f  scan %.2f",
+							prof_frame,
+							prof_update,
+							prof_draw,
+							prof_scan
+						);
+						rl::draw_text_ex(
+							font,
+							perf.zstr_tcopy(),
+							{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(74) },
+							(float)ui::tpx(14),
+							0.0f,
+							theme::current()
+							.panel_dim);
+					};
+				}
 			}
 		};
 		prof_update += (update_ms - prof_update) * 0.1;
