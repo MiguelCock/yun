@@ -151,3 +151,7 @@ editing.
 - Outgoing messages always include a `params` object (empty when there is none);
   some servers (e.g. Dart) require it on the `initialized` notification and
   otherwise reject every request with `ServerNotInitialized`.
+- Type inlay hints (`: <type>` after a binding name) hide the first colon of the
+  binding operator that follows, so an inferred local reads `x: T = value` (from
+  `x := value`) and an alias reads `$io: Io : value` (from `$io :: value`).
+  Explicit-typed declarations and constants get no type hint.
