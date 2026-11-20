@@ -20,6 +20,10 @@ const float ZOOM_RESPONSIVENESS        = 16.0f;
 const float INERTIA_FRICTION_PER_FRAME = 0.9f;
 const float EDGE_PAN_MARGIN            = 48.0f;
 const float EDGE_PAN_SPEED             = 900.0f;
+const float GRAB_FOLLOW_MARGIN_X       = 0.15f;
+const float GRAB_FOLLOW_MARGIN_Y       = 0.15f;
+const float GRAB_FOLLOW_MIN_X          = 80.0f;
+const float GRAB_FOLLOW_MIN_Y          = 60.0f;
 const float INERTIA_MIN_SPEED          = 5.0f;
 const float MAX_FRAME_DT               = 0.05f;
 const float CAMERA_SNAP_EPSILON        = 0.001f;
@@ -280,6 +284,49 @@ fn RLVector2 edge_pan_delta(
 	float step = speed * dt / zoom;
 	delta[0] *= step;
 	delta[1] *= step;
+	return delta;
+}
+
+fn RLVector2 keep_item_in_view_delta(Rect item, Rect safe, float zoom)
+{
+	RLVector2 delta = { 0.0f, 0.0f };
+	if (zoom <= 0.0f) zoom = 1.0f;
+	if (safe.width < 1.0f) safe.width = 1.0f;
+	if (safe.height < 1.0f) safe.height = 1.0f;
+
+	float center_x    = item.x + item.width / 2.0f;
+	float center_y    = item.y + item.height / 2.0f;
+	float item_right  = item.x + item.width;
+	float item_bottom = item.y + item.height;
+	float safe_right  = safe.x + safe.width;
+	float safe_bottom = safe.y + safe.height;
+
+	if (item.width > safe.width)
+	{
+		delta[0] = (safe.x + safe.width / 2.0f - center_x) / zoom;
+	}
+	else if (item.x < safe.x)
+	{
+		delta[0] = (safe.x - item.x) / zoom;
+	}
+	else if (item_right > safe_right)
+	{
+		delta[0] = (safe_right - item_right) / zoom;
+	}
+
+	if (item.height > safe.height)
+	{
+		delta[1] = (safe.y + safe.height / 2.0f - center_y) / zoom;
+	}
+	else if (item.y < safe.y)
+	{
+		delta[1] = (safe.y - item.y) / zoom;
+	}
+	else if (item_bottom > safe_bottom)
+	{
+		delta[1] = (safe_bottom - item_bottom) / zoom;
+	}
+
 	return delta;
 }
 
