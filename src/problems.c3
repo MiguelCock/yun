@@ -9,6 +9,7 @@ import yun::commands;
 import yun::editor;
 import yun::keymap;
 import yun::lsp;
+import yun::icons;
 import yun::theme;
 import yun::ui;
 
@@ -335,13 +336,24 @@ fn void Problems.draw(&self, RLFont font)
 	float s    = ui::scale();
 	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
-	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
+	float icon_px = icons::icon_size(18);
+	icons::draw(
+		icons::IconKind.PROBLEMS,
+		{ .x = panel.x + (float)PADDING * s, .y = panel.y + (float)PADDING * s, .width = icon_px, .height = icon_px },
+		theme::current()
+		.panel_header);
 	@pool()
 	{
 		String title = string::format(tmem, "Problems (%d)", (long)self.entries.len());
-		draw_text(font, title, panel.x + (float)PADDING * s, panel.y + (float)PADDING * s, 18.0f * ts, theme::current()
+		draw_text(
+			font,
+			title,
+			panel.x + (float)PADDING * s + icon_px + (float)ui::px(6),
+			panel.y + (float)PADDING * s,
+			18.0f * ts,
+			theme::current()
 			.panel_text);
 	};
 
@@ -375,7 +387,14 @@ fn void Problems.draw(&self, RLFont font)
 
 		if (index == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, (int)row_h, theme::current()
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = row_y,
+					.width = panel.width - 4.0f,
+					.height = row_h,
+				},
+				theme::current()
 				.panel_selected);
 		}
 		ProblemEntry* entry = self.entry_at(row.entry);
@@ -497,8 +516,7 @@ fn void draw_tooltip(String message, RLVector2 screen_pos, RLFont font)
 		if (panel.x < 4.0f) panel.x = 4.0f;
 		if (panel.y < 4.0f) panel.y = 4.0f;
 
-		rl::draw_rectangle_rec(panel, theme::current().panel_bg_alt);
-		rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+		ui::panel(panel, theme::current().panel_bg_alt, theme::current().panel_border);
 		for (int i = 0; i < count; i++)
 		{
 			draw_text(

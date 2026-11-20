@@ -1,6 +1,7 @@
 module yun::ui @test;
 
 import raylib6::rl;
+import std::math::geometry;
 
 fn void test_scale_and_px()
 {
@@ -78,4 +79,34 @@ fn void test_atlas_and_draw_px()
 
 	set_ui_scale(1.0f);
 	set_dpi(1.0f, 1.0f);
+}
+fn void test_corner_radius()
+{
+	set_ui_scale(1.0f);
+	set_dpi(1.0f, 1.0f);
+	set_corner_radius(6.0f);
+	assert(corner_radius() == 6.0f);
+
+	Rect wide = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 40.0f };
+	assert(roundness_for(wide, 6.0f) == 0.3f);
+	assert(roundness_for({ .x = 0.0f, .y = 0.0f, .width = 10.0f, .height = 10.0f }, 16.0f) == 1.0f);
+	assert(roundness_for(wide, 0.0f) == 0.0f);
+
+	set_corner_radius(100.0f);
+	assert(corner_radius() == 16.0f);
+	set_corner_radius(-4.0f);
+	assert(corner_radius() == 0.0f);
+	set_corner_radius(6.0f);
+}
+fn void test_cursor_priority()
+{
+	reset_cursor();
+	assert(cursor_requested() == RLMouseCursor.DEFAULT);
+	request_cursor(RLMouseCursor.POINTING_HAND, 5);
+	assert(cursor_requested() == RLMouseCursor.POINTING_HAND);
+	request_cursor(RLMouseCursor.IBEAM, 1);
+	assert(cursor_requested() == RLMouseCursor.POINTING_HAND);
+	request_cursor(RLMouseCursor.IBEAM, 10);
+	assert(cursor_requested() == RLMouseCursor.IBEAM);
+	reset_cursor();
 }

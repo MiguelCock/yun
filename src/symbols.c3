@@ -850,14 +850,13 @@ fn void Symbols.draw(&self, RLFont font)
 	float s    = ui::scale();
 	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
-	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	float pad     = 10.0f * s;
 	float field_h = 30.0f * s;
 	Rect field    = { .x = panel.x + pad, .y = panel.y + pad, .width = panel.width - pad * 2.0f, .height = field_h };
-	rl::draw_rectangle_rec(field, theme::current().panel_field);
-	rl::draw_rectangle_lines_ex(field, 1.0f, theme::current().panel_border);
+	ui::rounded_rect(field, ui::row_radius(), theme::current().panel_field);
+	ui::rounded_rect_lines(field, ui::row_radius(), 1.0f, theme::current().panel_border);
 
 	String query  = self.query_view();
 	float query_w = text_width(font, query, 15.0f * ts);
@@ -899,7 +898,14 @@ fn void Symbols.draw(&self, RLFont font)
 
 		if (i == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)y, (int)panel.width - 4, (int)row_h, theme::current()
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = y,
+					.width = panel.width - 4.0f,
+					.height = row_h,
+				},
+				theme::current()
 				.panel_selected);
 		}
 

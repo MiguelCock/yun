@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 94);
+	assert(command_count() == 95);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -69,6 +69,11 @@ fn void test_command_defs()
 	assert(settings.label.compare_to("Settings") == 0);
 	assert(settings.shortcut.compare_to("Ctrl+Shift+S") == 0);
 	assert(settings.in_top_bar);
+
+	CommandDef quit = command_def(CommandId.QUIT);
+	assert(quit.label.compare_to("Quit Yun") == 0);
+	assert(quit.shortcut.compare_to("Ctrl+Q") == 0);
+	assert(!quit.in_top_bar);
 }
 
 fn void test_contexts()
@@ -142,6 +147,7 @@ fn void test_command_from_name()
 	assert(command_from_name("code_actions") == (int)CommandId.CODE_ACTIONS);
 	assert(command_from_name("toggle_settings") == (int)CommandId.TOGGLE_SETTINGS);
 	assert(command_from_name("toggle_preview") == (int)CommandId.TOGGLE_PREVIEW);
+	assert(command_from_name("quit") == (int)CommandId.QUIT);
 	assert(command_from_name("nope") == -1);
 }
 
@@ -172,6 +178,7 @@ fn void test_command_enabled()
 	assert(!command_enabled(CommandId.COPY, true, false));
 	assert(command_enabled(CommandId.SELECT_ALL, true, true));
 	assert(command_enabled(CommandId.PROBLEMS, false, false));
+	assert(command_enabled(CommandId.QUIT, false, false));
 	assert(command_enabled(CommandId.GO_TO_DEFINITION, true, true));
 	assert(!command_enabled(CommandId.GO_TO_DEFINITION, true, false));
 	assert(command_enabled(CommandId.COMPLETE, true, true));

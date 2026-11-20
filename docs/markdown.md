@@ -10,8 +10,8 @@ Three ways to toggle the preview for a Markdown card:
 
 - **Keybind**: `Ctrl+Shift+V` (rebindable via the `toggle_preview` command).
 - **Command palette**: "Toggle Preview".
-- **Card title**: the `M` marker on the right of the title bar (`M` is drawn in
-  the focus color while the preview is on).
+- **Card title**: the preview icon on the right of the title bar (drawn in the
+  focus color and on a hover background while the preview is on).
 
 The preview is off by default. It is only available for Markdown cards.
 

@@ -86,8 +86,8 @@ enum CardRegion
 {
 	NONE,
 	HANDLE,
-	MARKER,
-	CLOSE,
+	MAXIMIZE,
+	MINIMIZE,
 	PREVIEW,
 	TITLE,
 	BODY,
@@ -556,8 +556,8 @@ fn CardRegion region_at(FileCard* card, RLVector2 world, EditorMetrics metrics, 
 	if (!card.contains(world)) return CardRegion.NONE;
 	if (card.resize_handle_at(world, camera) >= 0) return CardRegion.HANDLE;
 	if (card.preview_marker_hit(world)) return CardRegion.PREVIEW;
-	if (card.close_marker_hit(world)) return CardRegion.CLOSE;
-	if (card.marker_hit(world)) return CardRegion.MARKER;
+	if (card.maximize_marker_hit(world)) return CardRegion.MAXIMIZE;
+	if (card.minimize_marker_hit(world)) return CardRegion.MINIMIZE;
 	if (card.open && world[1] >= card.rect.y + ui::pxf(card::CARD_TITLE_HEIGHT)) return CardRegion.BODY;
 	return CardRegion.TITLE;
 }
@@ -1424,6 +1424,6 @@ fn void draw_scrollbar(Rect area, float content_height, float scroll_y, RLCamera
 {
 	if (content_height <= area.height) return;
 	apply_scissor(area, camera);
-	rl::draw_rectangle_rec(scrollbar_thumb(area, content_height, scroll_y), color);
+	ui::rounded_rect(scrollbar_thumb(area, content_height, scroll_y), ui::row_radius(), color);
 	rl::end_scissor_mode();
 }

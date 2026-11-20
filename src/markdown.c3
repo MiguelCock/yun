@@ -1401,10 +1401,15 @@ fn float view_draw(
 	{
 		float ry = area.y + r.rect.y - scroll;
 		if (ry + r.rect.height < area.y || ry > area.y + area.height) continue;
-		rl::draw_rectangle_rec(
-			{ .x = area.x + r.rect.x, .y = ry, .width = r.rect.width, .height = r.rect.height },
-			rect_color(r.kind)
-		);
+		Rect rr = { .x = area.x + r.rect.x, .y = ry, .width = r.rect.width, .height = r.rect.height };
+		if (r.kind == MdRectKind.CODE_BG || r.kind == MdRectKind.TABLE_HEADER)
+		{
+			ui::rounded_rect(rr, ui::row_radius(), rect_color(r.kind));
+		}
+		else
+		{
+			rl::draw_rectangle_rec(rr, rect_color(r.kind));
+		}
 	}
 
 	foreach (MdRun run : l.runs)
