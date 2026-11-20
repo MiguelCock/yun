@@ -8,6 +8,7 @@ import yun::editor;
 import yun::project;
 import yun::text;
 import yun::theme;
+import yun::ui;
 
 const int MINIMAP_WIDTH            = 220;
 const int MINIMAP_HEIGHT           = 160;
@@ -130,8 +131,7 @@ fn void draw(project::Project* project, canvas::Canvas* canvas)
 	if (!project.content_bounds(&content)) return;
 
 	Rect panel = minimap_panel(rl::get_screen_width(), rl::get_screen_height());
-	rl::draw_rectangle_rec(panel, theme::current().minimap_bg);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().minimap_border);
+	ui::panel(panel, theme::current().minimap_bg, theme::current().minimap_border);
 
 	for (sz i = 0; i < project.folders.len(); i++)
 	{
@@ -149,7 +149,11 @@ fn void draw(project::Project* project, canvas::Canvas* canvas)
 		rl::draw_rectangle_rec(block, theme::current().minimap_card);
 	}
 
-	rl::draw_rectangle_lines_ex(to_minimap_rect(canvas.visible_world_rect(), content, panel), 1.0f, theme::current()
+	ui::rounded_rect_lines(
+		to_minimap_rect(canvas.visible_world_rect(), content, panel),
+		ui::row_radius(),
+		1.0f,
+		theme::current()
 		.minimap_viewport);
 }
 
@@ -219,8 +223,7 @@ fn void draw_file(project::Project* project, editor::EditorMetrics metrics)
 	usz line_count       = card.buffer.line_count();
 
 	Rect panel = minimap_panel(rl::get_screen_width(), rl::get_screen_height());
-	rl::draw_rectangle_rec(panel, theme::current().minimap_bg);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().minimap_border);
+	ui::panel(panel, theme::current().minimap_bg, theme::current().minimap_border);
 	if (line_count == 0 || metrics.line_height <= 0.0f) return;
 
 	int rows = (int)panel.height;
@@ -253,7 +256,7 @@ fn void draw_file(project::Project* project, editor::EditorMetrics metrics)
 	usz first_visible = (usz)(card.scroll / metrics.line_height);
 	usz visible_lines = (usz)(text.height / metrics.line_height) + 1;
 	Rect viewport     = file_minimap_viewport(panel, first_visible, visible_lines, line_count);
-	rl::draw_rectangle_lines_ex(viewport, 1.0f, theme::current().minimap_viewport);
+	ui::rounded_rect_lines(viewport, ui::row_radius(), 1.0f, theme::current().minimap_viewport);
 }
 
 fn void update_file(project::Project* project, editor::EditorMetrics metrics)

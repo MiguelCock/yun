@@ -147,6 +147,7 @@ fn void apply_settings(
 		ui_changed = true;
 	}
 
+	ui::set_corner_radius((float)config.settings.get_int(settings::SettingId.APP_CORNER_RADIUS));
 	project.skip_nested_repos = config.settings.get_bool(settings::SettingId.APP_SKIP_SUBMODULES);
 
 	editor::EditorSettings es = editor::settings();
@@ -333,8 +334,7 @@ fn void draw_loading(project::OpenJob* job, RLFont font)
 		.width = 360.0f,
 		.height = 100.0f,
 	};
-	rl::draw_rectangle_rec(panel, theme::current().loading_panel);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().loading_border);
+	ui::panel(panel, theme::current().loading_panel, theme::current().loading_border);
 
 	@pool()
 	{
@@ -3097,8 +3097,7 @@ fn int main(String[] args)
 						.width = width + (float)ui::px(24),
 						.height = (float)ui::px(30),
 					};
-					rl::draw_rectangle_rec(panel, theme::current().panel_bg_alt);
-					rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+					ui::panel(panel, theme::current().panel_bg_alt, theme::current().panel_border);
 					rl::draw_text_ex(
 						font,
 						label.zstr_tcopy(),

@@ -160,8 +160,7 @@ fn void Prompt.draw(&self, RLFont font)
 	float pad       = (float)ui::px(12);
 	float text_size = (float)ui::tpx(16);
 	float hint_size = (float)ui::tpx(14);
-	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	Rect field = {
 		.x = panel.x + pad,
@@ -169,7 +168,7 @@ fn void Prompt.draw(&self, RLFont font)
 		.width = panel.width - pad * 2.0f,
 		.height = (float)ui::px(28),
 	};
-	rl::draw_rectangle_rec(field, theme::current().panel_field);
+	ui::rounded_rect(field, ui::row_radius(), theme::current().panel_field);
 
 	String text = self.text_view();
 	@pool()

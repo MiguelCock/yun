@@ -335,8 +335,7 @@ fn void Problems.draw(&self, RLFont font)
 	float s    = ui::scale();
 	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
-	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	@pool()
 	{
@@ -375,7 +374,14 @@ fn void Problems.draw(&self, RLFont font)
 
 		if (index == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, (int)row_h, theme::current()
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = row_y,
+					.width = panel.width - 4.0f,
+					.height = row_h,
+				},
+				theme::current()
 				.panel_selected);
 		}
 		ProblemEntry* entry = self.entry_at(row.entry);
@@ -497,8 +503,7 @@ fn void draw_tooltip(String message, RLVector2 screen_pos, RLFont font)
 		if (panel.x < 4.0f) panel.x = 4.0f;
 		if (panel.y < 4.0f) panel.y = 4.0f;
 
-		rl::draw_rectangle_rec(panel, theme::current().panel_bg_alt);
-		rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+		ui::panel(panel, theme::current().panel_bg_alt, theme::current().panel_border);
 		for (int i = 0; i < count; i++)
 		{
 			draw_text(

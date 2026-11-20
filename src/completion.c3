@@ -334,8 +334,7 @@ fn void Completion.draw(
 	if (panel.x < (float)ui::px(4)) panel.x = (float)ui::px(4);
 	if (panel.y < (float)ui::px(4)) panel.y = (float)ui::px(4);
 
-	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	rl::begin_scissor_mode((int)panel.x + 2, (int)panel.y + 2, (int)panel.width - 4, (int)panel.height - 4);
 	for (int slot = 0; slot < VISIBLE_ROWS; slot++)
@@ -346,7 +345,14 @@ fn void Completion.draw(
 		float row_y              = panel.y + (float)ui::px(3) + (float)slot * (float)ui::px(ROW_HEIGHT);
 		if (index == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ui::px(ROW_HEIGHT), theme::current()
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = row_y,
+					.width = panel.width - 4.0f,
+					.height = (float)ui::px(ROW_HEIGHT),
+				},
+				theme::current()
 				.panel_selected);
 		}
 		draw_text(

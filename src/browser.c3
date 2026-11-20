@@ -174,9 +174,14 @@ fn void Browser.draw(&self)
 	int row_h  = ui::px(ROW_HEIGHT);
 	int x      = (rl::get_screen_width() - width) / 2;
 	int y      = (rl::get_screen_height() - height) / 2;
-	rl::draw_rectangle(x, y, width, height, theme::current().panel_bg);
-	rl::draw_rectangle(x, y, width, ui::px(28), theme::current().panel_bg_alt);
-	rl::draw_rectangle_lines(x, y, width, height, theme::current().panel_border);
+	Rect panel = { .x = (float)x, .y = (float)y, .width = (float)width, .height = (float)height };
+	ui::rounded_rect(panel, ui::corner_radius(), theme::current().panel_bg);
+	ui::rounded_top(
+		{ .x = (float)x, .y = (float)y, .width = (float)width, .height = (float)ui::px(28) },
+		ui::corner_radius(),
+		theme::current()
+		.panel_bg_alt);
+	ui::rounded_rect_lines(panel, ui::corner_radius(), 1.0f, theme::current().panel_border);
 	rl::draw_text_ex(
 		ui::font(),
 		(ZString)self.dir.ptr,
@@ -190,11 +195,13 @@ fn void Browser.draw(&self)
 	for (int i = self.scroll; i < last; i++)
 	{
 		int row_y = y + ui::px(36) + (i - self.scroll) * row_h;
-		if (i == self.selected) rl::draw_rectangle(
-			x + ui::px(4),
-			row_y - ui::px(2),
-			width - ui::px(8),
-			row_h,
+		if (i == self.selected) ui::row(
+			{
+				.x = (float)(x + ui::px(4)),
+				.y = (float)(row_y - ui::px(2)),
+				.width = (float)(width - ui::px(8)),
+				.height = (float)row_h,
+			},
 			theme::current()
 			.panel_selected);
 		String label = self.row_label(i);
