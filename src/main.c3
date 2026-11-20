@@ -19,6 +19,7 @@ import yun::find;
 import yun::findbar;
 import yun::fonts;
 import yun::hover;
+import yun::icons;
 import yun::imports;
 import yun::keymap;
 import yun::lsp;
@@ -148,6 +149,21 @@ fn void apply_settings(
 	}
 
 	ui::set_corner_radius((float)config.settings.get_int(settings::SettingId.APP_CORNER_RADIUS));
+	String ui_icon_theme = config.settings.get_string(settings::SettingId.APP_UI_ICON_THEME);
+	icons::set_ui_theme(
+		ui_icon_theme.compare_to("vector") == 0 ? icons::UiIconTheme.VECTOR : icons::UiIconTheme.CODICONS
+	);
+	String file_icon_theme          = config.settings.get_string(settings::SettingId.APP_FILE_ICON_THEME);
+	icons::FileIconTheme file_theme = icons::FileIconTheme.MATERIAL;
+	if (file_icon_theme.compare_to("vscode") == 0)
+	{
+		file_theme = icons::FileIconTheme.VSCODE;
+	}
+	else if (file_icon_theme.compare_to("none") == 0)
+	{
+		file_theme = icons::FileIconTheme.NONE;
+	}
+	icons::set_file_theme(file_theme);
 	project.skip_nested_repos = config.settings.get_bool(settings::SettingId.APP_SKIP_SUBMODULES);
 
 	editor::EditorSettings es = editor::settings();
@@ -1672,6 +1688,8 @@ fn int main(String[] args)
 
 	fonts::Fonts fonts;
 	fonts.init(mem);
+
+	icons::init(mem);
 	settings::set_font_options(fonts.labels());
 
 	int pending_kind          = 0;
@@ -1692,6 +1710,7 @@ fn int main(String[] args)
 	defer config.destroy();
 	defer keymap.destroy();
 	defer settings_panel.destroy();
+	defer icons::shutdown();
 	defer fonts.destroy();
 	defer language::shutdown_grammars();
 	defer highlight::shutdown();

@@ -17,3 +17,14 @@ fn void test_icon_size_and_box()
 	assert(box.width == 16.0f);
 	assert(box.height == 16.0f);
 }
+fn void test_language_icon_names()
+{
+	assert(file_icon_theme_name(FileIconTheme.MATERIAL).compare_to("material") == 0);
+	assert(file_icon_theme_name(FileIconTheme.VSCODE).compare_to("vscode") == 0);
+	assert(file_icon_name(FileIconTheme.MATERIAL, "src/main.c3").compare_to("c3") == 0);
+	assert(file_icon_name(FileIconTheme.VSCODE, "src/main.c3").compare_to("file_type_c3") == 0);
+	assert(file_icon_name(FileIconTheme.MATERIAL, "src/main.py").compare_to("python") == 0);
+	assert(file_icon_name(FileIconTheme.VSCODE, "src/main.py").compare_to("file_type_python") == 0);
+	assert(file_icon_name(FileIconTheme.MATERIAL, "unknown.xyz").compare_to("file") == 0);
+	assert(file_icon_name(FileIconTheme.VSCODE, "unknown.xyz").compare_to("default_file") == 0);
+}

@@ -155,12 +155,25 @@ fn void FileCard.draw(&self, bool focused, RLCamera2D camera, RLVector2 mouse_wo
 	{
 		ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 	}
+	float file_icon_size = (float)ui::px(16);
+	bool has_file_icon = icons::draw_file(
+		(String)self.path,
+		{
+			.x = r.x + (float)ui::px(8),
+			.y = r.y + (ui::pxf(CARD_TITLE_HEIGHT) - file_icon_size) * 0.5f,
+			.width = file_icon_size,
+			.height = file_icon_size,
+		},
+		rl::WHITE
+	);
+	float name_x = r.x + (float)ui::px(10);
+	if (has_file_icon) name_x += file_icon_size + (float)ui::px(4);
 	@pool()
 	{
 		rl::draw_text_ex(
 			ui::font(),
 			self.name.zstr_tcopy(),
-			{ r.x + (float)ui::px(10), r.y + (float)ui::px(7) },
+			{ name_x, r.y + (float)ui::px(7) },
 			(float)ui::tpx(16),
 			0.0f,
 			theme::current()
