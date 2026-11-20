@@ -257,7 +257,7 @@ fn void test_effective_rect_and_marker()
 {
 	FileCard card = { .rect = { .x = 0.0f, .y = 0.0f, .width = 240.0f, .height = 160.0f }, .open = true };
 	assert(card.effective_rect().height == 160.0f);
-	assert(card.marker_hit({ 230.0f, 10.0f }));
+	assert(card.minimize_marker_hit({ 230.0f, 10.0f }));
 
 	card.open = false;
 	assert(card.effective_rect().height == 28.0f);
@@ -430,13 +430,15 @@ fn void test_resize_from()
 	card.resize_from(7, { 10000.0f, 0.0f }, min_w, min_h);
 	assert(card.rect.width == min_w);
 }
-fn void test_close_marker_hit()
+fn void test_title_markers()
 {
 	FileCard card = { .rect = { .x = 0.0f, .y = 0.0f, .width = 240.0f, .height = 160.0f }, .open = true };
-	assert(card.close_marker_hit({ 210.0f, 10.0f }));
-	assert(!card.close_marker_hit({ 225.0f, 10.0f }));
-	assert(card.marker_hit({ 225.0f, 10.0f }));
-	assert(!card.close_marker_hit({ 100.0f, 10.0f }));
+	assert(card.preview_marker_hit({ 175.0f, 10.0f }));
+	assert(card.maximize_marker_hit({ 200.0f, 10.0f }));
+	assert(card.minimize_marker_hit({ 225.0f, 10.0f }));
+	assert(!card.maximize_marker_hit({ 225.0f, 10.0f }));
+	assert(!card.minimize_marker_hit({ 200.0f, 10.0f }));
+	assert(!card.preview_marker_hit({ 100.0f, 10.0f }));
 }
 
 fn void test_unload_buffer()
@@ -659,8 +661,9 @@ fn void test_region_at()
 
 	assert(region_at(&card, { 100.0f, 10.0f }, metrics, camera) == CardRegion.TITLE);
 	assert(region_at(&card, { 100.0f, 80.0f }, metrics, camera) == CardRegion.BODY);
-	assert(region_at(&card, { 230.0f, 10.0f }, metrics, camera) == CardRegion.MARKER);
-	assert(region_at(&card, { 205.0f, 10.0f }, metrics, camera) == CardRegion.CLOSE);
+	assert(region_at(&card, { 230.0f, 10.0f }, metrics, camera) == CardRegion.MINIMIZE);
+	assert(region_at(&card, { 205.0f, 10.0f }, metrics, camera) == CardRegion.MAXIMIZE);
+	assert(region_at(&card, { 175.0f, 10.0f }, metrics, camera) == CardRegion.PREVIEW);
 	assert(region_at(&card, { 5.0f, 5.0f }, metrics, camera) == CardRegion.HANDLE);
 	assert(region_at(&card, { 400.0f, 400.0f }, metrics, camera) == CardRegion.NONE);
 
@@ -889,4 +892,17 @@ fn void test_inlay_hint_hides_binding_colon()
 		assert(offset_for_visual_column(&t, 0, 8, slice) == 5);
 		t.destroy();
 	};
+}
+fn void test_title_button_rects()
+{
+	FileCard card = { .rect = { .x = 0.0f, .y = 0.0f, .width = 240.0f, .height = 160.0f }, .open = true };
+	Rect preview  = card.title_button_rect(0);
+	Rect maximize = card.title_button_rect(1);
+	Rect minimize = card.title_button_rect(2);
+	assert(preview.x == 164.0f);
+	assert(maximize.x == 190.0f);
+	assert(minimize.x == 216.0f);
+	assert(minimize.x + minimize.width == 240.0f);
+	assert(preview.x + preview.width < maximize.x);
+	assert(maximize.x + maximize.width < minimize.x);
 }

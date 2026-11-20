@@ -15,6 +15,7 @@ enum IconKind : int
 	QUIT,
 	PREVIEW,
 	MAXIMIZE,
+	RESTORE,
 	MINIMIZE,
 	CLOSE,
 	SEARCH,
@@ -151,6 +152,19 @@ fn void draw(IconKind icon, Rect b, RLColor color)
 			seg(b, 0.2f, 0.8f, 0.4f, 0.8f, stroke, color);
 			seg(b, 0.8f, 0.6f, 0.8f, 0.8f, stroke, color);
 			seg(b, 0.8f, 0.8f, 0.6f, 0.8f, stroke, color);
+		case IconKind.RESTORE:
+			seg(b, 0.38f, 0.38f, 0.2f, 0.2f, stroke, color);
+			seg(b, 0.2f, 0.2f, 0.2f, 0.42f, stroke, color);
+			seg(b, 0.38f, 0.38f, 0.42f, 0.2f, stroke, color);
+			seg(b, 0.62f, 0.38f, 0.8f, 0.2f, stroke, color);
+			seg(b, 0.8f, 0.2f, 0.8f, 0.42f, stroke, color);
+			seg(b, 0.62f, 0.38f, 0.58f, 0.2f, stroke, color);
+			seg(b, 0.38f, 0.62f, 0.2f, 0.8f, stroke, color);
+			seg(b, 0.2f, 0.8f, 0.2f, 0.58f, stroke, color);
+			seg(b, 0.38f, 0.62f, 0.42f, 0.8f, stroke, color);
+			seg(b, 0.62f, 0.62f, 0.8f, 0.8f, stroke, color);
+			seg(b, 0.8f, 0.8f, 0.8f, 0.58f, stroke, color);
+			seg(b, 0.62f, 0.62f, 0.58f, 0.8f, stroke, color);
 		case IconKind.MINIMIZE:
 			seg(b, 0.3f, 0.5f, 0.5f, 0.7f, stroke, color);
 			seg(b, 0.5f, 0.7f, 0.7f, 0.5f, stroke, color);
