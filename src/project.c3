@@ -16,6 +16,7 @@ import yun::editor;
 import yun::findbar;
 import yun::gitignore;
 import yun::highlight;
+import yun::icons;
 import yun::keymap;
 import yun::lsp;
 import yun::markdown;
@@ -3019,13 +3020,26 @@ fn void Project.draw_cluster(&self, int index, float zoom)
 		ui::rounded_rect_lines(bounds, radius, thickness, theme::current().card_focus);
 	}
 	if (zoom < CLUSTER_TEXT_MIN_ZOOM) return;
-	String name = rl::get_file_name((ZString)cluster.path.ptr).str_view();
+	float icon_size = (float)ui::px(16);
+	bool has_icon = icons::draw_folder(
+		!cluster.collapsed,
+		{
+			.x = bounds.x + (float)ui::px(8),
+			.y = title.y + (title.height - icon_size) * 0.5f,
+			.width = icon_size,
+			.height = icon_size,
+		},
+		rl::WHITE
+	);
+	String name  = rl::get_file_name((ZString)cluster.path.ptr).str_view();
+	float name_x = bounds.x + (float)ui::px(10);
+	if (has_icon) name_x += icon_size + (float)ui::px(4);
 	@pool()
 	{
 		rl::draw_text_ex(
 			ui::font(),
 			name.zstr_tcopy(),
-			{ bounds.x + (float)ui::px(10), bounds.y + (float)ui::px(5) },
+			{ name_x, bounds.y + (float)ui::px(5) },
 			(float)ui::tpx(16),
 			0.0f,
 			theme::current()

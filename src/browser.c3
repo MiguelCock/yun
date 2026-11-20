@@ -208,6 +208,7 @@ fn void Browser.draw(&self)
 		String label    = self.row_label(i);
 		float icon_size = (float)ui::px(16);
 		bool has_icon = icons::draw_folder(
+			false,
 			{
 				.x = (float)(x + ui::px(10)),
 				.y = (float)row_y,

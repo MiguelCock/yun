@@ -339,10 +339,17 @@ fn bool draw_file(String path, Rect box, RLColor tint)
 	return true;
 }
 
-fn bool draw_folder(Rect box, RLColor tint)
+fn String folder_icon_name(FileIconTheme theme, bool open)
+{
+	if (theme == FileIconTheme.NONE) return "";
+	if (theme == FileIconTheme.VSCODE) return open ? "default_folder_opened" : "default_folder";
+	return open ? "folder-open" : "folder";
+}
+
+fn bool draw_folder(bool open, Rect box, RLColor tint)
 {
 	if (g_file_theme == FileIconTheme.NONE) return false;
-	String name         = g_file_theme == FileIconTheme.VSCODE ? "default_folder" : "folder";
+	String name         = folder_icon_name(g_file_theme, open);
 	RLTexture2D texture = file_texture(g_file_theme, name);
 	if (!texture.is_valid()) return false;
 	rl::draw_texture_pro(
