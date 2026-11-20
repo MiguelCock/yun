@@ -28,3 +28,11 @@ fn void test_language_icon_names()
 	assert(file_icon_name(FileIconTheme.MATERIAL, "unknown.xyz").compare_to("file") == 0);
 	assert(file_icon_name(FileIconTheme.VSCODE, "unknown.xyz").compare_to("default_file") == 0);
 }
+fn void test_folder_icon_names()
+{
+	assert(folder_icon_name(FileIconTheme.NONE, false).len == 0);
+	assert(folder_icon_name(FileIconTheme.MATERIAL, false).compare_to("folder") == 0);
+	assert(folder_icon_name(FileIconTheme.MATERIAL, true).compare_to("folder-open") == 0);
+	assert(folder_icon_name(FileIconTheme.VSCODE, false).compare_to("default_folder") == 0);
+	assert(folder_icon_name(FileIconTheme.VSCODE, true).compare_to("default_folder_opened") == 0);
+}
