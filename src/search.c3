@@ -29,7 +29,29 @@ const int MAX_SEARCH_WORKERS   = 4;
 const int PUMP_BATCH_BUDGET    = 32;
 const int QUERY_MAX            = 256;
 const double RESTART_DEBOUNCE  = 0.15;
-const float TOP_MARGIN         = 24.0f;
+
+struct SearchSettings
+{
+	int max_file_mb;
+	int max_matches_per_file;
+	int max_results;
+	int workers;
+	int debounce_ms;
+	int preview_length;
+}
+
+SearchSettings g_search_settings = { 2, 200, 2000, 4, 150, 120 };
+
+fn void set_settings(SearchSettings s)
+{
+	g_search_settings.max_file_mb = s.max_file_mb < 1 ? 1 : s.max_file_mb;
+	g_search_settings.max_matches_per_file = s.max_matches_per_file < 1 ? 1 : s.max_matches_per_file;
+	g_search_settings.max_results = s.max_results < 1 ? 1 : s.max_results;
+	g_search_settings.workers = s.workers < 1 ? 1 : s.workers;
+	g_search_settings.debounce_ms = s.debounce_ms < 1 ? 1 : s.debounce_ms;
+	g_search_settings.preview_length = s.preview_length < 1 ? 1 : s.preview_length;
+}
+const float TOP_MARGIN = 24.0f;
 
 struct SearchMatch
 {
@@ -145,7 +167,7 @@ fn String preview_of(Allocator allocator, String line)
 	usz start = 0;
 	while (start < line.len && (line[start] == ' ' || line[start] == '\t')) start++;
 	usz end = line.len;
-	if (end - start > (usz)PREVIEW_MAX) end = start + (usz)PREVIEW_MAX;
+	if (end - start > (usz)g_search_settings.preview_length) end = start + (usz)g_search_settings.preview_length;
 	return line[start:end - start].copy(allocator);
 }
 
@@ -162,14 +184,16 @@ fn void scan_content(
 	usz line  = 0;
 	usz start = 0;
 	usz found = 0;
-	while (start <= content.len && found < (usz)MAX_MATCHES_PER_FILE)
+	usz limit = (usz)g_search_settings.max_matches_per_file;
+	if (limit > (usz)MAX_MATCHES_PER_FILE) limit = (usz)MAX_MATCHES_PER_FILE;
+	while (start <= content.len && found < limit)
 	{
 		usz end = start;
 		while (end < content.len && content[end] != '\n') end++;
 		String text = content[start:end - start];
 		if (text.len > 0 && text[text.len - 1] == '\r') text = text[0:text.len - 1];
 
-		usz cap = (usz)MAX_MATCHES_PER_FILE - found;
+		usz cap = limit - found;
 		usz n   = find_in_line(text, query, case_sensitive, whole_word, columns[0:MAX_MATCHES_PER_FILE], cap);
 		for (usz i = 0; i < n; i++)
 		{
@@ -206,7 +230,7 @@ fn void scan_file_path(
 	{
 		long? size = path::file_size((Path)path);
 		if (catch excuse = size) return;
-		if (size > MAX_FILE_BYTES) return;
+		if (size > (long)g_search_settings.max_file_mb * 1024L * 1024L) return;
 
 		char[]? data = file::load(tmem, path);
 		if (catch excuse = data) return;
@@ -249,8 +273,8 @@ fn void search_worker(void* arg)
 
 fn void Search.init_pool(&self)
 {
-	int workers = os::num_cpu();
-	if (workers < 2) workers = 2;
+	int workers = g_search_settings.workers;
+	if (workers < 1) workers = 1;
 	if (workers > MAX_SEARCH_WORKERS) workers = MAX_SEARCH_WORKERS;
 	if (catch excuse = self.pool.init(self.allocator, workers))
 	{
@@ -392,7 +416,7 @@ fn void Search.cancel_run(&self)
 fn void Search.schedule_restart(&self, double now)
 {
 	self.restart_pending = true;
-	self.restart_at = now + RESTART_DEBOUNCE;
+	self.restart_at = now + (double)g_search_settings.debounce_ms / 1000.0;
 }
 
 fn void Search.start(&self, project::Project* project)
@@ -444,7 +468,7 @@ fn void Search.start(&self, project::Project* project)
 
 fn void Search.merge_batch(&self, SearchBatch* batch)
 {
-	if (batch.matches.len() > 0 && self.total_matches < (usz)MAX_RESULTS)
+	if (batch.matches.len() > 0 && self.total_matches < (usz)g_search_settings.max_results)
 	{
 		int group      = -1;
 		int*? existing =  self.group_index.get_ref(batch.path);

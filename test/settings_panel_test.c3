@@ -10,15 +10,16 @@ fn void test_keys_section_rows()
 		Panel p;
 		p.init(tmem);
 		p.show();
+		p.set_page(settings::SettingPage.KEYS);
 
-		assert(p.rows.len() == 158);
+		assert(p.rows.len() == (sz)commands::command_count() + 2);
 		bool found_header = false;
 		bool found_action = false;
 		int command_rows  = 0;
 		for (sz i = 0; i < p.rows.len(); i++)
 		{
 			Row row = p.rows[i];
-			if (row.kind == RowKind.HEADER && row.section.compare_to("keys") == 0) found_header = true;
+			if (row.kind == RowKind.HEADER && row.section.compare_to("Keybindings") == 0) found_header = true;
 			if (row.kind == RowKind.ACTION) found_action = true;
 			if (row.kind == RowKind.COMMAND) command_rows++;
 		}
@@ -91,4 +92,63 @@ fn void test_matches()
 	assert(matches("editor", "Font size", "font_size", "Editor font size in pixels.", "font"));
 	assert(matches("editor", "Font size", "font_size", "Editor font size in pixels.", "edf"));
 	assert(!matches("editor", "Font size", "font_size", "Editor font size in pixels.", "zzz"));
+}
+fn void test_page_mapping()
+{
+	assert(settings::page_for(settings::SettingId.APP_THEME) == settings::SettingPage.APPEARANCE);
+	assert(settings::page_for(settings::SettingId.EDITOR_FONT_SIZE) == settings::SettingPage.EDITOR);
+	assert(settings::page_for(settings::SettingId.CANVAS_GRID_CELL) == settings::SettingPage.CANVAS);
+	assert(settings::page_for(settings::SettingId.SEARCH_MAX_RESULTS) == settings::SettingPage.ADVANCED);
+	assert(settings::page_for(settings::SettingId.LSP_ENABLED) == settings::SettingPage.INTEGRATIONS);
+	assert(settings::page_for(settings::SettingId.APP_SKIP_SUBMODULES) == settings::SettingPage.GENERAL);
+}
+
+fn void test_page_rows()
+{
+	@pool()
+	{
+		Panel p;
+		p.init(tmem);
+		p.show();
+		p.set_page(settings::SettingPage.APPEARANCE);
+
+		bool found_setting = false;
+		bool found_reset   = false;
+		for (sz i = 0; i < p.rows.len(); i++)
+		{
+			if (p.rows[i].kind == RowKind.SETTING) found_setting = true;
+			if (p.rows[i].kind == RowKind.PAGE_RESET) found_reset = true;
+			assert(p.rows[i].kind != RowKind.COMMAND);
+		}
+		assert(found_setting);
+		assert(found_reset);
+		p.destroy();
+	};
+}
+
+fn void test_cross_page_search()
+{
+	@pool()
+	{
+		Panel p;
+		p.init(tmem);
+		p.show();
+		p.append_query('w');
+		p.append_query('o');
+		p.append_query('r');
+		p.append_query('k');
+		p.append_query('e');
+		p.append_query('r');
+		p.append_query('s');
+		p.rebuild();
+
+		bool found_advanced = false;
+		for (sz i = 0; i < p.rows.len(); i++)
+		{
+			if (p.rows[i].kind == RowKind.SETTING
+				&& p.rows[i].page == settings::SettingPage.ADVANCED) found_advanced = true;
+		}
+		assert(found_advanced);
+		p.destroy();
+	};
 }

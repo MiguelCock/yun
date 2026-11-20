@@ -149,6 +149,44 @@ fn void apply_settings(
 	}
 
 	ui::set_corner_radius((float)config.settings.get_int(settings::SettingId.APP_CORNER_RADIUS));
+	String notice_position = config.settings.get_string(settings::SettingId.APP_NOTIFICATIONS_POSITION);
+	int notice_pos         = 3;
+	if (notice_position.compare_to("top_left") == 0)
+	{
+		notice_pos = 0;
+	}
+	else if (notice_position.compare_to("top_right") == 0)
+	{
+		notice_pos = 1;
+	}
+	else if (notice_position.compare_to("bottom_left") == 0)
+	{
+		notice_pos = 2;
+	}
+	notifier.configure(
+		(float)config.settings.get_float(settings::SettingId.APP_NOTIFICATIONS_TTL),
+		(int)config.settings.get_int(settings::SettingId.APP_NOTIFICATIONS_MAX),
+		notice_pos
+	);
+	project.external_reload = config.settings.get_bool(settings::SettingId.APP_EXTERNAL_RELOAD);
+	project.poll_seconds = config.settings.get_float(settings::SettingId.APP_RELOAD_POLL);
+	project.sleep_editors = config.settings.get_bool(settings::SettingId.APP_SLEEP_EDITORS);
+	project.jump_highlight_seconds = (double)config.settings.get_int(
+		settings::SettingId.APP_JUMP_HIGHLIGHT_MS
+	) / 1000.0;
+	config.lsp_enabled = config.settings.get_bool(settings::SettingId.LSP_ENABLED);
+	project.autosave_enabled = config.settings.get_bool(settings::SettingId.EDITOR_AUTOSAVE);
+	project.autosave_interval = config.settings.get_float(settings::SettingId.EDITOR_AUTOSAVE_INTERVAL);
+	search::set_settings(
+		{
+			.max_file_mb = (int)config.settings.get_int(settings::SettingId.SEARCH_MAX_FILE_MB),
+			.max_matches_per_file = (int)config.settings.get_int(settings::SettingId.SEARCH_MAX_MATCHES_PER_FILE),
+			.max_results = (int)config.settings.get_int(settings::SettingId.SEARCH_MAX_RESULTS),
+			.workers = (int)config.settings.get_int(settings::SettingId.SEARCH_WORKERS),
+			.debounce_ms = (int)config.settings.get_int(settings::SettingId.SEARCH_DEBOUNCE_MS),
+			.preview_length = (int)config.settings.get_int(settings::SettingId.SEARCH_PREVIEW_MAX),
+		}
+	);
 	String ui_icon_theme = config.settings.get_string(settings::SettingId.APP_UI_ICON_THEME);
 	icons::set_ui_theme(
 		ui_icon_theme.compare_to("vector") == 0 ? icons::UiIconTheme.VECTOR : icons::UiIconTheme.CODICONS
@@ -177,6 +215,8 @@ fn void apply_settings(
 	es.indent_width = (int)config.settings.get_int(settings::SettingId.EDITOR_INDENT_WIDTH);
 	es.indent_spaces = config.settings.get_string(settings::SettingId.EDITOR_INDENT_STYLE).compare_to("spaces") == 0;
 	es.auto_indent = config.settings.get_bool(settings::SettingId.EDITOR_AUTO_INDENT);
+	es.history_budget = (usz)config.settings.get_int(settings::SettingId.EDITOR_UNDO_MB) * 1024u * 1024u;
+	es.diagnostic_segments = (int)config.settings.get_int(settings::SettingId.EDITOR_DIAGNOSTIC_SEGMENTS);
 
 	canvas::CanvasSettings cs = canvas::settings();
 	cs.min_zoom = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_MIN);
@@ -261,12 +301,20 @@ fn void apply_settings(
 	if (!reload_ui && !reload_editor && !metrics_changed)
 	{
 		editor::set_settings(es);
+		for (sz i = 0; i < project.cards.len(); i++)
+		{
+			if (project.cards[i].history) project.cards[i].history.budget = es.history_budget;
+		}
 		return;
 	}
 
 	float old_lh = metrics.line_height;
 	float old_cw = metrics.char_width;
 	editor::set_settings(es);
+	for (sz i = 0; i < project.cards.len(); i++)
+	{
+		if (project.cards[i].history) project.cards[i].history.budget = es.history_budget;
+	}
 
 	if (ui_changed)
 	{
@@ -2759,6 +2807,17 @@ fn int main(String[] args)
 			{
 				project.focus_toggle_requested = false;
 				run_command(commands::CommandId.TOGGLE_FOCUS_MODE, &app);
+			}
+			if (project.autosave_enabled && rl::get_time() - project.last_autosave >= project.autosave_interval)
+			{
+				project.last_autosave = rl::get_time();
+				for (sz i = 0; i < project.cards.len(); i++)
+				{
+					if (project.cards[i].dirty && project.cards[i].buffer)
+					{
+						(void)editor::save_buffer(&project.cards[i], project.allocator);
+					}
+				}
 			}
 			update_ms += (rl::get_time() - update_t0) * 1000.0;
 			if (ui_mode == UiMode.EDIT && project.focused < 0)

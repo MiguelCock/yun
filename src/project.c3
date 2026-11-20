@@ -121,6 +121,13 @@ struct Project
 	RLVector2 drag_world;
 	double last_input_time;
 	double last_poll;
+	double poll_seconds;
+	double jump_highlight_seconds;
+	bool external_reload;
+	bool sleep_editors;
+	bool autosave_enabled;
+	double autosave_interval;
+	double last_autosave;
 	int pending_reload;
 	int pending_close;
 	bool resizing;
@@ -165,6 +172,13 @@ fn void Project.init(&self, Allocator allocator)
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
 	self.last_poll = 0.0;
+	self.poll_seconds = POLL_SECONDS;
+	self.jump_highlight_seconds = JUMP_HIGHLIGHT_SECONDS;
+	self.external_reload = true;
+	self.sleep_editors = true;
+	self.autosave_enabled = false;
+	self.autosave_interval = 30.0;
+	self.last_autosave = 0.0;
 	self.pending_reload = -1;
 	self.pending_close = -1;
 	self.resizing = false;
@@ -268,7 +282,7 @@ fn void Project.mark_jump(&self, String path, usz line, double now)
 	if (self.jump_path.len) self.jump_path.free(self.allocator);
 	self.jump_path = path.copy(self.allocator);
 	self.jump_line = line;
-	self.jump_until = now + JUMP_HIGHLIGHT_SECONDS;
+	self.jump_until = now + self.jump_highlight_seconds;
 }
 
 fn void Project.clear_jump(&self)
@@ -2443,6 +2457,12 @@ fn void Project.refresh_sleep(&self, Rect visible, float zoom)
 	int asleep = 0;
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
+		if (!self.sleep_editors)
+		{
+			self.cards[i].sleeping = false;
+			awake++;
+			continue;
+		}
 		bool is_focused = (int)i == self.focused || (int)i == self.focus_card;
 		bool big_enough = self.cards[i].rect.width * zoom >= CARD_MIN_DRAW_PX;
 		bool on_screen  = self.card_visible(
@@ -2465,8 +2485,9 @@ fn void Project.refresh_sleep(&self, Rect visible, float zoom)
 
 fn void Project.poll_external(&self, double now)
 {
+	if (!self.external_reload) return;
 	if (self.pending_reload >= 0) return;
-	if (now - self.last_poll < POLL_SECONDS) return;
+	if (now - self.last_poll < self.poll_seconds) return;
 	self.last_poll = now;
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
@@ -3181,7 +3202,7 @@ fn void Project.draw_cards(
 				double now = rl::get_time();
 				if (now < self.jump_until)
 				{
-					float fade    = jump_fade(now, self.jump_until, JUMP_HIGHLIGHT_SECONDS);
+					float fade    = jump_fade(now, self.jump_until, self.jump_highlight_seconds);
 					RLColor base  = theme::current().card_focus;
 					RLColor color = { base[0], base[1], base[2], (char)(fade * (float)JUMP_HIGHLIGHT_ALPHA) };
 					Rect line_rect = {
