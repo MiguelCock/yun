@@ -417,6 +417,7 @@ struct App
 	editor::EditorMetrics metrics;
 	bool* project_open;
 	bool* content_changed;
+	bool* quit_requested;
 	UiMode* ui_mode;
 	UiMode* focus_saved_mode;
 	int* edit_grace_frames;
@@ -1091,6 +1092,12 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.QUIT:
+
+			{
+				*app.quit_requested = true;
+				return;
+			}
 		case commands::CommandId.CLOSE_CARD:
 
 			{
@@ -1711,6 +1718,7 @@ fn int main(String[] args)
 	defer project.destroy();
 
 	bool project_open           = false;
+	bool quit_requested         = false;
 	project::OpenJob* open_job  = null;
 	bool opening                = false;
 	bool content_changed        = false;
@@ -1846,6 +1854,7 @@ fn int main(String[] args)
 		.metrics = metrics,
 		.project_open = &project_open,
 		.content_changed = &content_changed,
+		.quit_requested = &quit_requested,
 		.ui_mode = &ui_mode,
 		.focus_saved_mode = &focus_saved_mode,
 		.edit_grace_frames = &edit_grace_frames,
@@ -1880,7 +1889,7 @@ fn int main(String[] args)
 	int bench_over     = 0;
 	int bench_samples  = 0;
 	int bench_warmup   = 30;
-	while (!rl::window_should_close())
+	while (!rl::window_should_close() && !quit_requested)
 	{
 		frame_count++;
 		if (selftest && frame_count > 3) break;
