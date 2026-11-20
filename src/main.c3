@@ -2736,6 +2736,11 @@ fn int main(String[] args)
 			bool suppress_edit_input = ui_mode == UiMode.EDIT && edit_grace_frames > 0;
 			double update_t0         = rl::get_time();
 			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
+			if (project.focus_toggle_requested)
+			{
+				project.focus_toggle_requested = false;
+				run_command(commands::CommandId.TOGGLE_FOCUS_MODE, &app);
+			}
 			update_ms += (rl::get_time() - update_t0) * 1000.0;
 			if (ui_mode == UiMode.EDIT && project.focused < 0)
 			{

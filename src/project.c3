@@ -109,6 +109,7 @@ struct Project
 	int selected_cluster;
 	int current_folder;
 	bool grabbing;
+	bool focus_toggle_requested;
 	int hover_card;
 	bool drag_card;
 	int drag_index;
@@ -158,6 +159,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.selected_cluster = -1;
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
+	self.focus_toggle_requested = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
@@ -240,6 +242,7 @@ fn void Project.reset(&self)
 	self.selected_cluster = -1;
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
+	self.focus_toggle_requested = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
@@ -2176,7 +2179,10 @@ fn void Project.update(
 		{
 			bool double_click         = self.register_click(rl::get_time(), world);
 			editor::CardRegion region = editor::region_at(&self.cards[card_hit], world, metrics, canvas.camera);
-			if (self.focus_card >= 0 && region != editor::CardRegion.BODY) region = editor::CardRegion.NONE;
+			if (self.focus_card >= 0 && region != editor::CardRegion.BODY && region != editor::CardRegion.MAXIMIZE)
+			{
+				region = editor::CardRegion.NONE;
+			}
 			if (region == editor::CardRegion.HANDLE)
 			{
 				int handle = self.cards[card_hit].resize_handle_at(world, canvas.camera);
@@ -2185,26 +2191,12 @@ fn void Project.update(
 				self.resize_handle = handle;
 				self.drag_world = world;
 			}
-			else if (region == editor::CardRegion.CLOSE)
+			else if (region == editor::CardRegion.MAXIMIZE)
 			{
-				FileCard* card = &self.cards[card_hit];
-				if (card.ephemeral)
-				{
-					self.discard_ephemeral(-1);
-				}
-				else if (card.buffer)
-				{
-					if (card.dirty)
-					{
-						self.pending_close = self.focus(card_hit);
-					}
-					else
-					{
-						(void)editor::unload_buffer(card, self.allocator);
-					}
-				}
+				self.focus(card_hit);
+				self.focus_toggle_requested = true;
 			}
-			else if (region == editor::CardRegion.MARKER)
+			else if (region == editor::CardRegion.MINIMIZE)
 			{
 				self.cards[card_hit].open = !self.cards[card_hit].open;
 			}
@@ -2400,10 +2392,10 @@ fn void Project.update(
 		}
 	}
 
-	if (!pointer_blocked && !self.resizing && self.focus_card < 0 && !rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
+	if (!pointer_blocked && !self.resizing && !rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
 	{
 		int hover  = self.hit_test(world);
-		int handle = hover >= 0 ? self.cards[hover].resize_handle_at(world, canvas.camera) : -1;
+		int handle = self.focus_card < 0 && hover >= 0 ? self.cards[hover].resize_handle_at(world, canvas.camera) : -1;
 		if (handle >= 0)
 		{
 			ui::request_cursor(cursor_for_handle(handle), 10);
@@ -2411,17 +2403,19 @@ fn void Project.update(
 		else if (hover >= 0)
 		{
 			FileCard* card = &self.cards[hover];
-			if (card.close_marker_hit(world))
+			if (card.maximize_marker_hit(world))
 			{
 				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
-				ui::tooltip("Close card");
+				ui::tooltip(self.focus_card >= 0 ? "Exit focus mode" : "Focus card");
 			}
-			else if (card.preview_marker_hit(world))
+			else if (self.focus_card < 0 && card.preview_marker_hit(
+				world
+			) && markdown::is_markdown_path((String)card.path))
 			{
 				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
 				ui::tooltip("Toggle Markdown preview");
 			}
-			else if (card.marker_hit(world))
+			else if (self.focus_card < 0 && card.minimize_marker_hit(world))
 			{
 				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
 				ui::tooltip(card.open ? "Collapse card" : "Expand card");
@@ -3078,7 +3072,8 @@ fn void Project.draw_cards(
 		float phase  = (float)elapsed - math::floor((float)elapsed / period) * period;
 		caret_on = phase < period * 0.5f;
 	}
-	Rect visible = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
+	Rect visible          = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
+	RLVector2 mouse_world = canvas::screen_to_world_camera(camera, rl::get_mouse_position());
 
 	@pool()
 	{
@@ -3107,7 +3102,7 @@ fn void Project.draw_cards(
 				card.draw_lod(camera.zoom);
 				continue;
 			}
-			card.draw(is_focused, camera.zoom);
+			card.draw(is_focused, camera, mouse_world, self.focus_card >= 0);
 			if (!is_focused && (int)i == self.selected)
 			{
 				ui::rounded_rect_lines(
