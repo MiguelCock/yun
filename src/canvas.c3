@@ -303,30 +303,36 @@ fn RLVector2 keep_item_in_view_delta(Rect item, Rect safe, float zoom)
 
 	if (item.width > safe.width)
 	{
-		delta[0] = (safe.x + safe.width / 2.0f - center_x) / zoom;
+		delta[0] = (center_x - (safe.x + safe.width / 2.0f)) / zoom;
 	}
 	else if (item.x < safe.x)
 	{
-		delta[0] = (safe.x - item.x) / zoom;
+		delta[0] = (item.x - safe.x) / zoom;
 	}
 	else if (item_right > safe_right)
 	{
-		delta[0] = (safe_right - item_right) / zoom;
+		delta[0] = (item_right - safe_right) / zoom;
 	}
 
 	if (item.height > safe.height)
 	{
-		delta[1] = (safe.y + safe.height / 2.0f - center_y) / zoom;
+		delta[1] = (center_y - (safe.y + safe.height / 2.0f)) / zoom;
 	}
 	else if (item.y < safe.y)
 	{
-		delta[1] = (safe.y - item.y) / zoom;
+		delta[1] = (item.y - safe.y) / zoom;
 	}
 	else if (item_bottom > safe_bottom)
 	{
-		delta[1] = (safe_bottom - item_bottom) / zoom;
+		delta[1] = (item_bottom - safe_bottom) / zoom;
 	}
 
+	float max_x = safe.width / zoom;
+	float max_y = safe.height / zoom;
+	delta[0] = math::clamp(delta[0], -max_x, max_x);
+	delta[1] = math::clamp(delta[1], -max_y, max_y);
+	if (math::is_nan(delta[0]) || math::is_inf(delta[0])) delta[0] = 0.0f;
+	if (math::is_nan(delta[1]) || math::is_inf(delta[1])) delta[1] = 0.0f;
 	return delta;
 }
 

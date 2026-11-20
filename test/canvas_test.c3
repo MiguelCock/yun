@@ -344,20 +344,26 @@ fn void test_keep_item_in_view_delta()
 	assert(d[0] == 0.0f && d[1] == 0.0f);
 
 	d = keep_item_in_view_delta({ .x = 10.0f, .y = 300.0f, .width = 50.0f, .height = 50.0f }, safe, 1.0f);
-	assert(d[0] == 70.0f && d[1] == 0.0f);
-
-	d = keep_item_in_view_delta({ .x = 900.0f, .y = 300.0f, .width = 50.0f, .height = 50.0f }, safe, 1.0f);
 	assert(d[0] == -70.0f && d[1] == 0.0f);
 
+	d = keep_item_in_view_delta({ .x = 900.0f, .y = 300.0f, .width = 50.0f, .height = 50.0f }, safe, 1.0f);
+	assert(d[0] == 70.0f && d[1] == 0.0f);
+
 	d = keep_item_in_view_delta({ .x = 400.0f, .y = 10.0f, .width = 50.0f, .height = 50.0f }, safe, 1.0f);
-	assert(d[0] == 0.0f && d[1] == 50.0f);
+	assert(d[0] == 0.0f && d[1] == -50.0f);
 
 	d = keep_item_in_view_delta({ .x = 400.0f, .y = 700.0f, .width = 50.0f, .height = 50.0f }, safe, 1.0f);
-	assert(d[0] == 0.0f && d[1] == -90.0f);
+	assert(d[0] == 0.0f && d[1] == 90.0f);
 
 	d = keep_item_in_view_delta({ .x = 200.0f, .y = 200.0f, .width = 900.0f, .height = 700.0f }, safe, 1.0f);
-	assert(d[0] == -170.0f && d[1] == -190.0f);
+	assert(d[0] == 170.0f && d[1] == 190.0f);
 
 	d = keep_item_in_view_delta({ .x = 10.0f, .y = 300.0f, .width = 50.0f, .height = 50.0f }, safe, 2.0f);
-	assert(d[0] == 35.0f && d[1] == 0.0f);
+	assert(d[0] == -35.0f && d[1] == 0.0f);
+
+	d = keep_item_in_view_delta({ .x = 10000.0f, .y = 300.0f, .width = 50.0f, .height = 50.0f }, safe, 1.0f);
+	assert(d[0] == 800.0f && d[1] == 0.0f);
+
+	d = keep_item_in_view_delta({ .x = -10000.0f, .y = 300.0f, .width = 50.0f, .height = 50.0f }, safe, 1.0f);
+	assert(d[0] == -800.0f && d[1] == 0.0f);
 }
