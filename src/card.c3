@@ -102,22 +102,23 @@ fn float screen_thickness(float px, float zoom)
 
 fn void FileCard.draw(&self, bool focused, float zoom)
 {
-	Rect r = self.effective_rect();
-	rl::draw_rectangle_rec(r, theme::current().card_body);
+	Rect r       = self.effective_rect();
+	float radius = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
+	ui::rounded_rect(r, radius, theme::current().card_body);
 	Rect title = {
 		.x = r.x,
 		.y = r.y,
 		.width = r.width,
 		.height = ui::pxf(CARD_TITLE_HEIGHT),
 	};
-	rl::draw_rectangle_rec(title, theme::current().card_title);
+	ui::rounded_top(title, radius, theme::current().card_title);
 	if (focused)
 	{
-		rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_focus);
+		ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_focus);
 	}
 	else
 	{
-		rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_border);
+		ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 	}
 	@pool()
 	{
@@ -167,9 +168,10 @@ fn void FileCard.draw(&self, bool focused, float zoom)
 
 fn void FileCard.draw_lod(&self, float zoom)
 {
-	Rect r = self.effective_rect();
-	rl::draw_rectangle_rec(r, theme::current().card_body);
-	rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_border);
+	Rect r       = self.effective_rect();
+	float radius = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
+	ui::rounded_rect(r, radius, theme::current().card_body);
+	ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 }
 fn void FileCard.handle_points(&self, RLVector2[8]* points)
 {

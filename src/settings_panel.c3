@@ -812,8 +812,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 	if (!self.open) return;
 
 	Rect panel = self.panel_rect();
-	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	draw_text(
 		font,
@@ -838,7 +837,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 	};
 
 	Rect field = self.field_rect();
-	rl::draw_rectangle_rec(field, theme::current().panel_field);
+	ui::rounded_rect(field, ui::row_radius(), theme::current().panel_field);
 	String query = self.query_view();
 	draw_text(font, query, field.x + (float)ui::px(8), field.y + (float)ui::px(8), (float)ui::tpx(20), theme::current()
 		.panel_text);
@@ -891,7 +890,14 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		bool selected = index == self.selected;
 		if (selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)y, (int)panel.width - 4, ui::px(ROW_HEIGHT), theme::current()
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = y,
+					.width = panel.width - 4.0f,
+					.height = (float)ui::px(ROW_HEIGHT),
+				},
+				theme::current()
 				.panel_selected);
 		}
 		if (row.kind == RowKind.SETTING)

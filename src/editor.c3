@@ -1424,6 +1424,6 @@ fn void draw_scrollbar(Rect area, float content_height, float scroll_y, RLCamera
 {
 	if (content_height <= area.height) return;
 	apply_scissor(area, camera);
-	rl::draw_rectangle_rec(scrollbar_thumb(area, content_height, scroll_y), color);
+	ui::rounded_rect(scrollbar_thumb(area, content_height, scroll_y), ui::row_radius(), color);
 	rl::end_scissor_mode();
 }

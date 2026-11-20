@@ -296,8 +296,9 @@ fn int FindBar.update(
 
 fn void draw_field(RLFont font, Rect field, String text, bool active)
 {
-	rl::draw_rectangle_rec(field, theme::current().panel_field);
-	rl::draw_rectangle_lines_ex(field, 1.0f, active ? theme::current().panel_border : theme::current().findbar_chip);
+	ui::rounded_rect(field, ui::row_radius(), theme::current().panel_field);
+	ui::rounded_rect_lines(field, ui::row_radius(), 1.0f, active ? theme::current()
+		.panel_border : theme::current().findbar_chip);
 	if (text.len > 0)
 	{
 		@pool()
@@ -331,7 +332,7 @@ fn void draw_field(RLFont font, Rect field, String text, bool active)
 
 fn void draw_chip(RLFont font, Rect chip, String label, bool toggled)
 {
-	rl::draw_rectangle_rec(chip, toggled ? theme::current().panel_selected : theme::current().findbar_chip);
+	ui::rounded_rect(chip, ui::row_radius(), toggled ? theme::current().panel_selected : theme::current().findbar_chip);
 	@pool()
 	{
 		ZString z      = label.zstr_tcopy();

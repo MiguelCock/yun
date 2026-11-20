@@ -2996,18 +2996,19 @@ fn void Project.draw_cluster(&self, int index, float zoom)
 {
 	FolderCluster cluster = self.folders[index];
 	Rect bounds           = self.cluster_visual_bounds(index);
-	rl::draw_rectangle_rec(bounds, theme::current().cluster_body);
+	float radius          = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
+	ui::rounded_rect(bounds, radius, theme::current().cluster_body);
 	Rect title = self.cluster_title_rect(index);
-	rl::draw_rectangle_rec(title, theme::current().cluster_title);
-	rl::draw_rectangle_lines_ex(bounds, card::screen_thickness(1.0f, zoom), theme::current().cluster_border);
+	ui::rounded_top(title, radius, theme::current().cluster_title);
+	ui::rounded_rect_lines(bounds, radius, card::screen_thickness(1.0f, zoom), theme::current().cluster_border);
 	if ((int)index == self.current_folder)
 	{
-		rl::draw_rectangle_lines_ex(title, card::screen_thickness(1.0f, zoom), theme::current().card_focus);
+		ui::rounded_rect_lines(title, radius, card::screen_thickness(1.0f, zoom), theme::current().card_focus);
 	}
 	if ((int)index == self.selected_cluster)
 	{
 		float thickness = card::screen_thickness(self.grabbing ? 3.0f : 2.0f, zoom);
-		rl::draw_rectangle_lines_ex(bounds, thickness, theme::current().card_focus);
+		ui::rounded_rect_lines(bounds, radius, thickness, theme::current().card_focus);
 	}
 	if (zoom < CLUSTER_TEXT_MIN_ZOOM) return;
 	String name = rl::get_file_name((ZString)cluster.path.ptr).str_view();
@@ -3094,8 +3095,9 @@ fn void Project.draw_cards(
 			card.draw(is_focused, camera.zoom);
 			if (!is_focused && (int)i == self.selected)
 			{
-				rl::draw_rectangle_lines_ex(
+				ui::rounded_rect_lines(
 					card.effective_rect(),
+					camera.zoom > 0.0f ? ui::corner_radius() / camera.zoom : ui::corner_radius(),
 					card::screen_thickness(2.0f, camera.zoom),
 					theme::current()
 					.card_focus);
@@ -3104,7 +3106,12 @@ fn void Project.draw_cards(
 			{
 				RLColor base  = theme::current().card_focus;
 				RLColor hover = { base[0], base[1], base[2], (char)140 };
-				rl::draw_rectangle_lines_ex(card.effective_rect(), card::screen_thickness(1.0f, camera.zoom), hover);
+				ui::rounded_rect_lines(
+					card.effective_rect(),
+					camera.zoom > 0.0f ? ui::corner_radius() / camera.zoom : ui::corner_radius(),
+					card::screen_thickness(1.0f, camera.zoom),
+					hover
+				);
 			}
 			if (!card.open) continue;
 

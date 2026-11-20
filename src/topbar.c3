@@ -217,7 +217,8 @@ fn void TopBar.draw(
 		bool enabled   = commands::command_enabled(def.id, has_project, has_buffer);
 		Rect r         = button_rect(i);
 		bool hovered   = mouse[0] >= r.x && mouse[0] <= r.x + r.width && mouse[1] >= r.y && mouse[1] <= r.y + r.height;
-		rl::draw_rectangle_rec(r, hovered && enabled ? theme::current().topbar_hover : theme::current().topbar_button);
+		ui::rounded_rect(r, ui::row_radius(), hovered && enabled ? theme::current()
+			.topbar_hover : theme::current().topbar_button);
 		String label   = def.label;
 		RLVector2 size = rl::measure_text_ex(font, (ZString)label.ptr, text_size, 0.0f);
 		rl::draw_text_ex(
@@ -239,7 +240,7 @@ fn void TopBar.draw(
 		has_buffer
 	))
 	{
-		rl::draw_rectangle_lines_ex(button_rect((usz)self.selected), 2.0f, theme::current().card_focus);
+		ui::rounded_rect_lines(button_rect((usz)self.selected), ui::row_radius(), 2.0f, theme::current().card_focus);
 	}
 	@pool()
 	{

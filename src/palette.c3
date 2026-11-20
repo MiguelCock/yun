@@ -361,11 +361,10 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 	if (!self.open) return;
 
 	Rect panel = self.panel_rect();
-	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	Rect field = self.field_rect();
-	rl::draw_rectangle_rec(field, theme::current().panel_field);
+	ui::rounded_rect(field, ui::row_radius(), theme::current().panel_field);
 	String query = self.query_view();
 	draw_run(font, query, field.x + (float)ui::px(8), field.y + (float)ui::px(5), theme::current().panel_text);
 	float query_width = measure_width(font, query);
@@ -400,7 +399,14 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 		float row_y              = list_y + (float)slot * (float)ui::px(ROW_HEIGHT);
 		if (index == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)row_y, (int)panel.width - 4, ui::px(ROW_HEIGHT), theme::current()
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = row_y,
+					.width = panel.width - 4.0f,
+					.height = (float)ui::px(ROW_HEIGHT),
+				},
+				theme::current()
 				.panel_selected);
 		}
 		draw_label(
