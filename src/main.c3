@@ -1132,7 +1132,7 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.TOGGLE_PREVIEW:
 
 			{
-				int index = target_card_index(project);
+				int index = project.focus_card >= 0 ? project.focus_card : target_card_index(project);
 				if (index < 0) return;
 				project.toggle_preview(index);
 				return;

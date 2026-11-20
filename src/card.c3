@@ -166,7 +166,6 @@ fn void FileCard.draw(&self, bool focused, RLCamera2D camera, RLVector2 mouse_wo
 			theme::current()
 			.card_text);
 	};
-	bool buttons_enabled = !focus_mode;
 	bool pressed         = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 	Rect preview_button  = self.title_button_rect(0);
 	Rect maximize_button = self.title_button_rect(1);
@@ -174,7 +173,7 @@ fn void FileCard.draw(&self, bool focused, RLCamera2D camera, RLVector2 mouse_wo
 
 	if (markdown::is_markdown_path((String)self.path))
 	{
-		bool hovered = buttons_enabled && rect_has_point(preview_button, mouse_world);
+		bool hovered = rect_has_point(preview_button, mouse_world);
 		draw_title_button(preview_button, icons::IconKind.PREVIEW, self.preview, hovered, hovered && pressed, zoom);
 	}
 	if (self.dirty) rl::draw_circle(
@@ -184,7 +183,7 @@ fn void FileCard.draw(&self, bool focused, RLCamera2D camera, RLVector2 mouse_wo
 		theme::current()
 		.card_dirty);
 
-	bool maximize_hovered = buttons_enabled && rect_has_point(maximize_button, mouse_world);
+	bool maximize_hovered = rect_has_point(maximize_button, mouse_world);
 	draw_title_button(
 		maximize_button,
 		focus_mode ? icons::IconKind.RESTORE : icons::IconKind.MAXIMIZE,
@@ -194,7 +193,7 @@ fn void FileCard.draw(&self, bool focused, RLCamera2D camera, RLVector2 mouse_wo
 		zoom
 	);
 
-	bool minimize_hovered = buttons_enabled && rect_has_point(minimize_button, mouse_world);
+	bool minimize_hovered = !focus_mode && rect_has_point(minimize_button, mouse_world);
 	draw_title_button(
 		minimize_button,
 		self.open ? icons::IconKind.CHEVRON_DOWN : icons::IconKind.CHEVRON_RIGHT,

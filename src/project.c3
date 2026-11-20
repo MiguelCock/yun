@@ -2179,7 +2179,8 @@ fn void Project.update(
 		{
 			bool double_click         = self.register_click(rl::get_time(), world);
 			editor::CardRegion region = editor::region_at(&self.cards[card_hit], world, metrics, canvas.camera);
-			if (self.focus_card >= 0 && region != editor::CardRegion.BODY && region != editor::CardRegion.MAXIMIZE)
+			if (self.focus_card >= 0 && region != editor::CardRegion.BODY && region != editor::CardRegion.MAXIMIZE
+				&& region != editor::CardRegion.PREVIEW)
 			{
 				region = editor::CardRegion.NONE;
 			}
@@ -2408,9 +2409,7 @@ fn void Project.update(
 				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
 				ui::tooltip(self.focus_card >= 0 ? "Exit focus mode" : "Focus card");
 			}
-			else if (self.focus_card < 0 && card.preview_marker_hit(
-				world
-			) && markdown::is_markdown_path((String)card.path))
+			else if (card.preview_marker_hit(world) && markdown::is_markdown_path((String)card.path))
 			{
 				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
 				ui::tooltip("Toggle Markdown preview");
