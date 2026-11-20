@@ -16,6 +16,7 @@ import yun::editor;
 import yun::findbar;
 import yun::gitignore;
 import yun::highlight;
+import yun::icons;
 import yun::keymap;
 import yun::lsp;
 import yun::markdown;
@@ -109,6 +110,7 @@ struct Project
 	int selected_cluster;
 	int current_folder;
 	bool grabbing;
+	bool focus_toggle_requested;
 	int hover_card;
 	bool drag_card;
 	int drag_index;
@@ -124,7 +126,6 @@ struct Project
 	bool resizing;
 	int resize_card;
 	int resize_handle;
-	int last_cursor;
 	bool selecting;
 	double last_click_time;
 	RLVector2 last_click_pos;
@@ -159,6 +160,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.selected_cluster = -1;
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
+	self.focus_toggle_requested = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
@@ -166,7 +168,6 @@ fn void Project.init(&self, Allocator allocator)
 	self.pending_reload = -1;
 	self.pending_close = -1;
 	self.resizing = false;
-	self.last_cursor = -1;
 	self.selecting = false;
 	self.last_click_time = -1000.0;
 	self.last_click_pos = { 0.0f, 0.0f };
@@ -242,6 +243,7 @@ fn void Project.reset(&self)
 	self.selected_cluster = -1;
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
+	self.focus_toggle_requested = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
@@ -2178,7 +2180,11 @@ fn void Project.update(
 		{
 			bool double_click         = self.register_click(rl::get_time(), world);
 			editor::CardRegion region = editor::region_at(&self.cards[card_hit], world, metrics, canvas.camera);
-			if (self.focus_card >= 0 && region != editor::CardRegion.BODY) region = editor::CardRegion.NONE;
+			if (self.focus_card >= 0 && region != editor::CardRegion.BODY && region != editor::CardRegion.MAXIMIZE
+				&& region != editor::CardRegion.PREVIEW)
+			{
+				region = editor::CardRegion.NONE;
+			}
 			if (region == editor::CardRegion.HANDLE)
 			{
 				int handle = self.cards[card_hit].resize_handle_at(world, canvas.camera);
@@ -2187,26 +2193,12 @@ fn void Project.update(
 				self.resize_handle = handle;
 				self.drag_world = world;
 			}
-			else if (region == editor::CardRegion.CLOSE)
+			else if (region == editor::CardRegion.MAXIMIZE)
 			{
-				FileCard* card = &self.cards[card_hit];
-				if (card.ephemeral)
-				{
-					self.discard_ephemeral(-1);
-				}
-				else if (card.buffer)
-				{
-					if (card.dirty)
-					{
-						self.pending_close = self.focus(card_hit);
-					}
-					else
-					{
-						(void)editor::unload_buffer(card, self.allocator);
-					}
-				}
+				self.focus(card_hit);
+				self.focus_toggle_requested = true;
 			}
-			else if (region == editor::CardRegion.MARKER)
+			else if (region == editor::CardRegion.MINIMIZE)
 			{
 				self.cards[card_hit].open = !self.cards[card_hit].open;
 			}
@@ -2402,15 +2394,32 @@ fn void Project.update(
 		}
 	}
 
-	if (!pointer_blocked && !self.resizing && self.focus_card < 0 && !rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
+	if (!pointer_blocked && !self.resizing && !rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
 	{
 		int hover  = self.hit_test(world);
-		int handle = hover >= 0 ? self.cards[hover].resize_handle_at(world, canvas.camera) : -1;
-		int cursor = (int)(handle < 0 ? rl::RLMouseCursor.DEFAULT : cursor_for_handle(handle));
-		if (cursor != self.last_cursor)
+		int handle = self.focus_card < 0 && hover >= 0 ? self.cards[hover].resize_handle_at(world, canvas.camera) : -1;
+		if (handle >= 0)
 		{
-			rl::set_mouse_cursor((RLMouseCursor)cursor);
-			self.last_cursor = cursor;
+			ui::request_cursor(cursor_for_handle(handle), 10);
+		}
+		else if (hover >= 0)
+		{
+			FileCard* card = &self.cards[hover];
+			if (card.maximize_marker_hit(world))
+			{
+				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
+				ui::tooltip(self.focus_card >= 0 ? "Exit focus mode" : "Focus card");
+			}
+			else if (card.preview_marker_hit(world) && markdown::is_markdown_path((String)card.path))
+			{
+				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
+				ui::tooltip("Toggle Markdown preview");
+			}
+			else if (self.focus_card < 0 && card.minimize_marker_hit(world))
+			{
+				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
+				ui::tooltip(card.open ? "Collapse card" : "Expand card");
+			}
 		}
 	}
 
@@ -2996,27 +3005,41 @@ fn void Project.draw_cluster(&self, int index, float zoom)
 {
 	FolderCluster cluster = self.folders[index];
 	Rect bounds           = self.cluster_visual_bounds(index);
-	rl::draw_rectangle_rec(bounds, theme::current().cluster_body);
+	float radius          = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
+	ui::rounded_rect(bounds, radius, theme::current().cluster_body);
 	Rect title = self.cluster_title_rect(index);
-	rl::draw_rectangle_rec(title, theme::current().cluster_title);
-	rl::draw_rectangle_lines_ex(bounds, card::screen_thickness(1.0f, zoom), theme::current().cluster_border);
+	ui::rounded_top(title, radius, theme::current().cluster_title);
+	ui::rounded_rect_lines(bounds, radius, card::screen_thickness(1.0f, zoom), theme::current().cluster_border);
 	if ((int)index == self.current_folder)
 	{
-		rl::draw_rectangle_lines_ex(title, card::screen_thickness(1.0f, zoom), theme::current().card_focus);
+		ui::rounded_rect_lines(title, radius, card::screen_thickness(1.0f, zoom), theme::current().card_focus);
 	}
 	if ((int)index == self.selected_cluster)
 	{
 		float thickness = card::screen_thickness(self.grabbing ? 3.0f : 2.0f, zoom);
-		rl::draw_rectangle_lines_ex(bounds, thickness, theme::current().card_focus);
+		ui::rounded_rect_lines(bounds, radius, thickness, theme::current().card_focus);
 	}
 	if (zoom < CLUSTER_TEXT_MIN_ZOOM) return;
-	String name = rl::get_file_name((ZString)cluster.path.ptr).str_view();
+	float icon_size = (float)ui::px(16);
+	bool has_icon = icons::draw_folder(
+		!cluster.collapsed,
+		{
+			.x = bounds.x + (float)ui::px(8),
+			.y = title.y + (title.height - icon_size) * 0.5f,
+			.width = icon_size,
+			.height = icon_size,
+		},
+		rl::WHITE
+	);
+	String name  = rl::get_file_name((ZString)cluster.path.ptr).str_view();
+	float name_x = bounds.x + (float)ui::px(10);
+	if (has_icon) name_x += icon_size + (float)ui::px(4);
 	@pool()
 	{
 		rl::draw_text_ex(
 			ui::font(),
 			name.zstr_tcopy(),
-			{ bounds.x + (float)ui::px(10), bounds.y + (float)ui::px(5) },
+			{ name_x, bounds.y + (float)ui::px(5) },
 			(float)ui::tpx(16),
 			0.0f,
 			theme::current()
@@ -3062,7 +3085,8 @@ fn void Project.draw_cards(
 		float phase  = (float)elapsed - math::floor((float)elapsed / period) * period;
 		caret_on = phase < period * 0.5f;
 	}
-	Rect visible = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
+	Rect visible          = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
+	RLVector2 mouse_world = canvas::screen_to_world_camera(camera, rl::get_mouse_position());
 
 	@pool()
 	{
@@ -3091,11 +3115,12 @@ fn void Project.draw_cards(
 				card.draw_lod(camera.zoom);
 				continue;
 			}
-			card.draw(is_focused, camera.zoom);
+			card.draw(is_focused, camera, mouse_world, self.focus_card >= 0);
 			if (!is_focused && (int)i == self.selected)
 			{
-				rl::draw_rectangle_lines_ex(
+				ui::rounded_rect_lines(
 					card.effective_rect(),
+					camera.zoom > 0.0f ? ui::corner_radius() / camera.zoom : ui::corner_radius(),
 					card::screen_thickness(2.0f, camera.zoom),
 					theme::current()
 					.card_focus);
@@ -3104,7 +3129,12 @@ fn void Project.draw_cards(
 			{
 				RLColor base  = theme::current().card_focus;
 				RLColor hover = { base[0], base[1], base[2], (char)140 };
-				rl::draw_rectangle_lines_ex(card.effective_rect(), card::screen_thickness(1.0f, camera.zoom), hover);
+				ui::rounded_rect_lines(
+					card.effective_rect(),
+					camera.zoom > 0.0f ? ui::corner_radius() / camera.zoom : ui::corner_radius(),
+					card::screen_thickness(1.0f, camera.zoom),
+					hover
+				);
 			}
 			if (!card.open) continue;
 

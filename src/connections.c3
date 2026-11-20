@@ -8,6 +8,7 @@ import yun::card;
 import yun::editor;
 import yun::imports;
 import yun::project;
+import yun::icons;
 import yun::theme;
 import yun::topbar;
 import yun::ui;
@@ -318,13 +319,24 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 	float scale = ui::scale();
 	float text  = ui::text_scale();
 	Rect panel  = self.panel_rect();
-	rl::draw_rectangle_rec(panel, theme::current().panel_bg);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
+	float icon_px = icons::icon_size(18);
+	icons::draw(
+		icons::IconKind.CONNECTIONS,
+		{ .x = panel.x + (float)ui::px(12), .y = panel.y + (float)ui::px(9), .width = icon_px, .height = icon_px },
+		theme::current()
+		.panel_header);
 	@pool()
 	{
 		String title = string::format(tmem, "Connections (%d)", (long)self.rows.len());
-		draw_text(font, title, panel.x + (float)ui::px(12), panel.y + (float)ui::px(9), 18.0f * text, theme::current()
+		draw_text(
+			font,
+			title,
+			panel.x + (float)ui::px(12) + icon_px + (float)ui::px(6),
+			panel.y + (float)ui::px(9),
+			18.0f * text,
+			theme::current()
 			.panel_text);
 	};
 
@@ -355,12 +367,26 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 		float y           = list_y + (float)slot * row_h;
 		if (row_index == self.selected)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)y, (int)panel.width - 4, (int)row_h, theme::current()
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = y,
+					.width = panel.width - 4.0f,
+					.height = row_h,
+				},
+				theme::current()
 				.panel_selected);
 		}
 		else if (row_index == self.hover)
 		{
-			rl::draw_rectangle((int)panel.x + 2, (int)y, (int)panel.width - 4, (int)row_h, theme::current()
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = y,
+					.width = panel.width - 4.0f,
+					.height = row_h,
+				},
+				theme::current()
 				.panel_bg_alt);
 		}
 

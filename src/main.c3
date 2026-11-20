@@ -19,6 +19,7 @@ import yun::find;
 import yun::findbar;
 import yun::fonts;
 import yun::hover;
+import yun::icons;
 import yun::imports;
 import yun::keymap;
 import yun::lsp;
@@ -147,6 +148,22 @@ fn void apply_settings(
 		ui_changed = true;
 	}
 
+	ui::set_corner_radius((float)config.settings.get_int(settings::SettingId.APP_CORNER_RADIUS));
+	String ui_icon_theme = config.settings.get_string(settings::SettingId.APP_UI_ICON_THEME);
+	icons::set_ui_theme(
+		ui_icon_theme.compare_to("vector") == 0 ? icons::UiIconTheme.VECTOR : icons::UiIconTheme.CODICONS
+	);
+	String file_icon_theme          = config.settings.get_string(settings::SettingId.APP_FILE_ICON_THEME);
+	icons::FileIconTheme file_theme = icons::FileIconTheme.MATERIAL;
+	if (file_icon_theme.compare_to("vscode") == 0)
+	{
+		file_theme = icons::FileIconTheme.VSCODE;
+	}
+	else if (file_icon_theme.compare_to("none") == 0)
+	{
+		file_theme = icons::FileIconTheme.NONE;
+	}
+	icons::set_file_theme(file_theme);
 	project.skip_nested_repos = config.settings.get_bool(settings::SettingId.APP_SKIP_SUBMODULES);
 
 	editor::EditorSettings es = editor::settings();
@@ -333,8 +350,7 @@ fn void draw_loading(project::OpenJob* job, RLFont font)
 		.width = 360.0f,
 		.height = 100.0f,
 	};
-	rl::draw_rectangle_rec(panel, theme::current().loading_panel);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().loading_border);
+	ui::panel(panel, theme::current().loading_panel, theme::current().loading_border);
 
 	@pool()
 	{
@@ -417,6 +433,7 @@ struct App
 	editor::EditorMetrics metrics;
 	bool* project_open;
 	bool* content_changed;
+	bool* quit_requested;
 	UiMode* ui_mode;
 	UiMode* focus_saved_mode;
 	int* edit_grace_frames;
@@ -1091,6 +1108,12 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.QUIT:
+
+			{
+				*app.quit_requested = true;
+				return;
+			}
 		case commands::CommandId.CLOSE_CARD:
 
 			{
@@ -1125,7 +1148,7 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.TOGGLE_PREVIEW:
 
 			{
-				int index = target_card_index(project);
+				int index = project.focus_card >= 0 ? project.focus_card : target_card_index(project);
 				if (index < 0) return;
 				project.toggle_preview(index);
 				return;
@@ -1665,6 +1688,8 @@ fn int main(String[] args)
 
 	fonts::Fonts fonts;
 	fonts.init(mem);
+
+	icons::init(mem);
 	settings::set_font_options(fonts.labels());
 
 	int pending_kind          = 0;
@@ -1685,6 +1710,7 @@ fn int main(String[] args)
 	defer config.destroy();
 	defer keymap.destroy();
 	defer settings_panel.destroy();
+	defer icons::shutdown();
 	defer fonts.destroy();
 	defer language::shutdown_grammars();
 	defer highlight::shutdown();
@@ -1711,6 +1737,7 @@ fn int main(String[] args)
 	defer project.destroy();
 
 	bool project_open           = false;
+	bool quit_requested         = false;
 	project::OpenJob* open_job  = null;
 	bool opening                = false;
 	bool content_changed        = false;
@@ -1846,6 +1873,7 @@ fn int main(String[] args)
 		.metrics = metrics,
 		.project_open = &project_open,
 		.content_changed = &content_changed,
+		.quit_requested = &quit_requested,
 		.ui_mode = &ui_mode,
 		.focus_saved_mode = &focus_saved_mode,
 		.edit_grace_frames = &edit_grace_frames,
@@ -1880,9 +1908,10 @@ fn int main(String[] args)
 	int bench_over     = 0;
 	int bench_samples  = 0;
 	int bench_warmup   = 30;
-	while (!rl::window_should_close())
+	while (!rl::window_should_close() && !quit_requested)
 	{
 		frame_count++;
+		ui::reset_cursor();
 		if (selftest && frame_count > 3) break;
 		bool bench_ready = benchmark_on && (benchmark_synthetic || project_open);
 		if (bench_ready)
@@ -2520,6 +2549,42 @@ fn int main(String[] args)
 							rl::RLKeyboardKey.DOWN
 						) || rl::is_key_down(rl::RLKeyboardKey.J)) delta[1] += step;
 						if (delta[0] != 0.0f || delta[1] != 0.0f) project.move_selected(delta);
+
+						Rect item = project.selected_item_rect();
+						if (item.width > 0.0f && item.height > 0.0f)
+						{
+							RLVector2 a = rl::get_world_to_screen2d({ item.x, item.y }, canvas.camera);
+							RLVector2 b = rl::get_world_to_screen2d(
+								{ item.x + item.width, item.y + item.height },
+								canvas.camera
+							);
+							Rect screen_item = {
+								.x = math::min(a[0], b[0]),
+								.y = math::min(a[1], b[1]),
+								.width = math::abs(b[0] - a[0]),
+								.height = math::abs(b[1] - a[1]),
+							};
+							float screen_w = (float)rl::get_screen_width();
+							float screen_h = (float)rl::get_screen_height();
+							float usable_h = screen_h - canvas.top_inset;
+							float margin_x = math::max(
+								canvas::GRAB_FOLLOW_MIN_X,
+								screen_w * canvas::GRAB_FOLLOW_MARGIN_X
+							);
+							float margin_y = math::max(
+								canvas::GRAB_FOLLOW_MIN_Y,
+								usable_h * canvas::GRAB_FOLLOW_MARGIN_Y
+							);
+							Rect safe = {
+								.x = margin_x,
+								.y = canvas.top_inset + margin_y,
+								.width = screen_w - margin_x * 2.0f,
+								.height = usable_h - margin_y * 2.0f,
+							};
+							RLVector2 follow = canvas::keep_item_in_view_delta(screen_item, safe, canvas.camera.zoom);
+							canvas.target.target[0] += follow[0];
+							canvas.target.target[1] += follow[1];
+						}
 					}
 					while (rl::get_char_pressed() != 0)
 					{
@@ -2690,6 +2755,11 @@ fn int main(String[] args)
 			bool suppress_edit_input = ui_mode == UiMode.EDIT && edit_grace_frames > 0;
 			double update_t0         = rl::get_time();
 			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
+			if (project.focus_toggle_requested)
+			{
+				project.focus_toggle_requested = false;
+				run_command(commands::CommandId.TOGGLE_FOCUS_MODE, &app);
+			}
 			update_ms += (rl::get_time() - update_t0) * 1000.0;
 			if (ui_mode == UiMode.EDIT && project.focused < 0)
 			{
@@ -3052,8 +3122,7 @@ fn int main(String[] args)
 						.width = width + (float)ui::px(24),
 						.height = (float)ui::px(30),
 					};
-					rl::draw_rectangle_rec(panel, theme::current().panel_bg_alt);
-					rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+					ui::panel(panel, theme::current().panel_bg_alt, theme::current().panel_border);
 					rl::draw_text_ex(
 						font,
 						label.zstr_tcopy(),
@@ -3199,7 +3268,9 @@ fn int main(String[] args)
 					};
 				}
 			}
+			ui::draw_tooltip(font);
 		};
+		ui::apply_cursor();
 		prof_update += (update_ms - prof_update) * 0.1;
 		prof_draw += (draw_ms - prof_draw) * 0.1;
 		prof_scan += (scan_ms - prof_scan) * 0.1;

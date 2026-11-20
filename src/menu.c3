@@ -217,18 +217,19 @@ fn void Menu.draw(&self)
 	if (!self.open) return;
 
 	Rect panel = self.panel_rect();
-	rl::draw_rectangle_rec(panel, theme::current().panel_bg_alt);
-	rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+	ui::panel(panel, theme::current().panel_bg_alt, theme::current().panel_border);
 	for (int i = 0; i < self.rows(); i++)
 	{
 		float row_y = panel.y + (float)ui::px(MENU_PADDING_Y) + (float)(i * ui::px(MENU_ROW_HEIGHT));
 		if (i == self.selected)
 		{
-			rl::draw_rectangle(
-				(int)(panel.x + 2.0f),
-				(int)row_y,
-				(int)(panel.width - 4.0f),
-				ui::px(MENU_ROW_HEIGHT),
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = row_y,
+					.width = panel.width - 4.0f,
+					.height = (float)ui::px(MENU_ROW_HEIGHT),
+				},
 				theme::current()
 				.panel_selected);
 		}

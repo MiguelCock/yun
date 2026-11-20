@@ -20,6 +20,10 @@ const float ZOOM_RESPONSIVENESS        = 16.0f;
 const float INERTIA_FRICTION_PER_FRAME = 0.9f;
 const float EDGE_PAN_MARGIN            = 48.0f;
 const float EDGE_PAN_SPEED             = 900.0f;
+const float GRAB_FOLLOW_MARGIN_X       = 0.15f;
+const float GRAB_FOLLOW_MARGIN_Y       = 0.15f;
+const float GRAB_FOLLOW_MIN_X          = 80.0f;
+const float GRAB_FOLLOW_MIN_Y          = 60.0f;
 const float INERTIA_MIN_SPEED          = 5.0f;
 const float MAX_FRAME_DT               = 0.05f;
 const float CAMERA_SNAP_EPSILON        = 0.001f;
@@ -280,6 +284,55 @@ fn RLVector2 edge_pan_delta(
 	float step = speed * dt / zoom;
 	delta[0] *= step;
 	delta[1] *= step;
+	return delta;
+}
+
+fn RLVector2 keep_item_in_view_delta(Rect item, Rect safe, float zoom)
+{
+	RLVector2 delta = { 0.0f, 0.0f };
+	if (zoom <= 0.0f) zoom = 1.0f;
+	if (safe.width < 1.0f) safe.width = 1.0f;
+	if (safe.height < 1.0f) safe.height = 1.0f;
+
+	float center_x    = item.x + item.width / 2.0f;
+	float center_y    = item.y + item.height / 2.0f;
+	float item_right  = item.x + item.width;
+	float item_bottom = item.y + item.height;
+	float safe_right  = safe.x + safe.width;
+	float safe_bottom = safe.y + safe.height;
+
+	if (item.width > safe.width)
+	{
+		delta[0] = (center_x - (safe.x + safe.width / 2.0f)) / zoom;
+	}
+	else if (item.x < safe.x)
+	{
+		delta[0] = (item.x - safe.x) / zoom;
+	}
+	else if (item_right > safe_right)
+	{
+		delta[0] = (item_right - safe_right) / zoom;
+	}
+
+	if (item.height > safe.height)
+	{
+		delta[1] = (center_y - (safe.y + safe.height / 2.0f)) / zoom;
+	}
+	else if (item.y < safe.y)
+	{
+		delta[1] = (item.y - safe.y) / zoom;
+	}
+	else if (item_bottom > safe_bottom)
+	{
+		delta[1] = (item_bottom - safe_bottom) / zoom;
+	}
+
+	float max_x = safe.width / zoom;
+	float max_y = safe.height / zoom;
+	delta[0] = math::clamp(delta[0], -max_x, max_x);
+	delta[1] = math::clamp(delta[1], -max_y, max_y);
+	if (math::is_nan(delta[0]) || math::is_inf(delta[0])) delta[0] = 0.0f;
+	if (math::is_nan(delta[1]) || math::is_inf(delta[1])) delta[1] = 0.0f;
 	return delta;
 }
 

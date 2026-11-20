@@ -170,8 +170,7 @@ fn void draw_hover(String markdown, RLVector2 anchor, RLFont font)
 		if (panel.x < 4.0f) panel.x = 4.0f;
 		if (panel.y < 4.0f) panel.y = 4.0f;
 
-		rl::draw_rectangle_rec(panel, theme::current().panel_bg);
-		rl::draw_rectangle_lines_ex(panel, 1.0f, theme::current().panel_border);
+		ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 		rl::begin_scissor_mode((int)panel.x + 2, (int)panel.y + 2, (int)panel.width - 4, (int)panel.height - 4);
 		for (int i = 0; i < count; i++)

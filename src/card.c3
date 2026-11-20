@@ -4,15 +4,18 @@ import raylib6::rl;
 import std::io::path;
 import std::math;
 import yun::highlight;
+import yun::icons;
 import yun::markdown;
 import yun::text;
 import yun::theme;
 import yun::ui;
 
-const float CARD_WIDTH        = 240.0f;
-const float CARD_HEIGHT       = 160.0f;
-const float CARD_TITLE_HEIGHT = 28.0f;
-const float HANDLE_PX         = 10.0f;
+const float CARD_WIDTH            = 240.0f;
+const float CARD_HEIGHT           = 160.0f;
+const float CARD_TITLE_HEIGHT     = 28.0f;
+const float CARD_TITLE_BUTTON     = 24.0f;
+const float CARD_TITLE_BUTTON_GAP = 2.0f;
+const float HANDLE_PX             = 10.0f;
 
 struct FileCard
 {
@@ -48,31 +51,37 @@ fn Rect FileCard.effective_rect(&self)
 	return r;
 }
 
-fn bool FileCard.marker_hit(&self, RLVector2 world)
+fn Rect FileCard.title_button_rect(&self, int slot)
 {
-	Rect r  = self.effective_rect();
-	float x = r.x + r.width - 24.0f;
-	return world[0] >= x && world[0] <= r.x + r.width && world[1] >= r.y && world[1] <= r.y + ui::pxf(
-		CARD_TITLE_HEIGHT
-	);
+	Rect r    = self.effective_rect();
+	float w   = ui::pxf(CARD_TITLE_BUTTON);
+	float gap = ui::pxf(CARD_TITLE_BUTTON_GAP);
+	return {
+		.x = r.x + r.width - (float)(3 - slot) * w - (float)(2 - slot) * gap,
+		.y = r.y + (ui::pxf(CARD_TITLE_HEIGHT) - w) * 0.5f,
+		.width = w,
+		.height = w,
+	};
+}
+
+fn bool rect_has_point(Rect r, RLVector2 p)
+{
+	return p[0] >= r.x && p[0] <= r.x + r.width && p[1] >= r.y && p[1] <= r.y + r.height;
 }
 
 fn bool FileCard.preview_marker_hit(&self, RLVector2 world)
 {
-	Rect r  = self.effective_rect();
-	float x = r.x + r.width - 74.0f;
-	return world[0] >= x && world[0] <= r.x + r.width - 56.0f && world[1] >= r.y && world[1] <= r.y + ui::pxf(
-		CARD_TITLE_HEIGHT
-	);
+	return rect_has_point(self.title_button_rect(0), world);
 }
 
-fn bool FileCard.close_marker_hit(&self, RLVector2 world)
+fn bool FileCard.maximize_marker_hit(&self, RLVector2 world)
 {
-	Rect r  = self.effective_rect();
-	float x = r.x + r.width - 44.0f;
-	return world[0] >= x && world[0] <= r.x + r.width - 24.0f && world[1] >= r.y && world[1] <= r.y + ui::pxf(
-		CARD_TITLE_HEIGHT
-	);
+	return rect_has_point(self.title_button_rect(1), world);
+}
+
+fn bool FileCard.minimize_marker_hit(&self, RLVector2 world)
+{
+	return rect_has_point(self.title_button_rect(2), world);
 }
 
 fn RLVector2 FileCard.center(&self)
@@ -100,76 +109,120 @@ fn float screen_thickness(float px, float zoom)
 	return t;
 }
 
-fn void FileCard.draw(&self, bool focused, float zoom)
+fn void draw_title_button(Rect button, icons::IconKind icon, bool active, bool hovered, bool pressed, float zoom)
 {
-	Rect r = self.effective_rect();
-	rl::draw_rectangle_rec(r, theme::current().card_body);
+	if (pressed)
+	{
+		ui::rounded_rect(button, zoom > 0.0f ? ui::row_radius() / zoom : ui::row_radius(), theme::current()
+			.panel_selected);
+	}
+	else if (hovered || active)
+	{
+		ui::rounded_rect(button, zoom > 0.0f ? ui::row_radius() / zoom : ui::row_radius(), theme::current()
+			.panel_bg_alt);
+	}
+	float size = ui::pxf(16.0f);
+	icons::draw(
+		icon,
+		{
+			.x = button.x + (button.width - size) * 0.5f,
+			.y = button.y + (button.height - size) * 0.5f,
+			.width = size,
+			.height = size,
+		},
+		active ? theme::current()
+		.card_focus : theme::current().card_text);
+}
+
+fn void FileCard.draw(&self, bool focused, RLCamera2D camera, RLVector2 mouse_world, bool focus_mode)
+{
+	float zoom   = camera.zoom;
+	Rect r       = self.effective_rect();
+	float radius = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
+	ui::rounded_rect(r, radius, theme::current().card_body);
 	Rect title = {
 		.x = r.x,
 		.y = r.y,
 		.width = r.width,
 		.height = ui::pxf(CARD_TITLE_HEIGHT),
 	};
-	rl::draw_rectangle_rec(title, theme::current().card_title);
+	ui::rounded_top(title, radius, theme::current().card_title);
 	if (focused)
 	{
-		rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_focus);
+		ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_focus);
 	}
 	else
 	{
-		rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_border);
+		ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 	}
+	float file_icon_size = (float)ui::px(16);
+	bool has_file_icon = icons::draw_file(
+		(String)self.path,
+		{
+			.x = r.x + (float)ui::px(8),
+			.y = r.y + (ui::pxf(CARD_TITLE_HEIGHT) - file_icon_size) * 0.5f,
+			.width = file_icon_size,
+			.height = file_icon_size,
+		},
+		rl::WHITE
+	);
+	float name_x = r.x + (float)ui::px(10);
+	if (has_file_icon) name_x += file_icon_size + (float)ui::px(4);
 	@pool()
 	{
 		rl::draw_text_ex(
 			ui::font(),
 			self.name.zstr_tcopy(),
-			{ r.x + (float)ui::px(10), r.y + (float)ui::px(7) },
+			{ name_x, r.y + (float)ui::px(7) },
 			(float)ui::tpx(16),
 			0.0f,
 			theme::current()
 			.card_text);
 	};
+	bool pressed         = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
+	Rect preview_button  = self.title_button_rect(0);
+	Rect maximize_button = self.title_button_rect(1);
+	Rect minimize_button = self.title_button_rect(2);
+
 	if (markdown::is_markdown_path((String)self.path))
 	{
-		rl::draw_text_ex(
-			ui::font(),
-			"M",
-			{ r.x + r.width - (float)ui::px(67), r.y + (float)ui::px(7) },
-			(float)ui::tpx(16),
-			0.0f,
-			self.preview ? theme::current()
-			.card_focus : theme::current().card_text);
+		bool hovered = rect_has_point(preview_button, mouse_world);
+		draw_title_button(preview_button, icons::IconKind.PREVIEW, self.preview, hovered, hovered && pressed, zoom);
 	}
 	if (self.dirty) rl::draw_circle(
-		(int)(r.x + r.width - (float)ui::px(52)),
-		(int)(r.y + (float)ui::px(14)),
+		(int)(preview_button.x - (float)ui::px(8)),
+		(int)(r.y + ui::pxf(CARD_TITLE_HEIGHT) * 0.5f),
 		(float)ui::px(3),
 		theme::current()
 		.card_dirty);
-	if (self.buffer) rl::draw_text_ex(
-		ui::font(),
-		"x",
-		{ r.x + r.width - (float)ui::px(40), r.y + (float)ui::px(7) },
-		(float)ui::tpx(16),
-		0.0f,
-		theme::current()
-		.card_text);
-	rl::draw_text_ex(
-		ui::font(),
-		self.open ? "-" : "+",
-		{ r.x + r.width - (float)ui::px(18), r.y + (float)ui::px(7) },
-		(float)ui::tpx(16),
-		0.0f,
-		theme::current()
-		.card_text);
+
+	bool maximize_hovered = rect_has_point(maximize_button, mouse_world);
+	draw_title_button(
+		maximize_button,
+		focus_mode ? icons::IconKind.RESTORE : icons::IconKind.MAXIMIZE,
+		focus_mode,
+		maximize_hovered,
+		maximize_hovered && pressed,
+		zoom
+	);
+
+	bool minimize_hovered = !focus_mode && rect_has_point(minimize_button, mouse_world);
+	draw_title_button(
+		minimize_button,
+		self.open ? icons::IconKind.CHEVRON_DOWN : icons::IconKind.CHEVRON_RIGHT,
+		false,
+		minimize_hovered,
+		minimize_hovered && pressed,
+		zoom
+	);
 }
 
 fn void FileCard.draw_lod(&self, float zoom)
 {
-	Rect r = self.effective_rect();
-	rl::draw_rectangle_rec(r, theme::current().card_body);
-	rl::draw_rectangle_lines_ex(r, screen_thickness(1.0f, zoom), theme::current().card_border);
+	Rect r       = self.effective_rect();
+	float radius = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
+	ui::rounded_rect(r, radius, theme::current().card_body);
+	ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 }
 fn void FileCard.handle_points(&self, RLVector2[8]* points)
 {
