@@ -20,6 +20,18 @@ enum SettingLayer : int
 	PROJECT,
 }
 
+enum SettingPage : int
+{
+	GENERAL,
+	APPEARANCE,
+	EDITOR,
+	CANVAS,
+	INTEGRATIONS,
+	KEYS,
+	ADVANCED,
+	COUNT,
+}
+
 enum SettingId : int
 {
 	APP_THEME,
@@ -29,6 +41,14 @@ enum SettingId : int
 	APP_CORNER_RADIUS,
 	APP_UI_ICON_THEME,
 	APP_FILE_ICON_THEME,
+	APP_NOTIFICATIONS_TTL,
+	APP_NOTIFICATIONS_MAX,
+	APP_NOTIFICATIONS_POSITION,
+	APP_ANIMATIONS,
+	APP_JUMP_HIGHLIGHT_MS,
+	APP_EXTERNAL_RELOAD,
+	APP_RELOAD_POLL,
+	APP_SLEEP_EDITORS,
 	APP_SKIP_SUBMODULES,
 	EDITOR_FONT_SIZE,
 	EDITOR_FONT_FAMILY,
@@ -42,6 +62,10 @@ enum SettingId : int
 	EDITOR_SCROLL_MARGIN_LINES,
 	EDITOR_WHEEL_SCROLL_LINES,
 	EDITOR_SHOW_LINE_NUMBERS,
+	EDITOR_AUTOSAVE,
+	EDITOR_AUTOSAVE_INTERVAL,
+	EDITOR_UNDO_MB,
+	EDITOR_DIAGNOSTIC_SEGMENTS,
 	CANVAS_ZOOM_MIN,
 	CANVAS_ZOOM_MAX,
 	CANVAS_ZOOM_STEP,
@@ -78,6 +102,13 @@ enum SettingId : int
 	ARROWS_EXTERNAL_STYLE,
 	ARROWS_DASH_LENGTH,
 	ARROWS_DASH_GAP,
+	SEARCH_MAX_FILE_MB,
+	SEARCH_MAX_MATCHES_PER_FILE,
+	SEARCH_MAX_RESULTS,
+	SEARCH_WORKERS,
+	SEARCH_DEBOUNCE_MS,
+	SEARCH_PREVIEW_MAX,
+	LSP_ENABLED,
 	COUNT,
 }
 
@@ -187,6 +218,83 @@ const SettingSpec[] SETTINGS = {
 		.kind = SettingKind.ENUM,
 		.fallback = { .s = "material" },
 		.options = { "material", "vscode", "none" },
+	},
+	{
+		.section = "app",
+		.key = "notifications_ttl",
+		.label = "Notification TTL",
+		.description = "Seconds a notification stays visible.",
+		.kind = SettingKind.FLOAT,
+		.fallback = { .f = 4.0 },
+		.min = 0.5,
+		.max = 30.0,
+		.step = 0.5,
+	},
+	{
+		.section = "app",
+		.key = "notifications_max",
+		.label = "Max notifications",
+		.description = "Maximum notifications kept on screen.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 5 },
+		.min = 1.0,
+		.max = 20.0,
+		.step = 1.0,
+	},
+	{
+		.section = "app",
+		.key = "notifications_position",
+		.label = "Notification position",
+		.description = "Where notifications appear on screen.",
+		.kind = SettingKind.ENUM,
+		.fallback = { .s = "bottom_left" },
+		.options = { "top_left", "top_right", "bottom_left", "bottom_right" },
+	},
+	{
+		.section = "app",
+		.key = "animations",
+		.label = "Animations",
+		.description = "Enable short panel and camera transitions.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
+		.section = "app",
+		.key = "jump_highlight_ms",
+		.label = "Jump highlight",
+		.description = "Duration of the jump-to-line highlight in milliseconds. 0 disables it.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 1000 },
+		.min = 0.0,
+		.max = 5000.0,
+		.step = 100.0,
+	},
+	{
+		.section = "app",
+		.key = "external_reload",
+		.label = "External reload",
+		.description = "Detect files changed outside Yun and prompt to reload.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
+		.section = "app",
+		.key = "reload_poll",
+		.label = "Reload poll",
+		.description = "Seconds between external file-change checks.",
+		.kind = SettingKind.FLOAT,
+		.fallback = { .f = 1.0 },
+		.min = 0.25,
+		.max = 10.0,
+		.step = 0.25,
+	},
+	{
+		.section = "app",
+		.key = "sleep_editors",
+		.label = "Sleep editors",
+		.description = "Free off-screen editor buffers and reload them when visible.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
 	},
 	{
 		.section = "app",
@@ -317,6 +425,47 @@ const SettingSpec[] SETTINGS = {
 		.description = "Show the line-number gutter.",
 		.kind = SettingKind.BOOL,
 		.fallback = { .b = true },
+	},
+	{
+		.section = "editor",
+		.key = "autosave",
+		.label = "Autosave",
+		.description = "Save dirty buffers automatically.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
+	},
+	{
+		.section = "editor",
+		.key = "autosave_interval",
+		.label = "Autosave interval",
+		.description = "Seconds between autosave passes.",
+		.kind = SettingKind.FLOAT,
+		.fallback = { .f = 30.0 },
+		.min = 1.0,
+		.max = 600.0,
+		.step = 1.0,
+	},
+	{
+		.section = "editor",
+		.key = "undo_mb",
+		.label = "Undo history",
+		.description = "Approximate undo-history budget in megabytes.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 4 },
+		.min = 1.0,
+		.max = 256.0,
+		.step = 1.0,
+	},
+	{
+		.section = "editor",
+		.key = "diagnostic_segments",
+		.label = "Diagnostic segments",
+		.description = "Maximum diagnostic underline segments per draw pass.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 512 },
+		.min = 64.0,
+		.max = 4096.0,
+		.step = 64.0,
 	},
 	{
 		.section = "canvas",
@@ -686,6 +835,80 @@ const SettingSpec[] SETTINGS = {
 		.max = 64.0,
 		.step = 1.0,
 	},
+	{
+		.section = "search",
+		.key = "max_file_mb",
+		.label = "Max file size",
+		.description = "Skip project-search files larger than this many megabytes.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 2 },
+		.min = 1.0,
+		.max = 512.0,
+		.step = 1.0,
+	},
+	{
+		.section = "search",
+		.key = "max_matches_per_file",
+		.label = "Matches per file",
+		.description = "Maximum matches kept per file.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 200 },
+		.min = 10.0,
+		.max = 1000.0,
+		.step = 10.0,
+	},
+	{
+		.section = "search",
+		.key = "max_results",
+		.label = "Max results",
+		.description = "Maximum project-search results.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 2000 },
+		.min = 50.0,
+		.max = 10000.0,
+		.step = 50.0,
+	},
+	{
+		.section = "search",
+		.key = "workers",
+		.label = "Search workers",
+		.description = "Worker threads used for project search (1-16).",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 4 },
+		.min = 1.0,
+		.max = 16.0,
+		.step = 1.0,
+	},
+	{
+		.section = "search",
+		.key = "debounce_ms",
+		.label = "Search debounce",
+		.description = "Delay before restarting a project search, in milliseconds.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 150 },
+		.min = 50.0,
+		.max = 2000.0,
+		.step = 50.0,
+	},
+	{
+		.section = "search",
+		.key = "preview_length",
+		.label = "Preview length",
+		.description = "Characters shown in each match preview.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 120 },
+		.min = 20.0,
+		.max = 500.0,
+		.step = 10.0,
+	},
+	{
+		.section = "lsp",
+		.key = "enabled",
+		.label = "Language servers",
+		.description = "Start configured language servers.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
 };
 
 struct Override
@@ -721,6 +944,98 @@ fn String[] setting_options(SettingId id)
 		return g_font_options;
 	}
 	return spec(id).options;
+}
+
+fn SettingPage page_for(SettingId id)
+{
+	SettingSpec s = spec(id);
+	if (s.section.compare_to("editor") == 0)
+	{
+		if (s.key.compare_to(
+			"undo_mb"
+		) == 0 || s.key.compare_to("diagnostic_segments") == 0) return SettingPage.ADVANCED;
+		return SettingPage.EDITOR;
+	}
+	if (s.section.compare_to(
+		"canvas"
+	) == 0 || s.section.compare_to("minimap") == 0 || s.section.compare_to("arrows") == 0) return SettingPage.CANVAS;
+	if (s.section.compare_to("search") == 0) return SettingPage.ADVANCED;
+	if (s.section.compare_to("lsp") == 0) return SettingPage.INTEGRATIONS;
+	if (s.section.compare_to("app") == 0)
+	{
+		if (s.key.compare_to("skip_submodules") == 0) return SettingPage.GENERAL;
+		if (s.key.compare_to(
+			"external_reload"
+		) == 0 || s.key.compare_to(
+			"reload_poll"
+		) == 0 || s.key.compare_to("sleep_editors") == 0) return SettingPage.INTEGRATIONS;
+		return SettingPage.APPEARANCE;
+	}
+	return SettingPage.GENERAL;
+}
+
+fn String page_label(SettingPage page)
+{
+	switch (page)
+	{
+		case SettingPage.GENERAL:
+			return "General";
+		case SettingPage.APPEARANCE:
+			return "Appearance";
+		case SettingPage.EDITOR:
+			return "Editor";
+		case SettingPage.CANVAS:
+			return "Canvas";
+		case SettingPage.INTEGRATIONS:
+			return "Integrations";
+		case SettingPage.KEYS:
+			return "Keys";
+		case SettingPage.ADVANCED:
+			return "Advanced";
+		case SettingPage.COUNT:
+			return "";
+	}
+}
+
+fn String group_for(SettingId id)
+{
+	SettingSpec s = spec(id);
+	if (s.section.compare_to("app") == 0)
+	{
+		if (s.key.starts_with("notifications_")) return "Notifications";
+		if (s.key.compare_to("animations") == 0 || s.key.compare_to("jump_highlight_ms") == 0) return "Behavior";
+		if (s.key.compare_to(
+			"external_reload"
+		) == 0 || s.key.compare_to("reload_poll") == 0 || s.key.compare_to("sleep_editors") == 0) return "Files";
+		if (s.key.compare_to("skip_submodules") == 0) return "Project";
+		return "Interface";
+	}
+	if (s.section.compare_to("editor") == 0)
+	{
+		if (s.key.compare_to("autosave") == 0 || s.key.compare_to("autosave_interval") == 0) return "Files";
+		if (s.key.compare_to("undo_mb") == 0 || s.key.compare_to("diagnostic_segments") == 0) return "Advanced";
+		if (s.key.compare_to(
+			"show_line_numbers"
+		) == 0 || s.key.starts_with(
+			"caret"
+		) || s.key.starts_with("scroll") || s.key.starts_with("wheel")) return "Editing";
+		return "Text";
+	}
+	if (s.section.compare_to("canvas") == 0)
+	{
+		if (s.key.starts_with("grid")) return "Grid";
+		return "Navigation";
+	}
+	if (s.section.compare_to("minimap") == 0) return "Minimap";
+	if (s.section.compare_to("arrows") == 0) return "Imports";
+	if (s.section.compare_to("search") == 0) return "Search limits";
+	if (s.section.compare_to("lsp") == 0) return "Language servers";
+	return "General";
+}
+
+fn bool is_advanced(SettingId id)
+{
+	return page_for(id) == SettingPage.ADVANCED;
 }
 
 fn bool is_section(String name)

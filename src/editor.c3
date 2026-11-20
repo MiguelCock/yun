@@ -32,6 +32,8 @@ struct EditorSettings
 	int indent_width;
 	bool indent_spaces;
 	bool auto_indent;
+	usz history_budget;
+	int diagnostic_segments;
 }
 
 EditorSettings g_editor_settings = {
@@ -45,6 +47,8 @@ EditorSettings g_editor_settings = {
 	.indent_width = 4,
 	.indent_spaces = false,
 	.auto_indent = true,
+	.history_budget = text::HISTORY_BUDGET,
+	.diagnostic_segments = MAX_DIAGNOSTIC_SEGMENTS,
 };
 
 fn EditorSettings settings()
@@ -576,6 +580,7 @@ fn void ensure_buffer(FileCard* card, Allocator allocator)
 	{
 		History* history = alloc::new(allocator, History);
 		history.init(allocator);
+		history.budget = g_editor_settings.history_budget;
 		card.history = history;
 	}
 	if (!card.highlight && card.buffer)
@@ -1243,14 +1248,16 @@ fn void draw_diagnostics(
 	apply_scissor(area, camera);
 	VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
 	int segments       = 0;
-	for (usz i = 0; i < diags.len && segments < MAX_DIAGNOSTIC_SEGMENTS; i++)
+	int segment_limit  = g_editor_settings.diagnostic_segments > 0 ? g_editor_settings.diagnostic_segments
+		: MAX_DIAGNOSTIC_SEGMENTS;
+	for (usz i = 0; i < diags.len && segments < segment_limit; i++)
 	{
 		usz start = 0;
 		usz end   = 0;
 		diagnostic_offsets(table, diags[i], &start, &end);
 		usz first_line = table.line_of(start);
 		usz last_line  = table.line_of(end);
-		for (usz line = first_line; line <= last_line && segments < MAX_DIAGNOSTIC_SEGMENTS; line++)
+		for (usz line = first_line; line <= last_line && segments < segment_limit; line++)
 		{
 			if (line < range.first || line >= range.last) continue;
 			usz line_start = table.line_start(line);

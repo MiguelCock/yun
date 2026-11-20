@@ -36,6 +36,7 @@ struct Config
 	List{KeyBinding} keymap_project;
 	List{LspCommand} lsp;
 	List{String} warnings;
+	bool lsp_enabled;
 }
 
 fn void Config.init(&self, Allocator allocator)
@@ -46,6 +47,7 @@ fn void Config.init(&self, Allocator allocator)
 	self.keymap_project.init(allocator);
 	self.lsp.init(allocator);
 	self.warnings.init(allocator);
+	self.lsp_enabled = true;
 }
 
 fn void Config.destroy(&self)
@@ -368,6 +370,7 @@ fn void Config.load(&self, String project_root)
 	self.reset();
 	self.load_global();
 	self.load_project(project_root);
+	self.lsp_enabled = self.settings.get_bool(settings::SettingId.LSP_ENABLED);
 	self.settings.mark_all_changed();
 }
 

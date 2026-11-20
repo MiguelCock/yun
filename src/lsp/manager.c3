@@ -1067,6 +1067,7 @@ fn LspClient* Lsp.ensure_client(&self, String language)
 	LspClient* existing = self.client_for(language);
 	if (existing) return existing;
 	if (!self.has_root) return null;
+	if (self.config && !self.config.lsp_enabled) return null;
 
 	String command = "";
 	if (self.config) command = self.config.lsp_command(language);
