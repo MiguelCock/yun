@@ -2520,6 +2520,42 @@ fn int main(String[] args)
 							rl::RLKeyboardKey.DOWN
 						) || rl::is_key_down(rl::RLKeyboardKey.J)) delta[1] += step;
 						if (delta[0] != 0.0f || delta[1] != 0.0f) project.move_selected(delta);
+
+						Rect item = project.selected_item_rect();
+						if (item.width > 0.0f && item.height > 0.0f)
+						{
+							RLVector2 a = rl::get_world_to_screen2d({ item.x, item.y }, canvas.camera);
+							RLVector2 b = rl::get_world_to_screen2d(
+								{ item.x + item.width, item.y + item.height },
+								canvas.camera
+							);
+							Rect screen_item = {
+								.x = math::min(a[0], b[0]),
+								.y = math::min(a[1], b[1]),
+								.width = math::abs(b[0] - a[0]),
+								.height = math::abs(b[1] - a[1]),
+							};
+							float screen_w = (float)rl::get_screen_width();
+							float screen_h = (float)rl::get_screen_height();
+							float usable_h = screen_h - canvas.top_inset;
+							float margin_x = math::max(
+								canvas::GRAB_FOLLOW_MIN_X,
+								screen_w * canvas::GRAB_FOLLOW_MARGIN_X
+							);
+							float margin_y = math::max(
+								canvas::GRAB_FOLLOW_MIN_Y,
+								usable_h * canvas::GRAB_FOLLOW_MARGIN_Y
+							);
+							Rect safe = {
+								.x = margin_x,
+								.y = canvas.top_inset + margin_y,
+								.width = screen_w - margin_x * 2.0f,
+								.height = usable_h - margin_y * 2.0f,
+							};
+							RLVector2 follow = canvas::keep_item_in_view_delta(screen_item, safe, canvas.camera.zoom);
+							canvas.target.target[0] += follow[0];
+							canvas.target.target[1] += follow[1];
+						}
 					}
 					while (rl::get_char_pressed() != 0)
 					{
