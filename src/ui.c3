@@ -2,15 +2,20 @@ module yun::ui;
 
 import raylib6::rl;
 import std::math;
+import yun::theme;
 
 const int BASE_SIZE = 16;
 
 RLFont g_font;
-int g_size            = BASE_SIZE;
-float g_layout_scale  = 1.0f;
-float g_font_scale    = 1.0f;
-float g_ui_scale      = 1.0f;
-float g_corner_radius = 6.0f;
+int g_size                 =  BASE_SIZE;
+float g_layout_scale       =  1.0f;
+float g_font_scale         =  1.0f;
+float g_ui_scale           =  1.0f;
+float g_corner_radius      =  6.0f;
+String g_tooltip           =  "";
+RLVector2 g_tooltip_anchor =  { 0.0f, 0.0f };
+RLMouseCursor g_cursor     =  RLMouseCursor.DEFAULT;
+int g_cursor_priority      = -1;
 
 fn void set_font(RLFont font, int size)
 {
@@ -147,6 +152,67 @@ fn void panel(Rect r, RLColor fill, RLColor border)
 fn void row(Rect r, RLColor color)
 {
 	rounded_rect(r, row_radius(), color);
+}
+
+fn void reset_cursor()
+{
+	g_cursor = RLMouseCursor.DEFAULT;
+	g_cursor_priority = -1;
+	g_tooltip = "";
+}
+
+fn void request_cursor(RLMouseCursor cursor, int priority)
+{
+	if (priority >= g_cursor_priority)
+	{
+		g_cursor = cursor;
+		g_cursor_priority = priority;
+	}
+}
+
+fn void apply_cursor()
+{
+	rl::set_mouse_cursor(g_cursor);
+}
+
+fn RLMouseCursor cursor_requested()
+{
+	return g_cursor;
+}
+
+fn void tooltip(String text)
+{
+	if (text.len == 0) return;
+	g_tooltip = text;
+	g_tooltip_anchor = rl::get_mouse_position();
+}
+
+fn void draw_tooltip(RLFont font)
+{
+	if (g_tooltip.len == 0) return;
+	float size   = (float)tpx(13);
+	float pad    = pxf(8.0f);
+	float width  = rl::measure_text_ex(font, (ZString)g_tooltip.ptr, size, 0.0f)[0] + pad * 2.0f;
+	float height = size + pxf(8.0f);
+	Rect tip = {
+		.x = g_tooltip_anchor[0] + pxf(14.0f),
+		.y = g_tooltip_anchor[1] + pxf(20.0f),
+		.width = width,
+		.height = height,
+	};
+	if (tip.x + tip.width > (float)rl::get_screen_width() - pxf(4.0f))
+	{
+		tip.x = (float)rl::get_screen_width() - tip.width - pxf(4.0f);
+	}
+	if (tip.y + tip.height > (float)rl::get_screen_height() - pxf(4.0f))
+	{
+		tip.y = g_tooltip_anchor[1] - tip.height - pxf(8.0f);
+	}
+	if (tip.x < pxf(4.0f)) tip.x = pxf(4.0f);
+	if (tip.y < pxf(4.0f)) tip.y = pxf(4.0f);
+	panel(tip, theme::current().panel_bg_alt, theme::current().panel_border);
+	rl::draw_text_ex(font, (ZString)g_tooltip.ptr, { tip.x + pad, tip.y + pxf(4.0f) }, size, 0.0f, theme::current()
+		.panel_text);
 }
 
 fn void rounded_top(Rect r, float radius, RLColor color)

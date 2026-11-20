@@ -8,6 +8,7 @@ import yun::card;
 import yun::editor;
 import yun::imports;
 import yun::project;
+import yun::icons;
 import yun::theme;
 import yun::topbar;
 import yun::ui;
@@ -320,10 +321,22 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 	Rect panel  = self.panel_rect();
 	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
+	float icon_px = icons::icon_size(18);
+	icons::draw(
+		icons::IconKind.CONNECTIONS,
+		{ .x = panel.x + (float)ui::px(12), .y = panel.y + (float)ui::px(9), .width = icon_px, .height = icon_px },
+		theme::current()
+		.panel_header);
 	@pool()
 	{
 		String title = string::format(tmem, "Connections (%d)", (long)self.rows.len());
-		draw_text(font, title, panel.x + (float)ui::px(12), panel.y + (float)ui::px(9), 18.0f * text, theme::current()
+		draw_text(
+			font,
+			title,
+			panel.x + (float)ui::px(12) + icon_px + (float)ui::px(6),
+			panel.y + (float)ui::px(9),
+			18.0f * text,
+			theme::current()
 			.panel_text);
 	};
 

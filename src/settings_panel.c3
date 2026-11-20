@@ -9,6 +9,7 @@ import yun::config;
 import yun::keymap;
 import yun::notify;
 import yun::settings;
+import yun::icons;
 import yun::theme;
 import yun::topbar;
 import yun::ui;
@@ -807,6 +808,16 @@ fn void draw_text(RLFont font, String text, float x, float y, float size, RLColo
 	};
 }
 
+fn icons::IconKind section_icon(String section)
+{
+	if (section.compare_to("editor") == 0) return icons::IconKind.SYMBOLS;
+	if (section.compare_to("canvas") == 0) return icons::IconKind.MAXIMIZE;
+	if (section.compare_to("minimap") == 0) return icons::IconKind.PREVIEW;
+	if (section.compare_to("arrows") == 0) return icons::IconKind.CONNECTIONS;
+	if (section.compare_to("keys") == 0) return icons::IconKind.KEYBOARD;
+	return icons::IconKind.SETTINGS;
+}
+
 fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap, config::Config* config)
 {
 	if (!self.open) return;
@@ -814,10 +825,21 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 	Rect panel = self.panel_rect();
 	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
+	float title_icon = icons::icon_size(20);
+	icons::draw(
+		icons::IconKind.SETTINGS,
+		{
+			.x = panel.x + (float)ui::px(PADDING),
+			.y = panel.y + (float)ui::px(12),
+			.width = title_icon,
+			.height = title_icon
+		},
+		theme::current()
+		.panel_header);
 	draw_text(
 		font,
 		"Settings",
-		panel.x + (float)ui::px(PADDING),
+		panel.x + (float)ui::px(PADDING) + title_icon + (float)ui::px(8),
 		panel.y + (float)ui::px(12),
 		(float)ui::tpx(24),
 		theme::current()
@@ -876,10 +898,21 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		Row row = self.rows[index];
 		if (row.kind == RowKind.HEADER)
 		{
+			float header_icon = icons::icon_size(16);
+			icons::draw(
+				section_icon(row.section),
+				{
+					.x = panel.x + (float)ui::px(PADDING),
+					.y = y + (float)ui::px(7),
+					.width = header_icon,
+					.height = header_icon,
+				},
+				theme::current()
+				.panel_header);
 			draw_text(
 				font,
 				row.section,
-				panel.x + (float)ui::px(PADDING),
+				panel.x + (float)ui::px(PADDING) + header_icon + (float)ui::px(6),
 				y + (float)ui::px(7),
 				(float)ui::tpx(18),
 				theme::current()

@@ -9,6 +9,7 @@ import yun::commands;
 import yun::editor;
 import yun::keymap;
 import yun::lsp;
+import yun::icons;
 import yun::theme;
 import yun::ui;
 
@@ -337,10 +338,22 @@ fn void Problems.draw(&self, RLFont font)
 	Rect panel = self.panel_rect();
 	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
+	float icon_px = icons::icon_size(18);
+	icons::draw(
+		icons::IconKind.PROBLEMS,
+		{ .x = panel.x + (float)PADDING * s, .y = panel.y + (float)PADDING * s, .width = icon_px, .height = icon_px },
+		theme::current()
+		.panel_header);
 	@pool()
 	{
 		String title = string::format(tmem, "Problems (%d)", (long)self.entries.len());
-		draw_text(font, title, panel.x + (float)PADDING * s, panel.y + (float)PADDING * s, 18.0f * ts, theme::current()
+		draw_text(
+			font,
+			title,
+			panel.x + (float)PADDING * s + icon_px + (float)ui::px(6),
+			panel.y + (float)PADDING * s,
+			18.0f * ts,
+			theme::current()
 			.panel_text);
 	};
 

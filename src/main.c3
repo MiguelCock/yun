@@ -1892,6 +1892,7 @@ fn int main(String[] args)
 	while (!rl::window_should_close() && !quit_requested)
 	{
 		frame_count++;
+		ui::reset_cursor();
 		if (selftest && frame_count > 3) break;
 		bool bench_ready = benchmark_on && (benchmark_synthetic || project_open);
 		if (bench_ready)
@@ -3243,7 +3244,9 @@ fn int main(String[] args)
 					};
 				}
 			}
+			ui::draw_tooltip(font);
 		};
+		ui::apply_cursor();
 		prof_update += (update_ms - prof_update) * 0.1;
 		prof_draw += (draw_ms - prof_draw) * 0.1;
 		prof_scan += (scan_ms - prof_scan) * 0.1;
