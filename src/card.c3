@@ -4,6 +4,7 @@ import raylib6::rl;
 import std::io::path;
 import std::math;
 import yun::highlight;
+import yun::icons;
 import yun::markdown;
 import yun::text;
 import yun::theme;
@@ -131,14 +132,17 @@ fn void FileCard.draw(&self, bool focused, float zoom)
 			theme::current()
 			.card_text);
 	};
+	float icon_size = (float)ui::px(16);
 	if (markdown::is_markdown_path((String)self.path))
 	{
-		rl::draw_text_ex(
-			ui::font(),
-			"M",
-			{ r.x + r.width - (float)ui::px(67), r.y + (float)ui::px(7) },
-			(float)ui::tpx(16),
-			0.0f,
+		icons::draw(
+			icons::IconKind.PREVIEW,
+			{
+				.x = r.x + r.width - (float)ui::px(67),
+				.y = r.y + (float)ui::px(7),
+				.width = icon_size,
+				.height = icon_size,
+			},
 			self.preview ? theme::current()
 			.card_focus : theme::current().card_text);
 	}
@@ -148,20 +152,24 @@ fn void FileCard.draw(&self, bool focused, float zoom)
 		(float)ui::px(3),
 		theme::current()
 		.card_dirty);
-	if (self.buffer) rl::draw_text_ex(
-		ui::font(),
-		"x",
-		{ r.x + r.width - (float)ui::px(40), r.y + (float)ui::px(7) },
-		(float)ui::tpx(16),
-		0.0f,
+	if (self.buffer) icons::draw(
+		icons::IconKind.CLOSE,
+		{
+			.x = r.x + r.width - (float)ui::px(40),
+			.y = r.y + (float)ui::px(7),
+			.width = icon_size,
+			.height = icon_size,
+		},
 		theme::current()
 		.card_text);
-	rl::draw_text_ex(
-		ui::font(),
-		self.open ? "-" : "+",
-		{ r.x + r.width - (float)ui::px(18), r.y + (float)ui::px(7) },
-		(float)ui::tpx(16),
-		0.0f,
+	icons::draw(
+		self.open ? icons::IconKind.CHEVRON_DOWN : icons::IconKind.CHEVRON_RIGHT,
+		{
+			.x = r.x + r.width - (float)ui::px(18),
+			.y = r.y + (float)ui::px(7),
+			.width = icon_size,
+			.height = icon_size,
+		},
 		theme::current()
 		.card_text);
 }

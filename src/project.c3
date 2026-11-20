@@ -124,7 +124,6 @@ struct Project
 	bool resizing;
 	int resize_card;
 	int resize_handle;
-	int last_cursor;
 	bool selecting;
 	double last_click_time;
 	RLVector2 last_click_pos;
@@ -166,7 +165,6 @@ fn void Project.init(&self, Allocator allocator)
 	self.pending_reload = -1;
 	self.pending_close = -1;
 	self.resizing = false;
-	self.last_cursor = -1;
 	self.selecting = false;
 	self.last_click_time = -1000.0;
 	self.last_click_pos = { 0.0f, 0.0f };
@@ -2406,11 +2404,28 @@ fn void Project.update(
 	{
 		int hover  = self.hit_test(world);
 		int handle = hover >= 0 ? self.cards[hover].resize_handle_at(world, canvas.camera) : -1;
-		int cursor = (int)(handle < 0 ? rl::RLMouseCursor.DEFAULT : cursor_for_handle(handle));
-		if (cursor != self.last_cursor)
+		if (handle >= 0)
 		{
-			rl::set_mouse_cursor((RLMouseCursor)cursor);
-			self.last_cursor = cursor;
+			ui::request_cursor(cursor_for_handle(handle), 10);
+		}
+		else if (hover >= 0)
+		{
+			FileCard* card = &self.cards[hover];
+			if (card.close_marker_hit(world))
+			{
+				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
+				ui::tooltip("Close card");
+			}
+			else if (card.preview_marker_hit(world))
+			{
+				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
+				ui::tooltip("Toggle Markdown preview");
+			}
+			else if (card.marker_hit(world))
+			{
+				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
+				ui::tooltip(card.open ? "Collapse card" : "Expand card");
+			}
 		}
 	}
 

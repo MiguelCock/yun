@@ -98,3 +98,15 @@ fn void test_corner_radius()
 	assert(corner_radius() == 0.0f);
 	set_corner_radius(6.0f);
 }
+fn void test_cursor_priority()
+{
+	reset_cursor();
+	assert(cursor_requested() == RLMouseCursor.DEFAULT);
+	request_cursor(RLMouseCursor.POINTING_HAND, 5);
+	assert(cursor_requested() == RLMouseCursor.POINTING_HAND);
+	request_cursor(RLMouseCursor.IBEAM, 1);
+	assert(cursor_requested() == RLMouseCursor.POINTING_HAND);
+	request_cursor(RLMouseCursor.IBEAM, 10);
+	assert(cursor_requested() == RLMouseCursor.IBEAM);
+	reset_cursor();
+}

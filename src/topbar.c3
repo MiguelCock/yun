@@ -3,11 +3,12 @@ module yun::topbar;
 import raylib6::rl;
 import std::math;
 import yun::commands;
+import yun::icons;
 import yun::theme;
 import yun::ui;
 
 const float TOP_BAR_HEIGHT = 34.0f;
-const float BUTTON_WIDTH   = 88.0f;
+const float BUTTON_WIDTH   = 104.0f;
 const float BUTTON_HEIGHT  = 24.0f;
 const float BUTTON_GAP     = 8.0f;
 const float PADDING_X      = 8.0f;
@@ -150,6 +151,23 @@ fn int TopBar.update(&self, RLVector2 screen, bool has_project, bool has_buffer)
 	return -1;
 }
 
+fn icons::IconKind icon_for_command(commands::CommandId id)
+{
+	switch (id)
+	{
+		case commands::CommandId.NEW_FILE:
+			return icons::IconKind.NEW_FILE;
+		case commands::CommandId.OPEN:
+			return icons::IconKind.OPEN;
+		case commands::CommandId.SAVE:
+			return icons::IconKind.SAVE;
+		case commands::CommandId.TOGGLE_SETTINGS:
+			return icons::IconKind.SETTINGS;
+		default:
+			return icons::IconKind.SETTINGS;
+	}
+}
+
 fn float bar_text_y(float text_height)
 {
 	return (ui::pxf(TOP_BAR_HEIGHT) - text_height) / 2.0f;
@@ -219,16 +237,29 @@ fn void TopBar.draw(
 		bool hovered   = mouse[0] >= r.x && mouse[0] <= r.x + r.width && mouse[1] >= r.y && mouse[1] <= r.y + r.height;
 		ui::rounded_rect(r, ui::row_radius(), hovered && enabled ? theme::current()
 			.topbar_hover : theme::current().topbar_button);
-		String label   = def.label;
-		RLVector2 size = rl::measure_text_ex(font, (ZString)label.ptr, text_size, 0.0f);
+		if (hovered && enabled) ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
+
+		String label           = def.label;
+		float button_text_size = (float)ui::tpx(15);
+		float icon_size        = icons::icon_size(16);
+		float gap              = (float)ui::px(6);
+		RLVector2 size         = rl::measure_text_ex(font, (ZString)label.ptr, button_text_size, 0.0f);
+		float start            = r.x + (r.width - (icon_size + gap + size[0])) * 0.5f;
+		RLColor color          = enabled ? theme::current().topbar_text : theme::current().topbar_disabled;
+		icons::draw(
+			icon_for_command(def.id),
+			{ .x = start, .y = r.y + (r.height - icon_size) * 0.5f, .width = icon_size, .height = icon_size },
+			color
+		);
 		rl::draw_text_ex(
 			font,
 			(ZString)label.ptr,
-			{ r.x + (r.width - size[0]) / 2.0f, r.y + (r.height - size[1]) / 2.0f },
-			text_size,
+			{ start + icon_size + gap, r.y + (r.height - size[1]) * 0.5f },
+			button_text_size,
 			0.0f,
-			enabled ? theme::current()
-			.topbar_text : theme::current().topbar_disabled);
+			color
+		);
+		if (hovered) ui::tooltip(label);
 	}
 
 	float name_x = ui::pxf(
