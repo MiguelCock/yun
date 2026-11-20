@@ -226,6 +226,6 @@ fn void rounded_top(Rect r, float radius, RLColor color)
 	rl::draw_rectangle_rec({ .x = r.x + rad, .y = r.y, .width = r.width - rad * 2.0f, .height = r.height }, color);
 	rl::draw_rectangle_rec({ .x = r.x, .y = r.y + rad, .width = rad, .height = r.height - rad }, color);
 	rl::draw_rectangle_rec({ .x = r.x + r.width - rad, .y = r.y + rad, .width = rad, .height = r.height - rad }, color);
-	rl::draw_circle_v({ r.x + rad, r.y + rad }, rad, color);
-	rl::draw_circle_v({ r.x + r.width - rad, r.y + rad }, rad, color);
+	rl::draw_circle_sector({ r.x + rad, r.y + rad }, rad, 180.0f, 360.0f, 16, color);
+	rl::draw_circle_sector({ r.x + r.width - rad, r.y + rad }, rad, 180.0f, 360.0f, 16, color);
 }
