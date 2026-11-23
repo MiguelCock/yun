@@ -6,6 +6,7 @@ import std::io;
 import std::io::file;
 import std::io::path;
 import std::math;
+import std::os::env;
 import yun::browser;
 import yun::canvas;
 import yun::card;
@@ -1580,6 +1581,72 @@ fn void reload_editor_font(
 	editor::set_font_size(draw_size);
 }
 
+fn bool debug_ui_enabled()
+{
+	@pool()
+	{
+		String? value = env::get_var(tmem, "YUN_DEBUG_UI");
+		if (catch excuse = value) return false;
+		return value.len > 0 && value[0] != '0';
+	};
+}
+
+fn void log_ui_diagnostics(project::Project* project)
+{
+	if (!debug_ui_enabled()) return;
+	@pool()
+	{
+		int monitor = rl::get_current_monitor();
+		float scale = rl::get_window_scale_dpi()[0];
+		String cwd  = rl::get_working_directory().str_view();
+		String exe  = rl::get_application_directory().str_view();
+
+		String platform = "linux";
+		$if env::WIN32:
+			platform = "windows";
+		$else
+			$if env::DARWIN:
+				platform = "macos";
+			$endif
+		$endif
+
+		String exe_icons = string::format(tmem, "%sassets/icons", exe);
+		String exe_font  = string::format(tmem, "%s%s", exe, FONT_PATH);
+		io::printfn(
+			"yun ui: platform=%s window=%dx%d screen=%dx%d render=%dx%d monitor=%d %dx%d phys=%dx%dmm dpi_scale=%.2f ui_scale=%.2f layout=%.2f font=%.2f",
+			platform,
+			rl::get_screen_width(),
+			rl::get_screen_height(),
+			rl::get_screen_width(),
+			rl::get_screen_height(),
+			rl::get_render_width(),
+			rl::get_render_height(),
+			monitor,
+			rl::get_monitor_width(monitor),
+			rl::get_monitor_height(monitor),
+			rl::get_monitor_physical_width(monitor),
+			rl::get_monitor_physical_height(monitor),
+			(double)scale,
+			(double)ui::scale(),
+			(double)ui::layout_scale(),
+			(double)ui::font_scale()
+		);
+		io::printfn(
+			"yun ui: theme=%s ui_icons=%s file_icons=%s cwd_icons=%s exe_icons=%s cwd_font=%s exe_font=%s cards=%d cwd=\"%s\" exe=\"%s\"",
+			theme::current_name(),
+			icons::ui_icon_theme_name(),
+			icons::file_icon_theme_current_name(),
+			file::exists("assets/icons") ? "yes" : "no",
+			file::exists(exe_icons) ? "yes" : "no",
+			file::exists(FONT_PATH) ? "yes" : "no",
+			file::exists(exe_font) ? "yes" : "no",
+			(int)project.cards.len(),
+			cwd,
+			exe
+		);
+	};
+}
+
 fn void update_dpi(
 	fonts::Fonts* fonts,
 	config::Config* config,
@@ -1954,6 +2021,7 @@ fn int main(String[] args)
 	RLVector2 last_arrow_target =  { 0.0f, 0.0f };
 	float last_arrow_zoom       = -1.0f;
 	bool arrow_hovered_cache    =  false;
+	bool diagnostics_logged     =  false;
 
 	int frame_count    = 0;
 	double prof_update = 0.0;
@@ -2025,6 +2093,11 @@ fn int main(String[] args)
 			&ui_size,
 			&font
 		);
+		if (!diagnostics_logged)
+		{
+			diagnostics_logged = true;
+			log_ui_diagnostics(&project);
+		}
 
 		if (opening)
 		{
