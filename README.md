@@ -69,6 +69,7 @@ These work from any mode:
 | `F12` | Go to definition |
 | `Ctrl+Shift+M` | Problems panel |
 | `Ctrl+Shift+I` | Connections panel |
+| `Ctrl+J` | Toggle the console panel |
 | `Ctrl+Shift+T` | Theme picker |
 | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` | New / open / save |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
@@ -79,6 +80,8 @@ These work from any mode:
 | `F3` (hold) | Show the awake/asleep editor counter and frame/update/draw/scan timings |
 
 Bindings are customizable via the `keymap` object in the config — global `~/.config/yun/config.json` or project `<root>/.yun/config.json` — e.g. `{ "keymap": { "save": "Ctrl+K" } }`.
+
+The console runs shell commands from the project root. `Ctrl+J` opens and focuses it; `Enter` runs the command, `Up`/`Down` walk history, `Ctrl+L` clears output, `Ctrl+C` kills a running command, `Ctrl+Shift+C` copies the output, and `Esc` returns focus while leaving the panel open. The top edge can be dragged to resize it.
 
 ## Getting started
 

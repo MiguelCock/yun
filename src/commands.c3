@@ -675,7 +675,7 @@ const CommandDef[] COMMAND_DEFS = {
 	{
 		.id = CommandId.TOGGLE_CONSOLE,
 		.label = "Console",
-		.shortcut = "Ctrl+`",
+		.shortcut = "Ctrl+J",
 		.in_top_bar = false,
 		.contexts = CTX_GLOBAL,
 	},
