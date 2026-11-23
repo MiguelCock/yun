@@ -29,6 +29,8 @@ const int MAX_SEARCH_WORKERS   = 4;
 const int PUMP_BATCH_BUDGET    = 32;
 const int QUERY_MAX            = 256;
 const double RESTART_DEBOUNCE  = 0.15;
+const double NAV_HOLD_DELAY    = 0.30;
+const double NAV_HOLD_INTERVAL = 0.04;
 
 struct SearchSettings
 {
@@ -111,6 +113,8 @@ struct Search
 	Atomic{bool} cancel;
 	int selected;
 	int scroll;
+	int hold_dir;
+	double hold_next;
 	usz total_matches;
 	bool restart_pending;
 	double restart_at;
@@ -309,6 +313,8 @@ fn void Search.init(&self, Allocator allocator)
 	self.generation = 0;
 	self.selected = 0;
 	self.scroll = 0;
+	self.hold_dir = 0;
+	self.hold_next = 0.0;
 	self.total_matches = 0;
 	self.restart_pending = false;
 	self.restart_at = 0.0;
@@ -393,6 +399,7 @@ fn void Search.show(&self)
 	self.case_sensitive = false;
 	self.whole_word = false;
 	self.restart_pending = false;
+	self.hold_dir = 0;
 	self.cancel_run();
 	self.clear_results();
 }
@@ -400,6 +407,7 @@ fn void Search.show(&self)
 fn void Search.close(&self)
 {
 	self.cancel_run();
+	self.hold_dir = 0;
 	self.open = false;
 }
 
@@ -562,6 +570,28 @@ fn void Search.move_selection(&self, int delta)
 	self.selected = next;
 }
 
+fn void Search.begin_hold(&self, int dir, double now)
+{
+	self.hold_dir = dir;
+	self.hold_next = now + NAV_HOLD_DELAY;
+}
+
+fn void Search.hold_tick(&self, bool down, bool up, double now)
+{
+	if (self.hold_dir > 0 && !down)
+	{
+		self.hold_dir = 0;
+	}
+	else if (self.hold_dir < 0 && !up)
+	{
+		self.hold_dir = 0;
+	}
+	if (self.hold_dir == 0) return;
+	if (now < self.hold_next) return;
+	self.move_selection(self.hold_dir);
+	self.hold_next = now + NAV_HOLD_INTERVAL;
+}
+
 fn int Search.selected_ordinal(&self)
 {
 	int ordinal = 0;
@@ -695,16 +725,25 @@ fn SearchTarget Search.update(&self, keymap::Keymap* keymap, project::Project* p
 		return self.activate();
 	}
 
-	int visible = self.visible_rows();
-	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_SEARCH))
+	int visible    = self.visible_rows();
+	bool down_held = keymap.held((int)commands::CommandId.LIST_DOWN, commands::CTX_SEARCH);
+	bool up_held   = keymap.held((int)commands::CommandId.LIST_UP, commands::CTX_SEARCH);
+	if (keymap.pressed((int)commands::CommandId.LIST_DOWN, commands::CTX_SEARCH))
 	{
 		self.consumed = true;
 		self.move_selection(1);
+		self.begin_hold(1, now);
 	}
-	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_SEARCH))
+	else if (keymap.pressed((int)commands::CommandId.LIST_UP, commands::CTX_SEARCH))
 	{
 		self.consumed = true;
 		self.move_selection(-1);
+		self.begin_hold(-1, now);
+	}
+	else
+	{
+		self.hold_tick(down_held, up_held, now);
+		if (self.hold_dir != 0) self.consumed = true;
 	}
 	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_DOWN, commands::CTX_SEARCH))
 	{

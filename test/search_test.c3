@@ -71,3 +71,37 @@ fn void test_scan_file_path()
 		(void)path::rmtree(dir);
 	};
 }
+fn void test_hold_repeats_after_delay()
+{
+	Search s = { };
+	s.total_matches = 3;
+	s.selected = 0;
+
+	s.begin_hold(1, 10.0);
+	s.hold_tick(true, false, 10.29);
+	assert(s.selected == 0);
+	s.hold_tick(true, false, 10.31);
+	assert(s.selected == 1);
+	s.hold_tick(true, false, 10.34);
+	assert(s.selected == 1);
+	s.hold_tick(true, false, 10.36);
+	assert(s.selected == 2);
+	s.hold_tick(true, false, 10.50);
+	assert(s.selected == 2);
+}
+
+fn void test_hold_stops_on_release()
+{
+	Search s = { };
+	s.total_matches = 3;
+	s.selected = 2;
+
+	s.begin_hold(-1, 0.0);
+	s.hold_tick(false, true, 0.31);
+	assert(s.selected == 1);
+	s.hold_tick(false, false, 0.32);
+	assert(s.hold_dir == 0);
+	s.hold_tick(false, true, 5.0);
+	assert(s.selected == 1);
+	assert(s.hold_dir == 0);
+}
