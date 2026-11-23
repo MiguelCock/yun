@@ -825,6 +825,8 @@ fn int Project.add_card(&self, String abs, RLVector2 world_pos)
 	if (existing >= 0)
 	{
 		self.focused = existing;
+		self.selected = existing;
+		self.selected_cluster = -1;
 		return existing;
 	}
 
@@ -837,6 +839,8 @@ fn int Project.add_card(&self, String abs, RLVector2 world_pos)
 	}
 
 	self.focused = self.append_card(final, world_pos);
+	self.selected = self.focused;
+	self.selected_cluster = -1;
 	return self.focused;
 }
 
@@ -1276,6 +1280,8 @@ fn bool OpenJob.step(&self, usz budget)
 		case OpenPhase.LAYOUT:
 			self.project.rebuild_folder_index();
 			self.project.focused = -1;
+			self.project.selected = -1;
+			self.project.selected_cluster = -1;
 			self.phase = OpenPhase.DONE;
 			return true;
 		case OpenPhase.DONE:
@@ -1363,6 +1369,8 @@ fn int Project.create_file(&self, int folder_index, String name, RLVector2 world
 	(void)created.close();
 
 	self.focused = self.append_card((String)dest, world_pos);
+	self.selected = self.focused;
+	self.selected_cluster = -1;
 	return self.focused;
 }
 
@@ -1512,11 +1520,18 @@ fn bool Project.delete_card_file(&self, int index)
 fn int Project.focus(&self, int index)
 {
 	if (index < 0 || index >= (int)self.cards.len()) return self.focused;
-	if (index == self.focused) return index;
+	if (index == self.focused)
+	{
+		self.selected = index;
+		self.selected_cluster = -1;
+		return index;
+	}
 	FileCard card = self.cards[index];
 	self.cards.remove_at(index);
 	self.cards.push(card);
 	self.focused = (int)(self.cards.len() - 1);
+	self.selected = self.focused;
+	self.selected_cluster = -1;
 	self.cards[self.focused].selection_anchor = self.cards[self.focused].cursor;
 	return self.focused;
 }
