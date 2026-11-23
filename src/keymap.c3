@@ -730,6 +730,15 @@ fn bool Keymap.pressed_repeat(&self, int id, ulong context)
 	return chord_pressed_repeat(self.chords[id]);
 }
 
+fn bool Keymap.held(&self, int id, ulong context)
+{
+	if (!self.active(id, context)) return false;
+	Chord chord = self.chords[id];
+	if (!chord.valid) return false;
+	if (!rl::is_key_down(chord.key)) return false;
+	return chord_mods_ok(chord);
+}
+
 fn bool chord_mods_ok_ignore_shift(Chord chord)
 {
 	bool ctrl;
