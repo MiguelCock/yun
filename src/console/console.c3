@@ -48,6 +48,7 @@ fn bool Console.submit(&self)
 {
 	String command = self.input.text_view().trim();
 	if (command.len == 0) return false;
+	if (self.runner.running()) return false;
 	bool ok = self.run(command);
 	self.history.add(command);
 	self.input.clear();

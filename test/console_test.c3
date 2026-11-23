@@ -1,7 +1,9 @@
 module yun::console @test;
 
 import std::os::env;
+import std::math::geometry;
 import std::thread;
+import yun::ui;
 import yun::console_test_helpers;
 
 fn void test_buffer_partial_lines()
@@ -339,4 +341,45 @@ fn void test_console_submit_records_history()
 	assert(console.buffer.line_count() == 2);
 	console_test_helpers::expect_line(&console.buffer, 0, ConsoleStream.COMMAND, "$ echo hi");
 	console_test_helpers::expect_line(&console.buffer, 1, ConsoleStream.STDERR, "No project open");
+}
+fn void test_panel_geometry()
+{
+	ui::set_ui_scale(1.0f);
+	ui::set_dpi(1.0f, 1.0f);
+
+	Rect panel = console_panel_rect(220.0f, 1000, 800);
+	assert(panel.x == 0.0f && panel.y == 580.0f);
+	assert(panel.width == 1000.0f && panel.height == 220.0f);
+
+	Rect full = console_panel_rect(1000.0f, 1000, 800);
+	assert(full.y == 120.0f);
+	assert(full.height == 680.0f);
+}
+
+fn void test_panel_scroll_math()
+{
+	assert(console_max_scroll(10, 4) == 6);
+	assert(console_max_scroll(3, 4) == 0);
+	assert(console_clamp_scroll(-2, 10, 4) == 0);
+	assert(console_clamp_scroll(8, 10, 4) == 6);
+	assert(console_clamp_scroll(2, 10, 4) == 2);
+}
+
+fn void test_panel_status_labels()
+{
+	assert(console_status_label(ConsoleStatus.IDLE).compare_to("Ready") == 0);
+	assert(console_status_label(ConsoleStatus.RUNNING).compare_to("Running") == 0);
+	assert(console_status_label(ConsoleStatus.EXITED).compare_to("Exit") == 0);
+	assert(console_status_label(ConsoleStatus.KILLED).compare_to("Killed") == 0);
+}
+
+fn void test_panel_open_close()
+{
+	ConsolePanel panel;
+	panel.init();
+	assert(!panel.visible);
+	panel.open();
+	assert(panel.visible && panel.focused && panel.pinned);
+	panel.close();
+	assert(!panel.visible && !panel.focused);
 }

@@ -121,6 +121,7 @@ enum CommandId
 	CYCLE_FOCUS,
 	MINIMIZE_CARD,
 	TOGGLE_FOCUS_MODE,
+	TOGGLE_CONSOLE,
 	TOGGLE_CONNECTIONS,
 	QUIT,
 }
@@ -672,6 +673,13 @@ const CommandDef[] COMMAND_DEFS = {
 		.contexts = CTX_GLOBAL,
 	},
 	{
+		.id = CommandId.TOGGLE_CONSOLE,
+		.label = "Console",
+		.shortcut = "Ctrl+`",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL,
+	},
+	{
 		.id = CommandId.TOGGLE_CONNECTIONS,
 		.label = "Connections",
 		.shortcut = "Ctrl+Shift+I",
@@ -881,6 +889,8 @@ fn String command_name(CommandId id)
 			return "minimize_card";
 		case CommandId.TOGGLE_FOCUS_MODE:
 			return "toggle_focus_mode";
+		case CommandId.TOGGLE_CONSOLE:
+			return "toggle_console";
 		case CommandId.TOGGLE_CONNECTIONS:
 			return "toggle_connections";
 		case CommandId.QUIT:
@@ -948,6 +958,7 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.SELECT_ALL:
 			return has_buffer;
 		case CommandId.PROBLEMS:
+		case CommandId.TOGGLE_CONSOLE:
 		case CommandId.QUIT:
 			return true;
 		case CommandId.GO_TO_DEFINITION:

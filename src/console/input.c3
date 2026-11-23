@@ -228,7 +228,8 @@ fn bool ConsoleHistory.previous(&self, ConsoleInput* input)
 	if (!self.browsing)
 	{
 		self.clear_draft();
-		self.draft = input.text_view().copy(self.allocator);
+		String view = input.text_view();
+		self.draft = view.len > 0 ? view.copy(self.allocator) : "";
 		self.browsing = true;
 		self.cursor = self.entries.len();
 	}
