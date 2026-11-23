@@ -383,3 +383,25 @@ fn void test_panel_open_close()
 	panel.close();
 	assert(!panel.visible && !panel.focused);
 }
+fn void test_input_zstr_view_clears()
+{
+	ConsoleInput input;
+	input.init(mem);
+	defer input.destroy();
+
+	input.set("hello");
+	assert(input.zstr_view().str_view().compare_to("hello") == 0);
+	input.clear();
+	assert(input.zstr_view().str_view().len == 0);
+
+	input.set("abcdef");
+	input.set("xy");
+	String value = input.zstr_view().str_view();
+	assert(value.compare_to("xy") == 0);
+	assert(value.len == 2);
+
+	input.set("abcd");
+	input.backspace();
+	input.backspace();
+	assert(input.zstr_view().str_view().compare_to("ab") == 0);
+}

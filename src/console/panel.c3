@@ -671,7 +671,7 @@ fn void ConsolePanel.draw(&self, Console* console, RLFont font, RLFont editor_fo
 	float text_y = input.y + (input.height - metrics.font_size) / 2.0f;
 	rl::draw_text_ex(
 		editor_font,
-		(ZString)view.ptr,
+		console.input.zstr_view(),
 		{ text_rect.x - self.input_scroll, text_y },
 		metrics.font_size,
 		0.0f,

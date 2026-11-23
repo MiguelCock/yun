@@ -34,6 +34,11 @@ fn String ConsoleInput.text_view(&self)
 	return self.text.str_view();
 }
 
+fn ZString ConsoleInput.zstr_view(&self)
+{
+	return self.text.zstr_view();
+}
+
 fn void ConsoleInput.clear(&self)
 {
 	self.text.clear();
