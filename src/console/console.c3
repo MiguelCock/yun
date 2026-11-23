@@ -7,6 +7,8 @@ struct Console
 	Allocator allocator;
 	ConsoleBuffer buffer;
 	ConsoleRunner runner;
+	ConsoleInput input;
+	ConsoleHistory history;
 	String root;
 }
 
@@ -15,6 +17,8 @@ fn void Console.init(&self, Allocator allocator)
 	self.allocator = allocator;
 	self.buffer.init(allocator);
 	self.runner.init(allocator);
+	self.input.init(allocator);
+	self.history.init(allocator);
 	self.root = "";
 }
 
@@ -23,6 +27,7 @@ fn void Console.set_root(&self, String root)
 	if (self.root.len > 0 && root.len > 0 && self.root.compare_to(root) == 0) return;
 	self.runner.stop(&self.buffer);
 	self.buffer.clear();
+	self.history.clear();
 	if (self.root.len > 0) self.root.free(self.allocator);
 	self.root = root.len > 0 ? root.copy(self.allocator) : "";
 }
@@ -37,6 +42,16 @@ fn bool Console.run(&self, String command)
 		return false;
 	}
 	return self.runner.start(&self.buffer, self.root, command);
+}
+
+fn bool Console.submit(&self)
+{
+	String command = self.input.text_view().trim();
+	if (command.len == 0) return false;
+	bool ok = self.run(command);
+	self.history.add(command);
+	self.input.clear();
+	return ok;
 }
 
 fn void Console.pump(&self)
@@ -63,6 +78,8 @@ fn void Console.destroy(&self)
 {
 	self.runner.destroy(&self.buffer);
 	self.buffer.destroy();
+	self.input.destroy();
+	self.history.destroy();
 	if (self.root.len > 0) self.root.free(self.allocator);
 	self.root = "";
 }
