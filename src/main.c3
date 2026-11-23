@@ -580,6 +580,17 @@ fn int target_card_index(project::Project* project)
 	return -1;
 }
 
+fn int focus_mode_target(project::Project* project, UiMode mode)
+{
+	int index = mode == UiMode.EDIT ? project.focused : project.selected;
+	if (index < 0 || index >= (int)project.cards.len())
+	{
+		index = mode == UiMode.EDIT ? project.selected : project.focused;
+	}
+	if (index < 0 || index >= (int)project.cards.len()) return -1;
+	return index;
+}
+
 fn void open_context_menu(App* app, context::ContextTarget target, int card, int folder, RLVector2 world, int offset)
 {
 	project::Project* project = app.project;
@@ -1121,9 +1132,8 @@ fn void run_command(commands::CommandId id, App* app)
 					*app.ui_mode = *app.focus_saved_mode;
 					return;
 				}
-				int index = project.focused;
-				if (index < 0) index = project.selected;
-				if (index < 0 || index >= (int)project.cards.len())
+				int index = focus_mode_target(project, *app.ui_mode);
+				if (index < 0)
 				{
 					app.notifier.push("No file to focus");
 					return;

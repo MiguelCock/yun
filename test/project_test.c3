@@ -446,11 +446,14 @@ fn void test_create_file_and_folder()
 		assert(first == 0);
 		assert(p.cards.len() == 1);
 		assert(p.focused == 0);
+		assert(p.selected == 0);
 		assert(path::exists(p.cards[0].path));
 
 		int second = p.create_file(ROOT_FOLDER, "hello.txt", { 0.0f, 0.0f });
 		assert(second == 1);
 		assert(p.cards.len() == 2);
+		assert(p.focused == 1);
+		assert(p.selected == 1);
 		assert(p.cards[1].name.compare_to("hello (1).txt") == 0);
 
 		int folder = p.create_folder_on_disk(ROOT_FOLDER, "sub", { 0.0f, 0.0f });
@@ -695,6 +698,7 @@ fn void test_discard_ephemeral()
 		int index = p.add_card((String)f, { 0.0f, 0.0f });
 		assert(index >= 0);
 		assert(p.focused == index);
+		assert(p.selected == index);
 		p.cards[index].ephemeral = true;
 
 		p.discard_ephemeral(p.focused);
@@ -1307,5 +1311,60 @@ fn void test_focus_mode_restores_rect_and_camera()
 		assert(canvas.camera.target[0] == 40.0f && canvas.camera.target[1] == 30.0f);
 
 		(void)path::rmtree(dir);
+	};
+}
+fn void test_focus_syncs_selection()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push({ .path = (Path)"/root/a.c3".copy(tmem), .name = "a.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.cards.push({ .path = (Path)"/root/b.c3".copy(tmem), .name = "b.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.focused = 1;
+		p.selected = 0;
+		p.selected_cluster = 0;
+
+		int index = p.focus(0);
+		assert(index == 1);
+		assert(p.focused == 1);
+		assert(p.selected == 1);
+		assert(p.selected_cluster == -1);
+		assert(p.cards[1].name.compare_to("a.c3") == 0);
+	};
+}
+
+fn void test_focus_same_card_syncs_selection()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push({ .path = (Path)"/root/a.c3".copy(tmem), .name = "a.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.cards.push({ .path = (Path)"/root/b.c3".copy(tmem), .name = "b.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.focused = 0;
+		p.selected = 1;
+		p.selected_cluster = 0;
+
+		assert(p.focus(0) == 0);
+		assert(p.focused == 0);
+		assert(p.selected == 0);
+		assert(p.selected_cluster == -1);
+	};
+}
+
+fn void test_nav_selection_keeps_focused_card()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push({ .path = (Path)"/root/a.c3".copy(tmem), .name = "a.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.cards.push({ .path = (Path)"/root/b.c3".copy(tmem), .name = "b.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.focused = 1;
+
+		p.select_card(0);
+		assert(p.selected == 0);
+		assert(p.focused == 1);
 	};
 }
