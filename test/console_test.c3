@@ -226,3 +226,117 @@ fn void test_console_requires_root()
 	console_test_helpers::expect_line(&console.buffer, 0, ConsoleStream.COMMAND, "$ echo hi");
 	console_test_helpers::expect_line(&console.buffer, 1, ConsoleStream.STDERR, "No project open");
 }
+fn void test_input_editing()
+{
+	ConsoleInput input;
+	input.init(mem);
+	defer input.destroy();
+
+	input.set("abc");
+	assert(input.len() == 3);
+	input.move_left();
+	input.insert_codepoint('X');
+	assert(input.text_view().compare_to("abXc") == 0);
+	input.backspace();
+	assert(input.text_view().compare_to("abc") == 0);
+	input.delete_forward();
+	assert(input.text_view().compare_to("ab") == 0);
+
+	input.home();
+	input.insert_codepoint('Z');
+	assert(input.text_view().compare_to("Zab") == 0);
+	input.end();
+	input.move_left();
+	input.backspace();
+	assert(input.text_view().compare_to("Zb") == 0);
+
+	input.set("ad");
+	input.home();
+	input.move_right();
+	input.insert_string("bc");
+	assert(input.text_view().compare_to("abcd") == 0);
+}
+
+fn void test_input_utf8_boundaries()
+{
+	ConsoleInput input;
+	input.init(mem);
+	defer input.destroy();
+
+	input.set("é");
+	assert(input.len() == 2);
+	input.move_left();
+	assert(input.cursor == 0);
+	input.insert_codepoint('a');
+	assert(input.text_view().compare_to("aé") == 0);
+	input.backspace();
+	assert(input.text_view().compare_to("é") == 0);
+	input.end();
+	input.backspace();
+	assert(input.len() == 0);
+	assert(input.cursor == 0);
+}
+
+fn void test_history_navigation()
+{
+	ConsoleInput input;
+	input.init(mem);
+	defer input.destroy();
+
+	ConsoleHistory history;
+	history.init(mem, 3);
+	defer history.destroy();
+
+	history.add("one");
+	history.add("two");
+	history.add("two");
+	assert(history.entries.len() == 2);
+
+	input.set("draft");
+	assert(history.previous(&input));
+	assert(input.text_view().compare_to("two") == 0);
+	assert(history.previous(&input));
+	assert(input.text_view().compare_to("one") == 0);
+	assert(history.previous(&input));
+	assert(input.text_view().compare_to("one") == 0);
+	assert(history.next(&input));
+	assert(input.text_view().compare_to("two") == 0);
+	assert(history.next(&input));
+	assert(input.text_view().compare_to("draft") == 0);
+	assert(!history.next(&input));
+}
+
+fn void test_history_capacity_and_empty()
+{
+	ConsoleInput input;
+	input.init(mem);
+	defer input.destroy();
+
+	ConsoleHistory history;
+	history.init(mem, 2);
+	defer history.destroy();
+
+	assert(!history.previous(&input));
+	history.add("a");
+	history.add("b");
+	history.add("c");
+	assert(history.entries.len() == 2);
+	assert(history.entries[0].compare_to("b") == 0);
+	assert(history.entries[1].compare_to("c") == 0);
+}
+
+fn void test_console_submit_records_history()
+{
+	Console console;
+	console.init(mem);
+	defer console.destroy();
+
+	console.input.set("  echo hi  ");
+	assert(!console.submit());
+	assert(console.input.len() == 0);
+	assert(console.history.entries.len() == 1);
+	assert(console.history.entries[0].compare_to("echo hi") == 0);
+	assert(console.buffer.line_count() == 2);
+	console_test_helpers::expect_line(&console.buffer, 0, ConsoleStream.COMMAND, "$ echo hi");
+	console_test_helpers::expect_line(&console.buffer, 1, ConsoleStream.STDERR, "No project open");
+}
