@@ -149,6 +149,7 @@ fn int utf8_sequence_length(String text, usz i)
 
 fn String sanitize_utf8(Allocator allocator, String text)
 {
+	if (text.len == 0) return "";
 	DString out;
 	out.init(allocator, text.len + 1);
 	char[3] replacement = { (char)0xEF, (char)0xBF, (char)0xBD };

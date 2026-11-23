@@ -14,6 +14,7 @@ import yun::commands;
 import yun::completion;
 import yun::connections;
 import yun::config;
+import yun::console;
 import yun::context;
 import yun::editor;
 import yun::find;
@@ -46,6 +47,7 @@ enum UiMode : int
 	MOVE,
 	EDIT,
 	TOP_BAR,
+	CONSOLE,
 }
 
 fn void set_project_title(project::Project* project)
@@ -479,12 +481,15 @@ struct App
 	menu::Menu* definition_menu;
 	search::Search* search;
 	symbols::Symbols* symbols;
+	console::Console* console;
+	console::ConsolePanel* console_panel;
 	editor::EditorMetrics metrics;
 	bool* project_open;
 	bool* content_changed;
 	bool* quit_requested;
 	UiMode* ui_mode;
 	UiMode* focus_saved_mode;
+	UiMode* console_saved_mode;
 	int* edit_grace_frames;
 	topbar::TopBar* bar;
 	keymap::Keymap* keymap;
@@ -1149,6 +1154,29 @@ fn void run_command(commands::CommandId id, App* app)
 				*app.edit_grace_frames = 2;
 				return;
 			}
+		case commands::CommandId.TOGGLE_CONSOLE:
+
+			{
+				if (app.console_panel.visible && *app.ui_mode == UiMode.CONSOLE)
+				{
+					app.console_panel.close();
+					*app.ui_mode = *app.console_saved_mode;
+				}
+				else if (app.console_panel.visible)
+				{
+					*app.console_saved_mode = *app.ui_mode;
+					*app.ui_mode = UiMode.CONSOLE;
+					app.console_panel.focused = true;
+					app.console_panel.focus_requested = false;
+				}
+				else
+				{
+					*app.console_saved_mode = *app.ui_mode;
+					app.console_panel.open();
+					*app.ui_mode = UiMode.CONSOLE;
+				}
+				return;
+			}
 		case commands::CommandId.TOGGLE_CONNECTIONS:
 
 			{
@@ -1808,6 +1836,13 @@ fn int main(String[] args)
 	symbols::Symbols symbols;
 	symbols.init(mem);
 
+	console::Console console;
+	console.init(mem);
+	defer console.destroy();
+
+	console::ConsolePanel console_panel;
+	console_panel.init();
+
 	keymap::Keymap keymap;
 	keymap.init(mem);
 
@@ -1869,6 +1904,7 @@ fn int main(String[] args)
 	double font_indicator_until = 0.0;
 	UiMode ui_mode              = UiMode.MOVE;
 	UiMode focus_saved_mode     = UiMode.MOVE;
+	UiMode console_saved_mode   = UiMode.MOVE;
 	int edit_grace_frames       = 0;
 	bool selftest               = false;
 	bool benchmark_on           = false;
@@ -1995,12 +2031,15 @@ fn int main(String[] args)
 		.definition_menu = &definition_menu,
 		.search = &search,
 		.symbols = &symbols,
+		.console = &console,
+		.console_panel = &console_panel,
 		.metrics = metrics,
 		.project_open = &project_open,
 		.content_changed = &content_changed,
 		.quit_requested = &quit_requested,
 		.ui_mode = &ui_mode,
 		.focus_saved_mode = &focus_saved_mode,
+		.console_saved_mode = &console_saved_mode,
 		.edit_grace_frames = &edit_grace_frames,
 		.bar = &bar,
 		.keymap = &keymap,
@@ -2079,6 +2118,7 @@ fn int main(String[] args)
 		double scan_t0     = rl::get_time();
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
+		console.pump();
 		scan_ms += (rl::get_time() - scan_t0) * 1000.0;
 
 		apply_settings(
@@ -2114,6 +2154,7 @@ fn int main(String[] args)
 				{
 					project_open = true;
 					finish_open(&project, &canvas, &config, &keymap, &notifier);
+					console.set_root((String)project.root);
 					search.close();
 					symbols.close();
 					symbols.start_scan(&project);
@@ -2598,8 +2639,23 @@ fn int main(String[] args)
 			RLVector2 mouse       = rl::get_mouse_position();
 			RLVector2 world       = canvas.screen_to_world(mouse);
 			bool over_connections = connections.contains_screen(mouse);
-			bool over_top         = topbar::contains_screen(mouse) || over_connections;
-			bool has_buffer       = has_focused_buffer(&project);
+			console_panel.update_mouse(&console, metrics, mouse);
+			bool over_console = console_panel.contains_screen(mouse);
+			bool over_top     = topbar::contains_screen(mouse) || over_connections || over_console;
+			bool has_buffer   = has_focused_buffer(&project);
+
+			if (ui_mode == UiMode.CONSOLE && rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && !over_console)
+			{
+				ui_mode = console_saved_mode;
+				console_panel.focused = false;
+			}
+			if (console_panel.focus_requested)
+			{
+				if (ui_mode != UiMode.CONSOLE) console_saved_mode = ui_mode;
+				ui_mode = UiMode.CONSOLE;
+				console_panel.focused = true;
+				console_panel.focus_requested = false;
+			}
 
 			bool font_wheel = false;
 			if (!over_top && project::ctrl_down())
@@ -2629,7 +2685,15 @@ fn int main(String[] args)
 			int bar_cmd = bar.update(mouse, project_open, has_buffer);
 			if (bar_cmd >= 0) run_command((commands::CommandId)bar_cmd, &app);
 
-			if (ui_mode == UiMode.TOP_BAR)
+			if (ui_mode == UiMode.CONSOLE)
+			{
+				if (console_panel.update_input(&console, metrics))
+				{
+					ui_mode = console_saved_mode;
+					console_panel.focused = false;
+				}
+			}
+			else if (ui_mode == UiMode.TOP_BAR)
 			{
 				int bar_key_cmd = keymap.poll_exact(commands::CTX_TOP_BAR);
 				if (bar_key_cmd < 0 && rl::is_key_pressed(rl::RLKeyboardKey.SPACE))
@@ -2883,7 +2947,7 @@ fn int main(String[] args)
 			if (project.focus_card >= 0) project.update_focus_rect(&canvas);
 
 			content_changed = false;
-			bool suppress_edit_input = ui_mode == UiMode.EDIT && edit_grace_frames > 0;
+			bool suppress_edit_input = (ui_mode == UiMode.EDIT && edit_grace_frames > 0) || ui_mode == UiMode.CONSOLE;
 			double update_t0         = rl::get_time();
 			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
 			if (project.focus_toggle_requested)
@@ -3325,6 +3389,10 @@ fn int main(String[] args)
 				{
 					mode_label = "-- TOP BAR --";
 				}
+				else if (ui_mode == UiMode.CONSOLE)
+				{
+					mode_label = "-- CONSOLE --";
+				}
 				else if (project.grabbing)
 				{
 					mode_label = "-- GRAB --";
@@ -3355,6 +3423,8 @@ fn int main(String[] args)
 				ui_mode == UiMode.TOP_BAR
 			);
 			connections.draw(font, &project, &import_index);
+			console_panel.focused = ui_mode == UiMode.CONSOLE;
+			console_panel.draw(&console, font, editor_font, metrics);
 			browser.draw();
 			close_menu.draw();
 			delete_menu.draw();

@@ -87,7 +87,7 @@ fn bool ConsoleRunner.start(&self, ConsoleBuffer* output, String root, String co
 	if (self.has_process) self.stop(output);
 	if (self.command.len > 0) self.command.free(self.allocator);
 	if (self.error.len > 0) self.error.free(self.allocator);
-	self.command = command.copy(self.allocator);
+	self.command = command.len > 0 ? command.copy(self.allocator) : "";
 	self.error = "";
 	self.exit_code = 0;
 	self.kill_requested = false;
