@@ -312,3 +312,32 @@ fn void test_keymap_scope_save()
 		(void)path::rmtree(dir);
 	};
 }
+fn void test_run_profiles()
+{
+	@pool()
+	{
+		Config c;
+		c.init(tmem);
+		c.reset();
+		assert(c.apply_json(
+			"{\"run\":{\"build\":{\"command\":\"c3c build\",\"cwd\":\"src\",\"env\":{\"MODE\":\"debug\"}}}}",
+			settings::SettingLayer.GLOBAL
+		));
+		assert(c.run_profiles.len() == 1);
+		assert(c.run_profiles[0].name.compare_to("build") == 0);
+		assert(c.run_profiles[0].command.compare_to("c3c build") == 0);
+		assert(c.run_profiles[0].cwd.compare_to("src") == 0);
+		assert(c.run_profiles[0].env.len() == 1);
+		assert(c.run_profiles[0].env[0].key.compare_to("MODE") == 0);
+		assert(c.run_profiles[0].env[0].value.compare_to("debug") == 0);
+		assert(c.warnings.len() == 0);
+
+		assert(c.apply_json("{\"run\":{\"build\":{\"command\":\"c3c test\"}}}", settings::SettingLayer.PROJECT));
+		assert(c.run_profiles.len() == 1);
+		assert(c.run_profiles[0].command.compare_to("c3c test") == 0);
+		assert(c.run_profiles[0].cwd.compare_to(".") == 0);
+
+		assert(c.apply_json("{\"run\":{\"bad\":{}}}", settings::SettingLayer.GLOBAL));
+		assert(c.warnings.len() == 1);
+	};
+}

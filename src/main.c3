@@ -62,12 +62,13 @@ fn void finish_open(
 	canvas::Canvas* canvas,
 	config::Config* config,
 	keymap::Keymap* keymap,
-	notify::Notifier* notifier
+	notify::Notifier* notifier,
+	console::ConsoleManager* console_manager
 )
 {
 	config.load((String)project.root);
 	ui::set_ui_scale((float)config.settings.get_float(settings::SettingId.APP_UI_SCALE));
-	bool restored = workspace::load(project, canvas);
+	bool restored = workspace::load(project, canvas, console_manager);
 	if (restored)
 	{
 		project.place_unrestored();
@@ -107,8 +108,7 @@ fn void apply_settings(
 	editor::EditorMetrics* metrics,
 	int* ui_size,
 	RLFont* ui_font,
-	console::Console* console,
-	console::ConsolePanel* console_panel
+	console::ConsoleManager* console_manager
 )
 {
 	if (config.settings.consume_change(settings::SettingId.APP_THEME))
@@ -279,8 +279,7 @@ fn void apply_settings(
 		.autocomplete = config.settings.get_bool(settings::SettingId.CONSOLE_AUTOCOMPLETE),
 	};
 	console::set_settings(cs_console);
-	console.apply_settings(console::settings());
-	console_panel.apply_settings(console::settings());
+	console_manager.apply_settings(console::settings());
 
 	bool font_changed    = false;
 	bool metrics_changed = false;
@@ -488,6 +487,7 @@ struct App
 	problems::Problems* problems;
 	connections::Connections* connections;
 	menu::Menu* theme_menu;
+	menu::Menu* profile_menu;
 	menu::Menu* context_menu;
 	menu::Menu* close_menu;
 	menu::Menu* delete_menu;
@@ -495,6 +495,7 @@ struct App
 	menu::Menu* definition_menu;
 	search::Search* search;
 	symbols::Symbols* symbols;
+	console::ConsoleManager* console_manager;
 	console::Console* console;
 	console::ConsolePanel* console_panel;
 	editor::EditorMetrics metrics;
@@ -577,6 +578,7 @@ fn void close_overlays(App* app)
 	app.problems.close();
 	app.name_prompt.close();
 	app.theme_menu.close();
+	app.profile_menu.close();
 	app.context_menu.close();
 	app.close_menu.close();
 	app.delete_menu.close();
@@ -613,7 +615,7 @@ fn int focus_mode_target(project::Project* project, UiMode mode)
 
 fn void focus_console(App* app)
 {
-	if (!app.console_panel.visible) app.console_panel.open();
+	if (!app.console_manager.visible) app.console_manager.open();
 	if (*app.ui_mode != UiMode.CONSOLE)
 	{
 		*app.console_saved_mode = *app.ui_mode;
@@ -628,6 +630,43 @@ fn void leave_console(App* app)
 	if (*app.ui_mode != UiMode.CONSOLE) return;
 	*app.ui_mode = *app.console_saved_mode;
 	app.console_panel.focused = false;
+}
+
+fn void run_profile(App* app, config::RunProfile* profile)
+{
+	if (!*app.project_open)
+	{
+		app.notifier.push("No project open");
+		return;
+	}
+	sync_app_console(app);
+	Console* console = app.console;
+	if (!console) return;
+	if (console.runner.running())
+	{
+		app.notifier.push("A command is already running");
+		return;
+	}
+	focus_console(app);
+	@pool()
+	{
+		List{console::ConsoleEnvVar} env;
+		env.init(tmem);
+		for (sz i = 0; i < profile.env.len(); i++)
+		{
+			env.push({ .key = profile.env[i].key, .value = profile.env[i].value });
+		}
+		String wrapped = console::console_profile_command(tmem, profile.cwd, env.entries[0:env.len()], profile.command);
+		String display = string::format(tmem, "%s: %s", profile.name, profile.command);
+		(void)console.run_display(display, wrapped);
+	};
+	app.console_panel.pinned = app.console_panel.auto_scroll;
+}
+
+fn void sync_app_console(App* app)
+{
+	app.console = app.console_manager.active_console();
+	app.console_panel = app.console_manager.active_panel();
 }
 
 fn void open_context_menu(App* app, context::ContextTarget target, int card, int folder, RLVector2 world, int offset)
@@ -1190,9 +1229,9 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.TOGGLE_CONSOLE:
 
 			{
-				if (app.console_panel.visible && *app.ui_mode == UiMode.CONSOLE)
+				if (app.console_manager.visible && *app.ui_mode == UiMode.CONSOLE)
 				{
-					app.console_panel.close();
+					app.console_manager.close();
 					*app.ui_mode = *app.console_saved_mode;
 				}
 				else
@@ -1283,6 +1322,89 @@ fn void run_command(commands::CommandId id, App* app)
 
 			{
 				leave_console(app);
+				return;
+			}
+		case commands::CommandId.CONSOLE_NEW_SESSION:
+
+			{
+				(void)app.console_manager.add_session();
+				sync_app_console(app);
+				focus_console(app);
+				return;
+			}
+		case commands::CommandId.CONSOLE_CLOSE_SESSION:
+
+			{
+				(void)app.console_manager.close_session(app.console_manager.active);
+				sync_app_console(app);
+				if (!app.console_manager.visible)
+				{
+					*app.ui_mode = *app.console_saved_mode;
+				}
+				else
+				{
+					app.console_panel.focused = true;
+				}
+				return;
+			}
+		case commands::CommandId.CONSOLE_NEXT_SESSION:
+
+			{
+				int count = (int)app.console_manager.sessions.len();
+				if (count > 1)
+				{
+					app.console_manager.select((app.console_manager.active + 1) % count);
+				}
+				sync_app_console(app);
+				focus_console(app);
+				return;
+			}
+		case commands::CommandId.CONSOLE_PREV_SESSION:
+
+			{
+				int count = (int)app.console_manager.sessions.len();
+				if (count > 1)
+				{
+					int next = app.console_manager.active - 1;
+					if (next < 0) next = count - 1;
+					app.console_manager.select(next);
+				}
+				sync_app_console(app);
+				focus_console(app);
+				return;
+			}
+		case commands::CommandId.CONSOLE_RUN_PROFILE:
+
+			{
+				if (!*app.project_open)
+				{
+					app.notifier.push("No project open");
+					return;
+				}
+				if (app.config.run_profiles.len() == 0)
+				{
+					app.notifier.push("No run profiles");
+					return;
+				}
+				if (app.config.run_profiles.len() == 1)
+				{
+					run_profile(app, &app.config.run_profiles[0]);
+					return;
+				}
+				@pool()
+				{
+					List{String} labels;
+					labels.init(tmem);
+					for (sz i = 0; i < app.config.run_profiles.len(); i++)
+					{
+						labels.push(app.config.run_profiles[i].name);
+					}
+					RLVector2 center = {
+						(float)rl::get_screen_width() / 2.0f - 100.0f,
+						(float)rl::get_screen_height() / 2.0f,
+					};
+					app.profile_menu.open_at(center, labels.entries[0:labels.len()]);
+				};
 				return;
 			}
 		case commands::CommandId.TOGGLE_CONNECTIONS:
@@ -1911,6 +2033,9 @@ fn int main(String[] args)
 	menu::Menu theme_menu;
 	theme_menu.init(mem);
 
+	menu::Menu profile_menu;
+	profile_menu.init(mem);
+
 	menu::Menu close_menu;
 	close_menu.init(mem);
 
@@ -1944,12 +2069,11 @@ fn int main(String[] args)
 	symbols::Symbols symbols;
 	symbols.init(mem);
 
-	console::Console console;
-	console.init(mem);
-	defer console.destroy();
-
-	console::ConsolePanel console_panel;
-	console_panel.init();
+	console::ConsoleManager console_manager;
+	console_manager.init(mem);
+	defer console_manager.destroy();
+	console::Console* console            = console_manager.active_console();
+	console::ConsolePanel* console_panel = console_manager.active_panel();
 
 	keymap::Keymap keymap;
 	keymap.init(mem);
@@ -1993,6 +2117,7 @@ fn int main(String[] args)
 	defer context_menu.destroy();
 	defer reload_menu.destroy();
 	defer theme_menu.destroy();
+	defer profile_menu.destroy();
 	defer close_menu.destroy();
 	defer delete_menu.destroy();
 	defer definition_menu.destroy();
@@ -2069,8 +2194,7 @@ fn int main(String[] args)
 				&metrics,
 				&ui_size,
 				&font,
-				&console,
-				&console_panel
+				&console_manager
 			);
 			open_job = project::open_job_create(project.allocator, &project, resolved);
 			opening = true;
@@ -2090,8 +2214,7 @@ fn int main(String[] args)
 			&metrics,
 			&ui_size,
 			&font,
-			&console,
-			&console_panel
+			&console_manager
 		);
 		if (benchmark_cards > 0)
 		{
@@ -2136,6 +2259,7 @@ fn int main(String[] args)
 		.problems = &problems,
 		.connections = &connections,
 		.theme_menu = &theme_menu,
+		.profile_menu = &profile_menu,
 		.context_menu = &context_menu,
 		.close_menu = &close_menu,
 		.delete_menu = &delete_menu,
@@ -2143,8 +2267,9 @@ fn int main(String[] args)
 		.definition_menu = &definition_menu,
 		.search = &search,
 		.symbols = &symbols,
-		.console = &console,
-		.console_panel = &console_panel,
+		.console_manager = &console_manager,
+		.console = console,
+		.console_panel = console_panel,
 		.metrics = metrics,
 		.project_open = &project_open,
 		.content_changed = &content_changed,
@@ -2189,6 +2314,15 @@ fn int main(String[] args)
 	{
 		frame_count++;
 		ui::reset_cursor();
+		console = console_manager.active_console();
+		console_panel = console_manager.active_panel();
+		app.console = console;
+		app.console_panel = console_panel;
+		if (ui_mode == UiMode.CONSOLE && !console_manager.visible)
+		{
+			ui_mode = console_saved_mode;
+			console_panel.focused = false;
+		}
 		if (selftest && frame_count > 3) break;
 		bool bench_ready = benchmark_on && (benchmark_synthetic || project_open);
 		if (bench_ready)
@@ -2230,7 +2364,7 @@ fn int main(String[] args)
 		double scan_t0     = rl::get_time();
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
-		console.pump();
+		console_manager.pump();
 		scan_ms += (rl::get_time() - scan_t0) * 1000.0;
 
 		apply_settings(
@@ -2244,8 +2378,7 @@ fn int main(String[] args)
 			&metrics,
 			&ui_size,
 			&font,
-			&console,
-			&console_panel
+			&console_manager
 		);
 		if (!diagnostics_logged)
 		{
@@ -2267,9 +2400,10 @@ fn int main(String[] args)
 				if (open_job.phase == project::OpenPhase.DONE)
 				{
 					project_open = true;
-					finish_open(&project, &canvas, &config, &keymap, &notifier);
-					console.set_root((String)project.root);
-					console_panel.clear_selection();
+					console_manager.reset((String)project.root);
+					finish_open(&project, &canvas, &config, &keymap, &notifier, &console_manager);
+					console = console_manager.active_console();
+					console_panel = console_manager.active_panel();
 					search.close();
 					symbols.close();
 					symbols.start_scan(&project);
@@ -2286,8 +2420,7 @@ fn int main(String[] args)
 						&metrics,
 						&ui_size,
 						&font,
-						&console,
-						&console_panel
+						&console_manager
 					);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
@@ -2513,6 +2646,15 @@ fn int main(String[] args)
 				};
 			}
 			if (!theme_menu.consumed) poll_global(&keymap, &app);
+		}
+		else if (profile_menu.open)
+		{
+			int chosen = profile_menu.update(&keymap);
+			if (chosen >= 0 && chosen < (int)config.run_profiles.len())
+			{
+				run_profile(&app, &config.run_profiles[chosen]);
+			}
+			if (!profile_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (context_menu.open)
 		{
@@ -2756,7 +2898,12 @@ fn int main(String[] args)
 			RLVector2 mouse       = rl::get_mouse_position();
 			RLVector2 world       = canvas.screen_to_world(mouse);
 			bool over_connections = connections.contains_screen(mouse);
-			console_panel.update_mouse(&console, metrics, mouse);
+			console_panel.update_mouse(&console_manager, console, metrics, mouse);
+			console_manager.sync_height();
+			console = console_manager.active_console();
+			console_panel = console_manager.active_panel();
+			app.console = console;
+			app.console_panel = console_panel;
 			bool over_console = console_panel.contains_screen(mouse);
 			bool over_top     = topbar::contains_screen(mouse) || over_connections || over_console;
 			bool has_buffer   = has_focused_buffer(&project);
@@ -2816,7 +2963,7 @@ fn int main(String[] args)
 
 			if (ui_mode == UiMode.CONSOLE)
 			{
-				if (console_panel.update_input(&console, &keymap, metrics))
+				if (console_panel.update_input(console, &keymap, metrics))
 				{
 					ui_mode = console_saved_mode;
 					console_panel.focused = false;
@@ -3552,13 +3699,18 @@ fn int main(String[] args)
 				ui_mode == UiMode.TOP_BAR
 			);
 			connections.draw(font, &project, &import_index);
+			console = console_manager.active_console();
+			console_panel = console_manager.active_panel();
+			app.console = console;
+			app.console_panel = console_panel;
 			console_panel.focused = ui_mode == UiMode.CONSOLE;
-			console_panel.draw(&console, font, editor_font, metrics);
+			console_panel.draw(&console_manager, console, font, editor_font, metrics);
 			browser.draw();
 			close_menu.draw();
 			delete_menu.draw();
 			reload_menu.draw();
 			theme_menu.draw();
+			profile_menu.draw();
 			context_menu.draw();
 			name_prompt.draw(font);
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
@@ -3650,6 +3802,6 @@ fn int main(String[] args)
 	}
 
 	if (project.focus_card >= 0) project.end_focus(&canvas);
-	if (project_open) workspace::save(&project, &canvas);
+	if (project_open) workspace::save(&project, &canvas, &console_manager);
 	return 0;
 }

@@ -134,6 +134,11 @@ enum CommandId
 	CONSOLE_SCROLL_UP,
 	CONSOLE_SCROLL_DOWN,
 	CONSOLE_LEAVE_FOCUS,
+	CONSOLE_NEW_SESSION,
+	CONSOLE_CLOSE_SESSION,
+	CONSOLE_NEXT_SESSION,
+	CONSOLE_PREV_SESSION,
+	CONSOLE_RUN_PROFILE,
 	TOGGLE_CONNECTIONS,
 	QUIT,
 }
@@ -771,6 +776,41 @@ const CommandDef[] COMMAND_DEFS = {
 		.contexts = CTX_CONSOLE,
 	},
 	{
+		.id = CommandId.CONSOLE_NEW_SESSION,
+		.label = "New Console Session",
+		.shortcut = "Ctrl+T",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_CLOSE_SESSION,
+		.label = "Close Console Session",
+		.shortcut = "Ctrl+W",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_NEXT_SESSION,
+		.label = "Next Console Session",
+		.shortcut = "Ctrl+Tab",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_PREV_SESSION,
+		.label = "Previous Console Session",
+		.shortcut = "Ctrl+Shift+Tab",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_RUN_PROFILE,
+		.label = "Run Profile",
+		.shortcut = "F5",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL,
+	},
+	{
 		.id = CommandId.TOGGLE_CONNECTIONS,
 		.label = "Connections",
 		.shortcut = "Ctrl+Shift+I",
@@ -1004,6 +1044,16 @@ fn String command_name(CommandId id)
 			return "console_scroll_down";
 		case CommandId.CONSOLE_LEAVE_FOCUS:
 			return "console_leave_focus";
+		case CommandId.CONSOLE_NEW_SESSION:
+			return "console_new_session";
+		case CommandId.CONSOLE_CLOSE_SESSION:
+			return "console_close_session";
+		case CommandId.CONSOLE_NEXT_SESSION:
+			return "console_next_session";
+		case CommandId.CONSOLE_PREV_SESSION:
+			return "console_prev_session";
+		case CommandId.CONSOLE_RUN_PROFILE:
+			return "console_run_profile";
 		case CommandId.TOGGLE_CONNECTIONS:
 			return "toggle_connections";
 		case CommandId.QUIT:
@@ -1083,6 +1133,11 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.CONSOLE_SCROLL_UP:
 		case CommandId.CONSOLE_SCROLL_DOWN:
 		case CommandId.CONSOLE_LEAVE_FOCUS:
+		case CommandId.CONSOLE_NEW_SESSION:
+		case CommandId.CONSOLE_CLOSE_SESSION:
+		case CommandId.CONSOLE_NEXT_SESSION:
+		case CommandId.CONSOLE_PREV_SESSION:
+		case CommandId.CONSOLE_RUN_PROFILE:
 		case CommandId.QUIT:
 			return true;
 		case CommandId.GO_TO_DEFINITION:

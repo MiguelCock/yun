@@ -2,6 +2,12 @@ module yun::console;
 
 const int PUMP_BUDGET = 64 * 1024;
 
+struct ConsoleEnvVar
+{
+	String key;
+	String value;
+}
+
 struct ConsoleSettings
 {
 	int max_lines;
@@ -69,16 +75,48 @@ fn void Console.set_root(&self, String root)
 	self.root = root.len > 0 ? root.copy(self.allocator) : "";
 }
 
-fn bool Console.run(&self, String command)
+fn String console_profile_command(Allocator allocator, String cwd, ConsoleEnvVar[] env, String command)
+{
+	DString out;
+	out.init(allocator, command.len + 32);
+	$if env::WIN32:
+		out.appendf("cd /D \"%s\" && ", cwd);
+		for (usz i = 0; i < env.len; i++)
+		{
+			out.appendf("set \"%s=%s\" && ", env[i].key, env[i].value);
+		}
+	$else
+		String quoted_cwd = shell_quote_posix(allocator, cwd);
+		out.appendf("cd %s && ", quoted_cwd);
+		quoted_cwd.free(allocator);
+		for (usz i = 0; i < env.len; i++)
+		{
+			String quoted_value = shell_quote_posix(allocator, env[i].value);
+			out.appendf("export %s=%s && ", env[i].key, quoted_value);
+			quoted_value.free(allocator);
+		}
+	$endif
+	out.append_string(command);
+	String result = out.str_view().copy(allocator);
+	out.free();
+	return result;
+}
+
+fn bool Console.run_display(&self, String display, String command)
 {
 	if (self.root.len == 0)
 	{
-		self.buffer.append_command(command);
+		self.buffer.append_command(display);
 		self.buffer.append_stderr("No project open\n");
 		self.buffer.flush();
 		return false;
 	}
-	return self.runner.start(&self.buffer, self.root, command);
+	return self.runner.start_display(&self.buffer, self.root, command, display);
+}
+
+fn bool Console.run(&self, String command)
+{
+	return self.run_display(command, command);
 }
 
 fn bool Console.submit(&self)

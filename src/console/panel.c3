@@ -21,6 +21,9 @@ const float BUTTON_GAP     = 6.0f;
 const int BUTTON_COUNT     = 4;
 const int SCROLL_LINES     = 3;
 const int FIND_QUERY_MAX   = 128;
+const float TAB_WIDTH      = 112.0f;
+const float TAB_GAP        = 4.0f;
+const float NEW_TAB_WIDTH  = 26.0f;
 const int FIND_MAX_MATCHES = 1000;
 
 struct ConsoleFindMatch
@@ -287,6 +290,49 @@ fn Rect ConsolePanel.header_rect(&self)
 		.width = panel.width - ui::pxf(PADDING) * 2.0f,
 		.height = ui::pxf(HEADER_HEIGHT),
 	};
+}
+
+fn Rect console_tab_rect(Rect header, int index)
+{
+	return {
+		.x = header.x + (float)index * (ui::pxf(TAB_WIDTH) + ui::pxf(TAB_GAP)),
+		.y = header.y + ui::pxf(2.0f),
+		.width = ui::pxf(TAB_WIDTH),
+		.height = header.height - ui::pxf(4.0f),
+	};
+}
+
+fn Rect console_new_tab_rect(ConsoleManager* manager, Rect header)
+{
+	return {
+		.x = header.x + (float)manager.sessions.len() * (ui::pxf(TAB_WIDTH) + ui::pxf(TAB_GAP)),
+		.y = header.y + ui::pxf(2.0f),
+		.width = ui::pxf(NEW_TAB_WIDTH),
+		.height = header.height - ui::pxf(4.0f),
+	};
+}
+
+fn bool rect_contains(Rect r, RLVector2 point)
+{
+	return point[0] >= r.x && point[0] <= r.x + r.width && point[1] >= r.y && point[1] <= r.y + r.height;
+}
+
+fn int console_tab_at(ConsoleManager* manager, Rect header, RLVector2 mouse)
+{
+	for (int i = 0; i < (int)manager.sessions.len(); i++)
+	{
+		if (rect_contains(console_tab_rect(header, i), mouse)) return i;
+	}
+	return -1;
+}
+
+fn bool console_tab_close_at(ConsoleManager* manager, Rect header, RLVector2 mouse)
+{
+	int index = console_tab_at(manager, header, mouse);
+	if (index < 0) return false;
+	Rect tab    = console_tab_rect(header, index);
+	float close = ui::pxf(16.0f);
+	return mouse[0] >= tab.x + tab.width - close - ui::pxf(4.0f);
 }
 
 fn Rect ConsolePanel.output_rect(&self)
@@ -988,17 +1034,49 @@ fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keyma
 	return false;
 }
 
-fn void ConsolePanel.update_mouse(&self, Console* console, EditorMetrics metrics, RLVector2 mouse)
+fn void ConsolePanel.update_mouse(
+	&self,
+	ConsoleManager* manager,
+	Console* console,
+	EditorMetrics metrics,
+	RLVector2 mouse
+)
 {
 	self.focus_requested = false;
 	if (!self.visible) return;
 	if (self.has_selection && console.buffer.first != self.sel_first_line) self.clear_selection();
 	Rect panel  = self.rect();
+	Rect header = self.header_rect();
 	Rect input  = self.input_rect();
 	Rect output = self.output_rect();
 
 	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
 	{
+		int tab = console_tab_at(manager, header, mouse);
+		if (tab >= 0)
+		{
+			if (console_tab_close_at(manager, header, mouse))
+			{
+				(void)manager.close_session(tab);
+			}
+			else
+			{
+				manager.select(tab);
+			}
+			if (manager.visible)
+			{
+				ConsolePanel* active = manager.active_panel();
+				if (active) active.focus_requested = true;
+			}
+			return;
+		}
+		if (rect_contains(console_new_tab_rect(manager, header), mouse))
+		{
+			(void)manager.add_session();
+			ConsolePanel* active = manager.active_panel();
+			if (active) active.focus_requested = true;
+			return;
+		}
 		if (mouse[1] >= panel.y && mouse[1] <= panel.y + ui::pxf(RESIZE_GRAB))
 		{
 			self.resizing = true;
@@ -1261,7 +1339,14 @@ fn String button_label(ConsoleButton button)
 	}
 }
 
-fn void ConsolePanel.draw(&self, Console* console, RLFont font, RLFont editor_font, EditorMetrics metrics)
+fn void ConsolePanel.draw(
+	&self,
+	ConsoleManager* manager,
+	Console* console,
+	RLFont font,
+	RLFont editor_font,
+	EditorMetrics metrics
+)
 {
 	if (!self.visible) return;
 	Rect panel  = self.rect();
@@ -1295,14 +1380,58 @@ fn void ConsolePanel.draw(&self, Console* console, RLFont font, RLFont editor_fo
 		.panel_dim);
 
 	float title_size = (float)ui::tpx(14);
-	rl::draw_text_ex(
-		font,
-		"Console",
-		{ header.x, header.y + (header.height - title_size) / 2.0f },
-		title_size,
-		0.0f,
-		theme::current()
-		.panel_header);
+	if (manager.sessions.len() <= 1)
+	{
+		rl::draw_text_ex(
+			font,
+			"Console",
+			{ header.x, header.y + (header.height - title_size) / 2.0f },
+			title_size,
+			0.0f,
+			theme::current()
+			.panel_header);
+	}
+	else
+	{
+		float tab_size = (float)ui::tpx(12);
+		for (int i = 0; i < (int)manager.sessions.len(); i++)
+		{
+			Rect tab = console_tab_rect(header, i);
+			if (tab.x + tab.width > header.x + header.width - ui::pxf(130.0f)) break;
+			bool active = i == manager.active;
+			ui::row(tab, active ? theme::current().panel_selected : theme::current().panel_field);
+			String title = manager.sessions[i].title;
+			rl::draw_text_ex(
+				font,
+				title.zstr_tcopy(),
+				{ tab.x + ui::pxf(8.0f), tab.y + (tab.height - tab_size) / 2.0f },
+				tab_size,
+				0.0f,
+				active ? theme::current()
+				.panel_text : theme::current().panel_dim);
+			rl::draw_text_ex(
+				font,
+				"x",
+				{ tab.x + tab.width - ui::pxf(14.0f), tab.y + (tab.height - tab_size) / 2.0f },
+				tab_size,
+				0.0f,
+				theme::current()
+				.panel_dim);
+		}
+		Rect new_tab = console_new_tab_rect(manager, header);
+		if (new_tab.x + new_tab.width <= header.x + header.width - ui::pxf(130.0f))
+		{
+			ui::row(new_tab, theme::current().panel_field);
+			rl::draw_text_ex(
+				font,
+				"+",
+				{ new_tab.x + ui::pxf(8.0f), new_tab.y + (new_tab.height - tab_size) / 2.0f },
+				tab_size,
+				0.0f,
+				theme::current()
+				.panel_header);
+		}
+	}
 
 	float status_size    = (float)ui::tpx(13);
 	RLColor status_color = theme::current().panel_dim;

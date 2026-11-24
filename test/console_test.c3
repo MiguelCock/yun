@@ -681,3 +681,104 @@ fn void test_console_autocomplete()
 	panel.refresh_completion(&console);
 	assert(!panel.completion_active);
 }
+fn void test_console_manager_sessions()
+{
+	ConsoleManager manager;
+	manager.init(mem);
+	defer manager.destroy();
+
+	assert(manager.sessions.len() == 1);
+	assert(manager.active == 0);
+	Console* first = manager.active_console();
+	assert(first != null);
+	first.buffer.append_stdout("one\n");
+
+	int second = manager.add_session();
+	assert(second == 1);
+	Console* second_console = manager.active_console();
+	assert(second_console != null);
+	second_console.buffer.append_stdout("two\n");
+	assert(first.buffer.line_count() == 1);
+	assert(second_console.buffer.line_count() == 1);
+
+	manager.select(0);
+	assert(manager.active == 0);
+	assert(manager.active_console() == first);
+	assert(manager.active_console().buffer.line_count() == 1);
+
+	manager.open();
+	assert(manager.visible);
+	assert(manager.active_panel().visible);
+	manager.active_panel().height = 300.0f;
+	manager.sync_height();
+	assert(manager.height == 300.0f);
+
+	assert(manager.close_session(0));
+	assert(manager.sessions.len() == 1);
+	assert(manager.active == 0);
+	assert(manager.active_panel().height == 300.0f);
+	manager.flush_pending();
+
+	assert(manager.close_session(0));
+	assert(manager.sessions.len() == 1);
+	assert(!manager.visible);
+	manager.flush_pending();
+}
+
+fn void test_console_manager_root()
+{
+	ConsoleManager manager;
+	manager.init(mem);
+	defer manager.destroy();
+
+	manager.set_root("/tmp/project");
+	assert(manager.root.compare_to("/tmp/project") == 0);
+	assert(manager.active_console().root.compare_to("/tmp/project") == 0);
+	(void)manager.add_session();
+	assert(manager.active_console().root.compare_to("/tmp/project") == 0);
+
+	manager.reset("/tmp/other");
+	assert(manager.sessions.len() == 1);
+	assert(manager.root.compare_to("/tmp/other") == 0);
+	assert(manager.active_console().root.compare_to("/tmp/other") == 0);
+}
+fn void test_console_profile_command()
+{
+	ConsoleEnvVar[1] env = { { .key = "MODE", .value = "debug" } };
+	String posix         = console_profile_command(tmem, "src", env[0:1], "c3c build");
+	assert(posix.compare_to("cd 'src' && export MODE='debug' && c3c build") == 0);
+	String windows = console_profile_command(tmem, "src", env[0:1], "c3c build");
+	// Same function on this platform; Windows formatting is compile-time.
+	$if env::WIN32:
+		assert(windows.compare_to("cd /D \"src\" && set \"MODE=debug\" && c3c build") == 0);
+	$else
+		assert(windows.compare_to(posix) == 0);
+	$endif
+}
+fn void test_console_profile_run()
+{
+	Console console;
+	console.init(mem);
+	defer console.destroy();
+	console.set_root(".");
+
+	ConsoleEnvVar[] env = { };
+	String wrapped      = console_profile_command(tmem, ".", env[0:0], "printf 'profile\\n'");
+	assert(console.run_display("build", wrapped));
+	for (int i = 0; i < 500 && console.running(); i++)
+	{
+		console.pump();
+		(void)thread::sleep_ms(10);
+	}
+	console.pump();
+	assert(!console.running());
+	assert(console.buffer.line_count() >= 2);
+	ConsoleLine* header = console.buffer.line_at(0);
+	assert(header.text.compare_to("$ build") == 0);
+	bool found = false;
+	for (sz i = 0; i < console.buffer.line_count(); i++)
+	{
+		if (console.buffer.line_at(i).text.compare_to("profile") == 0) found = true;
+	}
+	assert(found);
+}
