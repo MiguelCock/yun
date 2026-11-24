@@ -1368,3 +1368,30 @@ fn void test_nav_selection_keeps_focused_card()
 		assert(p.focused == 1);
 	};
 }
+fn void test_snap_selected_to_grid()
+{
+	@pool()
+	{
+		canvas::CanvasSettings saved   = canvas::settings();
+		canvas::CanvasSettings enabled = saved;
+		enabled.snap_to_grid = true;
+		enabled.snap_step = 64.0f;
+		canvas::set_settings(enabled);
+		defer canvas::set_settings(saved);
+
+		Project p;
+		p.init(tmem);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.name = "a.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .x = 13.0f, .y = 29.0f, .width = 100.0f, .height = 80.0f },
+			}
+		);
+		p.selected = 0;
+		p.snap_selected_to_grid(1.0f);
+		assert(p.cards[0].rect.x == 0.0f);
+		assert(p.cards[0].rect.y == 0.0f);
+	};
+}

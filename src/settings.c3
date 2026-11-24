@@ -641,7 +641,7 @@ const SettingSpec[] SETTINGS = {
 		.label = "Snap to grid",
 		.description = "Snap cards and folders to the canvas grid while dragging or resizing.",
 		.kind = SettingKind.BOOL,
-		.fallback = { .b = false },
+		.fallback = { .b = true },
 	},
 	{
 		.section = "canvas",

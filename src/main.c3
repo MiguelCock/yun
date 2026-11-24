@@ -1214,6 +1214,7 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				else if (project.grabbing)
 				{
+					project.snap_selected_to_grid(app.canvas.camera.zoom);
 					project.grabbing = false;
 					*app.ui_mode = UiMode.TOP_BAR;
 					app.bar.clamp_selection(*app.project_open, has_focused_buffer(project));
@@ -3044,6 +3045,7 @@ fn int main(String[] args)
 						rl::RLKeyboardKey.ESCAPE
 					) || rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
 					{
+						project.snap_selected_to_grid(canvas.camera.zoom);
 						project.grabbing = false;
 					}
 					else

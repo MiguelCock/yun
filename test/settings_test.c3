@@ -489,3 +489,11 @@ fn void test_arrows_clamp()
 		warnings.free();
 	};
 }
+fn void test_grid_snap_defaults()
+{
+	SettingSpec snap = spec(SettingId.CANVAS_SNAP_TO_GRID);
+	assert(snap.kind == SettingKind.BOOL);
+	assert(snap.fallback.b);
+	SettingSpec step = spec(SettingId.CANVAS_SNAP_STEP);
+	assert(step.fallback.i == 0);
+}

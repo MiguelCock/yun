@@ -2963,6 +2963,18 @@ fn void Project.snap_card_to_grid(&self, int index, float zoom)
 	self.invalidate_bounds_for_card(index);
 }
 
+fn void Project.snap_selected_to_grid(&self, float zoom)
+{
+	if (self.selected_cluster >= 0)
+	{
+		self.snap_cluster_to_grid(self.selected_cluster, zoom);
+	}
+	else if (self.selected >= 0)
+	{
+		self.snap_card_to_grid(self.selected, zoom);
+	}
+}
+
 fn void Project.snap_cluster_to_grid(&self, int index, float zoom)
 {
 	if (!canvas::settings().snap_to_grid || alt_down()) return;
@@ -3236,6 +3248,36 @@ fn void Project.draw_folders(&self, RLCamera2D camera)
 	}
 }
 
+fn void Project.draw_snap_guides(&self, RLCamera2D camera)
+{
+	if (!canvas::settings().snap_to_grid || alt_down()) return;
+	if (!self.drag_card && !self.drag_cluster && !self.resizing) return;
+	Rect r;
+	if (self.resizing)
+	{
+		if (self.resize_card < 0 || self.resize_card >= (int)self.cards.len()) return;
+		r = self.cards[self.resize_card].rect;
+	}
+	else if (self.drag_card)
+	{
+		if (self.drag_index < 0 || self.drag_index >= (int)self.cards.len()) return;
+		r = self.cards[self.drag_index].rect;
+	}
+	else
+	{
+		if (self.drag_cluster_index < 0 || self.drag_cluster_index >= (int)self.folders.len()) return;
+		r = self.cluster_visual_bounds(self.drag_cluster_index);
+	}
+	Rect view       = visible_world_rect(camera);
+	float thickness = card::screen_thickness(1.0f, camera.zoom);
+	RLColor base    = theme::current().card_focus;
+	RLColor guide   = { base[0], base[1], base[2], 150 };
+	rl::draw_line_ex({ r.x, view.y }, { r.x, view.y + view.height }, thickness, guide);
+	rl::draw_line_ex({ r.x + r.width, view.y }, { r.x + r.width, view.y + view.height }, thickness, guide);
+	rl::draw_line_ex({ view.x, r.y }, { view.x + view.width, r.y }, thickness, guide);
+	rl::draw_line_ex({ view.x, r.y + r.height }, { view.x + view.width, r.y + r.height }, thickness, guide);
+}
+
 fn void Project.draw_cards(
 	&self,
 	RLCamera2D camera,
@@ -3257,6 +3299,7 @@ fn void Project.draw_cards(
 	}
 	Rect visible          = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
 	RLVector2 mouse_world = canvas::screen_to_world_camera(camera, rl::get_mouse_position());
+	self.draw_snap_guides(camera);
 
 	@pool()
 	{
