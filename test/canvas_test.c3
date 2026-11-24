@@ -367,3 +367,11 @@ fn void test_keep_item_in_view_delta()
 	d = keep_item_in_view_delta({ .x = -10000.0f, .y = 300.0f, .width = 50.0f, .height = 50.0f }, safe, 1.0f);
 	assert(d[0] == -800.0f && d[1] == 0.0f);
 }
+fn void test_snap_value()
+{
+	assert(snap_value(10.0f, 16.0f) == 16.0f);
+	assert(snap_value(7.0f, 16.0f) == 0.0f);
+	assert(snap_value(-7.0f, 16.0f) == 0.0f);
+	assert(snap_value(-9.0f, 16.0f) == -16.0f);
+	assert(snap_value(10.0f, 0.0f) == 10.0f);
+}

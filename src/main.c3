@@ -240,6 +240,8 @@ fn void apply_settings(
 	cs.grid_cell = (float)config.settings.get_int(settings::SettingId.CANVAS_GRID_CELL);
 	cs.grid_min_px = (float)config.settings.get_float(settings::SettingId.CANVAS_GRID_MIN_PX);
 	cs.grid_max_px = (float)config.settings.get_float(settings::SettingId.CANVAS_GRID_MAX_PX);
+	cs.snap_to_grid = config.settings.get_bool(settings::SettingId.CANVAS_SNAP_TO_GRID);
+	cs.snap_step = (float)config.settings.get_int(settings::SettingId.CANVAS_SNAP_STEP);
 	cs.jump_zoom_min = (float)config.settings.get_float(settings::SettingId.CANVAS_JUMP_ZOOM_MIN);
 	cs.jump_zoom_target = (float)config.settings.get_float(settings::SettingId.CANVAS_JUMP_ZOOM_TARGET);
 	canvas::set_settings(cs);
@@ -1515,12 +1517,14 @@ fn void run_command(commands::CommandId id, App* app)
 				int index = target_card_index(project);
 				if (index < 0) return;
 				RLVector2 pos = project.cards[index].center();
-				if (project.duplicate_card(index, pos) < 0)
+				int duplicate = project.duplicate_card(index, pos);
+				if (duplicate < 0)
 				{
 					app.notifier.push("Could not duplicate");
 				}
 				else
 				{
+					project.snap_card_to_grid(duplicate, app.canvas.camera.zoom);
 					app.notifier.push("Duplicated");
 				}
 				return;
@@ -2598,6 +2602,14 @@ fn int main(String[] args)
 					}
 					else
 					{
+						if (pending_kind == 0)
+						{
+							project.snap_card_to_grid(result, canvas.camera.zoom);
+						}
+						else
+						{
+							project.snap_cluster_to_grid(result, canvas.camera.zoom);
+						}
 						name_prompt.close();
 					}
 				}
@@ -2731,12 +2743,14 @@ fn int main(String[] args)
 					case context::ContextAction.DUPLICATE_CARD:
 
 						{
-							if (project.duplicate_card(app.context_card, app.context_world) < 0)
+							int duplicate = project.duplicate_card(app.context_card, app.context_world);
+							if (duplicate < 0)
 							{
 								notifier.push("Could not duplicate");
 							}
 							else
 							{
+								project.snap_card_to_grid(duplicate, canvas.camera.zoom);
 								notifier.push("Duplicated");
 							}
 							break;
@@ -3255,15 +3269,25 @@ fn int main(String[] args)
 					String path = files.paths[i].str_view().copy(mem);
 					if (!rl::is_path_file(files.paths[i]))
 					{
-						if (project.add_folder_from_disk(path, world) < 0)
+						int folder_index = project.add_folder_from_disk(path, world);
+						if (folder_index < 0)
 						{
 							notifier.push("Drop folders from inside the project root");
 						}
+						else
+						{
+							project.snap_cluster_to_grid(folder_index, canvas.camera.zoom);
+						}
 						continue;
 					}
-					if (project.add_card(path, world) < 0)
+					int card_index = project.add_card(path, world);
+					if (card_index < 0)
 					{
 						notifier.push("Could not add dropped file");
+					}
+					else
+					{
+						project.snap_card_to_grid(card_index, canvas.camera.zoom);
 					}
 				}
 				rl::unload_dropped_files(files);
