@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 107);
+	assert(command_count() == 112);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -249,6 +249,16 @@ fn void test_console_commands()
 	CommandDef copy = command_def(CommandId.CONSOLE_COPY);
 	assert(copy.shortcut.compare_to("Ctrl+Shift+C") == 0);
 	assert(command_name(CommandId.CONSOLE_COPY).compare_to("console_copy") == 0);
+
+	CommandDef run_profile = command_def(CommandId.CONSOLE_RUN_PROFILE);
+	assert(run_profile.shortcut.compare_to("F5") == 0);
+	assert(command_name(CommandId.CONSOLE_RUN_PROFILE).compare_to("console_run_profile") == 0);
+
+	CommandDef new_session = command_def(CommandId.CONSOLE_NEW_SESSION);
+	assert(new_session.shortcut.compare_to("Ctrl+T") == 0);
+	assert(command_name(CommandId.CONSOLE_NEW_SESSION).compare_to("console_new_session") == 0);
+	assert(command_def(CommandId.CONSOLE_CLOSE_SESSION).shortcut.compare_to("Ctrl+W") == 0);
+	assert(command_def(CommandId.CONSOLE_NEXT_SESSION).shortcut.compare_to("Ctrl+Tab") == 0);
 
 	CommandDef find = command_def(CommandId.CONSOLE_FIND);
 	assert(find.shortcut.compare_to("Ctrl+F") == 0);

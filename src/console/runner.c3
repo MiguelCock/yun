@@ -163,6 +163,11 @@ fn void ConsoleRunner.kill_tree(&self)
 
 fn bool ConsoleRunner.start(&self, ConsoleBuffer* output, String root, String command)
 {
+	return self.start_display(output, root, command, command);
+}
+
+fn bool ConsoleRunner.start_display(&self, ConsoleBuffer* output, String root, String command, String display)
+{
 	if (self.running()) return false;
 	if (self.has_process) self.stop(output);
 	if (self.command.len > 0) self.command.free(self.allocator);
@@ -171,7 +176,7 @@ fn bool ConsoleRunner.start(&self, ConsoleBuffer* output, String root, String co
 	self.error = "";
 	self.exit_code = 0;
 	self.kill_requested = false;
-	if (output) output.append_command(command);
+	if (output) output.append_command(display);
 
 	bool grouped = false;
 	$if !env::WIN32:
