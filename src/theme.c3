@@ -15,6 +15,13 @@ struct Theme
 	RLColor card_focus;
 	RLColor card_text;
 	RLColor card_dirty;
+	// git
+	RLColor git_added;
+	RLColor git_modified;
+	RLColor git_deleted;
+	RLColor git_renamed;
+	RLColor git_conflict;
+	RLColor git_untracked;
 	// folder clusters
 	RLColor cluster_body;
 	RLColor cluster_border;
@@ -511,6 +518,12 @@ fn Theme theme_build(ThemeSpec spec)
 	t.card_focus = spec.accent;
 	t.card_text = spec.fg;
 	t.card_dirty = spec.warning;
+	t.git_added = spec.syn_string;
+	t.git_modified = spec.warning;
+	t.git_deleted = spec.error;
+	t.git_renamed = spec.info;
+	t.git_conflict = spec.error;
+	t.git_untracked = spec.muted;
 
 	t.cluster_body = with_alpha(spec.surface, 200);
 	t.cluster_border = spec.border;

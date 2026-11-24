@@ -6,7 +6,7 @@ import std::io::path;
 
 fn String after_spaces(String token, int count)
 {
-	usz pos = 0;
+	usz pos  = 0;
 	int seen = 0;
 	while (pos < token.len && seen < count)
 	{
@@ -129,23 +129,16 @@ fn bool GitStatus.parse(&self, String root, String data)
 		char kind = token[0];
 		if (kind == '1' && token.len >= 4)
 		{
-			char x = token[2];
-			char y = token[3];
+			char x      = token[2];
+			char y      = token[3];
 			String path = after_spaces(token, 8);
-			self.add_entry(
-				path,
-				"",
-				state_from_char(x),
-				state_from_char(y),
-				false,
-				false
-			);
+			self.add_entry(path, "", state_from_char(x), state_from_char(y), false, false);
 			continue;
 		}
 		if (kind == '2' && token.len >= 4)
 		{
-			char x = token[2];
-			char y = token[3];
+			char x      = token[2];
+			char y      = token[3];
 			String path = after_spaces(token, 9);
 			String orig = "";
 			if (pos < data.len)
@@ -155,14 +148,7 @@ fn bool GitStatus.parse(&self, String root, String data)
 				orig = data[pos:oend - pos];
 				pos = oend < data.len ? oend + 1 : data.len;
 			}
-			self.add_entry(
-				path,
-				orig,
-				state_from_char(x),
-				state_from_char(y),
-				false,
-				false
-			);
+			self.add_entry(path, orig, state_from_char(x), state_from_char(y), false, false);
 			continue;
 		}
 		if (kind == 'u' && token.len >= 4)

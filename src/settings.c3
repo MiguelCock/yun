@@ -125,6 +125,11 @@ enum SettingId : int
 	CONSOLE_NOTIFY,
 	CONSOLE_PERSIST_HISTORY,
 	CONSOLE_RESTORE_SESSIONS,
+	GIT_BINARY,
+	GIT_AUTO_REFRESH,
+	GIT_DEBOUNCE_MS,
+	GIT_CONFIRM_DISCARD,
+	GIT_DEFAULT_REMOTE,
 	LSP_ENABLED,
 	COUNT,
 }
@@ -1066,6 +1071,49 @@ const SettingSpec[] SETTINGS = {
 		.fallback = { .b = true },
 	},
 	{
+		.section = "git",
+		.key = "binary",
+		.label = "Git binary",
+		.description = "Git executable name or path. An empty value falls back to git.",
+		.kind = SettingKind.STRING,
+		.fallback = { .s = "git" },
+	},
+	{
+		.section = "git",
+		.key = "auto_refresh",
+		.label = "Auto refresh",
+		.description = "Refresh repository status after saves, file changes, focus changes, and periodically.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
+		.section = "git",
+		.key = "debounce_ms",
+		.label = "Refresh debounce",
+		.description = "Delay before refreshing Git status, in milliseconds.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 250 },
+		.min = 0.0,
+		.max = 5000.0,
+		.step = 50.0,
+	},
+	{
+		.section = "git",
+		.key = "confirm_discard",
+		.label = "Confirm discard",
+		.description = "Ask before discarding working-tree changes.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
+		.section = "git",
+		.key = "default_remote",
+		.label = "Default remote",
+		.description = "Remote used for fetch, pull, and push actions.",
+		.kind = SettingKind.STRING,
+		.fallback = { .s = "origin" },
+	},
+	{
 		.section = "lsp",
 		.key = "enabled",
 		.label = "Language servers",
@@ -1125,6 +1173,7 @@ fn SettingPage page_for(SettingId id)
 	) == 0 || s.section.compare_to("minimap") == 0 || s.section.compare_to("arrows") == 0) return SettingPage.CANVAS;
 	if (s.section.compare_to("search") == 0) return SettingPage.ADVANCED;
 	if (s.section.compare_to("console") == 0) return SettingPage.CONSOLE;
+	if (s.section.compare_to("git") == 0) return SettingPage.INTEGRATIONS;
 	if (s.section.compare_to("lsp") == 0) return SettingPage.INTEGRATIONS;
 	if (s.section.compare_to("app") == 0)
 	{
@@ -1210,6 +1259,7 @@ fn String group_for(SettingId id)
 		if (s.key.compare_to("restore_sessions") == 0) return "Sessions";
 		return "Panel";
 	}
+	if (s.section.compare_to("git") == 0) return "Git";
 	if (s.section.compare_to("lsp") == 0) return "Language servers";
 	return "General";
 }

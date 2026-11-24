@@ -78,7 +78,8 @@ fn String[] git_diff_argv(
 	String root,
 	String path,
 	String orig_path,
-	bool staged
+	bool staged,
+	bool untracked
 )
 {
 	@pool()
@@ -94,11 +95,22 @@ fn String[] git_diff_argv(
 		list.push("--no-ext-diff");
 		list.push("--no-textconv");
 		list.push("--unified=3");
-		list.push("-M");
-		if (staged) list.push("--cached");
-		list.push("--");
-		list.push(path);
-		if (orig_path.len > 0 && orig_path.compare_to(path) != 0) list.push(orig_path);
+		if (untracked)
+		{
+			list.push("--no-index");
+			list.push("--");
+			list.push("/dev/null");
+			String abs_path = path_join_alloc(tmem, root, path);
+			list.push(abs_path);
+		}
+		else
+		{
+			list.push("-M");
+			if (staged) list.push("--cached");
+			list.push("--");
+			list.push(path);
+			if (orig_path.len > 0 && orig_path.compare_to(path) != 0) list.push(orig_path);
+		}
 		return finish_argv(allocator, &list);
 	};
 }

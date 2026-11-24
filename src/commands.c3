@@ -127,6 +127,7 @@ enum CommandId
 	MINIMIZE_CARD,
 	TOGGLE_FOCUS_MODE,
 	TOGGLE_CONSOLE,
+	TOGGLE_SCM,
 	CONSOLE_RUN,
 	CONSOLE_HISTORY_PREV,
 	CONSOLE_HISTORY_NEXT,
@@ -737,6 +738,13 @@ const CommandDef[] COMMAND_DEFS = {
 		.contexts = CTX_GLOBAL,
 	},
 	{
+		.id = CommandId.TOGGLE_SCM,
+		.label = "Source Control",
+		.shortcut = "Ctrl+Shift+G",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL,
+	},
+	{
 		.id = CommandId.CONSOLE_RUN,
 		.label = "Run Command",
 		.shortcut = "Enter",
@@ -1102,6 +1110,8 @@ fn String command_name(CommandId id)
 			return "toggle_focus_mode";
 		case CommandId.TOGGLE_CONSOLE:
 			return "toggle_console";
+		case CommandId.TOGGLE_SCM:
+			return "toggle_scm";
 		case CommandId.CONSOLE_RUN:
 			return "console_run";
 		case CommandId.CONSOLE_HISTORY_PREV:
@@ -1210,6 +1220,7 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 			return has_buffer;
 		case CommandId.PROBLEMS:
 		case CommandId.TOGGLE_CONSOLE:
+		case CommandId.TOGGLE_SCM:
 		case CommandId.CONSOLE_RUN:
 		case CommandId.CONSOLE_HISTORY_PREV:
 		case CommandId.CONSOLE_HISTORY_NEXT:

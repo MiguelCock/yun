@@ -146,7 +146,7 @@ fn void test_status_integration()
 	{
 		return;
 	}
-	String[] name = { "git", "-C", dir, "config", "user.name", "Yun Test" };
+	String[] name  = { "git", "-C", dir, "config", "user.name", "Yun Test" };
 	String[] email = { "git", "-C", dir, "config", "user.email", "yun@example.com" };
 	(void)process::run(name, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
 	(void)process::run(email, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
@@ -157,7 +157,7 @@ fn void test_status_integration()
 	if (catch excuse = file::save(file, "module test;\n// changed\n")) return;
 
 	GitSettings previous = settings();
-	GitSettings fast = previous;
+	GitSettings fast     = previous;
 	fast.debounce_ms = 0;
 	set_settings(fast);
 	defer set_settings(previous);
@@ -173,4 +173,85 @@ fn void test_status_integration()
 	assert(entry != null);
 	assert(entry.worktree == GitFileState.MODIFIED);
 	assert(!entry.untracked);
+}
+
+fn void test_actions_integration()
+{
+	String[] probe = { "git", "--version" };
+	if (catch excuse = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
+	{
+		return;
+	}
+
+	String dir = "/tmp/yun_git_actions_test";
+	(void)path::delete((PathCommon)dir);
+	if (catch excuse = path::mkdir(dir, recursive: true)) return;
+	defer (void)path::delete((PathCommon)dir);
+
+	String file = string::format(tmem, "%s/file.c3", dir);
+	if (catch excuse = file::save(file, "module test;\n")) return;
+	String[] init = { "git", "init", "-q", dir };
+	if (catch excuse = process::run(init, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
+	{
+		return;
+	}
+	String[] name  = { "git", "-C", dir, "config", "user.name", "Yun Test" };
+	String[] email = { "git", "-C", dir, "config", "user.email", "yun@example.com" };
+	(void)process::run(name, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
+	(void)process::run(email, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
+	String[] add = { "git", "-C", dir, "add", "-A" };
+	(void)process::run(add, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
+	String[] commit = { "git", "-C", dir, "commit", "-q", "-m", "init" };
+	(void)process::run(commit, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
+	if (catch excuse = file::save(file, "module test;\n// changed\n")) return;
+
+	GitSettings previous = settings();
+	GitSettings fast     = previous;
+	fast.debounce_ms = 0;
+	set_settings(fast);
+	defer set_settings(previous);
+
+	State state;
+	state.init(mem);
+	defer state.destroy();
+	state.set_project(dir);
+	assert(git_test_helpers::wait_for_status(&state, dir, 5000));
+
+	String[] paths        = { "file.c3" };
+	ulong revision        = state.action_revision;
+	ulong status_revision = state.status_revision;
+	assert(state.stage(paths));
+	assert(git_test_helpers::wait_action(&state, dir, revision, 5000));
+	assert(state.action.success);
+	assert(git_test_helpers::wait_status_revision(&state, dir, status_revision, 5000));
+	GitEntry* staged = state.status.find_abs(file);
+	assert(staged != null);
+	assert(staged.index == GitFileState.MODIFIED);
+
+	revision = state.action_revision;
+	status_revision = state.status_revision;
+	assert(state.commit("change", false));
+	assert(git_test_helpers::wait_action(&state, dir, revision, 5000));
+	assert(state.action.success);
+	assert(git_test_helpers::wait_status_revision(&state, dir, status_revision, 5000));
+	assert(state.status.entries.len() == 0);
+
+	if (catch excuse = file::save(file, "module test;\n// changed again\n")) return;
+	state.refresh_now(git_test_helpers::now_seconds());
+	assert(git_test_helpers::wait_for_status(&state, dir, 5000));
+	assert(git_test_helpers::wait_idle(&state, dir, 5000));
+	revision = state.diff_revision;
+	assert(state.request_diff("file.c3", "", false, false));
+	assert(git_test_helpers::wait_diff(&state, dir, revision, 5000));
+	assert(state.diff.output.contains("+// changed again"));
+
+	String untracked = string::format(tmem, "%s/new.c3", dir);
+	if (catch excuse = file::save(untracked, "module new;\n")) return;
+	state.refresh_now(git_test_helpers::now_seconds());
+	assert(git_test_helpers::wait_for_status(&state, dir, 5000));
+	assert(git_test_helpers::wait_idle(&state, dir, 5000));
+	revision = state.diff_revision;
+	assert(state.request_diff("new.c3", "", false, true));
+	assert(git_test_helpers::wait_diff(&state, dir, revision, 5000));
+	assert(state.diff.output.contains("+module new;"));
 }

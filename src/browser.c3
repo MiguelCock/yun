@@ -5,6 +5,7 @@ import std::collections::list;
 import std::io::path;
 import std::math;
 import yun::commands;
+import yun::git;
 import yun::icons;
 import yun::keymap;
 import yun::theme;
@@ -166,7 +167,7 @@ fn String Browser.row_label(&self, int index)
 	return rl::get_file_name((ZString)entry.ptr).str_view();
 }
 
-fn void Browser.draw(&self)
+fn void Browser.draw(&self, git::GitStatus* git_status)
 {
 	if (!self.open) return;
 
@@ -230,6 +231,26 @@ fn void Browser.draw(&self)
 				theme::current()
 				.panel_text);
 		};
+		if (i >= 2)
+		{
+			git::GitEntry* entry = git::status_entry(git_status, (String)self.entries[(sz)(i - 2)]);
+			if (entry)
+			{
+				char badge = git::entry_badge(entry);
+				if (badge != ' ')
+				{
+					char[2] text = { badge, 0 };
+					rl::draw_text_ex(
+						ui::font(),
+						(ZString)&text[0],
+						{ (float)(x + width - ui::px(28)), (float)row_y },
+						(float)ui::tpx(14),
+						0.0f,
+						git::entry_color(entry)
+					);
+				}
+			}
+		}
 	}
 
 	rl::draw_text_ex(

@@ -57,6 +57,7 @@ struct State
 	String binary;
 	GitStatus status;
 	bool has_status;
+	ulong status_revision;
 	bool is_repo;
 	bool checked;
 	bool dirty;
@@ -88,6 +89,7 @@ fn void State.init(&self, Allocator allocator)
 	self.binary = "";
 	self.status.init(allocator);
 	self.has_status = false;
+	self.status_revision = 0;
 	self.is_repo = false;
 	self.checked = false;
 	self.dirty = false;
@@ -130,6 +132,7 @@ fn void State.clear_status(&self)
 	self.status.destroy();
 	self.status = fresh;
 	self.has_status = false;
+	self.status_revision++;
 }
 
 fn void State.cancel_in_flight(&self)
@@ -187,7 +190,8 @@ fn bool State.send(
 	usz output_cap,
 	String path,
 	String orig_path,
-	bool staged
+	bool staged,
+	bool untracked
 )
 {
 	GitRequest request = {
@@ -197,6 +201,7 @@ fn bool State.send(
 		.timeout_ms = timeout_ms,
 		.output_cap = output_cap,
 		.staged = staged,
+		.untracked = untracked,
 		.path = path.len > 0 ? path.copy(self.allocator) : "",
 		.orig_path = orig_path.len > 0 ? orig_path.copy(self.allocator) : "",
 	};
@@ -246,13 +251,23 @@ fn GitErrorKind classify_error(String detail)
 	{
 		return GitErrorKind.LOCKED;
 	}
-	if (contains_ci(detail, "authentication failed") || contains_ci(detail, "could not read username")
-		|| contains_ci(detail, "permission denied (publickey)") || contains_ci(detail, "terminal prompts disabled"))
+	if (contains_ci(
+		detail,
+		"authentication failed"
+	) || contains_ci(
+		detail,
+		"could not read username"
+	) || contains_ci(detail, "permission denied (publickey)") || contains_ci(detail, "terminal prompts disabled"))
 	{
 		return GitErrorKind.AUTH;
 	}
-	if (contains_ci(detail, "could not resolve host") || contains_ci(detail, "unable to access")
-		|| contains_ci(detail, "connection refused") || contains_ci(detail, "network is unreachable"))
+	if (contains_ci(
+		detail,
+		"could not resolve host"
+	) || contains_ci(
+		detail,
+		"unable to access"
+	) || contains_ci(detail, "connection refused") || contains_ci(detail, "network is unreachable"))
 	{
 		return GitErrorKind.NETWORK;
 	}
@@ -307,7 +322,7 @@ fn void State.start_detect(&self)
 {
 	if (self.busy_or_refreshing()) return;
 	String[] argv = git_detect_argv(self.allocator, self.binary, self.project_root);
-	if (!self.send(GitRequestKind.DETECT, argv, DETECT_TIMEOUT_MS, DETECT_OUTPUT_CAP, "", "", false))
+	if (!self.send(GitRequestKind.DETECT, argv, DETECT_TIMEOUT_MS, DETECT_OUTPUT_CAP, "", "", false, false))
 	{
 		self.checked = true;
 		self.is_repo = false;
@@ -321,7 +336,7 @@ fn void State.start_status(&self)
 {
 	if (self.busy_or_refreshing()) return;
 	String[] argv = git_status_argv(self.allocator, self.binary, self.repo_root);
-	if (!self.send(GitRequestKind.STATUS, argv, STATUS_TIMEOUT_MS, STATUS_OUTPUT_CAP, "", "", false))
+	if (!self.send(GitRequestKind.STATUS, argv, STATUS_TIMEOUT_MS, STATUS_OUTPUT_CAP, "", "", false, false))
 	{
 		self.dirty = false;
 		return;
@@ -358,7 +373,7 @@ fn void State.handle_detect(&self, GitResult* result)
 		return;
 	}
 	String raw = result.output.str_view();
-	usz end = 0;
+	usz end    = 0;
 	while (end < raw.len && raw[end] != '\n' && raw[end] != '\r') end++;
 	String root = trim_eol(raw[0:end]);
 	if (root.len == 0)
@@ -414,6 +429,7 @@ fn void State.handle_status(&self, GitResult* result)
 	self.status.destroy();
 	self.status = next;
 	self.has_status = true;
+	self.status_revision++;
 	self.is_repo = true;
 	self.checked = true;
 	self.clear_error();
@@ -429,8 +445,8 @@ fn void State.handle_diff(&self, GitResult* result)
 	self.diff.path = result.path.len > 0 ? result.path.copy(self.allocator) : "";
 	self.diff.orig_path = result.orig_path.len > 0 ? result.orig_path.copy(self.allocator) : "";
 	self.diff.exit_code = result.exit_code;
-	self.diff.output = result.output.copy_str(self.allocator);
-	self.diff.error = result.error.copy_str(self.allocator);
+	self.diff.output = result.output.len() > 0 ? result.output.copy_str(self.allocator) : "";
+	self.diff.error = result.error.len() > 0 ? result.error.copy_str(self.allocator) : "";
 	self.diff.truncated = result.truncated;
 	if (result.spawn_failed) self.diff.error = "Could not start Git".copy(self.allocator);
 	self.diff_revision++;
@@ -441,10 +457,9 @@ fn void State.handle_action(&self, GitResult* result)
 	self.action.destroy();
 	self.action.init(self.allocator);
 	self.action.kind = result.kind;
-	self.action.success = result.exit_code == 0 && !result.spawn_failed && !result.timed_out
-		&& !result.cancelled;
-	self.action.output = result.output.copy_str(self.allocator);
-	self.action.error = result.error.copy_str(self.allocator);
+	self.action.success = result.exit_code == 0 && !result.spawn_failed && !result.timed_out && !result.cancelled;
+	self.action.output = result.output.len() > 0 ? result.output.copy_str(self.allocator) : "";
+	self.action.error = result.error.len() > 0 ? result.error.copy_str(self.allocator) : "";
 	if (result.spawn_failed) self.action.error = "Could not start Git".copy(self.allocator);
 	if (result.timed_out) self.action.error = "Git did not finish in time.".copy(self.allocator);
 	if (result.cancelled) self.action.error = "Git command was cancelled.".copy(self.allocator);
@@ -580,19 +595,11 @@ fn void State.update(&self, String project_root, int cards_revision, double now,
 	self.start_status();
 }
 
-fn bool State.request_diff(&self, String path, String orig_path, bool staged)
+fn bool State.request_diff(&self, String path, String orig_path, bool staged, bool untracked)
 {
 	if (self.busy_or_refreshing() || !self.is_repo) return false;
-	String[] argv = git_diff_argv(self.allocator, self.binary, self.repo_root, path, orig_path, staged);
-	if (!self.send(
-		GitRequestKind.DIFF,
-		argv,
-		DIFF_TIMEOUT_MS,
-		DIFF_OUTPUT_CAP,
-		path,
-		orig_path,
-		staged
-	))
+	String[] argv = git_diff_argv(self.allocator, self.binary, self.repo_root, path, orig_path, staged, untracked);
+	if (!self.send(GitRequestKind.DIFF, argv, DIFF_TIMEOUT_MS, DIFF_OUTPUT_CAP, path, orig_path, staged, untracked))
 	{
 		return false;
 	}
@@ -605,7 +612,7 @@ fn bool State.stage(&self, String[] paths)
 	if (self.busy_or_refreshing() || !self.is_repo || paths.len == 0) return false;
 	String[] argv = git_stage_argv(self.allocator, self.binary, self.repo_root, paths);
 	self.busy = true;
-	if (!self.send(GitRequestKind.STAGE, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false))
+	if (!self.send(GitRequestKind.STAGE, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
 	{
 		self.busy = false;
 		return false;
@@ -616,10 +623,10 @@ fn bool State.stage(&self, String[] paths)
 fn bool State.unstage(&self, String[] paths)
 {
 	if (self.busy_or_refreshing() || !self.is_repo || paths.len == 0) return false;
-	bool initial = self.has_status && self.status.initial;
+	bool initial  = self.has_status && self.status.initial;
 	String[] argv = git_unstage_argv(self.allocator, self.binary, self.repo_root, paths, initial);
 	self.busy = true;
-	if (!self.send(GitRequestKind.UNSTAGE, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false))
+	if (!self.send(GitRequestKind.UNSTAGE, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
 	{
 		self.busy = false;
 		return false;
@@ -632,11 +639,19 @@ fn bool State.discard(&self, String[] paths)
 	if (self.busy_or_refreshing() || !self.is_repo || paths.len == 0) return false;
 	String[] argv = git_discard_argv(self.allocator, self.binary, self.repo_root, paths);
 	self.busy = true;
-	if (!self.send(GitRequestKind.DISCARD, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false))
+	if (!self.send(GitRequestKind.DISCARD, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
 	{
 		self.busy = false;
 		return false;
 	}
+	return true;
+}
+
+fn bool State.discard_untracked(&self, String abs_path, double now)
+{
+	if (catch excuse = file::delete(abs_path)) return false;
+	self.mark_dirty(now);
+	self.refresh_requested = true;
 	return true;
 }
 
@@ -645,7 +660,7 @@ fn bool State.commit(&self, String message, bool amend)
 	if (self.busy_or_refreshing() || !self.is_repo || message.len == 0) return false;
 	String[] argv = git_commit_argv(self.allocator, self.binary, self.repo_root, message, amend);
 	self.busy = true;
-	if (!self.send(GitRequestKind.COMMIT, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false))
+	if (!self.send(GitRequestKind.COMMIT, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
 	{
 		self.busy = false;
 		return false;

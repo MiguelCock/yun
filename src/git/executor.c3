@@ -23,6 +23,7 @@ struct GitRequest
 	int timeout_ms;
 	usz output_cap;
 	bool staged;
+	bool untracked;
 	String path;
 	String orig_path;
 }
@@ -97,7 +98,7 @@ fn void drain_process(Process* process, DString* out, DString* err, usz out_cap,
 	while (true)
 	{
 		sz? read = process.read_stdout(&chunk[0], (sz)chunk.len);
-		sz got = 0;
+		sz got   = 0;
 		if (try value = read) got = value;
 		if (got <= 0) break;
 		append_capped(out, (String)chunk[0:got], out_cap, truncated);
@@ -105,7 +106,7 @@ fn void drain_process(Process* process, DString* out, DString* err, usz out_cap,
 	while (true)
 	{
 		sz? read = process.read_stderr(&chunk[0], (sz)chunk.len);
-		sz got = 0;
+		sz got   = 0;
 		if (try value = read) got = value;
 		if (got <= 0) break;
 		append_capped(err, (String)chunk[0:got], err_cap, truncated);
@@ -116,7 +117,7 @@ fn bool GitExecutor.cancelled(&self, ulong id)
 {
 	self.mutex.lock();
 	bool cancelled = self.cancel_id == id;
-	bool stopping = self.stopping;
+	bool stopping  = self.stopping;
 	self.mutex.unlock();
 	return cancelled || stopping;
 }
@@ -141,14 +142,7 @@ fn GitResult git_run_request(GitExecutor* executor, GitRequest* request)
 	$if env::WIN32:
 		options = options | process::SpawnOptions.NO_WINDOW;
 	$endif
-	Process? spawned = process::spawn(
-		request.argv,
-		options,
-		{ },
-		process::CAPTURE,
-		process::CAPTURE,
-		process::CAPTURE
-	);
+	Process? spawned = process::spawn(request.argv, options, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
 	if (catch excuse = spawned)
 	{
 		result.spawn_failed = true;
@@ -159,10 +153,17 @@ fn GitResult git_run_request(GitExecutor* executor, GitRequest* request)
 	Process process = spawned;
 	defer (void)process.destroy();
 	Clock start = clock::now();
-	bool alive = true;
+	bool alive  = true;
 	while (true)
 	{
-		drain_process(&process, &result.output, &result.error, request.output_cap, DEFAULT_ERROR_CAP, &result.truncated);
+		drain_process(
+			&process,
+			&result.output,
+			&result.error,
+			request.output_cap,
+			DEFAULT_ERROR_CAP,
+			&result.truncated
+		);
 
 		bool? running = process.is_running();
 		if (try value = running)
@@ -213,7 +214,7 @@ fn int git_worker_main(void* arg)
 		GitRequest? maybe = executor.requests.pop();
 		if (catch excuse = maybe) break;
 		GitRequest request = maybe;
-		GitResult result = git_run_request(executor, &request);
+		GitResult result   = git_run_request(executor, &request);
 		git_free_argv(executor.allocator, request.argv);
 		if (request.path.len > 0) request.path.free(executor.allocator);
 		if (request.orig_path.len > 0) request.orig_path.free(executor.allocator);
