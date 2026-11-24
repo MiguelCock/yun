@@ -2836,11 +2836,16 @@ fn bool Project.editor_delete(&self, bool back)
 
 fn void Project.editor_move(&self, EditorMove move, EditorMetrics metrics)
 {
+	self.editor_move_select(move, metrics, shift_down());
+}
+
+fn void Project.editor_move_select(&self, EditorMove move, EditorMetrics metrics, bool select)
+{
 	FileCard* card = self.focused_editable_card();
 	if (!card) return;
 	PieceTable* table = card.buffer;
 	History* history  = card.history;
-	bool shift        = shift_down();
+	bool shift        = select;
 	bool vertical     = false;
 	history.break_coalescing();
 	switch (move)
@@ -3133,45 +3138,85 @@ fn void Project.handle_keyboard(
 		}
 	}
 
+	bool any_move = false;
 	if (keymap.pressed_move((int)commands::CommandId.CURSOR_LEFT, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.LEFT, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.CURSOR_RIGHT, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.RIGHT, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.CURSOR_UP, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.UP, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.CURSOR_DOWN, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.DOWN, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.CURSOR_WORD_LEFT, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.WORD_LEFT, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.CURSOR_WORD_RIGHT, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.WORD_RIGHT, metrics);
+		any_move = true;
 	}
-	if (keymap.pressed((int)commands::CommandId.LINE_START, commands::CTX_EDIT))
+	if (keymap.pressed_move((int)commands::CommandId.LINE_START, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.LINE_START, metrics);
+		any_move = true;
 	}
-	if (keymap.pressed((int)commands::CommandId.LINE_END, commands::CTX_EDIT))
+	if (keymap.pressed_move((int)commands::CommandId.LINE_END, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.LINE_END, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.PAGE_UP, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.PAGE_UP, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.PAGE_DOWN, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.PAGE_DOWN, metrics);
+		any_move = true;
+	}
+	if (shift_down() && !any_move)
+	{
+		bool fallback_move  = false;
+		EditorMove fallback = EditorMove.LEFT;
+		if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT))
+		{
+			fallback = EditorMove.LEFT;
+			fallback_move = true;
+		}
+		else if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT))
+		{
+			fallback = EditorMove.RIGHT;
+			fallback_move = true;
+		}
+		else if (rl::is_key_pressed(rl::RLKeyboardKey.UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP))
+		{
+			fallback = EditorMove.UP;
+			fallback_move = true;
+		}
+		else if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN))
+		{
+			fallback = EditorMove.DOWN;
+			fallback_move = true;
+		}
+		if (fallback_move)
+		{
+			self.editor_move_select(fallback, metrics, true);
+		}
 	}
 
 	if (completion::completion_is_open()) completion::completion_refilter(table, card.cursor);
