@@ -610,6 +610,7 @@ fn void State.handle_result(&self, GitResult* result)
 		case GitRequestKind.PULL:
 		case GitRequestKind.PUSH:
 		case GitRequestKind.PUBLISH:
+		case GitRequestKind.MERGE_ABORT:
 			self.handle_action(result);
 	}
 	result.destroy(self.allocator);
@@ -810,6 +811,19 @@ fn bool State.push(&self, bool publish)
 		false,
 		false
 	))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn bool State.abort_merge(&self)
+{
+	if (self.busy_or_refreshing() || !self.is_repo) return false;
+	String[] argv = git_merge_abort_argv(self.allocator, self.binary, self.repo_root);
+	self.busy = true;
+	if (!self.send(GitRequestKind.MERGE_ABORT, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
 	{
 		self.busy = false;
 		return false;

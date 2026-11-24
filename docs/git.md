@@ -23,6 +23,8 @@ The Source Control panel (`Ctrl+Shift+G`) docks on the left and lists merge conf
 
 Click the branch row (or press `B`) to open the branch picker. It lists local branches with the current branch marked and the upstream shown; `Enter` switches, `N` creates a branch from the current HEAD, and `R` refreshes the list. Switching is blocked by Git when local changes would be overwritten and the error is shown in the panel.
 
+Conflicted files appear under Merge Changes. Press `C` on a selected conflict to open the resolution view: `1`/`2`/`3` choose Current, Incoming, or Both, `S` saves and stages the resolved file, and `A` aborts the merge. The view shows the conflict labels and base text when available.
+
 The remote bar provides Fetch, Pull, Push/Publish, and Sync. Fetch and Push use `git.default_remote`; Pull uses the branch upstream with `--ff-only`; Publish runs `git push -u <remote> <branch>` when no upstream exists; Sync runs Pull followed by Push. Remote commands set `credential.interactive=false` so Git cannot wait on a terminal prompt; credential helpers and SSH agents still work. Pull and Sync are disabled while editors have unsaved changes.
 
 Diff commands use `--no-color --no-ext-diff --no-textconv`, so repository-configured diff drivers cannot execute. `src/git/diff.c3` parses unified diffs into hunks and typed lines; `src/git/diff_view.c3` renders inline and side-by-side modes.

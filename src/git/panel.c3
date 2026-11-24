@@ -73,6 +73,9 @@ struct Panel
 	int branch_input_len;
 	String pending_open;
 	bool open_pending;
+	String pending_resolve_rel;
+	String pending_resolve_abs;
+	bool resolve_pending;
 	bool leave_requested;
 	bool focus_requested;
 }
@@ -111,6 +114,9 @@ fn void Panel.init(&self, Allocator allocator)
 	self.branch_input_len = 0;
 	self.pending_open = "";
 	self.open_pending = false;
+	self.pending_resolve_rel = "";
+	self.pending_resolve_abs = "";
+	self.resolve_pending = false;
 	self.leave_requested = false;
 	self.focus_requested = false;
 }
@@ -119,6 +125,8 @@ fn void Panel.destroy(&self)
 {
 	self.rows.free();
 	if (self.pending_open.len > 0) self.pending_open.free(self.allocator);
+	if (self.pending_resolve_rel.len > 0) self.pending_resolve_rel.free(self.allocator);
+	if (self.pending_resolve_abs.len > 0) self.pending_resolve_abs.free(self.allocator);
 	if (self.branch_warning.len > 0) self.branch_warning.free(self.allocator);
 }
 
@@ -502,6 +510,19 @@ fn void Panel.request_open(&self, State* git)
 	if (self.pending_open.len > 0) self.pending_open.free(self.allocator);
 	self.pending_open = entry.abs_path.copy(self.allocator);
 	self.open_pending = true;
+}
+
+fn void Panel.request_resolve(&self, State* git)
+{
+	PanelRow* row = self.selected_row();
+	if (!row || row.kind != PanelRowKind.FILE_CONFLICT) return;
+	GitEntry* entry = self.entry_for(git, row.entry);
+	if (!entry) return;
+	if (self.pending_resolve_rel.len > 0) self.pending_resolve_rel.free(self.allocator);
+	if (self.pending_resolve_abs.len > 0) self.pending_resolve_abs.free(self.allocator);
+	self.pending_resolve_rel = entry.path.copy(self.allocator);
+	self.pending_resolve_abs = entry.abs_path.copy(self.allocator);
+	self.resolve_pending = true;
 }
 
 fn void Panel.request_diff(&self, State* git)
@@ -1024,6 +1045,7 @@ fn void Panel.handle_list_key(&self, State* git, Canvas* canvas, double now)
 	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.SPACE)) self.stage_selected(git, now);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.D)) self.request_diff(git);
+	if (rl::is_key_pressed(rl::RLKeyboardKey.C)) self.request_resolve(git);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.R)) git.refresh_now(now);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.B)) self.open_branch_picker(git);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.DELETE)) self.begin_discard(git, now);
@@ -2067,5 +2089,18 @@ fn bool Panel.take_open(&self, String* path)
 	*path = self.pending_open;
 	self.pending_open = "";
 	self.open_pending = false;
+	self.pending_resolve_rel = "";
+	self.pending_resolve_abs = "";
+	self.resolve_pending = false;
+	return true;
+}
+fn bool Panel.take_resolve(&self, String* rel, String* abs)
+{
+	if (!self.resolve_pending) return false;
+	*rel = self.pending_resolve_rel;
+	*abs = self.pending_resolve_abs;
+	self.pending_resolve_rel = "";
+	self.pending_resolve_abs = "";
+	self.resolve_pending = false;
 	return true;
 }

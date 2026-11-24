@@ -245,3 +245,17 @@ fn String[] git_push_argv(Allocator allocator, String binary, String root, Strin
 		return finish_argv(allocator, &list);
 	};
 }
+fn String[] git_merge_abort_argv(Allocator allocator, String binary, String root)
+{
+	@pool()
+	{
+		List{String} list;
+		list.init(tmem);
+		list.push(binary);
+		list.push("-C");
+		list.push(root);
+		list.push("merge");
+		list.push("--abort");
+		return finish_argv(allocator, &list);
+	};
+}

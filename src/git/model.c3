@@ -45,6 +45,7 @@ enum GitRequestKind : int
 	PULL,
 	PUSH,
 	PUBLISH,
+	MERGE_ABORT,
 }
 
 struct GitBranch
