@@ -1,7 +1,9 @@
 module yun::console @test;
 
-import std::os::env;
+import std::io::file;
+import std::io::path;
 import std::math::geometry;
+import std::os::env;
 import std::thread;
 import yun::ui;
 import yun::console_test_helpers;
@@ -450,4 +452,44 @@ fn void test_panel_apply_settings()
 	settings.auto_scroll = true;
 	panel.apply_settings(settings);
 	assert(panel.pinned);
+}
+fn void test_runner_kills_process_tree()
+{
+	$if env::WIN32:
+		return;
+	$endif
+	$if env::DARWIN:
+		return;
+	$endif
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? dir = tmp.append(tmem, "yun_console_tree");
+		if (catch excuse = dir) return;
+		Path root = dir;
+		(void)path::rmtree(root);
+		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		Path? leaked = root.append(tmem, "leaked.txt");
+		if (catch excuse = leaked) return;
+
+		ConsoleBuffer buffer;
+		buffer.init(mem);
+		defer buffer.destroy();
+
+		ConsoleRunner runner;
+		runner.init(mem);
+		defer runner.destroy(&buffer);
+
+		String command = string::format(tmem, "sh -c 'sleep 1; echo leaked > %s' & wait", (String)leaked);
+		assert(runner.start(&buffer, (String)root, command));
+		(void)thread::sleep_ms(100);
+		assert(runner.kill());
+		assert(console_test_helpers::wait_runner(&runner, &buffer, 500));
+		assert(runner.status == ConsoleStatus.KILLED);
+		(void)thread::sleep_ms(1500);
+		assert(!file::exists(leaked));
+
+		(void)path::rmtree(root);
+	};
 }
