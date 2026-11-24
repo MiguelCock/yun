@@ -26,7 +26,7 @@ Lua mods (#33–#36), large-file support (#14), very-large-project perf (#45), c
 
 ## Keyboard and modes
 
-Yun is keyboard-first and Vim-inspired. There are three modes, shown in the top bar (`-- MOVE --`, `-- EDIT --`, `-- TOP BAR --`), plus a `-- GRAB --` sub-state in MOVE. The status area also shows the current folder as a breadcrumb and elides it when space is tight. The FPS counter is hidden by default; hold `F3` to show it with the performance overlay. Overlays (command palette, search, symbol palette, problems panel, find bar, menus, prompts) are modal and handle their own keys.
+Yun is keyboard-first and Vim-inspired. There are three modes, shown in the top bar (`-- MOVE --`, `-- EDIT --`, `-- TOP BAR --`), plus a `-- GRAB --` sub-state in MOVE. The status area also shows the current folder as a breadcrumb and elides it when space is tight. The top bar exposes New, Open, Save, Git, and Console, followed by a compact settings icon. The FPS counter is hidden by default; hold `F3` to show it with the performance overlay. Overlays (command palette, search, symbol palette, problems panel, find bar, menus, prompts) are modal and handle their own keys.
 
 ### MOVE (default)
 
@@ -148,7 +148,7 @@ The `editor` section covers font size and family (monospace fonts found on the s
 
 Language servers are configured under the `lsp` section: a map of language id to command, e.g. `"lsp": { "c3": "c3lsp", "python": "pylsp" }`. Yun detects the language id from the file extension and starts the server (rooted at the project); an override takes precedence over the built-in default. See [`docs/lsp.md`](docs/lsp.md) for the supported ids and defaults.
 
-In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's *Settings* button, or the command palette. Settings are grouped into General, Appearance, Editor, Canvas, Integrations, Keys, Console, and Advanced pages; the sidebar switches pages, `Ctrl+1`…`Ctrl+8` jump directly, and typing searches across all pages. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value. The **Keys** page lists every command's shortcut: `Enter` captures a new chord, `Del` unbinds, `Backspace` resets it (when the search is empty), `Esc` cancels or clears the search, and a *Reset all* row clears the current scope.
+In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's settings icon, or the command palette. Settings are grouped into General, Appearance, Editor, Canvas, Integrations, Keys, Console, and Advanced pages; the sidebar switches pages, `Ctrl+1`…`Ctrl+8` jump directly, and typing searches across all pages. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value. The **Keys** page lists every command's shortcut: `Enter` captures a new chord, `Del` unbinds, `Backspace` resets it (when the search is empty), `Esc` cancels or clears the search, and a *Reset all* row clears the current scope.
 
 Keybindings use chords like `Ctrl+Shift+P`. Modifiers are `Ctrl` (shown as `Cmd` on macOS), `Shift`, `Alt` and `Super`; keys can be letters/digits, punctuation (`, . / ; ' [ ] - = \ \``), named keys (`Enter`, `Esc`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `CapsLock`, `PrintScreen`, `Pause`), function keys `F1`-`F12`, or keypad keys (`KP_0`-`KP_9`, `KP_Add`, `KP_Subtract`, `KP_Multiply`, `KP_Divide`, `KP_Enter`). Set a command's chord to `""` to unbind it. Editor and completion actions (undo/redo, indentation, cursor movement, completion next/prev/accept), canvas/mode/top-bar navigation (pan, zoom in/out/reset/fit, item select/cycle, enter/leave folder, cycle focus/grab, minimize, focus switching), overlay navigation (lists, accept/close, find next/replace, search toggles) and card actions (close/toggle/rename/duplicate/copy-path/delete, context menu, focus content) are registered commands too, so they can be rebound the same way.
 
@@ -167,8 +167,8 @@ The version lives in [`project.json`](project.json) (and `yun::version.APP_VERSI
 Releases are built and published by [`.github/workflows/release.yml`](.github/workflows/release.yml). **Merging a PR never publishes anything** — the workflow only builds. To cut a release, set the version in `project.json` and `src/version.c3` and push a matching tag:
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 Tagging builds `linux-x64`, `macos-aarch64`, and `windows-x64` and attaches the archives (with SHA-256 checksums) to the GitHub Release. The tag must equal `v<version from project.json>`, otherwise publishing is aborted.

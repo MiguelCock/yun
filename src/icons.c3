@@ -34,6 +34,7 @@ enum IconKind : int
 	TRASH,
 	CHEVRON_DOWN,
 	CHEVRON_RIGHT,
+	GIT,
 	COUNT,
 }
 
@@ -187,6 +188,8 @@ fn String codicon_name(IconKind icon)
 			return "chevron-down";
 		case IconKind.CHEVRON_RIGHT:
 			return "chevron-right";
+		case IconKind.GIT:
+			return "source-control";
 		case IconKind.COUNT:
 			return "";
 	}
@@ -613,6 +616,14 @@ fn void draw(IconKind icon, Rect b, RLColor color)
 		case IconKind.CHEVRON_RIGHT:
 			seg(b, 0.4f, 0.25f, 0.65f, 0.5f, stroke, color);
 			seg(b, 0.65f, 0.5f, 0.4f, 0.75f, stroke, color);
+		case IconKind.GIT:
+			rl::draw_circle_lines_v({ b.x + b.width * 0.3f, b.y + b.height * 0.22f }, b.width * 0.1f, color);
+			rl::draw_circle_lines_v({ b.x + b.width * 0.7f, b.y + b.height * 0.22f }, b.width * 0.1f, color);
+			rl::draw_circle_lines_v({ b.x + b.width * 0.5f, b.y + b.height * 0.8f }, b.width * 0.1f, color);
+			seg(b, 0.3f, 0.32f, 0.3f, 0.58f, stroke, color);
+			seg(b, 0.3f, 0.58f, 0.5f, 0.72f, stroke, color);
+			seg(b, 0.7f, 0.32f, 0.7f, 0.48f, stroke, color);
+			seg(b, 0.7f, 0.48f, 0.5f, 0.62f, stroke, color);
 		case IconKind.COUNT:
 			break;
 	}
