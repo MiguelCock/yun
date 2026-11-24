@@ -493,3 +493,10 @@ fn void test_runner_kills_process_tree()
 		(void)path::rmtree(root);
 	};
 }
+fn void test_panel_horizontal_clamp()
+{
+	assert(console_clamp_hscroll(-10.0f, 500.0f, 200.0f) == 0.0f);
+	assert(console_clamp_hscroll(100.0f, 500.0f, 200.0f) == 100.0f);
+	assert(console_clamp_hscroll(400.0f, 500.0f, 200.0f) == 300.0f);
+	assert(console_clamp_hscroll(50.0f, 100.0f, 200.0f) == 0.0f);
+}

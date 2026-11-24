@@ -1230,6 +1230,7 @@ fn void run_command(commands::CommandId id, App* app)
 				focus_console(app);
 				app.console.clear();
 				app.console_panel.scroll = 0;
+				app.console_panel.output_scroll_x = 0.0f;
 				app.console_panel.pinned = app.console_panel.auto_scroll;
 				return;
 			}
