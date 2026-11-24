@@ -2,12 +2,14 @@ module yun::project @test;
 
 import raylib6::rl;
 import std::collections::list;
+import std::core::mem::alloc;
 import std::io::file;
 import std::io::path;
 import std::math;
 import yun::canvas;
 import yun::card;
 import yun::editor;
+import yun::text;
 
 fn void test_path_is_inside()
 {
@@ -1393,5 +1395,54 @@ fn void test_snap_selected_to_grid()
 		p.snap_selected_to_grid(1.0f);
 		assert(p.cards[0].rect.x == 0.0f);
 		assert(p.cards[0].rect.y == 0.0f);
+	};
+}
+fn void test_shift_line_selection()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		PieceTable* table = alloc::new(tmem, PieceTable);
+		(void)table.init_from_buffer(tmem, "abc\ndef\nghi");
+		History* history = alloc::new(tmem, History);
+		history.init(tmem);
+		p.cards.push(
+			{
+				.path = (Path)"/tmp/shift_select.c3".copy(tmem),
+				.name = "shift_select.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.open = true,
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 400.0f, .height = 300.0f },
+				.buffer = table,
+				.history = history,
+			}
+		);
+		p.focused = 0;
+		FileCard* card = &p.cards[0];
+		card.cursor = 1;
+		card.selection_anchor = 1;
+		card.preferred_column = 1;
+
+		EditorMetrics metrics = {
+			.char_width = 8.0f,
+			.line_height = 16.0f,
+			.padding_x = 4.0f,
+			.padding_y = 4.0f,
+			.font_size = 16.0f,
+		};
+
+		p.editor_move_select(EditorMove.DOWN, metrics, true);
+		assert(card.cursor == 5 && card.selection_anchor == 1);
+		p.editor_move_select(EditorMove.DOWN, metrics, true);
+		assert(card.cursor == 9 && card.selection_anchor == 1);
+		p.editor_move_select(EditorMove.UP, metrics, true);
+		assert(card.cursor == 5 && card.selection_anchor == 1);
+		p.editor_move_select(EditorMove.UP, metrics, true);
+		assert(card.cursor == 1 && card.selection_anchor == 1);
+		assert(!editor::has_selection(card.selection_anchor, card.cursor));
+
+		p.editor_move_select(EditorMove.LINE_END, metrics, true);
+		assert(card.cursor == 3 && card.selection_anchor == 1);
 	};
 }
