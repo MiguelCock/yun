@@ -106,7 +106,9 @@ fn void apply_settings(
 	RLFont* editor_font,
 	editor::EditorMetrics* metrics,
 	int* ui_size,
-	RLFont* ui_font
+	RLFont* ui_font,
+	console::Console* console,
+	console::ConsolePanel* console_panel
 )
 {
 	if (config.settings.consume_change(settings::SettingId.APP_THEME))
@@ -267,6 +269,17 @@ fn void apply_settings(
 	is.dash_length = (float)config.settings.get_float(settings::SettingId.ARROWS_DASH_LENGTH);
 	is.dash_gap = (float)config.settings.get_float(settings::SettingId.ARROWS_DASH_GAP);
 	imports::set_settings(is);
+
+	console::ConsoleSettings cs_console = {
+		.max_lines = (int)config.settings.get_int(settings::SettingId.CONSOLE_MAX_LINES),
+		.max_output_kb = (int)config.settings.get_int(settings::SettingId.CONSOLE_MAX_OUTPUT_KB),
+		.history_size = (int)config.settings.get_int(settings::SettingId.CONSOLE_HISTORY_SIZE),
+		.panel_height = (float)config.settings.get_int(settings::SettingId.CONSOLE_PANEL_HEIGHT),
+		.auto_scroll = config.settings.get_bool(settings::SettingId.CONSOLE_AUTO_SCROLL),
+	};
+	console::set_settings(cs_console);
+	console.apply_settings(console::settings());
+	console_panel.apply_settings(console::settings());
 
 	bool font_changed    = false;
 	bool metrics_changed = false;
@@ -1960,7 +1973,9 @@ fn int main(String[] args)
 				&editor_font,
 				&metrics,
 				&ui_size,
-				&font
+				&font,
+				&console,
+				&console_panel
 			);
 			open_job = project::open_job_create(project.allocator, &project, resolved);
 			opening = true;
@@ -1979,7 +1994,9 @@ fn int main(String[] args)
 			&editor_font,
 			&metrics,
 			&ui_size,
-			&font
+			&font,
+			&console,
+			&console_panel
 		);
 		if (benchmark_cards > 0)
 		{
@@ -2131,7 +2148,9 @@ fn int main(String[] args)
 			&editor_font,
 			&metrics,
 			&ui_size,
-			&font
+			&font,
+			&console,
+			&console_panel
 		);
 		if (!diagnostics_logged)
 		{
@@ -2170,7 +2189,9 @@ fn int main(String[] args)
 						&editor_font,
 						&metrics,
 						&ui_size,
-						&font
+						&font,
+						&console,
+						&console_panel
 					);
 					lsp.set_root((String)project.root);
 					completion::completion_close();

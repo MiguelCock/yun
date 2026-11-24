@@ -830,7 +830,7 @@ fn void Panel.update(
 
 	if (rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL))
 	{
-		for (int i = 0; i < 7; i++)
+		for (int i = 0; i < (int)settings::SettingPage.COUNT; i++)
 		{
 			if (rl::is_key_pressed((rl::RLKeyboardKey)((int)rl::RLKeyboardKey.ONE + i)))
 			{
@@ -1046,6 +1046,8 @@ fn icons::IconKind page_icon(settings::SettingPage page)
 			return icons::IconKind.CONNECTIONS;
 		case settings::SettingPage.KEYS:
 			return icons::IconKind.KEYBOARD;
+		case settings::SettingPage.CONSOLE:
+			return icons::IconKind.CONSOLE;
 		case settings::SettingPage.ADVANCED:
 			return icons::IconKind.SETTINGS;
 		case settings::SettingPage.COUNT:

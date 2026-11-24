@@ -33,6 +33,8 @@ struct ConsolePanel
 	bool visible;
 	bool focused;
 	float height;
+	float setting_height;
+	bool auto_scroll;
 	int scroll;
 	bool pinned;
 	bool resizing;
@@ -46,6 +48,8 @@ fn void ConsolePanel.init(&self)
 	self.visible = false;
 	self.focused = false;
 	self.height = DEFAULT_HEIGHT;
+	self.setting_height = DEFAULT_HEIGHT;
+	self.auto_scroll = true;
 	self.scroll = 0;
 	self.pinned = true;
 	self.resizing = false;
@@ -58,7 +62,7 @@ fn void ConsolePanel.open(&self)
 {
 	self.visible = true;
 	self.focused = true;
-	self.pinned = true;
+	self.pinned = self.auto_scroll;
 	self.resizing = false;
 	self.exit_requested = false;
 }
@@ -68,6 +72,17 @@ fn void ConsolePanel.close(&self)
 	self.visible = false;
 	self.focused = false;
 	self.resizing = false;
+}
+
+fn void ConsolePanel.apply_settings(&self, ConsoleSettings settings)
+{
+	if (self.setting_height != settings.panel_height)
+	{
+		self.setting_height = settings.panel_height;
+		if (!self.resizing) self.height = settings.panel_height;
+	}
+	if (!self.auto_scroll && settings.auto_scroll) self.pinned = true;
+	self.auto_scroll = settings.auto_scroll;
 }
 
 fn Rect console_panel_rect(float height, int screen_w, int screen_h)
@@ -323,7 +338,7 @@ fn bool ConsolePanel.update_input(&self, Console* console, EditorMetrics metrics
 	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
 	{
 		(void)console.submit();
-		self.pinned = true;
+		self.pinned = self.auto_scroll;
 		self.scroll = self.max_scroll(console, metrics);
 		self.input_scroll = 0.0f;
 	}
@@ -410,7 +425,7 @@ fn void ConsolePanel.update_mouse(&self, Console* console, EditorMetrics metrics
 				{
 					case ConsoleButton.RUN:
 						(void)console.submit();
-						self.pinned = true;
+						self.pinned = self.auto_scroll;
 						self.input_scroll = 0.0f;
 						break;
 					case ConsoleButton.KILL:

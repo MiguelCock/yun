@@ -73,6 +73,15 @@ fn void ConsoleBuffer.init(
 	}
 }
 
+fn void ConsoleBuffer.set_limits(&self, int max_lines, usz max_bytes)
+{
+	int lines = max_lines > 0 ? max_lines : 1;
+	if (self.max_lines == lines && self.max_bytes == max_bytes) return;
+	self.max_lines = lines;
+	self.max_bytes = max_bytes;
+	self.trim();
+}
+
 fn sz ConsoleBuffer.line_count(&self)
 {
 	return self.lines.len() - self.first;

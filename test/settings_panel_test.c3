@@ -99,6 +99,8 @@ fn void test_page_mapping()
 	assert(settings::page_for(settings::SettingId.EDITOR_FONT_SIZE) == settings::SettingPage.EDITOR);
 	assert(settings::page_for(settings::SettingId.CANVAS_GRID_CELL) == settings::SettingPage.CANVAS);
 	assert(settings::page_for(settings::SettingId.SEARCH_MAX_RESULTS) == settings::SettingPage.ADVANCED);
+	assert(settings::page_for(settings::SettingId.CONSOLE_MAX_LINES) == settings::SettingPage.CONSOLE);
+	assert(settings::page_for(settings::SettingId.CONSOLE_AUTO_SCROLL) == settings::SettingPage.CONSOLE);
 	assert(settings::page_for(settings::SettingId.LSP_ENABLED) == settings::SettingPage.INTEGRATIONS);
 	assert(settings::page_for(settings::SettingId.APP_SKIP_SUBMODULES) == settings::SettingPage.GENERAL);
 }
