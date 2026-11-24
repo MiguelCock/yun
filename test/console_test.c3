@@ -553,3 +553,29 @@ fn void test_console_selection_text()
 	panel.clear_selection();
 	assert(panel.selection_text(&console, tmem).len == 0);
 }
+fn void test_console_find_matches()
+{
+	Console console;
+	console.init(mem);
+	defer console.destroy();
+	console.buffer.append_stdout("foo\nbar foo\nFOO\n");
+
+	ConsolePanel panel;
+	panel.init();
+	panel.find_open = true;
+	panel.find_set("foo");
+	panel.find_refresh(&console);
+	assert(panel.find_count == 3);
+	assert(panel.find_matches[0].line == 0 && panel.find_matches[0].start == 0);
+	assert(panel.find_matches[1].line == 1 && panel.find_matches[1].start == 4);
+	assert(panel.find_matches[2].line == 2 && panel.find_matches[2].start == 0);
+
+	panel.find_backspace();
+	panel.find_refresh(&console);
+	assert(panel.find_count == 3);
+	assert(panel.find_query_view().compare_to("fo") == 0);
+
+	panel.find_close();
+	assert(!panel.find_open);
+	assert(panel.find_count == 0);
+}

@@ -1233,6 +1233,7 @@ fn void run_command(commands::CommandId id, App* app)
 				app.console_panel.output_scroll_x = 0.0f;
 				app.console_panel.pinned = app.console_panel.auto_scroll;
 				app.console_panel.clear_selection();
+				app.console_panel.find_dirty = true;
 				return;
 			}
 		case commands::CommandId.CONSOLE_KILL:
@@ -1246,6 +1247,14 @@ fn void run_command(commands::CommandId id, App* app)
 
 			{
 				app.console_panel.copy_selection_or_all(app.console);
+				return;
+			}
+		case commands::CommandId.CONSOLE_FIND:
+
+			{
+				focus_console(app);
+				app.console_panel.find_open_panel();
+				app.console_panel.find_refresh(app.console);
 				return;
 			}
 		case commands::CommandId.CONSOLE_PASTE:
@@ -2783,6 +2792,18 @@ fn int main(String[] args)
 						font_indicator_until = rl::get_time() + 1.2;
 					}
 					font_wheel = true;
+				}
+			}
+
+			if (ui_mode == UiMode.EDIT)
+			{
+				if (keymap.pressed((int)commands::CommandId.FIND, commands::CTX_EDIT))
+				{
+					run_command(commands::CommandId.FIND, &app);
+				}
+				else if (keymap.pressed((int)commands::CommandId.REPLACE, commands::CTX_EDIT))
+				{
+					run_command(commands::CommandId.REPLACE, &app);
 				}
 			}
 

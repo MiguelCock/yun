@@ -81,7 +81,7 @@ These work from any mode:
 
 Bindings are customizable via the `keymap` object in the config — global `~/.config/yun/config.json` or project `<root>/.yun/config.json` — e.g. `{ "keymap": { "save": "Ctrl+K" } }`.
 
-The console runs shell commands from the project root. `Ctrl+J` opens and focuses it; `Enter` runs the command, `Up`/`Down` walk history, `Ctrl+L` clears output, `Ctrl+C` kills a running command, `Ctrl+Shift+C` copies the output, and `Esc` returns focus while leaving the panel open. The top edge can be dragged to resize it. Console actions are registered commands, so they can be rebound on the Keys page.
+The console runs shell commands from the project root. `Ctrl+J` opens and focuses it; `Enter` runs the command, `Up`/`Down` walk history, `Ctrl+L` clears output, `Ctrl+C` kills a running command, `Ctrl+Shift+C` copies the selection (or all output), `Ctrl+F` searches output, and `Esc` returns focus while leaving the panel open. The top edge can be dragged to resize it. Console actions are registered commands, so they can be rebound on the Keys page.
 
 ## Getting started
 

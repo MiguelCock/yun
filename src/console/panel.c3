@@ -20,6 +20,15 @@ const float BUTTON_HEIGHT  = 22.0f;
 const float BUTTON_GAP     = 6.0f;
 const int BUTTON_COUNT     = 4;
 const int SCROLL_LINES     = 3;
+const int FIND_QUERY_MAX   = 128;
+const int FIND_MAX_MATCHES = 1000;
+
+struct ConsoleFindMatch
+{
+	sz line;
+	usz start;
+	usz len;
+}
 
 enum ConsoleButton : int
 {
@@ -55,6 +64,14 @@ struct ConsolePanel
 	sz sel_first_line;
 	double last_click_time;
 	RLVector2 last_click_pos;
+	bool find_open;
+	char[FIND_QUERY_MAX + 1] find_query;
+	int find_len;
+	ConsoleFindMatch[FIND_MAX_MATCHES] find_matches;
+	int find_count;
+	int find_index;
+	int find_revision;
+	bool find_dirty;
 }
 
 fn void ConsolePanel.init(&self)
@@ -82,6 +99,13 @@ fn void ConsolePanel.init(&self)
 	self.sel_first_line = 0;
 	self.last_click_time = -1.0;
 	self.last_click_pos = { 0.0f, 0.0f };
+	self.find_open = false;
+	self.find_query[0] = 0;
+	self.find_len = 0;
+	self.find_count = 0;
+	self.find_index = 0;
+	self.find_revision = -1;
+	self.find_dirty = false;
 }
 
 fn void ConsolePanel.open(&self)
@@ -99,6 +123,9 @@ fn void ConsolePanel.close(&self)
 	self.focused = false;
 	self.resizing = false;
 	self.clear_selection();
+	self.find_open = false;
+	self.find_count = 0;
+	self.find_dirty = false;
 }
 
 fn void ConsolePanel.apply_settings(&self, ConsoleSettings settings)
@@ -559,12 +586,185 @@ fn void ConsolePanel.paste(&self, Console* console)
 	console.input.insert_string(clip[0:end]);
 }
 
+fn String ConsolePanel.find_query_view(&self)
+{
+	return (String)self.find_query[0:self.find_len];
+}
+
+fn void ConsolePanel.find_close(&self)
+{
+	self.find_open = false;
+	self.find_count = 0;
+	self.find_dirty = false;
+}
+
+fn void ConsolePanel.find_open_panel(&self)
+{
+	self.find_open = true;
+	self.find_dirty = true;
+	self.find_index = 0;
+}
+
+fn void ConsolePanel.find_set(&self, String query)
+{
+	self.find_len = 0;
+	for (usz i = 0; i < query.len && self.find_len < FIND_QUERY_MAX; i++)
+	{
+		self.find_query[self.find_len] = query[i];
+		self.find_len++;
+	}
+	self.find_query[self.find_len] = 0;
+	self.find_dirty = true;
+}
+
+fn void ConsolePanel.find_backspace(&self)
+{
+	if (self.find_len == 0) return;
+	self.find_len--;
+	while (self.find_len > 0 && (((int)self.find_query[self.find_len] & 0xC0) == 0x80)) self.find_len--;
+	self.find_query[self.find_len] = 0;
+}
+
+fn int lower_ascii(int c)
+{
+	if (c >= 'A' && c <= 'Z') return c + ('a' - 'A');
+	return c;
+}
+
+fn void ConsolePanel.find_refresh(&self, Console* console)
+{
+	if (!self.find_open) return;
+	if (!self.find_dirty && self.find_revision == console.buffer.revision) return;
+	self.find_revision = console.buffer.revision;
+	self.find_dirty = false;
+	self.find_count = 0;
+	if (self.find_len == 0) return;
+	String query = self.find_query_view();
+	for (sz line_index = 0; line_index < console.buffer.line_count(); line_index++)
+	{
+		ConsoleLine* line = console.buffer.line_at(line_index);
+		if (line.text.len < query.len) continue;
+		usz limit = line.text.len - query.len;
+		for (usz i = 0; i <= limit; i++)
+		{
+			bool match = true;
+			for (usz j = 0; j < query.len; j++)
+			{
+				if (lower_ascii((int)line.text[i + j] & 0xFF) != lower_ascii((int)query[j] & 0xFF))
+				{
+					match = false;
+					break;
+				}
+			}
+			if (!match) continue;
+			if (self.find_count < FIND_MAX_MATCHES)
+			{
+				self.find_matches[self.find_count] = { .line = line_index, .start = i, .len = query.len };
+				self.find_count++;
+			}
+		}
+	}
+	if (self.find_count == 0)
+	{
+		self.find_index = 0;
+	}
+	else if (self.find_index >= self.find_count)
+	{
+		self.find_index = self.find_count - 1;
+	}
+}
+
+fn void ConsolePanel.find_next(&self, Console* console, EditorMetrics metrics, int dir)
+{
+	self.find_refresh(console);
+	if (self.find_count == 0) return;
+	int next = self.find_index + dir;
+	next = (next % self.find_count + self.find_count) % self.find_count;
+	self.find_index = next;
+	ConsoleFindMatch match = self.find_matches[next];
+	int visible            = self.visible_rows(metrics);
+	int target             = (int)match.line - visible / 2;
+	int max                = self.max_scroll(console, metrics);
+	if (target < 0) target = 0;
+	if (target > max) target = max;
+	self.scroll = target;
+	self.pinned = false;
+}
+
 fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keymap, EditorMetrics metrics)
 {
 	if (!self.visible) return false;
 	self.exit_requested = false;
 	bool ctrl  = ctrl_down();
 	bool super = super_down();
+
+	if (self.find_open)
+	{
+		if (keymap.pressed(
+			(int)commands::CommandId.CONSOLE_FIND,
+			commands::CTX_CONSOLE
+		) || rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+		{
+			self.find_close();
+			drain_chars();
+			return false;
+		}
+		if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
+		{
+			self.find_next(console, metrics, shift_down() ? -1 : 1);
+			drain_chars();
+			return false;
+		}
+		if (rl::is_key_pressed(rl::RLKeyboardKey.UP))
+		{
+			self.find_next(console, metrics, -1);
+			drain_chars();
+			return false;
+		}
+		if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN))
+		{
+			self.find_next(console, metrics, 1);
+			drain_chars();
+			return false;
+		}
+		if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))
+		{
+			self.find_backspace();
+			self.find_dirty = true;
+			self.find_refresh(console);
+			drain_chars();
+			return false;
+		}
+		if (!ctrl && !super)
+		{
+			int codepoint = rl::get_char_pressed();
+			while (codepoint != 0)
+			{
+				if (codepoint >= 32 && codepoint < 0x80 && self.find_len < FIND_QUERY_MAX)
+				{
+					self.find_query[self.find_len] = (char)codepoint;
+					self.find_len++;
+					self.find_query[self.find_len] = 0;
+					self.find_dirty = true;
+				}
+				codepoint = rl::get_char_pressed();
+			}
+			self.find_refresh(console);
+		}
+		else
+		{
+			drain_chars();
+		}
+		return false;
+	}
+
+	if (keymap.pressed((int)commands::CommandId.CONSOLE_FIND, commands::CTX_CONSOLE))
+	{
+		self.find_open_panel();
+		self.find_refresh(console);
+		drain_chars();
+		return false;
+	}
 
 	if (keymap.pressed((int)commands::CommandId.CONSOLE_LEAVE_FOCUS, commands::CTX_CONSOLE))
 	{
@@ -912,6 +1112,72 @@ fn void ConsolePanel.draw(&self, Console* console, RLFont font, RLFont editor_fo
 		);
 	};
 
+	if (self.find_open)
+	{
+		float find_w = ui::pxf(260.0f);
+		float max_w  = header.width - ui::pxf(170.0f);
+		if (find_w > max_w) find_w = max_w;
+		if (find_w < ui::pxf(120.0f)) find_w = ui::pxf(120.0f);
+		Rect field = {
+			.x = header.x + ui::pxf(86.0f),
+			.y = header.y + ui::pxf(3.0f),
+			.width = find_w,
+			.height = header.height - ui::pxf(6.0f),
+		};
+		ui::row(field, theme::current().panel_field);
+		String query    = self.find_query_view();
+		float text_size = (float)ui::tpx(13);
+		float pad       = ui::pxf(6.0f);
+		String result   = "0/0";
+		@pool()
+		{
+			if (self.find_count > 0) result = string::format(
+				tmem,
+				"%d/%d",
+				(long)(self.find_index + 1),
+				(long)self.find_count
+			);
+			float result_w = rl::measure_text_ex(font, result.zstr_tcopy(), text_size, 0.0f)[0];
+			float inner    = field.width - pad * 2.0f - result_w - ui::pxf(8.0f);
+			String display = query.len > 0 ? query : "Find output";
+			RLColor color  = query.len > 0 ? theme::current().panel_text : theme::current().panel_dim;
+			float text_w   = rl::measure_text_ex(font, display.zstr_tcopy(), text_size, 0.0f)[0];
+			float x        = field.x + pad;
+			if (text_w > inner) x -= text_w - inner;
+			rl::begin_scissor_mode((int)(field.x + pad), (int)field.y, (int)(inner + pad), (int)field.height);
+			rl::draw_text_ex(
+				font,
+				display.zstr_tcopy(),
+				{ x, field.y + (field.height - text_size) / 2.0f },
+				text_size,
+				0.0f,
+				color
+			);
+			if (query.len > 0)
+			{
+				rl::draw_rectangle_rec(
+					{
+						.x = x + text_w,
+						.y = field.y + ui::pxf(4.0f),
+						.width = 1.0f,
+						.height = field.height - ui::pxf(8.0f)
+					},
+					theme::current()
+					.panel_caret);
+			}
+			rl::end_scissor_mode();
+			rl::draw_text_ex(
+				font,
+				result.zstr_tcopy(),
+				{ field.x + field.width - pad - result_w, field.y + (field.height - text_size) / 2.0f },
+				text_size,
+				0.0f,
+				theme::current()
+				.panel_dim);
+		};
+	}
+
+	if (self.find_open) self.find_refresh(console);
 	int scroll        = self.scroll_for(console, metrics);
 	int visible       = self.visible_rows(metrics);
 	float output_view = output.width - ui::pxf(PADDING) * 2.0f;
@@ -919,6 +1185,30 @@ fn void ConsolePanel.draw(&self, Console* console, RLFont font, RLFont editor_fo
 	self.output_scroll_x = console_clamp_hscroll(self.output_scroll_x, content, output_view);
 	rl::begin_scissor_mode((int)output.x, (int)output.y, (int)output.width, (int)output.height);
 	float text_x = output.x + ui::pxf(PADDING) - self.output_scroll_x;
+
+	if (self.find_open && self.find_count > 0)
+	{
+		for (int i = 0; i < visible; i++)
+		{
+			sz index          = (sz)scroll + (sz)i;
+			ConsoleLine* line = console.buffer.line_at(index);
+			if (!line) break;
+			for (int m = 0; m < self.find_count; m++)
+			{
+				ConsoleFindMatch match = self.find_matches[m];
+				if (match.line != index) continue;
+				float x1      = text_x + (float)console_columns_before(line.text, match.start) * metrics.char_width;
+				float x2      = text_x + (float)console_columns_before(
+					line.text,
+					match.start + match.len
+				) * metrics.char_width;
+				float y       = output.y + (float)i * metrics.line_height;
+				RLColor color = m == self.find_index ? theme::current()
+					.editor_match_current : theme::current().editor_match;
+				rl::draw_rectangle_rec({ .x = x1, .y = y, .width = x2 - x1, .height = metrics.line_height }, color);
+			}
+		}
+	}
 
 	sz sel_start_line;
 	usz sel_start_offset;
