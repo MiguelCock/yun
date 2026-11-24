@@ -43,6 +43,9 @@ struct ConsolePanel
 	bool focus_requested;
 	bool exit_requested;
 	float input_scroll;
+	float output_scroll_x;
+	float output_max_width;
+	int output_width_revision;
 }
 
 fn void ConsolePanel.init(&self)
@@ -58,6 +61,9 @@ fn void ConsolePanel.init(&self)
 	self.focus_requested = false;
 	self.exit_requested = false;
 	self.input_scroll = 0.0f;
+	self.output_scroll_x = 0.0f;
+	self.output_max_width = 0.0f;
+	self.output_width_revision = -1;
 }
 
 fn void ConsolePanel.open(&self)
@@ -110,6 +116,15 @@ fn int console_clamp_scroll(int scroll, int lines, int visible)
 	if (scroll < 0) return 0;
 	if (scroll > max) return max;
 	return scroll;
+}
+
+fn float console_clamp_hscroll(float offset, float content_width, float view_width)
+{
+	float max = content_width - view_width;
+	if (max <= 0.0f) return 0.0f;
+	if (offset < 0.0f) return 0.0f;
+	if (offset > max) return max;
+	return offset;
 }
 
 fn String console_status_label(ConsoleStatus status)
@@ -233,6 +248,29 @@ fn int ConsolePanel.visible_rows(&self, EditorMetrics metrics)
 	return rows > 0 ? rows : 1;
 }
 
+fn float ConsolePanel.output_width(&self, Console* console, EditorMetrics metrics)
+{
+	if (self.output_width_revision == console.buffer.revision) return self.output_max_width;
+	float max = 0.0f;
+	for (sz i = 0; i < console.buffer.line_count(); i++)
+	{
+		ConsoleLine* line = console.buffer.line_at(i);
+		float width       = (float)line.text.len * metrics.char_width;
+		if (width > max) max = width;
+	}
+	self.output_max_width = max;
+	self.output_width_revision = console.buffer.revision;
+	return max;
+}
+
+fn void ConsolePanel.scroll_horizontal(&self, Console* console, EditorMetrics metrics, float delta)
+{
+	Rect output   = self.output_rect();
+	float view    = output.width - ui::pxf(PADDING) * 2.0f;
+	float content = self.output_width(console, metrics);
+	self.output_scroll_x = console_clamp_hscroll(self.output_scroll_x + delta, content, view);
+}
+
 fn int ConsolePanel.max_scroll(&self, Console* console, EditorMetrics metrics)
 {
 	return console_max_scroll((int)console.buffer.line_count(), self.visible_rows(metrics));
@@ -329,6 +367,7 @@ fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keyma
 	{
 		console.clear();
 		self.scroll = 0;
+		self.output_scroll_x = 0.0f;
 		self.pinned = self.auto_scroll;
 		drain_chars();
 		return false;
@@ -479,7 +518,17 @@ fn void ConsolePanel.update_mouse(&self, Console* console, EditorMetrics metrics
 		&& mouse[1] <= output.y + output.height)
 	{
 		float wheel = rl::get_mouse_wheel_move();
-		if (wheel != 0.0f) self.scroll_by(console, metrics, -(int)(wheel * (float)SCROLL_LINES));
+		if (wheel != 0.0f)
+		{
+			if (shift_down())
+			{
+				self.scroll_horizontal(console, metrics, -wheel * metrics.char_width * 8.0f);
+			}
+			else
+			{
+				self.scroll_by(console, metrics, -(int)(wheel * (float)SCROLL_LINES));
+			}
+		}
 	}
 	if (mouse[1] >= panel.y && mouse[1] <= panel.y + ui::pxf(
 		RESIZE_GRAB
@@ -612,9 +661,13 @@ fn void ConsolePanel.draw(&self, Console* console, RLFont font, RLFont editor_fo
 		);
 	};
 
-	int scroll  = self.scroll_for(console, metrics);
-	int visible = self.visible_rows(metrics);
+	int scroll        = self.scroll_for(console, metrics);
+	int visible       = self.visible_rows(metrics);
+	float output_view = output.width - ui::pxf(PADDING) * 2.0f;
+	float content     = self.output_width(console, metrics);
+	self.output_scroll_x = console_clamp_hscroll(self.output_scroll_x, content, output_view);
 	rl::begin_scissor_mode((int)output.x, (int)output.y, (int)output.width, (int)output.height);
+	float text_x = output.x + ui::pxf(PADDING) - self.output_scroll_x;
 	for (int i = 0; i < visible; i++)
 	{
 		sz index = (sz)scroll + (sz)i;
@@ -624,13 +677,33 @@ fn void ConsolePanel.draw(&self, Console* console, RLFont font, RLFont editor_fo
 		rl::draw_text_ex(
 			editor_font,
 			(ZString)line.text.ptr,
-			{ output.x + ui::pxf(PADDING), y },
+			{ text_x, y },
 			metrics.font_size,
 			0.0f,
 			console_line_color(line.stream)
 		);
 	}
 	rl::end_scissor_mode();
+
+	if (content > output_view)
+	{
+		float track_x = output.x + ui::pxf(PADDING);
+		float track_y = output.y + output.height - ui::pxf(4.0f);
+		float track_w = output_view;
+		float thumb_w = track_w * output_view / content;
+		if (thumb_w < ui::pxf(24.0f)) thumb_w = ui::pxf(24.0f);
+		float max     = content - output_view;
+		float thumb_x = track_x;
+		if (max > 0.0f) thumb_x += (track_w - thumb_w) * self.output_scroll_x / max;
+		rl::draw_rectangle_rec(
+			{ .x = track_x, .y = track_y, .width = track_w, .height = ui::pxf(2.0f) },
+			theme::current()
+			.editor_scrollbar);
+		rl::draw_rectangle_rec(
+			{ .x = thumb_x, .y = track_y, .width = thumb_w, .height = ui::pxf(2.0f) },
+			theme::current()
+			.panel_dim);
+	}
 
 	int max_scroll = console_max_scroll((int)console.buffer.line_count(), visible);
 	if (max_scroll > 0)

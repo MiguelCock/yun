@@ -47,6 +47,7 @@ struct ConsoleBuffer
 	usz total_bytes;
 	int max_lines;
 	usz max_bytes;
+	int revision;
 	bool truncated;
 	ConsoleStreamState[2] streams;
 }
@@ -64,6 +65,7 @@ fn void ConsoleBuffer.init(
 	self.total_bytes = 0;
 	self.max_lines = max_lines > 0 ? max_lines : 1;
 	self.max_bytes = max_bytes;
+	self.revision = 0;
 	self.truncated = false;
 	for (int i = 0; i < 2; i++)
 	{
@@ -208,6 +210,7 @@ fn void ConsoleBuffer.trim(&self)
 			self.total_bytes = 0;
 		}
 		self.first++;
+		self.revision++;
 		self.truncated = true;
 	}
 	if (self.first > 0 && self.first >= self.lines.len())
@@ -224,6 +227,7 @@ fn void ConsoleBuffer.trim(&self)
 fn void ConsoleBuffer.push_line(&self, ConsoleStream stream, String text)
 {
 	self.lines.push({ .text = text, .stream = stream });
+	self.revision++;
 	self.total_bytes += text.len;
 	self.trim();
 }
@@ -388,6 +392,7 @@ fn void ConsoleBuffer.clear(&self)
 	self.lines.clear();
 	self.first = 0;
 	self.total_bytes = 0;
+	self.revision++;
 	self.truncated = false;
 	for (int i = 0; i < 2; i++)
 	{
