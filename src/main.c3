@@ -22,6 +22,7 @@ import yun::findbar;
 import yun::fonts;
 import yun::hover;
 import yun::icons;
+import yun::input;
 import yun::imports;
 import yun::keymap;
 import yun::lsp;
@@ -593,6 +594,34 @@ fn void poll_global(keymap::Keymap* keymap, App* app)
 {
 	int cmd = keymap.poll(commands::CTX_GLOBAL);
 	if (cmd >= 0) run_command((commands::CommandId)cmd, app);
+}
+
+fn bool is_select_command(int cmd)
+{
+	return cmd == (int)commands::CommandId.SELECT_LEFT || cmd == (int)commands::CommandId.SELECT_RIGHT
+		|| cmd == (int)commands::CommandId.SELECT_UP
+		|| cmd == (int)commands::CommandId.SELECT_DOWN;
+}
+
+fn int held_move_dir(keymap::Keymap* keymap)
+{
+	if (keymap.held(
+		(int)commands::CommandId.SELECT_LEFT,
+		commands::CTX_MOVE
+	) || rl::is_key_down(rl::RLKeyboardKey.LEFT)) return (int)commands::CommandId.SELECT_LEFT;
+	if (keymap.held(
+		(int)commands::CommandId.SELECT_RIGHT,
+		commands::CTX_MOVE
+	) || rl::is_key_down(rl::RLKeyboardKey.RIGHT)) return (int)commands::CommandId.SELECT_RIGHT;
+	if (keymap.held(
+		(int)commands::CommandId.SELECT_UP,
+		commands::CTX_MOVE
+	) || rl::is_key_down(rl::RLKeyboardKey.UP)) return (int)commands::CommandId.SELECT_UP;
+	if (keymap.held(
+		(int)commands::CommandId.SELECT_DOWN,
+		commands::CTX_MOVE
+	) || rl::is_key_down(rl::RLKeyboardKey.DOWN)) return (int)commands::CommandId.SELECT_DOWN;
+	return 0;
 }
 
 fn int target_card_index(project::Project* project)
@@ -2293,11 +2322,12 @@ fn int main(String[] args)
 		.pending_world = &pending_world,
 	};
 
-	RLVector2 last_arrow_mouse  =  { -1.0f, -1.0f };
-	RLVector2 last_arrow_target =  { 0.0f, 0.0f };
-	float last_arrow_zoom       = -1.0f;
-	bool arrow_hovered_cache    =  false;
-	bool diagnostics_logged     =  false;
+	RLVector2 last_arrow_mouse     =  { -1.0f, -1.0f };
+	RLVector2 last_arrow_target    =  { 0.0f, 0.0f };
+	float last_arrow_zoom          = -1.0f;
+	bool arrow_hovered_cache       =  false;
+	bool diagnostics_logged        =  false;
+	input::RepeatState move_repeat =  { };
 
 	int frame_count    = 0;
 	double prof_update = 0.0;
@@ -2323,6 +2353,7 @@ fn int main(String[] args)
 			ui_mode = console_saved_mode;
 			console_panel.focused = false;
 		}
+		if (ui_mode != UiMode.MOVE || project.grabbing) move_repeat.reset();
 		if (selftest && frame_count > 3) break;
 		bool bench_ready = benchmark_on && (benchmark_synthetic || project_open);
 		if (bench_ready)
@@ -3091,7 +3122,25 @@ fn int main(String[] args)
 					if (move_cmd < 0 && rl::is_key_pressed(
 						rl::RLKeyboardKey.KP_SUBTRACT
 					)) move_cmd = (int)commands::CommandId.ZOOM_OUT;
-					if (move_cmd >= 0) run_command((commands::CommandId)move_cmd, &app);
+					int held_dir    = held_move_dir(&keymap);
+					double move_now = rl::get_time();
+					if (move_cmd >= 0)
+					{
+						run_command((commands::CommandId)move_cmd, &app);
+						if (is_select_command(move_cmd))
+						{
+							move_repeat.start(held_dir, move_now);
+						}
+						else
+						{
+							move_repeat.reset();
+						}
+					}
+					else
+					{
+						int repeat_cmd = move_repeat.tick(held_dir, move_now);
+						if (repeat_cmd != 0) run_command((commands::CommandId)repeat_cmd, &app);
+					}
 
 					bool selection_changed = project.selected != before || project.selected_cluster != before_cluster;
 					if (selection_changed)
