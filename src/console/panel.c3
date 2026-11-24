@@ -1002,6 +1002,114 @@ fn RLColor console_line_color(ConsoleStream stream)
 	}
 }
 
+fn RLColor console_adjust_color(RLColor color, int delta)
+{
+	int r = ((int)color[0] & 0xFF) + delta;
+	int g = ((int)color[1] & 0xFF) + delta;
+	int b = ((int)color[2] & 0xFF) + delta;
+	if (r < 0) r = 0;
+	if (g < 0) g = 0;
+	if (b < 0) b = 0;
+	if (r > 255) r = 255;
+	if (g > 255) g = 255;
+	if (b > 255) b = 255;
+	return (RLColor) { (char)r, (char)g, (char)b, color[3] };
+}
+
+fn float draw_console_segment(
+	RLFont font,
+	EditorMetrics metrics,
+	String text,
+	float x,
+	float y,
+	RLColor fg,
+	RLColor bg,
+	bool has_bg,
+	uint attrs
+)
+{
+	if (text.len == 0) return 0.0f;
+	@pool()
+	{
+		ZString z     = text.zstr_tcopy();
+		float width   = rl::measure_text_ex(font, z, metrics.font_size, 0.0f)[0];
+		RLColor color = fg;
+		if ((attrs & SPAN_BOLD) != 0) color = console_adjust_color(color, 40);
+		if ((attrs & SPAN_DIM) != 0) color = console_adjust_color(color, -50);
+		if (has_bg)
+		{
+			rl::draw_rectangle_rec({ .x = x, .y = y, .width = width, .height = metrics.line_height }, bg);
+		}
+		rl::draw_text_ex(font, z, { x, y }, metrics.font_size, 0.0f, color);
+		if ((attrs & SPAN_UNDERLINE) != 0)
+		{
+			rl::draw_rectangle_rec(
+				{ .x = x, .y = y + metrics.font_size + 1.0f, .width = width, .height = 1.0f },
+				color
+			);
+		}
+		return width;
+	};
+}
+
+fn void draw_console_line(RLFont font, EditorMetrics metrics, ConsoleLine* line, float x, float y)
+{
+	RLColor default_color = console_line_color(line.stream);
+	if (line.span_count == 0 || !line.spans)
+	{
+		rl::draw_text_ex(font, (ZString)line.text.ptr, { x, y }, metrics.font_size, 0.0f, default_color);
+		return;
+	}
+	usz cursor = 0;
+	float px   = x;
+	for (int i = 0; i < line.span_count; i++)
+	{
+		ConsoleSpan span = line.spans[i];
+		if (span.start > cursor)
+		{
+			px += draw_console_segment(
+				font,
+				metrics,
+				line.text[cursor:span.start - cursor],
+				px,
+				y,
+				default_color,
+				{ },
+				false,
+				0
+			);
+		}
+		RLColor fg = span.fg;
+		if (!span.fg[3]) fg = default_color;
+		px += draw_console_segment(
+			font,
+			metrics,
+			line.text[span.start:span.len],
+			px,
+			y,
+			fg,
+			span.bg,
+			span.bg[3] != 0,
+			span.attrs
+		);
+		cursor = span.start + span.len;
+	}
+	if (cursor < line.text.len)
+	{
+		draw_console_segment(
+			font,
+			metrics,
+			line.text[cursor:line.text.len - cursor],
+			px,
+			y,
+			default_color,
+			{ },
+			false,
+			0
+		);
+	}
+}
+
 fn void draw_button(RLFont font, Rect r, String label, bool enabled, bool hovered)
 {
 	RLColor bg = hovered && enabled ? theme::current().topbar_hover : theme::current().panel_field;
@@ -1242,14 +1350,7 @@ fn void ConsolePanel.draw(&self, Console* console, RLFont font, RLFont editor_fo
 		if (index >= console.buffer.line_count()) break;
 		ConsoleLine* line = console.buffer.line_at(index);
 		float y           = output.y + (float)i * metrics.line_height;
-		rl::draw_text_ex(
-			editor_font,
-			(ZString)line.text.ptr,
-			{ text_x, y },
-			metrics.font_size,
-			0.0f,
-			console_line_color(line.stream)
-		);
+		draw_console_line(editor_font, metrics, line, text_x, y);
 	}
 	rl::end_scissor_mode();
 
