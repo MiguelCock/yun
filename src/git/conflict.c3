@@ -16,11 +16,23 @@ struct ConflictBlock
 {
 	usz start;
 	usz end;
+	int ours_line;
+	int theirs_line;
 	String ours;
 	String base;
 	String theirs;
 	String ours_label;
 	String theirs_label;
+}
+
+fn int line_number_at(String content, usz pos)
+{
+	int line = 1;
+	for (usz i = 0; i < pos && i < content.len; i++)
+	{
+		if (content[i] == '\n') line++;
+	}
+	return line;
 }
 
 fn String trim_marker_label(String line)
@@ -109,6 +121,8 @@ fn bool parse_conflicts(Allocator allocator, String content, List{ConflictBlock}
 				ConflictBlock block;
 				block.start = block_start;
 				block.end = block_end;
+				block.ours_line = line_number_at(content, ours_start);
+				block.theirs_line = line_number_at(content, theirs_start);
 				block.ours = content[ours_start:ours_end - ours_start].copy(allocator);
 				block.base = has_base ? content[base_start:base_end - base_start].copy(allocator) : "";
 				block.theirs = content[theirs_start:scan - theirs_start].copy(allocator);

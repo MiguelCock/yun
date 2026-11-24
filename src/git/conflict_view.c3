@@ -6,6 +6,8 @@ import std::core::mem::alloc;
 import std::io::file;
 import std::math;
 import yun::canvas;
+import yun::highlight;
+import yun::text;
 import yun::theme;
 import yun::ui;
 
@@ -273,7 +275,16 @@ fn Rect ConflictView.panel_rect(&self, Canvas* canvas)
 	};
 }
 
-fn void draw_conflict_pane(Rect rect, String label, String text, bool chosen, RLColor accent, float text_size)
+fn void draw_conflict_pane(
+	Rect rect,
+	String label,
+	String text,
+	bool chosen,
+	RLColor accent,
+	float text_size,
+	String path,
+	int start_line
+)
 {
 	ui::rounded_rect(rect, ui::corner_radius(), theme::current().panel_bg);
 	ui::rounded_rect_lines(rect, ui::corner_radius(), chosen ? 2.0f : 1.0f, chosen ? accent : theme::current()
@@ -286,6 +297,25 @@ fn void draw_conflict_pane(Rect rect, String label, String text, bool chosen, RL
 		0.0f,
 		theme::current()
 		.panel_header);
+	text::PieceTable table;
+	table.init_from_buffer(tmem, text);
+	highlight::Highlighter* highlighter = highlight::create(tmem, &table, path);
+	defer highlight::destroy(highlighter, tmem);
+	defer table.destroy();
+	if (highlighter)
+	{
+		highlighter.ensure_parsed();
+		highlighter.begin_runs();
+	}
+	float char_w = rl::measure_text_ex(ui::font(), "M", text_size, 0.0f)[0];
+	int digits   = 1;
+	int max_line = start_line + (int)table.line_count();
+	while (max_line >= 10)
+	{
+		digits++;
+		max_line /= 10;
+	}
+	float gutter = (float)digits * char_w + ui::pxf(10.0f);
 	float line_h = ui::tpxf(16.0f);
 	float y      = rect.y + ui::pxf(28.0f);
 	rl::begin_scissor_mode(
@@ -303,15 +333,45 @@ fn void draw_conflict_pane(Rect rect, String label, String text, bool chosen, RL
 		String line = text[pos:end - pos];
 		@pool()
 		{
+			String number = string::format(tmem, "%d", (long)(start_line + lines));
+			float width   = rl::measure_text_ex(ui::font(), number.zstr_tcopy(), text_size, 0.0f)[0];
 			rl::draw_text_ex(
 				ui::font(),
-				line.zstr_tcopy(),
-				{ rect.x + ui::pxf(10.0f), y },
+				number.zstr_tcopy(),
+				{ rect.x + ui::pxf(10.0f) + gutter - ui::pxf(12.0f) - width, y },
 				text_size,
 				0.0f,
 				theme::current()
-				.panel_text);
+				.panel_dim);
 		};
+		if (highlighter)
+		{
+			draw_highlighted_line(
+				highlighter,
+				&table,
+				lines,
+				line,
+				rect.x + gutter + ui::pxf(4.0f),
+				y,
+				char_w,
+				text_size,
+				0.0f
+			);
+		}
+		else
+		{
+			@pool()
+			{
+				rl::draw_text_ex(
+					ui::font(),
+					line.zstr_tcopy(),
+					{ rect.x + gutter + ui::pxf(4.0f), y },
+					text_size,
+					0.0f,
+					theme::current()
+					.panel_text);
+			};
+		}
 		y += line_h;
 		lines++;
 		if (end >= text.len) break;
@@ -398,15 +458,16 @@ fn void ConflictView.draw(&self, Canvas* canvas)
 		block.ours,
 		choice == ConflictChoice.CURRENT || choice == ConflictChoice.BOTH,
 		theme::current()
-		.git_added, (float)ui::tpx(12));
-	draw_conflict_pane(base, "Base", block.base, false, theme::current().panel_border, (float)ui::tpx(12));
+		.git_added, (float)ui::tpx(12), self.path_rel, block.ours_line);
+	draw_conflict_pane(base, "Base", block.base, false, theme::current()
+		.panel_border, (float)ui::tpx(12), self.path_rel, block.ours_line);
 	draw_conflict_pane(
 		incoming,
 		block.theirs_label,
 		block.theirs,
 		choice == ConflictChoice.INCOMING || choice == ConflictChoice.BOTH,
 		theme::current()
-		.git_deleted, (float)ui::tpx(12));
+		.git_deleted, (float)ui::tpx(12), self.path_rel, block.theirs_line);
 
 	float button_y = panel.y + panel.height - ui::pxf(64.0f);
 	float button_w = (panel.width - ui::pxf(48.0f)) / 3.0f;
