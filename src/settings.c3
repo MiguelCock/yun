@@ -114,6 +114,7 @@ enum SettingId : int
 	CONSOLE_HISTORY_SIZE,
 	CONSOLE_PANEL_HEIGHT,
 	CONSOLE_AUTO_SCROLL,
+	CONSOLE_AUTOCOMPLETE,
 	LSP_ENABLED,
 	COUNT,
 }
@@ -960,6 +961,14 @@ const SettingSpec[] SETTINGS = {
 		.fallback = { .b = true },
 	},
 	{
+		.section = "console",
+		.key = "autocomplete",
+		.label = "Autocomplete",
+		.description = "Show previous commands as inline ghost text while typing.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
 		.section = "lsp",
 		.key = "enabled",
 		.label = "Language servers",
@@ -1094,6 +1103,7 @@ fn String group_for(SettingId id)
 	{
 		if (s.key.compare_to("max_lines") == 0 || s.key.compare_to("max_output_kb") == 0) return "Limits";
 		if (s.key.compare_to("history_size") == 0) return "History";
+		if (s.key.compare_to("autocomplete") == 0) return "Completion";
 		return "Panel";
 	}
 	if (s.section.compare_to("lsp") == 0) return "Language servers";

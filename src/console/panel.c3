@@ -64,6 +64,11 @@ struct ConsolePanel
 	sz sel_first_line;
 	double last_click_time;
 	RLVector2 last_click_pos;
+	bool completion_enabled;
+	bool completion_active;
+	bool completion_dismissed;
+	int completion_index;
+	sz completion_input_len;
 	bool find_open;
 	char[FIND_QUERY_MAX + 1] find_query;
 	int find_len;
@@ -99,6 +104,11 @@ fn void ConsolePanel.init(&self)
 	self.sel_first_line = 0;
 	self.last_click_time = -1.0;
 	self.last_click_pos = { 0.0f, 0.0f };
+	self.completion_enabled = true;
+	self.completion_active = false;
+	self.completion_dismissed = false;
+	self.completion_index = -1;
+	self.completion_input_len = 0;
 	self.find_open = false;
 	self.find_query[0] = 0;
 	self.find_len = 0;
@@ -137,6 +147,12 @@ fn void ConsolePanel.apply_settings(&self, ConsoleSettings settings)
 	}
 	if (!self.auto_scroll && settings.auto_scroll) self.pinned = true;
 	self.auto_scroll = settings.auto_scroll;
+	self.completion_enabled = settings.autocomplete;
+	if (!self.completion_enabled)
+	{
+		self.completion_active = false;
+		self.completion_index = -1;
+	}
 }
 
 fn Rect console_panel_rect(float height, int screen_w, int screen_h)
@@ -586,6 +602,89 @@ fn void ConsolePanel.paste(&self, Console* console)
 	console.input.insert_string(clip[0:end]);
 }
 
+fn bool console_prefix_match(String entry, String input, bool fold)
+{
+	if (entry.len <= input.len) return false;
+	for (usz i = 0; i < input.len; i++)
+	{
+		int a = (int)entry[i] & 0xFF;
+		int b = (int)input[i] & 0xFF;
+		if (fold)
+		{
+			a = lower_ascii(a);
+			b = lower_ascii(b);
+		}
+		if (a != b) return false;
+	}
+	return true;
+}
+
+fn void ConsolePanel.refresh_completion(&self, Console* console)
+{
+	self.completion_active = false;
+	self.completion_index = -1;
+	if (!self.completion_enabled || self.completion_dismissed || console.history.browsing) return;
+	if (console.input.cursor != console.input.len() || console.input.len() == 0) return;
+	String input =  console.input.text_view();
+	int found    = -1;
+	for (int pass = 0; pass < 2 && found < 0; pass++)
+	{
+		bool fold = pass == 1;
+		for (sz i = console.history.entries.len() - 1; i >= 0; i--)
+		{
+			String entry = console.history.entries[i];
+			if (console_prefix_match(entry, input, fold))
+			{
+				found = (int)i;
+				break;
+			}
+		}
+	}
+	if (found < 0) return;
+	self.completion_index = found;
+	self.completion_active = true;
+}
+
+fn String ConsolePanel.completion_candidate(&self, Console* console)
+{
+	if (!self.completion_active || self.completion_index < 0
+		|| self.completion_index >= (int)console.history.entries.len()) return "";
+	return console.history.entries[self.completion_index];
+}
+
+fn String ConsolePanel.completion_suffix(&self, Console* console)
+{
+	if (!self.completion_active) return "";
+	String candidate = self.completion_candidate(console);
+	if (candidate.len <= console.input.len()) return "";
+	return candidate[console.input.len():candidate.len - console.input.len()];
+}
+
+fn void ConsolePanel.accept_completion(&self, Console* console)
+{
+	String candidate = self.completion_candidate(console);
+	if (candidate.len == 0) return;
+	console.input.set(candidate);
+	self.completion_active = false;
+	self.completion_index = -1;
+	self.completion_dismissed = false;
+	self.completion_input_len = console.input.len();
+}
+
+fn void ConsolePanel.dismiss_completion(&self)
+{
+	self.completion_active = false;
+	self.completion_index = -1;
+	self.completion_dismissed = true;
+}
+
+fn void ConsolePanel.sync_completion_input(&self, Console* console)
+{
+	if (console.input.len() == self.completion_input_len) return;
+	self.completion_input_len = console.input.len();
+	self.completion_dismissed = false;
+}
+
 fn String ConsolePanel.find_query_view(&self)
 {
 	return (String)self.find_query[0:self.find_len];
@@ -766,11 +865,27 @@ fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keyma
 		return false;
 	}
 
+	self.sync_completion_input(console);
+	self.refresh_completion(console);
+
 	if (keymap.pressed((int)commands::CommandId.CONSOLE_LEAVE_FOCUS, commands::CTX_CONSOLE))
 	{
 		drain_chars();
+		if (self.completion_active)
+		{
+			self.dismiss_completion();
+			return false;
+		}
 		self.exit_requested = true;
 		return true;
+	}
+	if (self.completion_active && (rl::is_key_pressed(
+		rl::RLKeyboardKey.RIGHT
+	) || rl::is_key_pressed(rl::RLKeyboardKey.END) || rl::is_key_pressed(rl::RLKeyboardKey.TAB)))
+	{
+		self.accept_completion(console);
+		drain_chars();
+		return false;
 	}
 	if (keymap.pressed((int)commands::CommandId.CONSOLE_COPY, commands::CTX_CONSOLE))
 	{
@@ -781,6 +896,7 @@ fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keyma
 	if (keymap.pressed((int)commands::CommandId.CONSOLE_PASTE, commands::CTX_CONSOLE))
 	{
 		self.paste(console);
+		self.sync_completion_input(console);
 		drain_chars();
 		return false;
 	}
@@ -868,6 +984,7 @@ fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keyma
 	{
 		drain_chars();
 	}
+	self.sync_completion_input(console);
 	return false;
 }
 
@@ -1414,6 +1531,7 @@ fn void ConsolePanel.draw(&self, Console* console, RLFont font, RLFont editor_fo
 	};
 	if (text_rect.width < ui::pxf(40.0f)) text_rect.width = ui::pxf(40.0f);
 
+	self.refresh_completion(console);
 	String view      = console.input.text_view();
 	float cursor_x   = 0.0f;
 	float text_width = 0.0f;
@@ -1443,6 +1561,24 @@ fn void ConsolePanel.draw(&self, Console* console, RLFont font, RLFont editor_fo
 		theme::current()
 		.panel_text);
 	float caret_x = text_rect.x - self.input_scroll + cursor_x;
+	if (self.completion_active)
+	{
+		String ghost = self.completion_suffix(console);
+		if (ghost.len > 0)
+		{
+			@pool()
+			{
+				rl::draw_text_ex(
+					editor_font,
+					ghost.zstr_tcopy(),
+					{ caret_x, text_y },
+					metrics.font_size,
+					0.0f,
+					theme::current()
+					.panel_disabled);
+			};
+		}
+	}
 	rl::draw_rectangle_rec(
 		{ .x = caret_x, .y = input.y + ui::pxf(6.0f), .width = 1.0f, .height = input.height - ui::pxf(12.0f) },
 		theme::current()
