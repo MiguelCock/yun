@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 96);
+	assert(command_count() == 106);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -79,7 +79,7 @@ fn void test_command_defs()
 fn void test_contexts()
 {
 	assert(command_def(CommandId.SAVE).contexts == CTX_GLOBAL);
-	assert(command_def(CommandId.COPY).contexts == CTX_GLOBAL);
+	assert(command_def(CommandId.COPY).contexts == CTX_EDIT);
 	assert(command_def(CommandId.TOGGLE_SETTINGS).contexts == CTX_GLOBAL);
 	assert(command_def(CommandId.UNDO).contexts == CTX_EDIT);
 	assert(command_def(CommandId.CURSOR_UP).contexts == CTX_EDIT);
@@ -234,4 +234,20 @@ fn void test_fuzzy_capacity_guard()
 {
 	usz[1] positions;
 	assert(fuzzy_match("Open", "op", positions[0:1]) == -1);
+}
+fn void test_console_commands()
+{
+	CommandDef run = command_def(CommandId.CONSOLE_RUN);
+	assert(run.label.compare_to("Run Command") == 0);
+	assert(run.shortcut.compare_to("Enter") == 0);
+	assert(run.contexts == CTX_CONSOLE);
+
+	CommandDef kill = command_def(CommandId.CONSOLE_KILL);
+	assert(kill.shortcut.compare_to("Ctrl+C") == 0);
+	assert(kill.contexts == CTX_CONSOLE);
+
+	CommandDef copy = command_def(CommandId.CONSOLE_COPY);
+	assert(copy.shortcut.compare_to("Ctrl+Shift+C") == 0);
+	assert(command_name(CommandId.CONSOLE_COPY).compare_to("console_copy") == 0);
+	assert(command_enabled(CommandId.CONSOLE_RUN, true, true));
 }

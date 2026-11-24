@@ -73,9 +73,9 @@ fn void test_selection_clamped()
 		p.init(tmem);
 		p.show();
 		p.filter();
-		p.move_selection(100);
+		p.move_selection(10000);
 		assert(p.selected == (int)p.results.len() - 1);
-		p.move_selection(-100);
+		p.move_selection(-10000);
 		assert(p.selected == 0);
 	};
 }

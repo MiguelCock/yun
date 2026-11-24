@@ -3,7 +3,9 @@ module yun::console;
 import raylib6::rl;
 import std::core::dstring;
 import std::math;
+import yun::commands;
 import yun::editor;
+import yun::keymap;
 import yun::theme;
 import yun::ui;
 
@@ -290,64 +292,70 @@ fn void drain_chars()
 	}
 }
 
-fn bool ConsolePanel.update_input(&self, Console* console, EditorMetrics metrics)
+fn void ConsolePanel.paste(&self, Console* console)
+{
+	String clip = rl::get_clipboard_text().str_view();
+	usz end     = 0;
+	while (end < clip.len && clip[end] != '\n' && clip[end] != '\r') end++;
+	console.input.insert_string(clip[0:end]);
+}
+
+fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keymap, EditorMetrics metrics)
 {
 	if (!self.visible) return false;
 	self.exit_requested = false;
 	bool ctrl  = ctrl_down();
-	bool shift = shift_down();
 	bool super = super_down();
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	if (keymap.pressed((int)commands::CommandId.CONSOLE_LEAVE_FOCUS, commands::CTX_CONSOLE))
 	{
 		drain_chars();
 		self.exit_requested = true;
 		return true;
 	}
-
-	if (ctrl && shift && rl::is_key_pressed(rl::RLKeyboardKey.C))
+	if (keymap.pressed((int)commands::CommandId.CONSOLE_COPY, commands::CTX_CONSOLE))
 	{
 		self.copy_output(console);
 		drain_chars();
 		return false;
 	}
-	if (ctrl && rl::is_key_pressed(rl::RLKeyboardKey.V))
+	if (keymap.pressed((int)commands::CommandId.CONSOLE_PASTE, commands::CTX_CONSOLE))
 	{
-		String clip = rl::get_clipboard_text().str_view();
-		usz end     = 0;
-		while (end < clip.len && clip[end] != '\n' && clip[end] != '\r') end++;
-		console.input.insert_string(clip[0:end]);
+		self.paste(console);
 		drain_chars();
 		return false;
 	}
-	if (ctrl && rl::is_key_pressed(rl::RLKeyboardKey.L))
+	if (keymap.pressed((int)commands::CommandId.CONSOLE_CLEAR, commands::CTX_CONSOLE))
 	{
 		console.clear();
 		self.scroll = 0;
-		self.pinned = true;
+		self.pinned = self.auto_scroll;
 		drain_chars();
 		return false;
 	}
-	if (ctrl && rl::is_key_pressed(rl::RLKeyboardKey.C))
+	if (keymap.pressed((int)commands::CommandId.CONSOLE_KILL, commands::CTX_CONSOLE))
 	{
-		if (console.running()) console.kill();
+		console.kill();
 		drain_chars();
 		return false;
 	}
 
-	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
+	if (keymap.pressed(
+		(int)commands::CommandId.CONSOLE_RUN,
+		commands::CTX_CONSOLE
+	) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
 	{
 		(void)console.submit();
 		self.pinned = self.auto_scroll;
 		self.scroll = self.max_scroll(console, metrics);
 		self.input_scroll = 0.0f;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP))
+	if (keymap.pressed_repeat((int)commands::CommandId.CONSOLE_HISTORY_PREV, commands::CTX_CONSOLE))
 	{
 		(void)console.history.previous(&console.input);
 		self.input_scroll = 0.0f;
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN))
+	if (keymap.pressed_repeat((int)commands::CommandId.CONSOLE_HISTORY_NEXT, commands::CTX_CONSOLE))
 	{
 		(void)console.history.next(&console.input);
 		self.input_scroll = 0.0f;
@@ -377,11 +385,11 @@ fn bool ConsolePanel.update_input(&self, Console* console, EditorMetrics metrics
 	{
 		console.input.backspace();
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP))
+	if (keymap.pressed((int)commands::CommandId.CONSOLE_SCROLL_UP, commands::CTX_CONSOLE))
 	{
 		self.scroll_by(console, metrics, -self.visible_rows(metrics));
 	}
-	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN))
+	if (keymap.pressed((int)commands::CommandId.CONSOLE_SCROLL_DOWN, commands::CTX_CONSOLE))
 	{
 		self.scroll_by(console, metrics, self.visible_rows(metrics));
 	}
