@@ -21,6 +21,8 @@ Status parsing is NUL-delimited. It handles branch headers (`branch.oid`, `branc
 
 The Source Control panel (`Ctrl+Shift+G`) docks on the left and lists merge conflicts, staged changes, working-tree changes, and untracked files. Cards and browser rows receive a coloured status stripe/letter.
 
+Click the branch row (or press `B`) to open the branch picker. It lists local branches with the current branch marked and the upstream shown; `Enter` switches, `N` creates a branch from the current HEAD, and `R` refreshes the list. Switching is blocked by Git when local changes would be overwritten and the error is shown in the panel.
+
 Diff commands use `--no-color --no-ext-diff --no-textconv`, so repository-configured diff drivers cannot execute. `src/git/diff.c3` parses unified diffs into hunks and typed lines; `src/git/diff_view.c3` renders inline and side-by-side modes.
 
 ## Security

@@ -5,16 +5,17 @@ import std::core::dstring;
 import std::core::mem::alloc;
 import std::io::file;
 import std::io::path;
-import std::time::clock;
 
 const int STATUS_TIMEOUT_MS   = 30000;
 const int DETECT_TIMEOUT_MS   = 10000;
 const int DIFF_TIMEOUT_MS     = 60000;
 const int ACTION_TIMEOUT_MS   = 120000;
+const int BRANCH_TIMEOUT_MS   = 15000;
 const usz STATUS_OUTPUT_CAP   = 4 * 1024 * 1024;
 const usz DETECT_OUTPUT_CAP   = 64 * 1024;
 const usz DIFF_OUTPUT_CAP     = 16 * 1024 * 1024;
 const usz ACTION_OUTPUT_CAP   = 4 * 1024 * 1024;
+const usz BRANCH_OUTPUT_CAP   = 512 * 1024;
 const double PERIODIC_REFRESH = 5.0;
 
 struct GitSettings
@@ -58,6 +59,9 @@ struct State
 	GitStatus status;
 	bool has_status;
 	ulong status_revision;
+	List{GitBranch} branches;
+	ulong branches_revision;
+	bool branches_loaded;
 	bool is_repo;
 	bool checked;
 	bool dirty;
@@ -78,6 +82,7 @@ struct State
 	int last_cards_revision;
 	double last_periodic;
 	bool last_focus;
+	double current_now;
 }
 
 fn void State.init(&self, Allocator allocator)
@@ -90,6 +95,9 @@ fn void State.init(&self, Allocator allocator)
 	self.status.init(allocator);
 	self.has_status = false;
 	self.status_revision = 0;
+	self.branches.init(allocator);
+	self.branches_revision = 0;
+	self.branches_loaded = false;
 	self.is_repo = false;
 	self.checked = false;
 	self.dirty = false;
@@ -110,6 +118,7 @@ fn void State.init(&self, Allocator allocator)
 	self.last_cards_revision = -1;
 	self.last_periodic = 0.0;
 	self.last_focus = false;
+	self.current_now = 0.0;
 }
 
 fn void State.destroy(&self)
@@ -120,9 +129,21 @@ fn void State.destroy(&self)
 	if (self.repo_root.len > 0) self.repo_root.free(self.allocator);
 	if (self.binary.len > 0) self.binary.free(self.allocator);
 	self.status.destroy();
+	self.clear_branches();
+	self.branches.free();
 	self.error.clear();
 	self.action.destroy();
 	self.diff.destroy();
+}
+
+fn void State.clear_branches(&self)
+{
+	for (sz i = 0; i < self.branches.len(); i++)
+	{
+		self.branches[i].destroy(self.allocator);
+	}
+	self.branches.clear();
+	self.branches_revision++;
 }
 
 fn void State.clear_status(&self)
@@ -151,6 +172,8 @@ fn void State.set_project(&self, String root)
 	if (self.repo_root.len > 0) self.repo_root.free(self.allocator);
 	self.repo_root = "";
 	self.clear_status();
+	self.clear_branches();
+	self.branches_loaded = false;
 	self.checked = false;
 	self.is_repo = false;
 	self.dirty = root.len > 0;
@@ -344,6 +367,19 @@ fn void State.start_status(&self)
 	self.refreshing = true;
 }
 
+fn void State.start_branch_list(&self)
+{
+	if (self.busy_or_refreshing()) return;
+	String[] argv = git_branch_list_argv(self.allocator, self.binary, self.repo_root);
+	if (!self.send(GitRequestKind.BRANCH_LIST, argv, BRANCH_TIMEOUT_MS, BRANCH_OUTPUT_CAP, "", "", false, false))
+	{
+		self.branches_loaded = true;
+		self.dirty = false;
+		return;
+	}
+	self.refreshing = true;
+}
+
 fn void State.handle_detect(&self, GitResult* result)
 {
 	if (result.spawn_failed)
@@ -389,6 +425,8 @@ fn void State.handle_detect(&self, GitResult* result)
 	self.repo_root = root.copy(self.allocator);
 	self.checked = true;
 	self.is_repo = true;
+	self.branches_loaded = false;
+	self.clear_branches();
 	self.clear_error();
 	self.dirty = true;
 	self.dirty_at = 0.0;
@@ -485,13 +523,59 @@ fn void State.handle_action(&self, GitResult* result)
 	if (self.action.success)
 	{
 		self.clear_error();
+		if (self.action.kind == GitRequestKind.BRANCH_SWITCH || self.action.kind == GitRequestKind.BRANCH_CREATE)
+		{
+			self.branches_loaded = false;
+			self.clear_status();
+		}
 	}
 	else
 	{
 		GitErrorKind kind = classify_error(self.action.error);
 		self.set_error(kind, error_message(kind, self.action.error), self.action.error);
 	}
-	self.mark_dirty(now_seconds());
+	self.mark_dirty(self.current_now);
+}
+
+fn void State.handle_branch_list(&self, GitResult* result)
+{
+	self.branches_loaded = true;
+	if (result.spawn_failed)
+	{
+		self.dirty = false;
+		self.set_error(GitErrorKind.NOT_FOUND, "Git is not installed or not on PATH.", "");
+		return;
+	}
+	if (result.timed_out)
+	{
+		self.dirty = false;
+		self.set_error(GitErrorKind.TIMEOUT, "Git did not finish listing branches.", "");
+		return;
+	}
+	if (result.exit_code != 0)
+	{
+		self.dirty = false;
+		GitErrorKind kind = classify_error(result.error.str_view());
+		self.set_error(kind, error_message(kind, result.error.str_view()), result.error.str_view());
+		return;
+	}
+	List{GitBranch} next;
+	next.init(self.allocator);
+	if (!parse_branches(self.allocator, result.output.str_view(), &next))
+	{
+		for (sz i = 0; i < next.len(); i++) next[i].destroy(self.allocator);
+		next.free();
+		self.dirty = false;
+		self.set_error(GitErrorKind.COMMAND_FAILED, "Could not parse Git branches.", "");
+		return;
+	}
+	self.clear_branches();
+	self.branches.free();
+	self.branches = next;
+	self.branches_revision++;
+	self.clear_error();
+	self.dirty = true;
+	self.dirty_at = 0.0;
 }
 
 fn void State.handle_result(&self, GitResult* result)
@@ -512,21 +596,20 @@ fn void State.handle_result(&self, GitResult* result)
 			self.handle_status(result);
 		case GitRequestKind.DIFF:
 			self.handle_diff(result);
+		case GitRequestKind.BRANCH_LIST:
+			self.handle_branch_list(result);
 		case GitRequestKind.STAGE:
 		case GitRequestKind.UNSTAGE:
 		case GitRequestKind.DISCARD:
 		case GitRequestKind.COMMIT:
+		case GitRequestKind.BRANCH_SWITCH:
+		case GitRequestKind.BRANCH_CREATE:
 			self.handle_action(result);
 	}
 	result.destroy(self.allocator);
 	self.in_flight_id = 0;
 	self.refreshing = false;
-	if (self.is_repo && (self.dirty || self.refresh_requested) && !self.busy) self.dirty_at = now_seconds();
-}
-
-fn double now_seconds()
-{
-	return (double)(clock::now().to_now().to_ms()) / 1000.0;
+	if (self.is_repo && (self.dirty || self.refresh_requested) && !self.busy) self.dirty_at = self.current_now;
 }
 
 fn void State.pump(&self)
@@ -543,6 +626,7 @@ fn void State.pump(&self)
 fn void State.update(&self, String project_root, int cards_revision, double now, bool window_focused)
 {
 	if (self.project_root.len == 0 || self.project_root.compare_to(project_root) != 0) return;
+	self.current_now = now;
 	self.pump();
 
 	String wanted_binary = g_git_settings.binary.len > 0 ? g_git_settings.binary : "git";
@@ -554,6 +638,8 @@ fn void State.update(&self, String project_root, int cards_revision, double now,
 		self.checked = false;
 		self.is_repo = false;
 		self.clear_status();
+		self.clear_branches();
+		self.branches_loaded = false;
 		if (self.repo_root.len > 0) self.repo_root.free(self.allocator);
 		self.repo_root = "";
 		self.error.clear();
@@ -612,9 +698,51 @@ fn void State.update(&self, String project_root, int cards_revision, double now,
 		return;
 	}
 
+	if (!self.branches_loaded)
+	{
+		self.dirty = false;
+		self.refresh_requested = false;
+		self.start_branch_list();
+		return;
+	}
+
 	self.dirty = false;
 	self.refresh_requested = false;
 	self.start_status();
+}
+
+fn void State.request_branches(&self)
+{
+	self.branches_loaded = false;
+	self.dirty = true;
+	self.refresh_requested = true;
+	self.dirty_at = 0.0;
+}
+
+fn bool State.switch_branch(&self, String name)
+{
+	if (self.busy_or_refreshing() || !self.is_repo || name.len == 0) return false;
+	String[] argv = git_branch_switch_argv(self.allocator, self.binary, self.repo_root, name);
+	self.busy = true;
+	if (!self.send(GitRequestKind.BRANCH_SWITCH, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn bool State.create_branch(&self, String name)
+{
+	if (self.busy_or_refreshing() || !self.is_repo || name.len == 0) return false;
+	String[] argv = git_branch_create_argv(self.allocator, self.binary, self.repo_root, name);
+	self.busy = true;
+	if (!self.send(GitRequestKind.BRANCH_CREATE, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
 }
 
 fn bool State.request_diff(&self, String path, String orig_path, bool staged, bool untracked)

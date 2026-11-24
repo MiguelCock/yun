@@ -53,3 +53,18 @@ fn void test_panel_commit_editing()
 	panel.clear_message();
 	assert(panel.message_len == 0);
 }
+fn void test_panel_branch_input()
+{
+	Panel panel;
+	panel.init(mem);
+	defer panel.destroy();
+	panel.branch_input_append('f');
+	panel.branch_input_append('e');
+	panel.branch_input_append('a');
+	panel.branch_input_append('t');
+	assert(panel.branch_input_view().compare_to("feat") == 0);
+	panel.branch_input_backspace();
+	assert(panel.branch_input_view().compare_to("fea") == 0);
+	panel.branch_input_clear();
+	assert(panel.branch_input_len == 0);
+}

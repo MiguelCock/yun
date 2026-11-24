@@ -3097,9 +3097,21 @@ fn int main(String[] args)
 			app.console = console;
 			app.console_panel = console_panel;
 			git_panel.bottom_inset = console_manager.visible ? ui::pxf(console_panel.height) : 0.0f;
-			bool over_console = console_panel.contains_screen(mouse);
-			bool over_git     = git_panel.contains_screen(&canvas, mouse);
-			if (!diff_view.open) git_panel.update(&git_state, &canvas, rl::get_time(), ui_mode == UiMode.SCM);
+			bool over_console  = console_panel.contains_screen(mouse);
+			bool over_git      = git_panel.contains_screen(&canvas, mouse);
+			bool editors_dirty = false;
+			for (sz i = 0; i < project.cards.len(); i++)
+			{
+				if (project.cards[i].dirty)
+				{
+					editors_dirty = true;
+					break;
+				}
+			}
+			if (!diff_view.open)
+			{
+				git_panel.update(&git_state, &canvas, rl::get_time(), ui_mode == UiMode.SCM, editors_dirty);
+			}
 			if (git_panel.focus_requested)
 			{
 				if (ui_mode != UiMode.SCM) scm_saved_mode = ui_mode;

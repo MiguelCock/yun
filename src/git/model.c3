@@ -38,6 +38,16 @@ enum GitRequestKind : int
 	UNSTAGE,
 	DISCARD,
 	COMMIT,
+	BRANCH_LIST,
+	BRANCH_SWITCH,
+	BRANCH_CREATE,
+}
+
+struct GitBranch
+{
+	String name;
+	String upstream;
+	bool current;
 }
 
 struct GitEntry
@@ -167,6 +177,12 @@ fn bool entry_has_staged(GitEntry* entry)
 fn bool entry_has_unstaged(GitEntry* entry)
 {
 	return !entry.untracked && !entry.conflicted && entry.worktree != GitFileState.UNMODIFIED;
+}
+
+fn void GitBranch.destroy(&self, Allocator allocator)
+{
+	if (self.name.len > 0) self.name.free(allocator);
+	if (self.upstream.len > 0) self.upstream.free(allocator);
 }
 
 fn void GitEntry.destroy(&self, Allocator allocator)

@@ -9,15 +9,16 @@ import yun::canvas;
 import yun::theme;
 import yun::ui;
 
-const float PANEL_WIDTH = 286.0f;
-const float HEADER_H    = 30.0f;
-const float BRANCH_H    = 24.0f;
-const float SECTION_H   = 21.0f;
-const float ROW_H       = 23.0f;
-const float COMMIT_H    = 112.0f;
-const float PAD         = 8.0f;
-const int COMMIT_MAX    = 2048;
-const int SCROLL_LINES  = 3;
+const float PANEL_WIDTH   = 286.0f;
+const float HEADER_H      = 30.0f;
+const float BRANCH_H      = 24.0f;
+const float SECTION_H     = 21.0f;
+const float ROW_H         = 23.0f;
+const float COMMIT_H      = 112.0f;
+const float PAD           = 8.0f;
+const int COMMIT_MAX      = 2048;
+const int BRANCH_NAME_MAX = 128;
+const int SCROLL_LINES    = 3;
 
 enum PanelRowKind : int
 {
@@ -60,6 +61,14 @@ struct Panel
 	bool confirm_open;
 	int confirm_row;
 	bool error_open;
+	bool branch_open;
+	bool branch_create;
+	bool editors_dirty;
+	String branch_warning;
+	int branch_selected;
+	int branch_scroll;
+	char[BRANCH_NAME_MAX] branch_input;
+	int branch_input_len;
 	String pending_open;
 	bool open_pending;
 	bool leave_requested;
@@ -89,6 +98,14 @@ fn void Panel.init(&self, Allocator allocator)
 	self.confirm_open = false;
 	self.confirm_row = -1;
 	self.error_open = false;
+	self.branch_open = false;
+	self.branch_create = false;
+	self.editors_dirty = false;
+	self.branch_warning = "";
+	self.branch_selected = -1;
+	self.branch_scroll = 0;
+	self.branch_input[0] = 0;
+	self.branch_input_len = 0;
 	self.pending_open = "";
 	self.open_pending = false;
 	self.leave_requested = false;
@@ -99,6 +116,7 @@ fn void Panel.destroy(&self)
 {
 	self.rows.free();
 	if (self.pending_open.len > 0) self.pending_open.free(self.allocator);
+	if (self.branch_warning.len > 0) self.branch_warning.free(self.allocator);
 }
 
 fn void Panel.open(&self)
@@ -114,6 +132,8 @@ fn void Panel.close(&self)
 	self.focused = false;
 	self.bottom_inset = 0.0f;
 	self.confirm_open = false;
+	self.branch_open = false;
+	self.branch_create = false;
 }
 
 fn float Panel.width(&self, Canvas* canvas)
@@ -631,6 +651,211 @@ fn void Panel.sync_actions(&self, State* git)
 	if (git.action_revision == self.action_seen) return;
 	self.action_seen = git.action_revision;
 	if (git.action.success && git.action.kind == GitRequestKind.COMMIT) self.clear_message();
+	if (git.action.success
+		&& (git.action.kind == GitRequestKind.BRANCH_SWITCH || git.action.kind == GitRequestKind.BRANCH_CREATE))
+	{
+		self.branch_open = false;
+		self.branch_create = false;
+		self.branch_input_clear();
+	}
+}
+
+fn Rect Panel.branch_modal_rect(&self, Canvas* canvas)
+{
+	Rect panel   = self.rect(canvas);
+	float width  = panel.width - ui::pxf(24.0f);
+	float height = panel.height - ui::pxf(80.0f);
+	if (height > ui::pxf(380.0f)) height = ui::pxf(380.0f);
+	if (height < ui::pxf(180.0f)) height = ui::pxf(180.0f);
+	return {
+		.x = panel.x + (panel.width - width) / 2.0f,
+		.y = panel.y + (panel.height - height) / 2.0f,
+		.width = width,
+		.height = height,
+	};
+}
+
+fn int Panel.branch_visible_rows(&self, Canvas* canvas)
+{
+	Rect modal   = self.branch_modal_rect(canvas);
+	float list_h = modal.height - ui::pxf(92.0f);
+	int rows     = (int)(list_h / ui::pxf(ROW_H));
+	return rows < 1 ? 1 : rows;
+}
+
+fn void Panel.ensure_branch_visible(&self, Canvas* canvas)
+{
+	if (self.branch_selected < 0) return;
+	int visible = self.branch_visible_rows(canvas);
+	if (self.branch_selected < self.branch_scroll) self.branch_scroll = self.branch_selected;
+	if (self.branch_selected >= self.branch_scroll + visible)
+	{
+		self.branch_scroll = self.branch_selected - visible + 1;
+	}
+}
+
+fn void Panel.open_branch_picker(&self, State* git)
+{
+	self.branch_open = true;
+	self.branch_create = false;
+	self.branch_input_len = 0;
+	self.branch_input[0] = 0;
+	self.branch_scroll = 0;
+	self.branch_selected = -1;
+	if (self.branch_warning.len > 0)
+	{
+		self.branch_warning.free(self.allocator);
+		self.branch_warning = "";
+	}
+	for (sz i = 0; i < git.branches.len(); i++)
+	{
+		if (git.branches[i].current)
+		{
+			self.branch_selected = (int)i;
+			break;
+		}
+	}
+	if (self.branch_selected < 0 && git.branches.len() > 0) self.branch_selected = 0;
+	git.request_branches();
+}
+
+fn void Panel.branch_input_clear(&self)
+{
+	self.branch_input_len = 0;
+	self.branch_input[0] = 0;
+}
+
+fn void Panel.branch_input_append(&self, char c)
+{
+	if (self.branch_input_len >= BRANCH_NAME_MAX - 1) return;
+	self.branch_input[self.branch_input_len] = c;
+	self.branch_input_len++;
+	self.branch_input[self.branch_input_len] = 0;
+}
+
+fn void Panel.branch_input_backspace(&self)
+{
+	if (self.branch_input_len == 0) return;
+	self.branch_input_len--;
+	while (self.branch_input_len > 0 && (((int)self.branch_input[self.branch_input_len] & 0xC0) == 0x80))
+	{
+		self.branch_input_len--;
+	}
+	self.branch_input[self.branch_input_len] = 0;
+}
+
+fn String Panel.branch_input_view(&self)
+{
+	return (String)self.branch_input[0:self.branch_input_len];
+}
+
+fn void Panel.switch_selected_branch(&self, State* git)
+{
+	if (self.branch_selected < 0 || self.branch_selected >= (int)git.branches.len()) return;
+	GitBranch* branch = &git.branches[self.branch_selected];
+	if (branch.current) return;
+	if (self.editors_dirty)
+	{
+		if (self.branch_warning.len > 0) self.branch_warning.free(self.allocator);
+		self.branch_warning = "Save or discard unsaved editors first.".copy(self.allocator);
+		return;
+	}
+	(void)git.switch_branch(branch.name);
+}
+
+fn void Panel.create_branch_from_input(&self, State* git)
+{
+	if (self.branch_input_len == 0) return;
+	(void)git.create_branch(self.branch_input_view());
+}
+
+fn void Panel.handle_branch_key(&self, State* git, Canvas* canvas, double now)
+{
+	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	{
+		if (self.branch_create)
+		{
+			self.branch_create = false;
+			self.branch_input_clear();
+		}
+		else
+		{
+			self.branch_open = false;
+		}
+		return;
+	}
+	if (self.branch_create)
+	{
+		if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
+		{
+			self.create_branch_from_input(git);
+			return;
+		}
+		if (rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE)) self.branch_input_backspace();
+		bool ctrl = ctrl_down();
+		if (ctrl && rl::is_key_pressed(rl::RLKeyboardKey.V))
+		{
+			ZString clip = rl::get_clipboard_text();
+			if (clip)
+			{
+				String text = clip.str_view();
+				for (usz i = 0; i < text.len; i++)
+				{
+					char c = text[i];
+					if (c > 32 && c != '\n' && c != '\r') self.branch_input_append(c);
+				}
+			}
+		}
+		if (!ctrl)
+		{
+			int codepoint = rl::get_char_pressed();
+			while (codepoint != 0)
+			{
+				if (codepoint > 32 && codepoint < 0x80)
+				{
+					char c = (char)codepoint;
+					if (c != '/' && c != '\\' && c != '~' && c != '^' && c != ':' && c != '?' && c != '*' && c != '[')
+					{
+						self.branch_input_append(c);
+					}
+				}
+				codepoint = rl::get_char_pressed();
+			}
+		}
+		return;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.UP)) self.branch_selected--;
+	if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN)) self.branch_selected++;
+	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP))
+	{
+		self.branch_selected -= self.branch_visible_rows(canvas);
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN))
+	{
+		self.branch_selected += self.branch_visible_rows(canvas);
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.HOME)) self.branch_selected = 0;
+	if (rl::is_key_pressed(rl::RLKeyboardKey.END)) self.branch_selected = (int)git.branches.len() - 1;
+	if (self.branch_selected < 0) self.branch_selected = 0;
+	if (self.branch_selected >= (int)git.branches.len())
+	{
+		self.branch_selected = (int)git.branches.len() - 1;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.N))
+	{
+		self.branch_create = true;
+		self.branch_input_clear();
+		while (rl::get_char_pressed() != 0)
+		{
+		}
+		return;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.R)) git.request_branches();
+	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
+	{
+		self.switch_selected_branch(git);
+	}
+	self.ensure_branch_visible(canvas);
 }
 
 fn void Panel.handle_commit_key(&self, State* git)
@@ -745,6 +970,7 @@ fn void Panel.handle_list_key(&self, State* git, Canvas* canvas, double now)
 	if (rl::is_key_pressed(rl::RLKeyboardKey.SPACE)) self.stage_selected(git, now);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.D)) self.request_diff(git);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.R)) git.refresh_now(now);
+	if (rl::is_key_pressed(rl::RLKeyboardKey.B)) self.open_branch_picker(git);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.DELETE)) self.begin_discard(git, now);
 }
 
@@ -762,10 +988,11 @@ fn void Panel.handle_confirm_key(&self, State* git, double now)
 	}
 }
 
-fn bool Panel.update(&self, State* git, Canvas* canvas, double now, bool focused)
+fn bool Panel.update(&self, State* git, Canvas* canvas, double now, bool focused, bool editors_dirty)
 {
 	if (!self.visible) return false;
 	self.focused = focused;
+	self.editors_dirty = editors_dirty;
 	self.focus_requested = false;
 	self.leave_requested = false;
 	self.sync_actions(git);
@@ -779,6 +1006,81 @@ fn bool Panel.update(&self, State* git, Canvas* canvas, double now, bool focused
 	RLVector2 mouse = rl::get_mouse_position();
 	bool inside     = rect_contains(panel, mouse);
 	bool consumed   = inside;
+
+	if (self.branch_open)
+	{
+		if (focused) self.handle_branch_key(git, canvas, now);
+		if (self.branch_selected >= (int)git.branches.len())
+		{
+			self.branch_selected = (int)git.branches.len() - 1;
+		}
+		if (self.branch_selected < 0 && git.branches.len() > 0) self.branch_selected = 0;
+		int max_scroll = (int)git.branches.len() - self.branch_visible_rows(canvas);
+		if (max_scroll < 0) max_scroll = 0;
+		if (self.branch_scroll > max_scroll) self.branch_scroll = max_scroll;
+		if (self.branch_scroll < 0) self.branch_scroll = 0;
+		Rect modal = self.branch_modal_rect(canvas);
+		if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
+		{
+			if (!rect_contains(modal, mouse))
+			{
+				self.branch_open = false;
+				self.branch_create = false;
+				return true;
+			}
+			if (self.branch_create)
+			{
+				Rect create = {
+					.x = modal.x + ui::pxf(14.0f),
+					.y = modal.y + modal.height - ui::pxf(34.0f),
+					.width = (modal.width - ui::pxf(36.0f)) / 2.0f,
+					.height = ui::pxf(24.0f),
+				};
+				Rect cancel = {
+					.x = create.x + create.width + ui::pxf(8.0f),
+					.y = create.y,
+					.width = create.width,
+					.height = create.height,
+				};
+				if (rect_contains(create, mouse)) self.create_branch_from_input(git);
+				if (rect_contains(cancel, mouse))
+				{
+					self.branch_create = false;
+					self.branch_input_clear();
+				}
+				return true;
+			}
+			float list_y = modal.y + ui::pxf(38.0f);
+			float list_h = modal.height - ui::pxf(92.0f);
+			Rect list    = { .x = modal.x, .y = list_y, .width = modal.width, .height = list_h };
+			if (rect_contains(list, mouse))
+			{
+				int row = self.branch_scroll + (int)((mouse[1] - list.y) / ui::pxf(ROW_H));
+				if (row >= 0 && row < (int)git.branches.len()) self.branch_selected = row;
+				return true;
+			}
+			Rect switch_button = {
+				.x = modal.x + ui::pxf(14.0f),
+				.y = modal.y + modal.height - ui::pxf(34.0f),
+				.width = (modal.width - ui::pxf(36.0f)) / 2.0f,
+				.height = ui::pxf(24.0f),
+			};
+			Rect new_button = {
+				.x = switch_button.x + switch_button.width + ui::pxf(8.0f),
+				.y = switch_button.y,
+				.width = switch_button.width,
+				.height = switch_button.height,
+			};
+			if (rect_contains(switch_button, mouse)) self.switch_selected_branch(git);
+			if (rect_contains(new_button, mouse))
+			{
+				self.branch_create = true;
+				self.branch_input_clear();
+			}
+			return true;
+		}
+		return true;
+	}
 
 	if (self.error_open)
 	{
@@ -863,9 +1165,9 @@ fn bool Panel.update(&self, State* git, Canvas* canvas, double now, bool focused
 			return true;
 		}
 		Rect branch = self.branch_rect(canvas);
-		if (rect_contains(branch, mouse) && git.error.kind != GitErrorKind.NONE)
+		if (rect_contains(branch, mouse))
 		{
-			self.error_open = true;
+			self.open_branch_picker(git);
 			return true;
 		}
 		Rect commit = self.commit_rect(canvas);
@@ -941,6 +1243,14 @@ fn bool Panel.update(&self, State* git, Canvas* canvas, double now, bool focused
 		}
 
 		Rect list = self.list_rect(canvas);
+		if (git.error.kind != GitErrorKind.NONE && rect_contains(
+			{ .x = list.x, .y = list.y + list.height - ui::pxf(20.0f), .width = list.width, .height = ui::pxf(20.0f) },
+			mouse
+		))
+		{
+			self.error_open = true;
+			return true;
+		}
 		if (rect_contains(list, mouse))
 		{
 			int row = self.scroll + (int)((mouse[1] - list.y) / ui::pxf(ROW_H));
@@ -1036,13 +1346,27 @@ fn void Panel.draw_branch(&self, State* git, Rect header, float text_size)
 		}
 		else if (git.has_status && git.status.branch.len > 0)
 		{
-			label = string::format(
-				tmem,
-				"%s  +%d -%d",
-				git.status.branch,
-				(long)git.status.ahead,
-				(long)git.status.behind
-			);
+			if (git.status.upstream.len > 0)
+			{
+				label = string::format(
+					tmem,
+					"%s  [%s]  +%d -%d",
+					git.status.branch,
+					git.status.upstream,
+					(long)git.status.ahead,
+					(long)git.status.behind
+				);
+			}
+			else
+			{
+				label = string::format(
+					tmem,
+					"%s  +%d -%d",
+					git.status.branch,
+					(long)git.status.ahead,
+					(long)git.status.behind
+				);
+			}
 		}
 		else
 		{
@@ -1179,6 +1503,203 @@ fn void Panel.draw_commit(&self, State* git, Canvas* canvas, float text_size)
 	draw_button(stage_all, "Stage All", count_paths(git, false) > 0, text_size);
 	draw_button(unstage_all, "Unstage", count_paths(git, true) > 0, text_size);
 	draw_button(refresh, "Refresh", true, text_size);
+}
+
+fn void Panel.draw_branch_picker(&self, State* git, Canvas* canvas, float text_size)
+{
+	if (!self.branch_open) return;
+	Rect panel = self.rect(canvas);
+	Rect modal = self.branch_modal_rect(canvas);
+	rl::draw_rectangle_rec(panel, { 0, 0, 0, 120 });
+	ui::rounded_rect(modal, ui::corner_radius(), theme::current().panel_bg_alt);
+	ui::rounded_rect_lines(modal, ui::corner_radius(), 1.0f, theme::current().panel_border);
+	rl::draw_text_ex(
+		ui::font(),
+		self.branch_create ? "New branch" : "Switch branch",
+		{ modal.x + ui::pxf(14.0f), modal.y + ui::pxf(10.0f) },
+		(float)ui::tpx(15),
+		0.0f,
+		theme::current()
+		.panel_text);
+	if (self.branch_warning.len > 0)
+	{
+		rl::draw_text_ex(
+			ui::font(),
+			self.branch_warning.zstr_tcopy(),
+			{ modal.x + ui::pxf(14.0f), modal.y + ui::pxf(30.0f) },
+			(float)ui::tpx(11),
+			0.0f,
+			theme::current()
+			.git_conflict);
+	}
+
+	if (self.branch_create)
+	{
+		@pool()
+		{
+			String current = git.has_status && git.status.branch.len > 0 ? git.status.branch : "HEAD";
+			String hint    = string::format(tmem, "Create from %s", current);
+			rl::draw_text_ex(
+				ui::font(),
+				hint.zstr_tcopy(),
+				{ modal.x + ui::pxf(14.0f), modal.y + ui::pxf(34.0f) },
+				(float)ui::tpx(12),
+				0.0f,
+				theme::current()
+				.panel_dim);
+		};
+		Rect field = {
+			.x = modal.x + ui::pxf(14.0f),
+			.y = modal.y + ui::pxf(54.0f),
+			.width = modal.width - ui::pxf(28.0f),
+			.height = ui::pxf(28.0f),
+		};
+		ui::rounded_rect(field, ui::row_radius(), theme::current().panel_field);
+		ui::rounded_rect_lines(field, ui::row_radius(), 1.0f, theme::current().card_focus);
+		String input = self.branch_input_view();
+		if (input.len == 0)
+		{
+			rl::draw_text_ex(
+				ui::font(),
+				"branch-name",
+				{ field.x + ui::pxf(6.0f), field.y + ui::pxf(5.0f) },
+				text_size,
+				0.0f,
+				theme::current()
+				.panel_disabled);
+		}
+		else
+		{
+			@pool()
+			{
+				rl::draw_text_ex(
+					ui::font(),
+					input.zstr_tcopy(),
+					{ field.x + ui::pxf(6.0f), field.y + ui::pxf(5.0f) },
+					text_size,
+					0.0f,
+					theme::current()
+					.panel_text);
+				float width = rl::measure_text_ex(ui::font(), input.zstr_tcopy(), text_size, 0.0f)[0];
+				rl::draw_rectangle_rec(
+					{
+						.x = field.x + ui::pxf(7.0f) + width,
+						.y = field.y + ui::pxf(5.0f),
+						.width = 1.0f,
+						.height = text_size
+					},
+					theme::current()
+					.panel_caret);
+			};
+		}
+		Rect create = {
+			.x = modal.x + ui::pxf(14.0f),
+			.y = modal.y + modal.height - ui::pxf(34.0f),
+			.width = (modal.width - ui::pxf(36.0f)) / 2.0f,
+			.height = ui::pxf(24.0f),
+		};
+		Rect cancel = {
+			.x = create.x + create.width + ui::pxf(8.0f),
+			.y = create.y,
+			.width = create.width,
+			.height = create.height,
+		};
+		draw_button(create, "Create", self.branch_input_len > 0 && !git.busy, (float)ui::tpx(12));
+		draw_button(cancel, "Cancel", true, (float)ui::tpx(12));
+		return;
+	}
+
+	float list_y = modal.y + ui::pxf(38.0f);
+	float list_h = modal.height - ui::pxf(92.0f);
+	Rect list    = { .x = modal.x, .y = list_y, .width = modal.width, .height = list_h };
+	rl::begin_scissor_mode((int)list.x, (int)list.y, (int)list.width, (int)list.height);
+	if (git.branches.len() == 0)
+	{
+		rl::draw_text_ex(
+			ui::font(),
+			git.branches_loaded ? "No local branches" : "Loading branches...",
+			{ list.x + ui::pxf(14.0f), list.y + ui::pxf(6.0f) },
+			(float)ui::tpx(13),
+			0.0f,
+			theme::current()
+			.panel_dim);
+	}
+	int last = math::min(self.branch_scroll + self.branch_visible_rows(canvas), (int)git.branches.len());
+	for (int i = self.branch_scroll; i < last; i++)
+	{
+		GitBranch* branch = &git.branches[i];
+		Rect row = {
+			.x = list.x,
+			.y = list.y + (float)(i - self.branch_scroll) * ui::pxf(ROW_H),
+			.width = list.width,
+			.height = ui::pxf(ROW_H),
+		};
+		if (i == self.branch_selected)
+		{
+			ui::row(
+				{ .x = row.x + ui::pxf(4.0f), .y = row.y, .width = row.width - ui::pxf(8.0f), .height = row.height },
+				theme::current()
+				.panel_selected);
+		}
+		rl::draw_text_ex(
+			ui::font(),
+			branch.current ? "*" : " ",
+			{ row.x + ui::pxf(10.0f), row.y + ui::pxf(2.0f) },
+			(float)ui::tpx(13),
+			0.0f,
+			theme::current()
+			.panel_dim);
+		@pool()
+		{
+			rl::draw_text_ex(
+				ui::font(),
+				branch.name.zstr_tcopy(),
+				{ row.x + ui::pxf(24.0f), row.y + ui::pxf(2.0f) },
+				(float)ui::tpx(13),
+				0.0f,
+				theme::current()
+				.panel_text);
+		};
+		if (branch.upstream.len > 0)
+		{
+			@pool()
+			{
+				float width = rl::measure_text_ex(
+					ui::font(),
+					branch.upstream.zstr_tcopy(),
+					(float)ui::tpx(11),
+					0.0f
+				)[0];
+				rl::draw_text_ex(
+					ui::font(),
+					branch.upstream.zstr_tcopy(),
+					{ row.x + row.width - width - ui::pxf(10.0f), row.y + ui::pxf(4.0f) },
+					(float)ui::tpx(11),
+					0.0f,
+					theme::current()
+					.panel_dim);
+			};
+		}
+	}
+	rl::end_scissor_mode();
+
+	Rect switch_button = {
+		.x = modal.x + ui::pxf(14.0f),
+		.y = modal.y + modal.height - ui::pxf(34.0f),
+		.width = (modal.width - ui::pxf(36.0f)) / 2.0f,
+		.height = ui::pxf(24.0f),
+	};
+	Rect new_button = {
+		.x = switch_button.x + switch_button.width + ui::pxf(8.0f),
+		.y = switch_button.y,
+		.width = switch_button.width,
+		.height = switch_button.height,
+	};
+	bool can_switch = self.branch_selected >= 0 && self.branch_selected < (int)git.branches.len()
+		&& !git.branches[self.branch_selected].current
+		&& !git.busy;
+	draw_button(switch_button, "Switch", can_switch, (float)ui::tpx(12));
+	draw_button(new_button, "New", !git.busy, (float)ui::tpx(12));
 }
 
 fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
@@ -1438,6 +1959,8 @@ fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
 			theme::current()
 			.panel_disabled);
 	}
+
+	self.draw_branch_picker(git, canvas, text_size);
 }
 
 fn bool Panel.take_open(&self, String* path)

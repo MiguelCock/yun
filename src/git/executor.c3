@@ -4,6 +4,7 @@ import std::collections::list;
 import std::core::dstring;
 import std::core::mem::alloc;
 import std::os::env;
+import std::os::posix;
 import std::os::process;
 import std::thread;
 import std::thread::channel;
@@ -165,16 +166,42 @@ fn GitResult git_run_request(GitExecutor* executor, GitRequest* request)
 			&result.truncated
 		);
 
-		bool? running = process.is_running();
-		if (try value = running)
-		{
-			alive = value;
-		}
-		else
-		{
-			alive = false;
-		}
-		if (!alive) break;
+		$if env::WIN32:
+			bool? running = process.is_running();
+			if (try value = running)
+			{
+				alive = value;
+			}
+			else
+			{
+				alive = false;
+			}
+			if (!alive) break;
+		$else
+			int status = 0;
+			int child  = (int)process.child;
+			int waited = child > 0 ? (int)posix::waitpid(child, &status, posix::WNOHANG) : -1;
+			if (waited == 0)
+			{
+				alive = true;
+			}
+			else
+			{
+				if (waited == child)
+				{
+					result.exit_code = posix::wIFEXITED(status) ? (int)posix::wEXITSTATUS(status) : 1;
+				}
+				else
+				{
+					result.exit_code = -1;
+				}
+				process.return_status = result.exit_code;
+				process.child = 0;
+				process.is_alive = false;
+				alive = false;
+			}
+			if (!alive) break;
+		$endif
 
 		if (GitExecutor.cancelled(executor, request.id))
 		{
@@ -192,12 +219,27 @@ fn GitResult git_run_request(GitExecutor* executor, GitRequest* request)
 	}
 
 	drain_process(&process, &result.output, &result.error, request.output_cap, DEFAULT_ERROR_CAP, &result.truncated);
-	if (alive || result.cancelled || result.timed_out)
-	{
-		(void)process.terminate();
-	}
-	int? code = process.join();
-	if (try value = code) result.exit_code = (int)value;
+	$if env::WIN32:
+		if (alive || result.cancelled || result.timed_out)
+		{
+			(void)process.terminate();
+		}
+		int? code = process.join();
+		if (try value = code) result.exit_code = (int)value;
+	$else
+		if (result.cancelled || result.timed_out)
+		{
+			int child = (int)process.child;
+			if (child > 0)
+			{
+				int status = 0;
+				(void)posix::waitpid(child, &status, 0);
+				result.exit_code = posix::wIFEXITED(status) ? (int)posix::wEXITSTATUS(status) : 1;
+				process.child = 0;
+				process.is_alive = false;
+			}
+		}
+	$endif
 	return result;
 }
 
