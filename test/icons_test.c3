@@ -9,6 +9,8 @@ fn void test_icon_size_and_box()
 	ui::set_ui_scale(1.0f);
 	ui::set_dpi(1.0f, 1.0f);
 	assert(icon_size(16) == 16.0f);
+	assert(codicon_name(IconKind.GIT).compare_to("source-control") == 0);
+	assert(codicon_name(IconKind.CONSOLE).compare_to("console") == 0);
 
 	Rect button = { .x = 10.0f, .y = 10.0f, .width = 100.0f, .height = 40.0f };
 	Rect box    = icon_box(button, 16);
