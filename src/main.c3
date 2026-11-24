@@ -2448,6 +2448,7 @@ fn int main(String[] args)
 	bool diagnostics_logged        =  false;
 	input::RepeatState move_repeat =  { };
 	ulong last_git_error_revision  =  0;
+	ulong last_git_action_revision =  0;
 
 	int frame_count    = 0;
 	double prof_update = 0.0;
@@ -2533,6 +2534,35 @@ fn int main(String[] args)
 			if (git_state.error.kind != git::GitErrorKind.NONE && !git_state.error_quiet)
 			{
 				notifier.push(git_state.error.message);
+			}
+		}
+		if (git_state.action_revision != last_git_action_revision)
+		{
+			last_git_action_revision = git_state.action_revision;
+			if (git_state.action.success)
+			{
+				switch (git_state.action.kind)
+				{
+					case git::GitRequestKind.FETCH:
+						notifier.push("Fetched");
+					case git::GitRequestKind.PULL:
+						notifier.push("Pulled");
+					case git::GitRequestKind.PUSH:
+						notifier.push("Pushed");
+					case git::GitRequestKind.PUBLISH:
+						notifier.push("Published branch");
+					case git::GitRequestKind.DETECT:
+					case git::GitRequestKind.STATUS:
+					case git::GitRequestKind.DIFF:
+					case git::GitRequestKind.STAGE:
+					case git::GitRequestKind.UNSTAGE:
+					case git::GitRequestKind.DISCARD:
+					case git::GitRequestKind.COMMIT:
+					case git::GitRequestKind.BRANCH_LIST:
+					case git::GitRequestKind.BRANCH_SWITCH:
+					case git::GitRequestKind.BRANCH_CREATE:
+						break;
+				}
 			}
 		}
 		console_manager.pump();

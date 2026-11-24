@@ -12,6 +12,7 @@ import yun::ui;
 const float PANEL_WIDTH   = 286.0f;
 const float HEADER_H      = 30.0f;
 const float BRANCH_H      = 24.0f;
+const float REMOTE_H      = 26.0f;
 const float SECTION_H     = 21.0f;
 const float ROW_H         = 23.0f;
 const float COMMIT_H      = 112.0f;
@@ -63,6 +64,7 @@ struct Panel
 	bool error_open;
 	bool branch_open;
 	bool branch_create;
+	bool sync_pending;
 	bool editors_dirty;
 	String branch_warning;
 	int branch_selected;
@@ -100,6 +102,7 @@ fn void Panel.init(&self, Allocator allocator)
 	self.error_open = false;
 	self.branch_open = false;
 	self.branch_create = false;
+	self.sync_pending = false;
 	self.editors_dirty = false;
 	self.branch_warning = "";
 	self.branch_selected = -1;
@@ -169,6 +172,17 @@ fn Rect Panel.branch_rect(&self, Canvas* canvas)
 	};
 }
 
+fn Rect Panel.remote_rect(&self, Canvas* canvas)
+{
+	Rect branch = self.branch_rect(canvas);
+	return {
+		.x = branch.x,
+		.y = branch.y + branch.height,
+		.width = branch.width,
+		.height = ui::pxf(REMOTE_H),
+	};
+}
+
 fn Rect Panel.header_rect(&self, Canvas* canvas)
 {
 	Rect panel = self.rect(canvas);
@@ -187,7 +201,7 @@ fn Rect Panel.list_rect(&self, Canvas* canvas)
 {
 	Rect panel   = self.rect(canvas);
 	Rect commit  = self.commit_rect(canvas);
-	float top    = panel.y + ui::pxf(HEADER_H) + ui::pxf(BRANCH_H);
+	float top    = panel.y + ui::pxf(HEADER_H) + ui::pxf(BRANCH_H) + ui::pxf(REMOTE_H);
 	float bottom = commit.y;
 	if (bottom < top) bottom = top;
 	return { .x = panel.x, .y = top, .width = panel.width, .height = bottom - top };
@@ -580,7 +594,7 @@ fn void Panel.stage_all(&self, State* git, double now, bool staged)
 
 fn bool Panel.can_commit(&self, State* git)
 {
-	if (git.busy || !git.has_status || self.message_len == 0) return false;
+	if (git.busy_or_refreshing() || !git.has_status || self.message_len == 0) return false;
 	for (sz i = 0; i < git.status.entries.len(); i++)
 	{
 		GitEntry* entry = &git.status.entries[i];
@@ -657,6 +671,18 @@ fn void Panel.sync_actions(&self, State* git)
 		self.branch_open = false;
 		self.branch_create = false;
 		self.branch_input_clear();
+	}
+	if (self.sync_pending)
+	{
+		if (git.action.kind == GitRequestKind.PULL)
+		{
+			self.sync_pending = false;
+			if (git.action.success) (void)git.push(false);
+		}
+		else if (!git.action.success)
+		{
+			self.sync_pending = false;
+		}
 	}
 }
 
@@ -856,6 +882,35 @@ fn void Panel.handle_branch_key(&self, State* git, Canvas* canvas, double now)
 		self.switch_selected_branch(git);
 	}
 	self.ensure_branch_visible(canvas);
+}
+
+fn bool Panel.can_remote(&self, State* git)
+{
+	return !git.busy_or_refreshing() && git.is_repo && git.has_status;
+}
+
+fn bool Panel.can_push(&self, State* git)
+{
+	return self.can_remote(git) && git.status.branch.len > 0;
+}
+
+fn bool Panel.needs_publish(&self, State* git)
+{
+	return git.has_status && git.status.upstream.len == 0;
+}
+
+fn bool Panel.can_pull(&self, State* git)
+{
+	return self.can_push(git) && git.status.upstream.len > 0 && !self.editors_dirty;
+}
+
+fn void Panel.start_sync(&self, State* git)
+{
+	if (!self.can_pull(git)) return;
+	if (git.pull())
+	{
+		self.sync_pending = true;
+	}
 }
 
 fn void Panel.handle_commit_key(&self, State* git)
@@ -1168,6 +1223,28 @@ fn bool Panel.update(&self, State* git, Canvas* canvas, double now, bool focused
 		if (rect_contains(branch, mouse))
 		{
 			self.open_branch_picker(git);
+			return true;
+		}
+		Rect remote = self.remote_rect(canvas);
+		if (rect_contains(remote, mouse))
+		{
+			float gap         = ui::pxf(4.0f);
+			float button_w    = (remote.width - ui::pxf(PAD) * 2.0f - gap * 3.0f) / 4.0f;
+			float x           = remote.x + ui::pxf(PAD);
+			Rect fetch_button = { .x = x, .y = remote.y + ui::pxf(2.0f), .width = button_w, .height = ui::pxf(21.0f) };
+			x += button_w + gap;
+			Rect pull_button = { .x = x, .y = fetch_button.y, .width = button_w, .height = fetch_button.height };
+			x += button_w + gap;
+			Rect push_button = { .x = x, .y = fetch_button.y, .width = button_w, .height = fetch_button.height };
+			x += button_w + gap;
+			Rect sync_button = { .x = x, .y = fetch_button.y, .width = button_w, .height = fetch_button.height };
+			if (self.can_remote(git) && rect_contains(fetch_button, mouse)) (void)git.fetch();
+			if (self.can_pull(git) && rect_contains(pull_button, mouse)) (void)git.pull();
+			if (self.can_push(git) && rect_contains(push_button, mouse))
+			{
+				(void)git.push(self.needs_publish(git));
+			}
+			if (self.can_pull(git) && rect_contains(sync_button, mouse)) self.start_sync(git);
 			return true;
 		}
 		Rect commit = self.commit_rect(canvas);
@@ -1604,7 +1681,7 @@ fn void Panel.draw_branch_picker(&self, State* git, Canvas* canvas, float text_s
 			.width = create.width,
 			.height = create.height,
 		};
-		draw_button(create, "Create", self.branch_input_len > 0 && !git.busy, (float)ui::tpx(12));
+		draw_button(create, "Create", self.branch_input_len > 0 && !git.busy_or_refreshing(), (float)ui::tpx(12));
 		draw_button(cancel, "Cancel", true, (float)ui::tpx(12));
 		return;
 	}
@@ -1699,7 +1776,7 @@ fn void Panel.draw_branch_picker(&self, State* git, Canvas* canvas, float text_s
 		&& !git.branches[self.branch_selected].current
 		&& !git.busy;
 	draw_button(switch_button, "Switch", can_switch, (float)ui::tpx(12));
-	draw_button(new_button, "New", !git.busy, (float)ui::tpx(12));
+	draw_button(new_button, "New", !git.busy_or_refreshing(), (float)ui::tpx(12));
 }
 
 fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
@@ -1740,6 +1817,27 @@ fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
 	}
 
 	self.draw_branch(git, header, (float)ui::tpx(13));
+
+	Rect remote = self.remote_rect(canvas);
+	if (git.is_repo)
+	{
+		float gap         = ui::pxf(4.0f);
+		float button_w    = (remote.width - ui::pxf(PAD) * 2.0f - gap * 3.0f) / 4.0f;
+		float x           = remote.x + ui::pxf(PAD);
+		float button_y    = remote.y + ui::pxf(2.0f);
+		Rect fetch_button = { .x = x, .y = button_y, .width = button_w, .height = ui::pxf(21.0f) };
+		x += button_w + gap;
+		Rect pull_button = { .x = x, .y = button_y, .width = button_w, .height = fetch_button.height };
+		x += button_w + gap;
+		Rect push_button = { .x = x, .y = button_y, .width = button_w, .height = fetch_button.height };
+		x += button_w + gap;
+		Rect sync_button = { .x = x, .y = button_y, .width = button_w, .height = fetch_button.height };
+		bool upstream    = self.needs_publish(git);
+		draw_button(fetch_button, "Fetch", self.can_remote(git), (float)ui::tpx(11));
+		draw_button(pull_button, "Pull", self.can_pull(git), (float)ui::tpx(11));
+		draw_button(push_button, upstream ? "Publish" : "Push", self.can_push(git), (float)ui::tpx(11));
+		draw_button(sync_button, self.sync_pending ? "Syncing" : "Sync", self.can_pull(git), (float)ui::tpx(11));
+	}
 
 	rl::begin_scissor_mode((int)list.x, (int)list.y, (int)list.width, (int)list.height);
 	if (!git.is_repo)

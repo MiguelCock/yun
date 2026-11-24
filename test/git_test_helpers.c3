@@ -1,5 +1,7 @@
 module yun::git_test_helpers;
 
+import std::io::file;
+import std::os::process;
 import std::thread;
 import std::time::clock;
 import yun::git;
@@ -94,4 +96,23 @@ fn String temp_dir(String name)
 {
 	g_temp_counter++;
 	return string::format(mem, "/tmp/%s_%d_%d", name, g_temp_counter, now_ms());
+}
+fn bool save_file(String path, String content)
+{
+	if (catch excuse = std::io::file::save(path, content)) return false;
+	return true;
+}
+fn bool run_git(String[] argv)
+{
+	int? code = std::os::process::run(
+		argv,
+		{ },
+		{ },
+		std::os::process::CAPTURE,
+		std::os::process::CAPTURE,
+		std::os::process::CAPTURE
+	);
+	int value = -1;
+	if (try result = code) value = result;
+	return value == 0;
 }

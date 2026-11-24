@@ -11,11 +11,13 @@ const int DETECT_TIMEOUT_MS   = 10000;
 const int DIFF_TIMEOUT_MS     = 60000;
 const int ACTION_TIMEOUT_MS   = 120000;
 const int BRANCH_TIMEOUT_MS   = 15000;
+const int REMOTE_TIMEOUT_MS   = 300000;
 const usz STATUS_OUTPUT_CAP   = 4 * 1024 * 1024;
 const usz DETECT_OUTPUT_CAP   = 64 * 1024;
 const usz DIFF_OUTPUT_CAP     = 16 * 1024 * 1024;
 const usz ACTION_OUTPUT_CAP   = 4 * 1024 * 1024;
 const usz BRANCH_OUTPUT_CAP   = 512 * 1024;
+const usz REMOTE_OUTPUT_CAP   = 2 * 1024 * 1024;
 const double PERIODIC_REFRESH = 5.0;
 
 struct GitSettings
@@ -604,6 +606,10 @@ fn void State.handle_result(&self, GitResult* result)
 		case GitRequestKind.COMMIT:
 		case GitRequestKind.BRANCH_SWITCH:
 		case GitRequestKind.BRANCH_CREATE:
+		case GitRequestKind.FETCH:
+		case GitRequestKind.PULL:
+		case GitRequestKind.PUSH:
+		case GitRequestKind.PUBLISH:
 			self.handle_action(result);
 	}
 	result.destroy(self.allocator);
@@ -738,6 +744,72 @@ fn bool State.create_branch(&self, String name)
 	String[] argv = git_branch_create_argv(self.allocator, self.binary, self.repo_root, name);
 	self.busy = true;
 	if (!self.send(GitRequestKind.BRANCH_CREATE, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn String State.default_remote(&self)
+{
+	return g_git_settings.default_remote.len > 0 ? g_git_settings.default_remote : "origin";
+}
+
+fn bool State.fetch(&self)
+{
+	if (self.busy_or_refreshing() || !self.is_repo) return false;
+	String[] argv = git_fetch_argv(self.allocator, self.binary, self.repo_root, self.default_remote());
+	self.busy = true;
+	if (!self.send(GitRequestKind.FETCH, argv, REMOTE_TIMEOUT_MS, REMOTE_OUTPUT_CAP, "", "", false, false))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn bool State.pull(&self)
+{
+	if (self.busy_or_refreshing() || !self.is_repo || !self.has_status || self.status.branch.len == 0)
+	{
+		return false;
+	}
+	String[] argv = git_pull_argv(self.allocator, self.binary, self.repo_root);
+	self.busy = true;
+	if (!self.send(GitRequestKind.PULL, argv, REMOTE_TIMEOUT_MS, REMOTE_OUTPUT_CAP, "", "", false, false))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn bool State.push(&self, bool publish)
+{
+	if (self.busy_or_refreshing() || !self.is_repo || !self.has_status || self.status.branch.len == 0)
+	{
+		return false;
+	}
+	String[] argv = git_push_argv(
+		self.allocator,
+		self.binary,
+		self.repo_root,
+		self.default_remote(),
+		self.status.branch,
+		publish
+	);
+	self.busy = true;
+	if (!self.send(
+		publish ? GitRequestKind.PUBLISH : GitRequestKind.PUSH,
+		argv,
+		REMOTE_TIMEOUT_MS,
+		REMOTE_OUTPUT_CAP,
+		"",
+		"",
+		false,
+		false
+	))
 	{
 		self.busy = false;
 		return false;

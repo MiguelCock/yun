@@ -41,6 +41,10 @@ enum GitRequestKind : int
 	BRANCH_LIST,
 	BRANCH_SWITCH,
 	BRANCH_CREATE,
+	FETCH,
+	PULL,
+	PUSH,
+	PUBLISH,
 }
 
 struct GitBranch

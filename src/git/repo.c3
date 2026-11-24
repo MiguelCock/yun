@@ -190,3 +190,58 @@ fn String[] git_commit_argv(Allocator allocator, String binary, String root, Str
 		return finish_argv(allocator, &list);
 	};
 }
+fn String[] git_fetch_argv(Allocator allocator, String binary, String root, String remote)
+{
+	@pool()
+	{
+		List{String} list;
+		list.init(tmem);
+		list.push(binary);
+		list.push("-c");
+		list.push("credential.interactive=false");
+		list.push("--no-pager");
+		list.push("-C");
+		list.push(root);
+		list.push("fetch");
+		list.push(remote);
+		return finish_argv(allocator, &list);
+	};
+}
+
+fn String[] git_pull_argv(Allocator allocator, String binary, String root)
+{
+	@pool()
+	{
+		List{String} list;
+		list.init(tmem);
+		list.push(binary);
+		list.push("-c");
+		list.push("credential.interactive=false");
+		list.push("--no-pager");
+		list.push("-C");
+		list.push(root);
+		list.push("pull");
+		list.push("--ff-only");
+		return finish_argv(allocator, &list);
+	};
+}
+
+fn String[] git_push_argv(Allocator allocator, String binary, String root, String remote, String branch, bool publish)
+{
+	@pool()
+	{
+		List{String} list;
+		list.init(tmem);
+		list.push(binary);
+		list.push("-c");
+		list.push("credential.interactive=false");
+		list.push("--no-pager");
+		list.push("-C");
+		list.push(root);
+		list.push("push");
+		if (publish) list.push("-u");
+		list.push(remote);
+		list.push(branch);
+		return finish_argv(allocator, &list);
+	};
+}
