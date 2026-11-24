@@ -448,7 +448,11 @@ fn void State.handle_diff(&self, GitResult* result)
 	self.diff.output = result.output.len() > 0 ? result.output.copy_str(self.allocator) : "";
 	self.diff.error = result.error.len() > 0 ? result.error.copy_str(self.allocator) : "";
 	self.diff.truncated = result.truncated;
-	if (result.spawn_failed) self.diff.error = "Could not start Git".copy(self.allocator);
+	if (result.spawn_failed)
+	{
+		if (self.diff.error.len > 0) self.diff.error.free(self.allocator);
+		self.diff.error = "Could not start Git".copy(self.allocator);
+	}
 	self.diff_revision++;
 }
 
@@ -460,14 +464,32 @@ fn void State.handle_action(&self, GitResult* result)
 	self.action.success = result.exit_code == 0 && !result.spawn_failed && !result.timed_out && !result.cancelled;
 	self.action.output = result.output.len() > 0 ? result.output.copy_str(self.allocator) : "";
 	self.action.error = result.error.len() > 0 ? result.error.copy_str(self.allocator) : "";
-	if (result.spawn_failed) self.action.error = "Could not start Git".copy(self.allocator);
-	if (result.timed_out) self.action.error = "Git did not finish in time.".copy(self.allocator);
-	if (result.cancelled) self.action.error = "Git command was cancelled.".copy(self.allocator);
+	if (result.spawn_failed || result.timed_out || result.cancelled)
+	{
+		if (self.action.error.len > 0) self.action.error.free(self.allocator);
+		if (result.spawn_failed)
+		{
+			self.action.error = "Could not start Git".copy(self.allocator);
+		}
+		else if (result.timed_out)
+		{
+			self.action.error = "Git did not finish in time.".copy(self.allocator);
+		}
+		else
+		{
+			self.action.error = "Git command was cancelled.".copy(self.allocator);
+		}
+	}
 	self.action_revision++;
 	self.busy = false;
 	if (self.action.success)
 	{
 		self.clear_error();
+	}
+	else
+	{
+		GitErrorKind kind = classify_error(self.action.error);
+		self.set_error(kind, error_message(kind, self.action.error), self.action.error);
 	}
 	self.mark_dirty(now_seconds());
 }

@@ -87,7 +87,7 @@ fn void GitStatus.add_entry(
 
 fn bool GitStatus.parse(&self, String root, String data)
 {
-	self.root = root.copy(self.allocator);
+	self.root = root.len > 0 ? root.copy(self.allocator) : "";
 	self.valid = true;
 	usz pos = 0;
 	while (pos < data.len)

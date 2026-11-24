@@ -2,9 +2,12 @@ module yun::git;
 
 import raylib6::rl;
 import std::collections::list;
+import std::core::dstring;
 import std::core::mem::alloc;
 import std::math;
 import yun::canvas;
+import yun::highlight;
+import yun::text;
 import yun::theme;
 import yun::ui;
 
@@ -26,6 +29,8 @@ struct DiffRowView
 	String right_text;
 	int left_no;
 	int right_no;
+	int left_line;
+	int right_line;
 }
 
 struct DiffView
@@ -45,6 +50,10 @@ struct DiffView
 	List{DiffRowView} rows;
 	int max_columns;
 	int max_line_no;
+	text::PieceTable left_table;
+	text::PieceTable right_table;
+	highlight::Highlighter* left_highlighter;
+	highlight::Highlighter* right_highlighter;
 }
 
 fn void DiffView.init(&self, Allocator allocator)
@@ -64,12 +73,20 @@ fn void DiffView.init(&self, Allocator allocator)
 	self.rows.init(allocator);
 	self.max_columns = 0;
 	self.max_line_no = 0;
+	self.left_table.init_empty(allocator);
+	self.right_table.init_empty(allocator);
+	self.left_highlighter = null;
+	self.right_highlighter = null;
 }
 
 fn void DiffView.destroy(&self)
 {
 	self.diff.destroy();
 	self.rows.free();
+	highlight::destroy(self.left_highlighter, self.allocator);
+	highlight::destroy(self.right_highlighter, self.allocator);
+	self.left_table.destroy();
+	self.right_table.destroy();
 	if (self.path.len > 0) self.path.free(self.allocator);
 	if (self.orig_path.len > 0) self.orig_path.free(self.allocator);
 	if (self.error.len > 0) self.error.free(self.allocator);
@@ -120,6 +137,8 @@ fn void DiffView.add_side(&self, DiffLine* left, DiffLine* right)
 	row.right_text = right ? right.text : "";
 	row.left_no = left ? left.old_line : 0;
 	row.right_no = right ? right.new_line : 0;
+	row.left_line = -1;
+	row.right_line = -1;
 	self.rows.push(row);
 }
 
@@ -189,6 +208,117 @@ fn void DiffView.rebuild(&self)
 	}
 	if (self.scroll > (int)self.rows.len() - 1) self.scroll = (int)self.rows.len() - 1;
 	if (self.scroll < 0) self.scroll = 0;
+	self.rebuild_highlight_tables();
+}
+
+fn void DiffView.rebuild_highlight_tables(&self)
+{
+	highlight::destroy(self.left_highlighter, self.allocator);
+	highlight::destroy(self.right_highlighter, self.allocator);
+	self.left_highlighter = null;
+	self.right_highlighter = null;
+	self.left_table.destroy();
+	self.right_table.destroy();
+	self.left_table = (text::PieceTable) { };
+	self.right_table = (text::PieceTable) { };
+	if (self.mode != DiffMode.SIDE_BY_SIDE)
+	{
+		self.left_table.init_empty(self.allocator);
+		self.right_table.init_empty(self.allocator);
+		return;
+	}
+
+	DString left;
+	left.init(self.allocator);
+	DString right;
+	right.init(self.allocator);
+	int left_line  = 0;
+	int right_line = 0;
+	for (sz i = 0; i < self.rows.len(); i++)
+	{
+		DiffRowView* row = &self.rows[i];
+		if (row.header) continue;
+		if (row.has_left)
+		{
+			row.left_line = left_line++;
+			left.append_string(row.left_text);
+			left.append_char('\n');
+		}
+		if (row.has_right)
+		{
+			row.right_line = right_line++;
+			right.append_string(row.right_text);
+			right.append_char('\n');
+		}
+	}
+	if (left.len() > 0)
+	{
+		self.left_table.init_from_buffer(self.allocator, left.str_view());
+		self.left_highlighter = highlight::create(self.allocator, &self.left_table, self.path);
+	}
+	else
+	{
+		self.left_table.init_empty(self.allocator);
+	}
+	if (right.len() > 0)
+	{
+		self.right_table.init_from_buffer(self.allocator, right.str_view());
+		self.right_highlighter = highlight::create(self.allocator, &self.right_table, self.path);
+	}
+	else
+	{
+		self.right_table.init_empty(self.allocator);
+	}
+	left.free();
+	right.free();
+}
+
+fn void draw_highlighted_line(
+	highlight::Highlighter* highlighter,
+	text::PieceTable* table,
+	int line,
+	String text,
+	float x,
+	float y,
+	float char_w,
+	float text_size,
+	float h_scroll
+)
+{
+	if (!highlighter || line < 0 || text.len == 0) return;
+	usz line_start = table.line_start((usz)line);
+	usz line_end   = line + 1 < (int)table.line_count() ? table.line_start((usz)(line + 1)) : table.length();
+	while (line_end > line_start && (table.byte_at(
+		line_end - 1
+	) == '\n' || table.byte_at(line_end - 1) == '\r')) line_end--;
+	@pool()
+	{
+		List{highlight::Span} runs;
+		runs.init(tmem);
+		highlighter.runs_for_line(line_start, line_end, &runs);
+		if (runs.len() == 0)
+		{
+			rl::draw_text_ex(ui::font(), text.zstr_tcopy(), { x, y }, text_size, 0.0f, theme::current().panel_text);
+			return;
+		}
+		foreach (highlight::Span run : runs)
+		{
+			usz start = run.start > line_start ? (usz)(run.start - line_start) : 0;
+			usz end   = run.end > line_start ? (usz)(run.end - line_start) : 0;
+			if (start >= text.len) continue;
+			if (end > text.len) end = text.len;
+			if (end <= start) continue;
+			String part = text[start:end - start];
+			rl::draw_text_ex(
+				ui::font(),
+				part.zstr_tcopy(),
+				{ x + (float)start * char_w - h_scroll, y },
+				text_size,
+				0.0f,
+				highlight::role_color(run.role)
+			);
+		}
+	};
 }
 
 fn bool DiffView.sync(&self, State* git)
@@ -551,6 +681,11 @@ fn void DiffView.draw(&self, Canvas* canvas)
 				{ .x = body.x + half, .y = body.y, .width = 1.0f, .height = body.height },
 				theme::current()
 				.panel_border);
+			if (self.left_highlighter)
+			{
+				self.left_highlighter.ensure_parsed();
+				self.left_highlighter.begin_runs();
+			}
 			rl::begin_scissor_mode(
 				(int)(left_rect.x + gutter),
 				(int)body.y,
@@ -562,15 +697,37 @@ fn void DiffView.draw(&self, Canvas* canvas)
 				DiffRowView* row = &self.rows[i];
 				if (!row.has_left || row.header) continue;
 				float y = body.y + (float)(i - self.scroll) * line_h + ui::pxf(1.0f);
-				draw_row_text(
-					left_rect.x + gutter - self.h_scroll,
-					y,
-					row.left_text,
-					text_size,
-					diff_text_color(row.left_kind)
-				);
+				if (self.left_highlighter)
+				{
+					draw_highlighted_line(
+						self.left_highlighter,
+						&self.left_table,
+						row.left_line,
+						row.left_text,
+						left_rect.x + gutter,
+						y,
+						char_w,
+						text_size,
+						self.h_scroll
+					);
+				}
+				else
+				{
+					draw_row_text(
+						left_rect.x + gutter - self.h_scroll,
+						y,
+						row.left_text,
+						text_size,
+						diff_text_color(row.left_kind)
+					);
+				}
 			}
 			rl::end_scissor_mode();
+			if (self.right_highlighter)
+			{
+				self.right_highlighter.ensure_parsed();
+				self.right_highlighter.begin_runs();
+			}
 			rl::begin_scissor_mode(
 				(int)(right_rect.x + gutter),
 				(int)body.y,
@@ -582,13 +739,30 @@ fn void DiffView.draw(&self, Canvas* canvas)
 				DiffRowView* row = &self.rows[i];
 				if (!row.has_right || row.header) continue;
 				float y = body.y + (float)(i - self.scroll) * line_h + ui::pxf(1.0f);
-				draw_row_text(
-					right_rect.x + gutter - self.h_scroll,
-					y,
-					row.right_text,
-					text_size,
-					diff_text_color(row.right_kind)
-				);
+				if (self.right_highlighter)
+				{
+					draw_highlighted_line(
+						self.right_highlighter,
+						&self.right_table,
+						row.right_line,
+						row.right_text,
+						right_rect.x + gutter,
+						y,
+						char_w,
+						text_size,
+						self.h_scroll
+					);
+				}
+				else
+				{
+					draw_row_text(
+						right_rect.x + gutter - self.h_scroll,
+						y,
+						row.right_text,
+						text_size,
+						diff_text_color(row.right_kind)
+					);
+				}
 			}
 			rl::end_scissor_mode();
 		}

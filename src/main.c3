@@ -2448,7 +2448,6 @@ fn int main(String[] args)
 	bool diagnostics_logged        =  false;
 	input::RepeatState move_repeat =  { };
 	ulong last_git_error_revision  =  0;
-	ulong last_git_action_revision =  0;
 
 	int frame_count    = 0;
 	double prof_update = 0.0;
@@ -3117,14 +3116,6 @@ fn int main(String[] args)
 			{
 				ui_mode = scm_saved_mode;
 				git_panel.focused = false;
-			}
-			if (git_state.action_revision != last_git_action_revision)
-			{
-				last_git_action_revision = git_state.action_revision;
-				if (!git_state.action.success && git_state.action.error.len > 0)
-				{
-					notifier.push(git::first_line(git_state.action.error));
-				}
 			}
 			String git_open_path = "";
 			if (git_panel.take_open(&git_open_path))

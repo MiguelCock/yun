@@ -59,6 +59,7 @@ struct Panel
 	ulong action_seen;
 	bool confirm_open;
 	int confirm_row;
+	bool error_open;
 	String pending_open;
 	bool open_pending;
 	bool leave_requested;
@@ -87,6 +88,7 @@ fn void Panel.init(&self, Allocator allocator)
 	self.action_seen = 0;
 	self.confirm_open = false;
 	self.confirm_row = -1;
+	self.error_open = false;
 	self.pending_open = "";
 	self.open_pending = false;
 	self.leave_requested = false;
@@ -134,6 +136,17 @@ fn Rect Panel.rect(&self, Canvas* canvas)
 fn bool Panel.contains_screen(&self, Canvas* canvas, RLVector2 point)
 {
 	return self.visible && rect_contains(self.rect(canvas), point);
+}
+
+fn Rect Panel.branch_rect(&self, Canvas* canvas)
+{
+	Rect header = self.header_rect(canvas);
+	return {
+		.x = header.x,
+		.y = header.y + header.height,
+		.width = header.width,
+		.height = ui::pxf(BRANCH_H),
+	};
 }
 
 fn Rect Panel.header_rect(&self, Canvas* canvas)
@@ -608,11 +621,13 @@ fn void Panel.confirm_discard(&self, State* git, double now)
 	}
 	self.confirm_open = false;
 	self.confirm_row = -1;
+	self.error_open = false;
 	git.mark_dirty(now);
 }
 
 fn void Panel.sync_actions(&self, State* git)
 {
+	if (git.error.kind == GitErrorKind.NONE) self.error_open = false;
 	if (git.action_revision == self.action_seen) return;
 	self.action_seen = git.action_revision;
 	if (git.action.success && git.action.kind == GitRequestKind.COMMIT) self.clear_message();
@@ -754,12 +769,32 @@ fn bool Panel.update(&self, State* git, Canvas* canvas, double now, bool focused
 	self.focus_requested = false;
 	self.leave_requested = false;
 	self.sync_actions(git);
-	if (self.rows_revision != git.status_revision) self.rebuild(git);
+	if (self.rows_revision != git.status_revision)
+	{
+		self.rebuild(git);
+		self.ensure_visible(canvas);
+	}
 
 	Rect panel      = self.rect(canvas);
 	RLVector2 mouse = rl::get_mouse_position();
 	bool inside     = rect_contains(panel, mouse);
 	bool consumed   = inside;
+
+	if (self.error_open)
+	{
+		if (focused && rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE)) self.error_open = false;
+		if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
+		{
+			Rect modal = {
+				.x = panel.x + panel.width / 2.0f - ui::pxf(170.0f),
+				.y = panel.y + panel.height / 2.0f - ui::pxf(90.0f),
+				.width = ui::pxf(340.0f),
+				.height = ui::pxf(180.0f),
+			};
+			if (!rect_contains(modal, mouse)) self.error_open = false;
+		}
+		return true;
+	}
 
 	if (self.confirm_open)
 	{
@@ -825,6 +860,12 @@ fn bool Panel.update(&self, State* git, Canvas* canvas, double now, bool focused
 		if (rect_contains(refresh, mouse))
 		{
 			git.refresh_now(now);
+			return true;
+		}
+		Rect branch = self.branch_rect(canvas);
+		if (rect_contains(branch, mouse) && git.error.kind != GitErrorKind.NONE)
+		{
+			self.error_open = true;
 			return true;
 		}
 		Rect commit = self.commit_rect(canvas);
@@ -1343,6 +1384,59 @@ fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
 		};
 		draw_button(discard, "Discard", true, (float)ui::tpx(12));
 		draw_button(cancel, "Cancel", true, (float)ui::tpx(12));
+	}
+
+	if (self.error_open)
+	{
+		rl::draw_rectangle_rec(panel, { 0, 0, 0, 140 });
+		Rect modal = {
+			.x = panel.x + panel.width / 2.0f - ui::pxf(170.0f),
+			.y = panel.y + panel.height / 2.0f - ui::pxf(90.0f),
+			.width = ui::pxf(340.0f),
+			.height = ui::pxf(180.0f),
+		};
+		ui::rounded_rect(modal, ui::corner_radius(), theme::current().panel_bg_alt);
+		ui::rounded_rect_lines(modal, ui::corner_radius(), 1.0f, theme::current().panel_border);
+		rl::draw_text_ex(
+			ui::font(),
+			git.error.message.zstr_tcopy(),
+			{ modal.x + ui::pxf(14.0f), modal.y + ui::pxf(12.0f) },
+			(float)ui::tpx(14),
+			0.0f,
+			theme::current()
+			.panel_text);
+		String detail = git.error.detail.len > 0 ? git.error.detail : "No additional details.";
+		int line      = 0;
+		usz start     = 0;
+		for (usz i = 0; i <= detail.len && line < 8; i++)
+		{
+			if (i < detail.len && detail[i] != '\n') continue;
+			if (i > start)
+			{
+				String row = detail[start:i - start];
+				@pool()
+				{
+					rl::draw_text_ex(
+						ui::font(),
+						row.zstr_tcopy(),
+						{ modal.x + ui::pxf(14.0f), modal.y + ui::pxf(38.0f + (float)line * 17.0f) },
+						(float)ui::tpx(12),
+						0.0f,
+						theme::current()
+						.panel_dim);
+				};
+			}
+			line++;
+			start = i + 1;
+		}
+		rl::draw_text_ex(
+			ui::font(),
+			"Esc: close",
+			{ modal.x + modal.width - ui::pxf(70.0f), modal.y + modal.height - ui::pxf(24.0f) },
+			(float)ui::tpx(11),
+			0.0f,
+			theme::current()
+			.panel_disabled);
 	}
 }
 

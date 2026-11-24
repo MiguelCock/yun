@@ -237,8 +237,8 @@ fn void GitError.set(&self, GitErrorKind kind, String message, String detail)
 {
 	self.clear();
 	self.kind = kind;
-	self.message = message.copy(self.allocator);
-	self.detail = detail.copy(self.allocator);
+	self.message = message.len > 0 ? message.copy(self.allocator) : "";
+	self.detail = detail.len > 0 ? detail.copy(self.allocator) : "";
 }
 
 fn void GitAction.init(&self, Allocator allocator)
