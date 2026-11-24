@@ -141,22 +141,28 @@ fn bool save(project::Project* project, canvas::Canvas* canvas, console::Console
 			console_state.visible = console_manager.visible;
 			console_state.height = console_manager.height;
 			console_state.active = console_manager.active;
-			ConsoleSessionState[] sessions = alloc::new_array(
-				tmem,
-				ConsoleSessionState,
-				(usz)console_manager.sessions.len()
-			);
-			for (sz i = 0; i < console_manager.sessions.len(); i++)
+			bool restore_sessions = console::settings().restore_sessions;
+			bool persist_history  = console::settings().persist_history;
+			if (restore_sessions)
 			{
-				ConsoleSession* session = console_manager.sessions[i];
-				String[] history        = alloc::new_array(tmem, String, (usz)session.console.history.entries.len());
-				for (sz h = 0; h < session.console.history.entries.len(); h++)
+				ConsoleSessionState[] sessions = alloc::new_array(
+					tmem,
+					ConsoleSessionState,
+					(usz)console_manager.sessions.len()
+				);
+				for (sz i = 0; i < console_manager.sessions.len(); i++)
 				{
-					history[(usz)h] = session.console.history.entries[h];
+					ConsoleSession* session = console_manager.sessions[i];
+					usz history_count       = persist_history ? (usz)session.console.history.entries.len() : 0;
+					String[] history        = alloc::new_array(tmem, String, (sz)history_count);
+					for (usz h = 0; h < history_count; h++)
+					{
+						history[h] = session.console.history.entries[(sz)h];
+					}
+					sessions[(usz)i] = { .title = session.title, .history = history };
 				}
-				sessions[(usz)i] = { .title = session.title, .history = history };
+				console_state.sessions = sessions;
 			}
-			console_state.sessions = sessions;
 		}
 		state.console = console_state;
 
@@ -239,8 +245,10 @@ fn bool load(project::Project* project, canvas::Canvas* canvas, console::Console
 
 		if (console_manager && state.version.compare_to(WORKSPACE_VERSION) == 0)
 		{
+			bool restore_sessions = console::settings().restore_sessions;
+			bool persist_history  = console::settings().persist_history;
 			console_manager.clear_sessions();
-			if (state.console.sessions.len == 0)
+			if (!restore_sessions || state.console.sessions.len == 0)
 			{
 				(void)console_manager.add_session();
 			}
@@ -251,16 +259,20 @@ fn bool load(project::Project* project, canvas::Canvas* canvas, console::Console
 					ConsoleSessionState session_state = state.console.sessions[i];
 					int index                         = console_manager.add_session_named(session_state.title);
 					Console* restored                 = &console_manager.sessions[index].console;
-					for (usz h = 0; h < session_state.history.len; h++)
+					if (persist_history)
 					{
-						restored.history.add(session_state.history[h]);
+						for (usz h = 0; h < session_state.history.len; h++)
+						{
+							restored.history.add(session_state.history[h]);
+						}
 					}
 				}
 			}
 			console_manager.visible = state.console.visible;
 			console_manager.height = state.console.height;
 			if (console_manager.height < console::MIN_HEIGHT) console_manager.height = console::DEFAULT_HEIGHT;
-			if (state.console.active >= 0 && state.console.active < (int)console_manager.sessions.len())
+			if (restore_sessions && state.console.active >= 0
+				&& state.console.active < (int)console_manager.sessions.len())
 			{
 				console_manager.active = state.console.active;
 			}

@@ -821,3 +821,70 @@ fn void test_console_input_word_nav()
 	input.move_word_left();
 	assert(input.cursor == 0);
 }
+fn void test_console_buffer_flags()
+{
+	ConsoleBuffer buffer;
+	buffer.init(mem);
+	defer buffer.destroy();
+
+	buffer.set_render_ansi(false);
+	buffer.append_stdout("\x1b[31mred\x1b[0m\n");
+	ConsoleLine* line = buffer.line_at(0);
+	assert(line.text.compare_to("red") == 0);
+	assert(line.span_count == 0);
+
+	buffer.set_show_headers(false);
+	buffer.append_command("echo hello");
+	assert(buffer.line_count() == 1);
+
+	buffer.set_show_headers(true);
+	buffer.append_command("echo hello");
+	assert(buffer.line_count() == 2);
+	assert(buffer.line_at(1).text.compare_to("$ echo hello") == 0);
+}
+
+fn void test_console_notify_policy()
+{
+	assert(!console_should_notify(ConsoleNotify.NEVER, ConsoleStatus.EXITED, 1));
+	assert(!console_should_notify(ConsoleNotify.FAILURE, ConsoleStatus.EXITED, 0));
+	assert(console_should_notify(ConsoleNotify.FAILURE, ConsoleStatus.EXITED, 1));
+	assert(console_should_notify(ConsoleNotify.FAILURE, ConsoleStatus.FAILED, -1));
+	assert(console_should_notify(ConsoleNotify.ALWAYS, ConsoleStatus.EXITED, 0));
+	assert(console_should_notify(ConsoleNotify.ALWAYS, ConsoleStatus.KILLED, 1));
+}
+
+fn void test_panel_console_settings()
+{
+	ConsolePanel panel;
+	panel.init();
+	ConsoleSettings settings = console::settings();
+	settings.wheel_lines = 7;
+	settings.autocomplete = false;
+	panel.apply_settings(settings);
+	assert(panel.wheel_lines == 7);
+	assert(!panel.completion_enabled);
+}
+
+fn void test_console_kill_on_close()
+{
+	ConsoleManager manager;
+	manager.init(mem);
+	defer manager.destroy();
+
+	ConsoleSettings saved    = console::settings();
+	ConsoleSettings settings = saved;
+	settings.kill_on_close = true;
+	console::set_settings(settings);
+	defer console::set_settings(saved);
+
+	manager.set_root(".");
+	manager.open();
+	Console* console = manager.active_console();
+	$if env::WIN32:
+		assert(console.run("ping -n 20 127.0.0.1 >nul"));
+	$else
+		assert(console.run("sleep 10"));
+	$endif
+	manager.close();
+	assert(console.runner.status == ConsoleStatus.KILLING);
+}

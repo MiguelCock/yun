@@ -67,6 +67,7 @@ struct ConsolePanel
 	sz sel_first_line;
 	double last_click_time;
 	RLVector2 last_click_pos;
+	int wheel_lines;
 	bool completion_enabled;
 	bool completion_active;
 	bool completion_dismissed;
@@ -107,6 +108,7 @@ fn void ConsolePanel.init(&self)
 	self.sel_first_line = 0;
 	self.last_click_time = -1.0;
 	self.last_click_pos = { 0.0f, 0.0f };
+	self.wheel_lines = 3;
 	self.completion_enabled = true;
 	self.completion_active = false;
 	self.completion_dismissed = false;
@@ -150,6 +152,7 @@ fn void ConsolePanel.apply_settings(&self, ConsoleSettings settings)
 	}
 	if (!self.auto_scroll && settings.auto_scroll) self.pinned = true;
 	self.auto_scroll = settings.auto_scroll;
+	self.wheel_lines = settings.wheel_lines > 0 ? settings.wheel_lines : 1;
 	self.completion_enabled = settings.autocomplete;
 	if (!self.completion_enabled)
 	{
@@ -1189,7 +1192,7 @@ fn void ConsolePanel.update_mouse(
 			}
 			else
 			{
-				self.scroll_by(console, metrics, -(int)(wheel * (float)SCROLL_LINES));
+				self.scroll_by(console, metrics, -(int)(wheel * (float)self.wheel_lines));
 			}
 		}
 	}

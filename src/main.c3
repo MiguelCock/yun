@@ -58,6 +58,68 @@ fn void set_project_title(project::Project* project)
 	rl::set_window_title((ZString)title.ptr);
 }
 
+fn void notify_console_finishes(console::ConsoleManager* manager, notify::Notifier* notifier, bool console_focused)
+{
+	int mode = (int)console::settings().notify;
+	for (sz i = 0; i < manager.sessions.len(); i++)
+	{
+		console::ConsoleSession* session = manager.sessions[i];
+		int exit_code                    = 0;
+		console::ConsoleStatus status;
+		if (!session.console.take_notify(&exit_code, &status)) continue;
+		if (console_focused) continue;
+		if (!console::console_should_notify((console::ConsoleNotify)mode, status, exit_code)) continue;
+		@pool()
+		{
+			String detail;
+			if (status == console::ConsoleStatus.FAILED)
+			{
+				detail = "failed to start";
+			}
+			else if (status == console::ConsoleStatus.KILLED)
+			{
+				detail = "stopped";
+			}
+			else
+			{
+				detail = string::format(tmem, "exited %d", (long)exit_code);
+			}
+			notifier.push(string::format(tmem, "Console %s: %s", session.title, detail));
+		};
+	}
+}
+
+fn void set_console_settings(config::Config* config)
+{
+	String notify               = config.settings.get_string(settings::SettingId.CONSOLE_NOTIFY);
+	console::ConsoleNotify mode = console::ConsoleNotify.FAILURE;
+	if (notify.compare_to("never") == 0)
+	{
+		mode = console::ConsoleNotify.NEVER;
+	}
+	else if (notify.compare_to("always") == 0)
+	{
+		mode = console::ConsoleNotify.ALWAYS;
+	}
+	console::ConsoleSettings cs = {
+		.max_lines = (int)config.settings.get_int(settings::SettingId.CONSOLE_MAX_LINES),
+		.max_output_kb = (int)config.settings.get_int(settings::SettingId.CONSOLE_MAX_OUTPUT_KB),
+		.history_size = (int)config.settings.get_int(settings::SettingId.CONSOLE_HISTORY_SIZE),
+		.panel_height = (float)config.settings.get_int(settings::SettingId.CONSOLE_PANEL_HEIGHT),
+		.auto_scroll = config.settings.get_bool(settings::SettingId.CONSOLE_AUTO_SCROLL),
+		.autocomplete = config.settings.get_bool(settings::SettingId.CONSOLE_AUTOCOMPLETE),
+		.wheel_lines = (int)config.settings.get_int(settings::SettingId.CONSOLE_WHEEL_LINES),
+		.ansi_colors = config.settings.get_bool(settings::SettingId.CONSOLE_ANSI_COLORS),
+		.show_headers = config.settings.get_bool(settings::SettingId.CONSOLE_SHOW_HEADERS),
+		.clear_on_run = config.settings.get_bool(settings::SettingId.CONSOLE_CLEAR_ON_RUN),
+		.kill_on_close = config.settings.get_bool(settings::SettingId.CONSOLE_KILL_ON_CLOSE),
+		.notify = mode,
+		.persist_history = config.settings.get_bool(settings::SettingId.CONSOLE_PERSIST_HISTORY),
+		.restore_sessions = config.settings.get_bool(settings::SettingId.CONSOLE_RESTORE_SESSIONS),
+	};
+	console::set_settings(cs);
+}
+
 fn void finish_open(
 	project::Project* project,
 	canvas::Canvas* canvas,
@@ -68,6 +130,7 @@ fn void finish_open(
 )
 {
 	config.load((String)project.root);
+	set_console_settings(config);
 	ui::set_ui_scale((float)config.settings.get_float(settings::SettingId.APP_UI_SCALE));
 	bool restored = workspace::load(project, canvas, console_manager);
 	if (restored)
@@ -273,15 +336,7 @@ fn void apply_settings(
 	is.dash_gap = (float)config.settings.get_float(settings::SettingId.ARROWS_DASH_GAP);
 	imports::set_settings(is);
 
-	console::ConsoleSettings cs_console = {
-		.max_lines = (int)config.settings.get_int(settings::SettingId.CONSOLE_MAX_LINES),
-		.max_output_kb = (int)config.settings.get_int(settings::SettingId.CONSOLE_MAX_OUTPUT_KB),
-		.history_size = (int)config.settings.get_int(settings::SettingId.CONSOLE_HISTORY_SIZE),
-		.panel_height = (float)config.settings.get_int(settings::SettingId.CONSOLE_PANEL_HEIGHT),
-		.auto_scroll = config.settings.get_bool(settings::SettingId.CONSOLE_AUTO_SCROLL),
-		.autocomplete = config.settings.get_bool(settings::SettingId.CONSOLE_AUTOCOMPLETE),
-	};
-	console::set_settings(cs_console);
+	set_console_settings(config);
 	console_manager.apply_settings(console::settings());
 
 	bool font_changed    = false;
@@ -2402,6 +2457,7 @@ fn int main(String[] args)
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
 		console_manager.pump();
+		notify_console_finishes(&console_manager, &notifier, ui_mode == UiMode.CONSOLE && console_manager.visible);
 		scan_ms += (rl::get_time() - scan_t0) * 1000.0;
 
 		apply_settings(

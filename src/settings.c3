@@ -117,6 +117,14 @@ enum SettingId : int
 	CONSOLE_PANEL_HEIGHT,
 	CONSOLE_AUTO_SCROLL,
 	CONSOLE_AUTOCOMPLETE,
+	CONSOLE_WHEEL_LINES,
+	CONSOLE_ANSI_COLORS,
+	CONSOLE_SHOW_HEADERS,
+	CONSOLE_CLEAR_ON_RUN,
+	CONSOLE_KILL_ON_CLOSE,
+	CONSOLE_NOTIFY,
+	CONSOLE_PERSIST_HISTORY,
+	CONSOLE_RESTORE_SESSIONS,
 	LSP_ENABLED,
 	COUNT,
 }
@@ -990,6 +998,74 @@ const SettingSpec[] SETTINGS = {
 		.fallback = { .b = true },
 	},
 	{
+		.section = "console",
+		.key = "wheel_lines",
+		.label = "Wheel scroll lines",
+		.description = "Output lines scrolled per mouse-wheel notch.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 3 },
+		.min = 1.0,
+		.max = 20.0,
+		.step = 1.0,
+	},
+	{
+		.section = "console",
+		.key = "ansi_colors",
+		.label = "ANSI colors",
+		.description = "Render ANSI colors from command output; off strips them.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
+		.section = "console",
+		.key = "show_command_headers",
+		.label = "Command headers",
+		.description = "Show the $ command label before each run's output.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
+		.section = "console",
+		.key = "clear_on_run",
+		.label = "Clear on run",
+		.description = "Clear previous output when a new command starts.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
+	},
+	{
+		.section = "console",
+		.key = "kill_on_close",
+		.label = "Kill on close",
+		.description = "Kill a running command when the console panel is closed.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
+	},
+	{
+		.section = "console",
+		.key = "notify",
+		.label = "Notifications",
+		.description = "Notify when a command finishes: never, failure, or always.",
+		.kind = SettingKind.ENUM,
+		.fallback = { .s = "failure" },
+		.options = { "never", "failure", "always" },
+	},
+	{
+		.section = "console",
+		.key = "persist_history",
+		.label = "Persist history",
+		.description = "Save per-project command history in the workspace.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
+		.section = "console",
+		.key = "restore_sessions",
+		.label = "Restore sessions",
+		.description = "Restore console session tabs on project open.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
 		.section = "lsp",
 		.key = "enabled",
 		.label = "Language servers",
@@ -1123,8 +1199,15 @@ fn String group_for(SettingId id)
 	if (s.section.compare_to("console") == 0)
 	{
 		if (s.key.compare_to("max_lines") == 0 || s.key.compare_to("max_output_kb") == 0) return "Limits";
-		if (s.key.compare_to("history_size") == 0) return "History";
+		if (s.key.compare_to("history_size") == 0 || s.key.compare_to("persist_history") == 0) return "History";
 		if (s.key.compare_to("autocomplete") == 0) return "Completion";
+		if (s.key.compare_to(
+			"ansi_colors"
+		) == 0 || s.key.compare_to(
+			"show_command_headers"
+		) == 0 || s.key.compare_to("clear_on_run") == 0) return "Behavior";
+		if (s.key.compare_to("notify") == 0) return "Notifications";
+		if (s.key.compare_to("restore_sessions") == 0) return "Sessions";
 		return "Panel";
 	}
 	if (s.section.compare_to("lsp") == 0) return "Language servers";

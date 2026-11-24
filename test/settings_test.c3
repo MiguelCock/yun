@@ -497,3 +497,14 @@ fn void test_grid_snap_defaults()
 	SettingSpec step = spec(SettingId.CANVAS_SNAP_STEP);
 	assert(step.fallback.i == 0);
 }
+fn void test_console_settings_defaults()
+{
+	assert(spec(SettingId.CONSOLE_WHEEL_LINES).fallback.i == 3);
+	assert(spec(SettingId.CONSOLE_ANSI_COLORS).fallback.b);
+	assert(spec(SettingId.CONSOLE_SHOW_HEADERS).fallback.b);
+	assert(!spec(SettingId.CONSOLE_CLEAR_ON_RUN).fallback.b);
+	assert(!spec(SettingId.CONSOLE_KILL_ON_CLOSE).fallback.b);
+	assert(spec(SettingId.CONSOLE_NOTIFY).fallback.s.compare_to("failure") == 0);
+	assert(spec(SettingId.CONSOLE_PERSIST_HISTORY).fallback.b);
+	assert(spec(SettingId.CONSOLE_RESTORE_SESSIONS).fallback.b);
+}

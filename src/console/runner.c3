@@ -26,6 +26,9 @@ struct ConsoleRunner
 	ConsoleStatus status;
 	int exit_code;
 	bool kill_requested;
+	bool notify_pending;
+	int notify_code;
+	ConsoleStatus notify_status;
 	String command;
 	String error;
 }
@@ -38,6 +41,9 @@ fn void ConsoleRunner.init(&self, Allocator allocator)
 	self.status = ConsoleStatus.IDLE;
 	self.exit_code = 0;
 	self.kill_requested = false;
+	self.notify_pending = false;
+	self.notify_code = 0;
+	self.notify_status = ConsoleStatus.IDLE;
 	self.command = "";
 	self.error = "";
 }
@@ -196,6 +202,9 @@ fn bool ConsoleRunner.start_display(&self, ConsoleBuffer* output, String root, S
 	if (catch excuse = spawned)
 	{
 		self.status = ConsoleStatus.FAILED;
+		self.notify_pending = true;
+		self.notify_code = -1;
+		self.notify_status = ConsoleStatus.FAILED;
 		self.error = "Could not start the shell".copy(self.allocator);
 		if (output)
 		{
@@ -294,6 +303,9 @@ fn void ConsoleRunner.pump(&self, ConsoleBuffer* output, int budget)
 		self.exit_code = exit_code;
 	$endif
 	self.status = self.kill_requested ? ConsoleStatus.KILLED : ConsoleStatus.EXITED;
+	self.notify_pending = true;
+	self.notify_code = self.exit_code;
+	self.notify_status = self.status;
 	(void)self.process.destroy();
 	self.has_process = false;
 }
