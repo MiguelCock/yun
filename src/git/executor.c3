@@ -311,6 +311,15 @@ fn void GitExecutor.stop(&self)
 	self.mutex.unlock();
 	self.requests.close();
 	(void)self.worker.join();
+	while (true)
+	{
+		GitRequest? maybe = self.requests.try_pop();
+		if (catch excuse = maybe) break;
+		GitRequest request = maybe;
+		git_free_argv(self.allocator, request.argv);
+		if (request.path.len > 0) request.path.free(self.allocator);
+		if (request.orig_path.len > 0) request.orig_path.free(self.allocator);
+	}
 	self.requests.destroy();
 	self.requests = null;
 	if (self.results)
