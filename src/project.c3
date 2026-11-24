@@ -3355,10 +3355,15 @@ fn void Project.draw_snap_guides(&self, RLCamera2D camera)
 		if (self.drag_index < 0 || self.drag_index >= (int)self.cards.len()) return;
 		r = self.cards[self.drag_index].rect;
 	}
-	else
+	else if (self.drag_cluster)
 	{
 		if (self.drag_cluster_index < 0 || self.drag_cluster_index >= (int)self.folders.len()) return;
 		r = self.cluster_visual_bounds(self.drag_cluster_index);
+	}
+	else
+	{
+		r = self.selected_item_rect();
+		if (r.width <= 0.0f) return;
 	}
 	Rect view       = visible_world_rect(camera);
 	float thickness = card::screen_thickness(1.0f, camera.zoom);
@@ -3391,7 +3396,6 @@ fn void Project.draw_cards(
 	}
 	Rect visible          = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
 	RLVector2 mouse_world = canvas::screen_to_world_camera(camera, rl::get_mouse_position());
-	self.draw_snap_guides(camera);
 
 	@pool()
 	{
@@ -3600,6 +3604,7 @@ fn void Project.draw_cards(
 			if (is_focused && self.focus_card < 0) card.draw_handles(camera, theme::current().editor_handle);
 		}
 	};
+	self.draw_snap_guides(camera);
 }
 fn void Project.toggle_preview(&self, int index)
 {
