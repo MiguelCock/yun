@@ -50,7 +50,7 @@ Mouse panning, zooming, clicking and dragging still work as before.
 
 ### EDIT
 
-Typing edits the focused card; arrow keys move the caret, `Tab` indents, and the usual editing shortcuts apply. `Esc` returns to MOVE and keeps the card selected, so you can keep browsing with `[` / `]`.
+Typing edits the focused card; arrow keys move the caret, `Ctrl+Left/Right` move by word, `Ctrl+Shift+Left/Right` select by word, `Ctrl+Backspace` / `Ctrl+Delete` delete words, `Tab` indents, and the usual editing shortcuts apply. `Esc` returns to MOVE and keeps the card selected, so you can keep browsing with `[` / `]`.
 
 ### TOP BAR
 

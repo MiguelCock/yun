@@ -2522,6 +2522,8 @@ enum EditorMove : int
 	RIGHT,
 	UP,
 	DOWN,
+	WORD_LEFT,
+	WORD_RIGHT,
 	LINE_START,
 	LINE_END,
 	PAGE_UP,
@@ -2728,6 +2730,28 @@ fn bool Project.editor_outdent(&self)
 	return true;
 }
 
+fn bool Project.editor_delete_word(&self, bool back)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return false;
+	PieceTable* table = card.buffer;
+	History* history  = card.history;
+	double now        = rl::get_time();
+	usz start         = 0;
+	usz end           = 0;
+	editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+	if (start == end)
+	{
+		usz length = 0;
+		editor::word_delete_range(table, card.cursor, back, &start, &length);
+		end = start + length;
+	}
+	if (start == end) return false;
+	card.cursor = history.replace(table, start, end - start, "", now);
+	card.selection_anchor = card.cursor;
+	return true;
+}
+
 fn bool Project.editor_delete(&self, bool back)
 {
 	FileCard* card = self.focused_editable_card();
@@ -2770,6 +2794,12 @@ fn void Project.editor_move(&self, EditorMove move, EditorMetrics metrics)
 			break;
 		case EditorMove.RIGHT:
 			card.cursor = editor::cursor_next(table, card.cursor);
+			break;
+		case EditorMove.WORD_LEFT:
+			card.cursor = editor::cursor_word_left(table, card.cursor);
+			break;
+		case EditorMove.WORD_RIGHT:
+			card.cursor = editor::cursor_word_right(table, card.cursor);
 			break;
 		case EditorMove.LINE_START:
 			card.cursor = editor::cursor_home(table, card.cursor);
@@ -2950,6 +2980,14 @@ fn void Project.handle_keyboard(
 	{
 		if (self.editor_delete(false)) changed = true;
 	}
+	if (keymap.pressed_repeat((int)commands::CommandId.DELETE_WORD_BACK, commands::CTX_EDIT))
+	{
+		if (self.editor_delete_word(true)) changed = true;
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.DELETE_WORD_FORWARD, commands::CTX_EDIT))
+	{
+		if (self.editor_delete_word(false)) changed = true;
+	}
 
 	if (!ctrl_down())
 	{
@@ -3010,6 +3048,14 @@ fn void Project.handle_keyboard(
 	if (keymap.pressed_move((int)commands::CommandId.CURSOR_DOWN, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.DOWN, metrics);
+	}
+	if (keymap.pressed_move((int)commands::CommandId.CURSOR_WORD_LEFT, commands::CTX_EDIT))
+	{
+		self.editor_move(EditorMove.WORD_LEFT, metrics);
+	}
+	if (keymap.pressed_move((int)commands::CommandId.CURSOR_WORD_RIGHT, commands::CTX_EDIT))
+	{
+		self.editor_move(EditorMove.WORD_RIGHT, metrics);
 	}
 	if (keymap.pressed((int)commands::CommandId.LINE_START, commands::CTX_EDIT))
 	{
