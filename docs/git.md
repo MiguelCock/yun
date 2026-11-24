@@ -27,7 +27,7 @@ Conflicted files appear under Merge Changes. Press `C` on a selected conflict to
 
 The remote bar provides Fetch, Pull, Push/Publish, and Sync. Fetch and Push use `git.default_remote`; Pull uses the branch upstream with `--ff-only`; Publish runs `git push -u <remote> <branch>` when no upstream exists; Sync runs Pull followed by Push. Remote commands set `credential.interactive=false` so Git cannot wait on a terminal prompt; credential helpers and SSH agents still work. Pull and Sync are disabled while editors have unsaved changes.
 
-Diff commands use `--no-color --no-ext-diff --no-textconv`, so repository-configured diff drivers cannot execute. `src/git/diff.c3` parses unified diffs into hunks and typed lines; `src/git/diff_view.c3` renders inline and side-by-side modes.
+Diff commands use `--no-color --no-ext-diff --no-textconv`, so repository-configured diff drivers cannot execute. `src/git/diff.c3` parses unified diffs into hunks and typed lines; `src/git/diff_view.c3` renders inline and side-by-side modes. In the diff overlay, `[`/`]` select a hunk and `S`/`U` stage or unstage it. Hunk patches are written to a temporary file and applied with `git apply --cached` (or `--reverse` for staged diffs); the viewer refreshes after each action.
 
 ## Security
 

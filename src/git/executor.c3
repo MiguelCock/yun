@@ -39,6 +39,7 @@ struct GitResult
 	bool timed_out;
 	bool truncated;
 	bool staged;
+	bool untracked;
 	String path;
 	String orig_path;
 	DString output;
@@ -134,6 +135,7 @@ fn GitResult git_run_request(GitExecutor* executor, GitRequest* request)
 	result.timed_out = false;
 	result.truncated = false;
 	result.staged = request.staged;
+	result.untracked = request.untracked;
 	result.path = request.path.len > 0 ? request.path.copy(executor.allocator) : "";
 	result.orig_path = request.orig_path.len > 0 ? request.orig_path.copy(executor.allocator) : "";
 	result.output.init(executor.allocator);

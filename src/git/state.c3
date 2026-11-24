@@ -85,6 +85,7 @@ struct State
 	double last_periodic;
 	bool last_focus;
 	double current_now;
+	String patch_file;
 }
 
 fn void State.init(&self, Allocator allocator)
@@ -121,6 +122,7 @@ fn void State.init(&self, Allocator allocator)
 	self.last_periodic = 0.0;
 	self.last_focus = false;
 	self.current_now = 0.0;
+	self.patch_file = "";
 }
 
 fn void State.destroy(&self)
@@ -130,12 +132,21 @@ fn void State.destroy(&self)
 	if (self.project_root.len > 0) self.project_root.free(self.allocator);
 	if (self.repo_root.len > 0) self.repo_root.free(self.allocator);
 	if (self.binary.len > 0) self.binary.free(self.allocator);
+	self.clear_patch_file();
 	self.status.destroy();
 	self.clear_branches();
 	self.branches.free();
 	self.error.clear();
 	self.action.destroy();
 	self.diff.destroy();
+}
+
+fn void State.clear_patch_file(&self)
+{
+	if (self.patch_file.len == 0) return;
+	(void)file::delete(self.patch_file);
+	self.patch_file.free(self.allocator);
+	self.patch_file = "";
 }
 
 fn void State.clear_branches(&self)
@@ -164,6 +175,7 @@ fn void State.cancel_in_flight(&self)
 	self.in_flight_id = 0;
 	self.refreshing = false;
 	self.busy = false;
+	self.clear_patch_file();
 }
 
 fn void State.set_project(&self, String root)
@@ -482,6 +494,7 @@ fn void State.handle_diff(&self, GitResult* result)
 	self.diff.init(self.allocator);
 	self.diff.valid = true;
 	self.diff.staged = result.staged;
+	self.diff.untracked = result.untracked;
 	self.diff.path = result.path.len > 0 ? result.path.copy(self.allocator) : "";
 	self.diff.orig_path = result.orig_path.len > 0 ? result.orig_path.copy(self.allocator) : "";
 	self.diff.exit_code = result.exit_code;
@@ -611,8 +624,10 @@ fn void State.handle_result(&self, GitResult* result)
 		case GitRequestKind.PUSH:
 		case GitRequestKind.PUBLISH:
 		case GitRequestKind.MERGE_ABORT:
+		case GitRequestKind.APPLY_PATCH:
 			self.handle_action(result);
 	}
+	if (kind == GitRequestKind.APPLY_PATCH) self.clear_patch_file();
 	result.destroy(self.allocator);
 	self.in_flight_id = 0;
 	self.refreshing = false;
@@ -825,6 +840,30 @@ fn bool State.abort_merge(&self)
 	self.busy = true;
 	if (!self.send(GitRequestKind.MERGE_ABORT, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
 	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn bool State.apply_patch(&self, String patch, bool reverse)
+{
+	if (self.busy_or_refreshing() || !self.is_repo || patch.len == 0) return false;
+	Path? temp = path::temp_directory(tmem);
+	if (catch excuse = temp) return false;
+	String patch_file = string::format(self.allocator, "%s/yun_git_patch_%d.patch", (String)temp, (long)self.next_id);
+	if (catch excuse = file::save(patch_file, patch))
+	{
+		patch_file.free(self.allocator);
+		return false;
+	}
+	self.clear_patch_file();
+	self.patch_file = patch_file;
+	String[] argv = git_apply_patch_argv(self.allocator, self.binary, self.repo_root, self.patch_file, reverse);
+	self.busy = true;
+	if (!self.send(GitRequestKind.APPLY_PATCH, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
+	{
+		self.clear_patch_file();
 		self.busy = false;
 		return false;
 	}

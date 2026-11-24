@@ -29,6 +29,7 @@ struct DiffRowView
 	String right_text;
 	int left_no;
 	int right_no;
+	int hunk_index;
 	int left_line;
 	int right_line;
 }
@@ -45,6 +46,10 @@ struct DiffView
 	String path;
 	String orig_path;
 	bool staged;
+	bool untracked;
+	bool patch_pending;
+	ulong patch_action_seen;
+	int selected_hunk;
 	DiffFile diff;
 	String error;
 	List{DiffRowView} rows;
@@ -68,6 +73,10 @@ fn void DiffView.init(&self, Allocator allocator)
 	self.path = "";
 	self.orig_path = "";
 	self.staged = false;
+	self.untracked = false;
+	self.patch_pending = false;
+	self.patch_action_seen = 0;
+	self.selected_hunk = 0;
 	self.diff.init(allocator);
 	self.error = "";
 	self.rows.init(allocator);
@@ -107,9 +116,9 @@ fn String diff_basename(String path)
 	return path;
 }
 
-fn void DiffView.add_header(&self, String text)
+fn void DiffView.add_header(&self, String text, int hunk_index)
 {
-	self.rows.push({ .header = true, .header_text = text });
+	self.rows.push({ .header = true, .header_text = text, .hunk_index = hunk_index });
 }
 
 fn void DiffView.add_inline(&self, DiffLine* line)
@@ -139,6 +148,7 @@ fn void DiffView.add_side(&self, DiffLine* left, DiffLine* right)
 	row.right_no = right ? right.new_line : 0;
 	row.left_line = -1;
 	row.right_line = -1;
+	row.hunk_index = -1;
 	self.rows.push(row);
 }
 
@@ -190,7 +200,7 @@ fn void DiffView.rebuild(&self)
 	for (sz h = 0; h < self.diff.hunks.len(); h++)
 	{
 		DiffHunk* hunk = &self.diff.hunks[h];
-		self.add_header(hunk.header);
+		self.add_header(hunk.header, (int)h);
 		int old_end = hunk.old_start + hunk.old_count;
 		int new_end = hunk.new_start + hunk.new_count;
 		if (old_end > self.max_line_no) self.max_line_no = old_end;
@@ -355,6 +365,8 @@ fn bool DiffView.sync(&self, State* git)
 	self.path = git.diff.path.len > 0 ? git.diff.path.copy(self.allocator) : "";
 	self.orig_path = git.diff.orig_path.len > 0 ? git.diff.orig_path.copy(self.allocator) : "";
 	self.staged = git.diff.staged;
+	self.untracked = git.diff.untracked;
+	self.selected_hunk = 0;
 	self.open = true;
 	self.scroll = 0;
 	self.h_scroll = 0.0f;
@@ -396,10 +408,71 @@ fn void DiffView.ensure_visible(&self, Canvas* canvas)
 	if (self.scroll < 0) self.scroll = 0;
 }
 
-fn void DiffView.update(&self, Canvas* canvas, double now)
+fn int DiffView.hunk_row(&self, int hunk_index)
+{
+	for (sz i = 0; i < self.rows.len(); i++)
+	{
+		if (self.rows[i].header && self.rows[i].hunk_index == hunk_index) return (int)i;
+	}
+	return -1;
+}
+
+fn void DiffView.scroll_to_hunk(&self, Canvas* canvas)
+{
+	int row = self.hunk_row(self.selected_hunk);
+	if (row < 0) return;
+	int visible = self.visible_rows(canvas);
+	if (row < self.scroll) self.scroll = row;
+	if (row >= self.scroll + visible) self.scroll = row - visible / 2;
+	self.ensure_visible(canvas);
+}
+
+fn void DiffView.request_patch(&self, State* git)
+{
+	if (self.patch_pending || self.untracked || self.diff.hunks.len() == 0 || git.busy_or_refreshing()) return;
+	if (self.selected_hunk < 0 || self.selected_hunk >= (int)self.diff.hunks.len()) return;
+	String patch = build_hunk_patch(self.allocator, &self.diff, self.selected_hunk, self.path);
+	if (patch.len == 0) return;
+	self.patch_action_seen = git.action_revision;
+	if (!git.apply_patch(patch, self.staged))
+	{
+		patch.free(self.allocator);
+		if (self.error.len > 0) self.error.free(self.allocator);
+		self.error = "Could not apply the hunk. Refresh the diff and retry.".copy(self.allocator);
+		return;
+	}
+	patch.free(self.allocator);
+	self.patch_pending = true;
+}
+
+fn void DiffView.sync_patch(&self, State* git)
+{
+	if (!self.patch_pending) return;
+	if (git.action_revision == self.patch_action_seen) return;
+	self.patch_pending = false;
+	if (!git.action.success)
+	{
+		if (self.error.len > 0) self.error.free(self.allocator);
+		self.error = git.action.error.len > 0 ? git.action.error.copy(self.allocator)
+			: "Could not apply the hunk.".copy(self.allocator);
+		return;
+	}
+	if (self.error.len > 0)
+	{
+		self.error.free(self.allocator);
+		self.error = "";
+	}
+	if (!git.request_diff(self.path, self.orig_path, self.staged, self.untracked))
+	{
+		self.error = "Hunk applied. Reopen the diff to refresh.".copy(self.allocator);
+	}
+}
+
+fn void DiffView.update(&self, State* git, Canvas* canvas, double now)
 {
 	if (!self.open) return;
 	self.close_requested = false;
+	self.sync_patch(git);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
 	{
 		self.open = false;
@@ -411,6 +484,24 @@ fn void DiffView.update(&self, Canvas* canvas, double now)
 		self.mode = self.mode == DiffMode.INLINE ? DiffMode.SIDE_BY_SIDE : DiffMode.INLINE;
 		self.rebuild();
 	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT_BRACKET))
+	{
+		self.selected_hunk--;
+		if (self.selected_hunk < 0) self.selected_hunk = 0;
+		self.scroll_to_hunk(canvas);
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT_BRACKET))
+	{
+		self.selected_hunk++;
+		if (self.selected_hunk >= (int)self.diff.hunks.len())
+		{
+			self.selected_hunk = (int)self.diff.hunks.len() - 1;
+		}
+		if (self.selected_hunk < 0) self.selected_hunk = 0;
+		self.scroll_to_hunk(canvas);
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.S) && !self.staged) self.request_patch(git);
+	if (rl::is_key_pressed(rl::RLKeyboardKey.U) && self.staged) self.request_patch(git);
 	int visible = self.visible_rows(canvas);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.UP)) self.scroll--;
 	if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN)) self.scroll++;
@@ -597,8 +688,11 @@ fn void DiffView.draw(&self, Canvas* canvas)
 			float y          = body.y + (float)(i - self.scroll) * line_h;
 			if (row.header)
 			{
-				rl::draw_rectangle_rec({ .x = body.x, .y = y, .width = body.width, .height = line_h }, theme::current()
-					.panel_bg_alt);
+				bool hunk_selected = row.hunk_index == self.selected_hunk;
+				rl::draw_rectangle_rec(
+					{ .x = body.x, .y = y, .width = body.width, .height = line_h },
+					hunk_selected ? theme::current()
+					.panel_selected : theme::current().panel_bg_alt);
 				draw_row_text(
 					body.x + ui::pxf(10.0f),
 					y + ui::pxf(2.0f),
@@ -606,6 +700,24 @@ fn void DiffView.draw(&self, Canvas* canvas)
 					(float)ui::tpx(13),
 					theme::current()
 					.panel_header);
+				if (hunk_selected && !self.untracked && self.error.len == 0)
+				{
+					RLColor hint_color = self.patch_pending ? theme::current()
+						.panel_disabled : theme::current().git_modified;
+					String hint        = self.staged ? "U: unstage hunk" : "S: stage hunk";
+					@pool()
+					{
+						float width = rl::measure_text_ex(ui::font(), hint.zstr_tcopy(), (float)ui::tpx(11), 0.0f)[0];
+						rl::draw_text_ex(
+							ui::font(),
+							hint.zstr_tcopy(),
+							{ body.x + body.width - width - ui::pxf(10.0f), y + ui::pxf(3.0f) },
+							(float)ui::tpx(11),
+							0.0f,
+							hint_color
+						);
+					};
+				}
 				continue;
 			}
 			if (!side)
@@ -802,7 +914,7 @@ fn void DiffView.draw(&self, Canvas* canvas)
 	String mode_label = self.mode == DiffMode.INLINE ? "Inline" : "Side by side";
 	@pool()
 	{
-		String hint = string::format(tmem, "%s    Tab: mode    Esc: close    Up/Down: scroll", mode_label);
+		String hint = string::format(tmem, "%s    Tab: mode    [ ]: hunk    S/U: apply hunk    Esc: close", mode_label);
 		rl::draw_text_ex(
 			ui::font(),
 			hint.zstr_tcopy(),

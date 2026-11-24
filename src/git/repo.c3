@@ -259,3 +259,20 @@ fn String[] git_merge_abort_argv(Allocator allocator, String binary, String root
 		return finish_argv(allocator, &list);
 	};
 }
+fn String[] git_apply_patch_argv(Allocator allocator, String binary, String root, String patch_file, bool reverse)
+{
+	@pool()
+	{
+		List{String} list;
+		list.init(tmem);
+		list.push(binary);
+		list.push("-C");
+		list.push(root);
+		list.push("apply");
+		list.push("--cached");
+		list.push("--whitespace=nowarn");
+		if (reverse) list.push("--reverse");
+		list.push(patch_file);
+		return finish_argv(allocator, &list);
+	};
+}

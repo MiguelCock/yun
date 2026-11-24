@@ -116,3 +116,10 @@ fn bool run_git(String[] argv)
 	if (try result = code) value = result;
 	return value == 0;
 }
+fn String capture_git(String[] argv)
+{
+	char[65536] buffer;
+	String? output = std::os::process::run_capture_stdout(&buffer, argv, std::os::process::SpawnOptions.INHERIT_ENV);
+	if (catch excuse = output) return "".copy(mem);
+	return ((String)output).copy(mem);
+}

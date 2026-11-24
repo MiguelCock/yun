@@ -2573,6 +2573,7 @@ fn int main(String[] args)
 					case git::GitRequestKind.BRANCH_SWITCH:
 					case git::GitRequestKind.BRANCH_CREATE:
 					case git::GitRequestKind.MERGE_ABORT:
+					case git::GitRequestKind.APPLY_PATCH:
 						break;
 				}
 			}
@@ -3125,7 +3126,7 @@ fn int main(String[] args)
 			bool over_connections = connections.contains_screen(mouse);
 			if (diff_view.open)
 			{
-				diff_view.update(&canvas, rl::get_time());
+				diff_view.update(&git_state, &canvas, rl::get_time());
 				if (diff_view.close_requested)
 				{
 					diff_view.close_requested = false;

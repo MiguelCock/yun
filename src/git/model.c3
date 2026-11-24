@@ -46,6 +46,7 @@ enum GitRequestKind : int
 	PUSH,
 	PUBLISH,
 	MERGE_ABORT,
+	APPLY_PATCH,
 }
 
 struct GitBranch
@@ -103,6 +104,7 @@ struct GitDiffResult
 	Allocator allocator;
 	bool valid;
 	bool staged;
+	bool untracked;
 	String path;
 	String orig_path;
 	int exit_code;
@@ -284,6 +286,7 @@ fn void GitDiffResult.init(&self, Allocator allocator)
 	self.allocator = allocator;
 	self.valid = false;
 	self.staged = false;
+	self.untracked = false;
 	self.path = "";
 	self.orig_path = "";
 	self.exit_code = 0;
