@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 95);
+	assert(command_count() == 121);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -79,7 +79,7 @@ fn void test_command_defs()
 fn void test_contexts()
 {
 	assert(command_def(CommandId.SAVE).contexts == CTX_GLOBAL);
-	assert(command_def(CommandId.COPY).contexts == CTX_GLOBAL);
+	assert(command_def(CommandId.COPY).contexts == CTX_EDIT);
 	assert(command_def(CommandId.TOGGLE_SETTINGS).contexts == CTX_GLOBAL);
 	assert(command_def(CommandId.UNDO).contexts == CTX_EDIT);
 	assert(command_def(CommandId.CURSOR_UP).contexts == CTX_EDIT);
@@ -153,11 +153,13 @@ fn void test_command_from_name()
 
 fn void test_bar_commands()
 {
-	assert(bar_command_count() == 4);
+	assert(bar_command_count() == 6);
 	assert(bar_command(0).id == CommandId.NEW_FILE);
 	assert(bar_command(1).id == CommandId.OPEN);
 	assert(bar_command(2).id == CommandId.SAVE);
-	assert(bar_command(3).id == CommandId.TOGGLE_SETTINGS);
+	assert(bar_command(3).id == CommandId.TOGGLE_SCM);
+	assert(bar_command(4).id == CommandId.TOGGLE_CONSOLE);
+	assert(bar_command(5).id == CommandId.TOGGLE_SETTINGS);
 }
 
 fn void test_command_enabled()
@@ -234,4 +236,46 @@ fn void test_fuzzy_capacity_guard()
 {
 	usz[1] positions;
 	assert(fuzzy_match("Open", "op", positions[0:1]) == -1);
+}
+fn void test_console_commands()
+{
+	CommandDef run = command_def(CommandId.CONSOLE_RUN);
+	assert(run.label.compare_to("Run Command") == 0);
+	assert(run.shortcut.compare_to("Enter") == 0);
+	assert(run.contexts == CTX_CONSOLE);
+
+	CommandDef kill = command_def(CommandId.CONSOLE_KILL);
+	assert(kill.shortcut.compare_to("Ctrl+C") == 0);
+	assert(kill.contexts == CTX_CONSOLE);
+
+	CommandDef copy = command_def(CommandId.CONSOLE_COPY);
+	assert(copy.shortcut.compare_to("Ctrl+Shift+C") == 0);
+	assert(command_name(CommandId.CONSOLE_COPY).compare_to("console_copy") == 0);
+
+	CommandDef console_word_left = command_def(CommandId.CONSOLE_WORD_LEFT);
+	assert(console_word_left.shortcut.compare_to("Ctrl+Left") == 0);
+	assert(command_name(CommandId.CONSOLE_WORD_LEFT).compare_to("console_word_left") == 0);
+	assert(command_def(CommandId.CONSOLE_DELETE_WORD_BACK).shortcut.compare_to("Ctrl+Backspace") == 0);
+
+	CommandDef word_left = command_def(CommandId.CURSOR_WORD_LEFT);
+	assert(word_left.shortcut.compare_to("Ctrl+Left") == 0);
+	assert(command_name(CommandId.CURSOR_WORD_LEFT).compare_to("cursor_word_left") == 0);
+	assert(command_def(CommandId.CURSOR_WORD_RIGHT).shortcut.compare_to("Ctrl+Right") == 0);
+	assert(command_def(CommandId.DELETE_WORD_BACK).shortcut.compare_to("Ctrl+Backspace") == 0);
+	assert(command_def(CommandId.DELETE_WORD_FORWARD).shortcut.compare_to("Ctrl+Delete") == 0);
+
+	CommandDef run_profile = command_def(CommandId.CONSOLE_RUN_PROFILE);
+	assert(run_profile.shortcut.compare_to("F5") == 0);
+	assert(command_name(CommandId.CONSOLE_RUN_PROFILE).compare_to("console_run_profile") == 0);
+
+	CommandDef new_session = command_def(CommandId.CONSOLE_NEW_SESSION);
+	assert(new_session.shortcut.compare_to("Ctrl+T") == 0);
+	assert(command_name(CommandId.CONSOLE_NEW_SESSION).compare_to("console_new_session") == 0);
+	assert(command_def(CommandId.CONSOLE_CLOSE_SESSION).shortcut.compare_to("Ctrl+W") == 0);
+	assert(command_def(CommandId.CONSOLE_NEXT_SESSION).shortcut.compare_to("Ctrl+Tab") == 0);
+
+	CommandDef find = command_def(CommandId.CONSOLE_FIND);
+	assert(find.shortcut.compare_to("Ctrl+F") == 0);
+	assert(command_name(CommandId.CONSOLE_FIND).compare_to("console_find") == 0);
+	assert(command_enabled(CommandId.CONSOLE_RUN, true, true));
 }

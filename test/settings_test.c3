@@ -489,3 +489,33 @@ fn void test_arrows_clamp()
 		warnings.free();
 	};
 }
+fn void test_grid_snap_defaults()
+{
+	SettingSpec snap = spec(SettingId.CANVAS_SNAP_TO_GRID);
+	assert(snap.kind == SettingKind.BOOL);
+	assert(snap.fallback.b);
+	SettingSpec step = spec(SettingId.CANVAS_SNAP_STEP);
+	assert(step.fallback.i == 0);
+}
+fn void test_console_settings_defaults()
+{
+	assert(spec(SettingId.CONSOLE_WHEEL_LINES).fallback.i == 3);
+	assert(spec(SettingId.CONSOLE_ANSI_COLORS).fallback.b);
+	assert(spec(SettingId.CONSOLE_SHOW_HEADERS).fallback.b);
+	assert(!spec(SettingId.CONSOLE_CLEAR_ON_RUN).fallback.b);
+	assert(!spec(SettingId.CONSOLE_KILL_ON_CLOSE).fallback.b);
+	assert(spec(SettingId.CONSOLE_NOTIFY).fallback.s.compare_to("failure") == 0);
+	assert(spec(SettingId.CONSOLE_PERSIST_HISTORY).fallback.b);
+	assert(spec(SettingId.CONSOLE_RESTORE_SESSIONS).fallback.b);
+}
+fn void test_git_settings_defaults()
+{
+	assert(spec(SettingId.GIT_BINARY).section.compare_to("git") == 0);
+	assert(spec(SettingId.GIT_BINARY).fallback.s.compare_to("git") == 0);
+	assert(spec(SettingId.GIT_AUTO_REFRESH).fallback.b);
+	assert(spec(SettingId.GIT_DEBOUNCE_MS).fallback.i == 250);
+	assert(spec(SettingId.GIT_CONFIRM_DISCARD).fallback.b);
+	assert(spec(SettingId.GIT_DEFAULT_REMOTE).fallback.s.compare_to("origin") == 0);
+	assert(page_for(SettingId.GIT_BINARY) == SettingPage.INTEGRATIONS);
+	assert(group_for(SettingId.GIT_BINARY).compare_to("Git") == 0);
+}

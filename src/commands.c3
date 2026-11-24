@@ -14,6 +14,7 @@ const ulong CTX_BROWSER    = 1 << 10;
 const ulong CTX_SETTINGS   = 1 << 11;
 const ulong CTX_MENU       = 1 << 12;
 const ulong CTX_COMPLETION = 1 << 13;
+const ulong CTX_CONSOLE    = 1 << 14;
 
 const ulong CTX_OVERLAY_CLOSE  = CTX_PALETTE | CTX_FIND | CTX_SEARCH | CTX_SYMBOLS | CTX_PROBLEMS | CTX_PROMPT
 	| CTX_BROWSER
@@ -61,6 +62,10 @@ enum CommandId
 	CURSOR_RIGHT,
 	CURSOR_UP,
 	CURSOR_DOWN,
+	CURSOR_WORD_LEFT,
+	CURSOR_WORD_RIGHT,
+	DELETE_WORD_BACK,
+	DELETE_WORD_FORWARD,
 	LINE_START,
 	LINE_END,
 	PAGE_UP,
@@ -121,6 +126,28 @@ enum CommandId
 	CYCLE_FOCUS,
 	MINIMIZE_CARD,
 	TOGGLE_FOCUS_MODE,
+	TOGGLE_CONSOLE,
+	TOGGLE_SCM,
+	CONSOLE_RUN,
+	CONSOLE_HISTORY_PREV,
+	CONSOLE_HISTORY_NEXT,
+	CONSOLE_CLEAR,
+	CONSOLE_KILL,
+	CONSOLE_COPY,
+	CONSOLE_FIND,
+	CONSOLE_PASTE,
+	CONSOLE_SCROLL_UP,
+	CONSOLE_SCROLL_DOWN,
+	CONSOLE_LEAVE_FOCUS,
+	CONSOLE_NEW_SESSION,
+	CONSOLE_CLOSE_SESSION,
+	CONSOLE_NEXT_SESSION,
+	CONSOLE_PREV_SESSION,
+	CONSOLE_RUN_PROFILE,
+	CONSOLE_WORD_LEFT,
+	CONSOLE_WORD_RIGHT,
+	CONSOLE_DELETE_WORD_BACK,
+	CONSOLE_DELETE_WORD_FORWARD,
 	TOGGLE_CONNECTIONS,
 	QUIT,
 }
@@ -131,6 +158,8 @@ struct CommandDef
 	String label;
 	String shortcut;
 	bool in_top_bar;
+	bool icon_only;
+	String bar_label;
 	ulong contexts;
 	bool repeat;
 }
@@ -147,11 +176,11 @@ const CommandDef[] COMMAND_DEFS = {
 		.in_top_bar = false,
 		.contexts = CTX_GLOBAL
 	},
-	{ .id = CommandId.FIND, .label = "Find", .shortcut = "Ctrl+F", .in_top_bar = false, .contexts = CTX_GLOBAL },
-	{ .id = CommandId.REPLACE, .label = "Replace", .shortcut = "Ctrl+H", .in_top_bar = false, .contexts = CTX_GLOBAL },
-	{ .id = CommandId.COPY, .label = "Copy", .shortcut = "Ctrl+C", .in_top_bar = false, .contexts = CTX_GLOBAL },
-	{ .id = CommandId.CUT, .label = "Cut", .shortcut = "Ctrl+X", .in_top_bar = false, .contexts = CTX_GLOBAL },
-	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.FIND, .label = "Find", .shortcut = "Ctrl+F", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.REPLACE, .label = "Replace", .shortcut = "Ctrl+H", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.COPY, .label = "Copy", .shortcut = "Ctrl+C", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.CUT, .label = "Cut", .shortcut = "Ctrl+X", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false, .contexts = CTX_EDIT },
 	{
 		.id = CommandId.SELECT_ALL,
 		.label = "Select All",
@@ -234,6 +263,7 @@ const CommandDef[] COMMAND_DEFS = {
 		.label = "Settings",
 		.shortcut = "Ctrl+Shift+S",
 		.in_top_bar = true,
+		.icon_only = true,
 		.contexts = CTX_GLOBAL,
 	},
 	{ .id = CommandId.UNDO, .label = "Undo", .shortcut = "Ctrl+Z", .in_top_bar = false, .contexts = CTX_EDIT },
@@ -282,6 +312,38 @@ const CommandDef[] COMMAND_DEFS = {
 		.shortcut = "Down",
 		.in_top_bar = false,
 		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.CURSOR_WORD_LEFT,
+		.label = "Cursor Word Left",
+		.shortcut = "Ctrl+Left",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CURSOR_WORD_RIGHT,
+		.label = "Cursor Word Right",
+		.shortcut = "Ctrl+Right",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.DELETE_WORD_BACK,
+		.label = "Delete Word Back",
+		.shortcut = "Ctrl+Backspace",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.DELETE_WORD_FORWARD,
+		.label = "Delete Word Forward",
+		.shortcut = "Ctrl+Delete",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+		.repeat = true,
 	},
 	{
 		.id = CommandId.LINE_START,
@@ -672,6 +734,167 @@ const CommandDef[] COMMAND_DEFS = {
 		.contexts = CTX_GLOBAL,
 	},
 	{
+		.id = CommandId.TOGGLE_CONSOLE,
+		.label = "Console",
+		.shortcut = "Ctrl+J",
+		.in_top_bar = true,
+		.contexts = CTX_GLOBAL,
+	},
+	{
+		.id = CommandId.TOGGLE_SCM,
+		.label = "Source Control",
+		.bar_label = "Git",
+		.shortcut = "Ctrl+Shift+G",
+		.in_top_bar = true,
+		.contexts = CTX_GLOBAL,
+	},
+	{
+		.id = CommandId.CONSOLE_RUN,
+		.label = "Run Command",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_HISTORY_PREV,
+		.label = "Console History Previous",
+		.shortcut = "Up",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CONSOLE_HISTORY_NEXT,
+		.label = "Console History Next",
+		.shortcut = "Down",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CONSOLE_CLEAR,
+		.label = "Clear Console",
+		.shortcut = "Ctrl+L",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_KILL,
+		.label = "Kill Command",
+		.shortcut = "Ctrl+C",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_COPY,
+		.label = "Copy Console Output",
+		.shortcut = "Ctrl+Shift+C",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_FIND,
+		.label = "Find in Console",
+		.shortcut = "Ctrl+F",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_PASTE,
+		.label = "Paste Into Console",
+		.shortcut = "Ctrl+V",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_SCROLL_UP,
+		.label = "Console Scroll Up",
+		.shortcut = "PageUp",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_SCROLL_DOWN,
+		.label = "Console Scroll Down",
+		.shortcut = "PageDown",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_LEAVE_FOCUS,
+		.label = "Leave Console",
+		.shortcut = "Esc",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_NEW_SESSION,
+		.label = "New Console Session",
+		.shortcut = "Ctrl+T",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_CLOSE_SESSION,
+		.label = "Close Console Session",
+		.shortcut = "Ctrl+W",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_NEXT_SESSION,
+		.label = "Next Console Session",
+		.shortcut = "Ctrl+Tab",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_PREV_SESSION,
+		.label = "Previous Console Session",
+		.shortcut = "Ctrl+Shift+Tab",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_RUN_PROFILE,
+		.label = "Run Profile",
+		.shortcut = "F5",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL,
+	},
+	{
+		.id = CommandId.CONSOLE_WORD_LEFT,
+		.label = "Console Word Left",
+		.shortcut = "Ctrl+Left",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CONSOLE_WORD_RIGHT,
+		.label = "Console Word Right",
+		.shortcut = "Ctrl+Right",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CONSOLE_DELETE_WORD_BACK,
+		.label = "Console Delete Word Back",
+		.shortcut = "Ctrl+Backspace",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CONSOLE_DELETE_WORD_FORWARD,
+		.label = "Console Delete Word Forward",
+		.shortcut = "Ctrl+Delete",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
 		.id = CommandId.TOGGLE_CONNECTIONS,
 		.label = "Connections",
 		.shortcut = "Ctrl+Shift+I",
@@ -685,6 +908,15 @@ fn usz command_count()
 {
 	return COMMAND_DEFS.len;
 }
+
+const CommandId[] TOP_BAR_COMMANDS = {
+	CommandId.NEW_FILE,
+	CommandId.OPEN,
+	CommandId.SAVE,
+	CommandId.TOGGLE_SCM,
+	CommandId.TOGGLE_CONSOLE,
+	CommandId.TOGGLE_SETTINGS,
+};
 
 fn CommandDef command_def(CommandId id)
 {
@@ -761,6 +993,14 @@ fn String command_name(CommandId id)
 			return "cursor_up";
 		case CommandId.CURSOR_DOWN:
 			return "cursor_down";
+		case CommandId.CURSOR_WORD_LEFT:
+			return "cursor_word_left";
+		case CommandId.CURSOR_WORD_RIGHT:
+			return "cursor_word_right";
+		case CommandId.DELETE_WORD_BACK:
+			return "delete_word_back";
+		case CommandId.DELETE_WORD_FORWARD:
+			return "delete_word_forward";
 		case CommandId.LINE_START:
 			return "line_start";
 		case CommandId.LINE_END:
@@ -881,6 +1121,50 @@ fn String command_name(CommandId id)
 			return "minimize_card";
 		case CommandId.TOGGLE_FOCUS_MODE:
 			return "toggle_focus_mode";
+		case CommandId.TOGGLE_CONSOLE:
+			return "toggle_console";
+		case CommandId.TOGGLE_SCM:
+			return "toggle_scm";
+		case CommandId.CONSOLE_RUN:
+			return "console_run";
+		case CommandId.CONSOLE_HISTORY_PREV:
+			return "console_history_prev";
+		case CommandId.CONSOLE_HISTORY_NEXT:
+			return "console_history_next";
+		case CommandId.CONSOLE_CLEAR:
+			return "console_clear";
+		case CommandId.CONSOLE_KILL:
+			return "console_kill";
+		case CommandId.CONSOLE_COPY:
+			return "console_copy";
+		case CommandId.CONSOLE_FIND:
+			return "console_find";
+		case CommandId.CONSOLE_PASTE:
+			return "console_paste";
+		case CommandId.CONSOLE_SCROLL_UP:
+			return "console_scroll_up";
+		case CommandId.CONSOLE_SCROLL_DOWN:
+			return "console_scroll_down";
+		case CommandId.CONSOLE_LEAVE_FOCUS:
+			return "console_leave_focus";
+		case CommandId.CONSOLE_NEW_SESSION:
+			return "console_new_session";
+		case CommandId.CONSOLE_CLOSE_SESSION:
+			return "console_close_session";
+		case CommandId.CONSOLE_NEXT_SESSION:
+			return "console_next_session";
+		case CommandId.CONSOLE_PREV_SESSION:
+			return "console_prev_session";
+		case CommandId.CONSOLE_RUN_PROFILE:
+			return "console_run_profile";
+		case CommandId.CONSOLE_WORD_LEFT:
+			return "console_word_left";
+		case CommandId.CONSOLE_WORD_RIGHT:
+			return "console_word_right";
+		case CommandId.CONSOLE_DELETE_WORD_BACK:
+			return "console_delete_word_back";
+		case CommandId.CONSOLE_DELETE_WORD_FORWARD:
+			return "console_delete_word_forward";
 		case CommandId.TOGGLE_CONNECTIONS:
 			return "toggle_connections";
 		case CommandId.QUIT:
@@ -899,24 +1183,13 @@ fn int command_from_name(String name)
 
 fn usz bar_command_count()
 {
-	usz count = 0;
-	foreach (CommandDef def : COMMAND_DEFS)
-	{
-		if (def.in_top_bar) count++;
-	}
-	return count;
+	return TOP_BAR_COMMANDS.len;
 }
 
 fn CommandDef bar_command(usz slot)
 {
-	usz seen = 0;
-	foreach (CommandDef def : COMMAND_DEFS)
-	{
-		if (!def.in_top_bar) continue;
-		if (seen == slot) return def;
-		seen++;
-	}
-	return COMMAND_DEFS[0];
+	if (slot >= TOP_BAR_COMMANDS.len) return COMMAND_DEFS[0];
+	return command_def(TOP_BAR_COMMANDS[slot]);
 }
 
 fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
@@ -948,6 +1221,28 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.SELECT_ALL:
 			return has_buffer;
 		case CommandId.PROBLEMS:
+		case CommandId.TOGGLE_CONSOLE:
+		case CommandId.TOGGLE_SCM:
+		case CommandId.CONSOLE_RUN:
+		case CommandId.CONSOLE_HISTORY_PREV:
+		case CommandId.CONSOLE_HISTORY_NEXT:
+		case CommandId.CONSOLE_CLEAR:
+		case CommandId.CONSOLE_KILL:
+		case CommandId.CONSOLE_COPY:
+		case CommandId.CONSOLE_FIND:
+		case CommandId.CONSOLE_PASTE:
+		case CommandId.CONSOLE_SCROLL_UP:
+		case CommandId.CONSOLE_SCROLL_DOWN:
+		case CommandId.CONSOLE_LEAVE_FOCUS:
+		case CommandId.CONSOLE_NEW_SESSION:
+		case CommandId.CONSOLE_CLOSE_SESSION:
+		case CommandId.CONSOLE_NEXT_SESSION:
+		case CommandId.CONSOLE_PREV_SESSION:
+		case CommandId.CONSOLE_RUN_PROFILE:
+		case CommandId.CONSOLE_WORD_LEFT:
+		case CommandId.CONSOLE_WORD_RIGHT:
+		case CommandId.CONSOLE_DELETE_WORD_BACK:
+		case CommandId.CONSOLE_DELETE_WORD_FORWARD:
 		case CommandId.QUIT:
 			return true;
 		case CommandId.GO_TO_DEFINITION:
@@ -977,6 +1272,10 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.CURSOR_RIGHT:
 		case CommandId.CURSOR_UP:
 		case CommandId.CURSOR_DOWN:
+		case CommandId.CURSOR_WORD_LEFT:
+		case CommandId.CURSOR_WORD_RIGHT:
+		case CommandId.DELETE_WORD_BACK:
+		case CommandId.DELETE_WORD_FORWARD:
 		case CommandId.LINE_START:
 		case CommandId.LINE_END:
 		case CommandId.PAGE_UP:

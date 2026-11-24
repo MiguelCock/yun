@@ -34,6 +34,7 @@ enum IconKind : int
 	TRASH,
 	CHEVRON_DOWN,
 	CHEVRON_RIGHT,
+	GIT,
 	COUNT,
 }
 
@@ -187,6 +188,8 @@ fn String codicon_name(IconKind icon)
 			return "chevron-down";
 		case IconKind.CHEVRON_RIGHT:
 			return "chevron-right";
+		case IconKind.GIT:
+			return "source-control";
 		case IconKind.COUNT:
 			return "";
 	}
@@ -197,6 +200,26 @@ fn String file_icon_theme_name(FileIconTheme theme)
 	if (theme == FileIconTheme.MATERIAL) return "material";
 	if (theme == FileIconTheme.VSCODE) return "vscode";
 	return "";
+}
+
+fn String ui_icon_theme_name()
+{
+	return g_ui_theme == UiIconTheme.CODICONS ? "codicons" : "vector";
+}
+
+fn String file_icon_theme_current_name()
+{
+	String name = file_icon_theme_name(g_file_theme);
+	return name.len > 0 ? name : "none";
+}
+
+fn RLTexture2D load_texture_from(String path)
+{
+	RLTexture2D texture = { };
+	if (!file::exists(path)) return texture;
+	texture = rl::load_texture(path.zstr_tcopy());
+	if (texture.is_valid()) texture.set_filter(RLTextureFilter.BILINEAR);
+	return texture;
 }
 
 fn String file_icon_name(FileIconTheme theme, String path)
@@ -278,20 +301,18 @@ fn RLTexture2D load_icon_texture(String theme, String name)
 		if (g_override_dir.len > 0)
 		{
 			String path = string::format(tmem, "%s/%s/%s.png", g_override_dir, theme, name);
-			if (file::exists(path))
-			{
-				texture = rl::load_texture(path.zstr_tcopy());
-				if (texture.is_valid()) texture.set_filter(RLTextureFilter.BILINEAR);
-			}
+			texture = load_texture_from(path);
 		}
 		if (!texture.is_valid())
 		{
 			String path = string::format(tmem, "assets/icons/%s/%s.png", theme, name);
-			if (file::exists(path))
-			{
-				texture = rl::load_texture(path.zstr_tcopy());
-				if (texture.is_valid()) texture.set_filter(RLTextureFilter.BILINEAR);
-			}
+			texture = load_texture_from(path);
+		}
+		if (!texture.is_valid())
+		{
+			String exe  = rl::get_application_directory().str_view();
+			String path = string::format(tmem, "%sassets/icons/%s/%s.png", exe, theme, name);
+			texture = load_texture_from(path);
 		}
 	};
 	return texture;
@@ -595,6 +616,14 @@ fn void draw(IconKind icon, Rect b, RLColor color)
 		case IconKind.CHEVRON_RIGHT:
 			seg(b, 0.4f, 0.25f, 0.65f, 0.5f, stroke, color);
 			seg(b, 0.65f, 0.5f, 0.4f, 0.75f, stroke, color);
+		case IconKind.GIT:
+			rl::draw_circle_lines_v({ b.x + b.width * 0.3f, b.y + b.height * 0.22f }, b.width * 0.1f, color);
+			rl::draw_circle_lines_v({ b.x + b.width * 0.7f, b.y + b.height * 0.22f }, b.width * 0.1f, color);
+			rl::draw_circle_lines_v({ b.x + b.width * 0.5f, b.y + b.height * 0.8f }, b.width * 0.1f, color);
+			seg(b, 0.3f, 0.32f, 0.3f, 0.58f, stroke, color);
+			seg(b, 0.3f, 0.58f, 0.5f, 0.72f, stroke, color);
+			seg(b, 0.7f, 0.32f, 0.7f, 0.48f, stroke, color);
+			seg(b, 0.7f, 0.48f, 0.5f, 0.62f, stroke, color);
 		case IconKind.COUNT:
 			break;
 	}

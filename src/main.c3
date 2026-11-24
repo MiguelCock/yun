@@ -6,6 +6,7 @@ import std::io;
 import std::io::file;
 import std::io::path;
 import std::math;
+import std::os::env;
 import yun::browser;
 import yun::canvas;
 import yun::card;
@@ -13,13 +14,16 @@ import yun::commands;
 import yun::completion;
 import yun::connections;
 import yun::config;
+import yun::console;
 import yun::context;
 import yun::editor;
 import yun::find;
 import yun::findbar;
 import yun::fonts;
+import yun::git;
 import yun::hover;
 import yun::icons;
+import yun::input;
 import yun::imports;
 import yun::keymap;
 import yun::lsp;
@@ -45,6 +49,11 @@ enum UiMode : int
 	MOVE,
 	EDIT,
 	TOP_BAR,
+	CONSOLE,
+	SCM,
+	DIFF,
+	CONFLICT,
+	HISTORY,
 }
 
 fn void set_project_title(project::Project* project)
@@ -54,17 +63,94 @@ fn void set_project_title(project::Project* project)
 	rl::set_window_title((ZString)title.ptr);
 }
 
+fn void notify_console_finishes(console::ConsoleManager* manager, notify::Notifier* notifier, bool console_focused)
+{
+	int mode = (int)console::settings().notify;
+	for (sz i = 0; i < manager.sessions.len(); i++)
+	{
+		console::ConsoleSession* session = manager.sessions[i];
+		int exit_code                    = 0;
+		console::ConsoleStatus status;
+		if (!session.console.take_notify(&exit_code, &status)) continue;
+		if (console_focused) continue;
+		if (!console::console_should_notify((console::ConsoleNotify)mode, status, exit_code)) continue;
+		@pool()
+		{
+			String detail;
+			if (status == console::ConsoleStatus.FAILED)
+			{
+				detail = "failed to start";
+			}
+			else if (status == console::ConsoleStatus.KILLED)
+			{
+				detail = "stopped";
+			}
+			else
+			{
+				detail = string::format(tmem, "exited %d", (long)exit_code);
+			}
+			notifier.push(string::format(tmem, "Console %s: %s", session.title, detail));
+		};
+	}
+}
+
+fn void set_git_settings(config::Config* config)
+{
+	git::GitSettings gs = {
+		.binary = config.settings.get_string(settings::SettingId.GIT_BINARY),
+		.auto_refresh = config.settings.get_bool(settings::SettingId.GIT_AUTO_REFRESH),
+		.debounce_ms = (int)config.settings.get_int(settings::SettingId.GIT_DEBOUNCE_MS),
+		.confirm_discard = config.settings.get_bool(settings::SettingId.GIT_CONFIRM_DISCARD),
+		.default_remote = config.settings.get_string(settings::SettingId.GIT_DEFAULT_REMOTE),
+	};
+	git::set_settings(gs);
+}
+
+fn void set_console_settings(config::Config* config)
+{
+	String notify               = config.settings.get_string(settings::SettingId.CONSOLE_NOTIFY);
+	console::ConsoleNotify mode = console::ConsoleNotify.FAILURE;
+	if (notify.compare_to("never") == 0)
+	{
+		mode = console::ConsoleNotify.NEVER;
+	}
+	else if (notify.compare_to("always") == 0)
+	{
+		mode = console::ConsoleNotify.ALWAYS;
+	}
+	console::ConsoleSettings cs = {
+		.max_lines = (int)config.settings.get_int(settings::SettingId.CONSOLE_MAX_LINES),
+		.max_output_kb = (int)config.settings.get_int(settings::SettingId.CONSOLE_MAX_OUTPUT_KB),
+		.history_size = (int)config.settings.get_int(settings::SettingId.CONSOLE_HISTORY_SIZE),
+		.panel_height = (float)config.settings.get_int(settings::SettingId.CONSOLE_PANEL_HEIGHT),
+		.auto_scroll = config.settings.get_bool(settings::SettingId.CONSOLE_AUTO_SCROLL),
+		.autocomplete = config.settings.get_bool(settings::SettingId.CONSOLE_AUTOCOMPLETE),
+		.wheel_lines = (int)config.settings.get_int(settings::SettingId.CONSOLE_WHEEL_LINES),
+		.ansi_colors = config.settings.get_bool(settings::SettingId.CONSOLE_ANSI_COLORS),
+		.show_headers = config.settings.get_bool(settings::SettingId.CONSOLE_SHOW_HEADERS),
+		.clear_on_run = config.settings.get_bool(settings::SettingId.CONSOLE_CLEAR_ON_RUN),
+		.kill_on_close = config.settings.get_bool(settings::SettingId.CONSOLE_KILL_ON_CLOSE),
+		.notify = mode,
+		.persist_history = config.settings.get_bool(settings::SettingId.CONSOLE_PERSIST_HISTORY),
+		.restore_sessions = config.settings.get_bool(settings::SettingId.CONSOLE_RESTORE_SESSIONS),
+	};
+	console::set_settings(cs);
+}
+
 fn void finish_open(
 	project::Project* project,
 	canvas::Canvas* canvas,
 	config::Config* config,
 	keymap::Keymap* keymap,
-	notify::Notifier* notifier
+	notify::Notifier* notifier,
+	console::ConsoleManager* console_manager
 )
 {
 	config.load((String)project.root);
+	set_console_settings(config);
+	set_git_settings(config);
 	ui::set_ui_scale((float)config.settings.get_float(settings::SettingId.APP_UI_SCALE));
-	bool restored = workspace::load(project, canvas);
+	bool restored = workspace::load(project, canvas, console_manager);
 	if (restored)
 	{
 		project.place_unrestored();
@@ -103,7 +189,8 @@ fn void apply_settings(
 	RLFont* editor_font,
 	editor::EditorMetrics* metrics,
 	int* ui_size,
-	RLFont* ui_font
+	RLFont* ui_font,
+	console::ConsoleManager* console_manager
 )
 {
 	if (config.settings.consume_change(settings::SettingId.APP_THEME))
@@ -149,6 +236,44 @@ fn void apply_settings(
 	}
 
 	ui::set_corner_radius((float)config.settings.get_int(settings::SettingId.APP_CORNER_RADIUS));
+	String notice_position = config.settings.get_string(settings::SettingId.APP_NOTIFICATIONS_POSITION);
+	int notice_pos         = 3;
+	if (notice_position.compare_to("top_left") == 0)
+	{
+		notice_pos = 0;
+	}
+	else if (notice_position.compare_to("top_right") == 0)
+	{
+		notice_pos = 1;
+	}
+	else if (notice_position.compare_to("bottom_left") == 0)
+	{
+		notice_pos = 2;
+	}
+	notifier.configure(
+		(float)config.settings.get_float(settings::SettingId.APP_NOTIFICATIONS_TTL),
+		(int)config.settings.get_int(settings::SettingId.APP_NOTIFICATIONS_MAX),
+		notice_pos
+	);
+	project.external_reload = config.settings.get_bool(settings::SettingId.APP_EXTERNAL_RELOAD);
+	project.poll_seconds = config.settings.get_float(settings::SettingId.APP_RELOAD_POLL);
+	project.sleep_editors = config.settings.get_bool(settings::SettingId.APP_SLEEP_EDITORS);
+	project.jump_highlight_seconds = (double)config.settings.get_int(
+		settings::SettingId.APP_JUMP_HIGHLIGHT_MS
+	) / 1000.0;
+	config.lsp_enabled = config.settings.get_bool(settings::SettingId.LSP_ENABLED);
+	project.autosave_enabled = config.settings.get_bool(settings::SettingId.EDITOR_AUTOSAVE);
+	project.autosave_interval = config.settings.get_float(settings::SettingId.EDITOR_AUTOSAVE_INTERVAL);
+	search::set_settings(
+		{
+			.max_file_mb = (int)config.settings.get_int(settings::SettingId.SEARCH_MAX_FILE_MB),
+			.max_matches_per_file = (int)config.settings.get_int(settings::SettingId.SEARCH_MAX_MATCHES_PER_FILE),
+			.max_results = (int)config.settings.get_int(settings::SettingId.SEARCH_MAX_RESULTS),
+			.workers = (int)config.settings.get_int(settings::SettingId.SEARCH_WORKERS),
+			.debounce_ms = (int)config.settings.get_int(settings::SettingId.SEARCH_DEBOUNCE_MS),
+			.preview_length = (int)config.settings.get_int(settings::SettingId.SEARCH_PREVIEW_MAX),
+		}
+	);
 	String ui_icon_theme = config.settings.get_string(settings::SettingId.APP_UI_ICON_THEME);
 	icons::set_ui_theme(
 		ui_icon_theme.compare_to("vector") == 0 ? icons::UiIconTheme.VECTOR : icons::UiIconTheme.CODICONS
@@ -177,6 +302,8 @@ fn void apply_settings(
 	es.indent_width = (int)config.settings.get_int(settings::SettingId.EDITOR_INDENT_WIDTH);
 	es.indent_spaces = config.settings.get_string(settings::SettingId.EDITOR_INDENT_STYLE).compare_to("spaces") == 0;
 	es.auto_indent = config.settings.get_bool(settings::SettingId.EDITOR_AUTO_INDENT);
+	es.history_budget = (usz)config.settings.get_int(settings::SettingId.EDITOR_UNDO_MB) * 1024u * 1024u;
+	es.diagnostic_segments = (int)config.settings.get_int(settings::SettingId.EDITOR_DIAGNOSTIC_SEGMENTS);
 
 	canvas::CanvasSettings cs = canvas::settings();
 	cs.min_zoom = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_MIN);
@@ -194,6 +321,8 @@ fn void apply_settings(
 	cs.grid_cell = (float)config.settings.get_int(settings::SettingId.CANVAS_GRID_CELL);
 	cs.grid_min_px = (float)config.settings.get_float(settings::SettingId.CANVAS_GRID_MIN_PX);
 	cs.grid_max_px = (float)config.settings.get_float(settings::SettingId.CANVAS_GRID_MAX_PX);
+	cs.snap_to_grid = config.settings.get_bool(settings::SettingId.CANVAS_SNAP_TO_GRID);
+	cs.snap_step = (float)config.settings.get_int(settings::SettingId.CANVAS_SNAP_STEP);
 	cs.jump_zoom_min = (float)config.settings.get_float(settings::SettingId.CANVAS_JUMP_ZOOM_MIN);
 	cs.jump_zoom_target = (float)config.settings.get_float(settings::SettingId.CANVAS_JUMP_ZOOM_TARGET);
 	canvas::set_settings(cs);
@@ -224,6 +353,10 @@ fn void apply_settings(
 	is.dash_length = (float)config.settings.get_float(settings::SettingId.ARROWS_DASH_LENGTH);
 	is.dash_gap = (float)config.settings.get_float(settings::SettingId.ARROWS_DASH_GAP);
 	imports::set_settings(is);
+
+	set_console_settings(config);
+	console_manager.apply_settings(console::settings());
+	set_git_settings(config);
 
 	bool font_changed    = false;
 	bool metrics_changed = false;
@@ -261,12 +394,20 @@ fn void apply_settings(
 	if (!reload_ui && !reload_editor && !metrics_changed)
 	{
 		editor::set_settings(es);
+		for (sz i = 0; i < project.cards.len(); i++)
+		{
+			if (project.cards[i].history) project.cards[i].history.budget = es.history_budget;
+		}
 		return;
 	}
 
 	float old_lh = metrics.line_height;
 	float old_cw = metrics.char_width;
 	editor::set_settings(es);
+	for (sz i = 0; i < project.cards.len(); i++)
+	{
+		if (project.cards[i].history) project.cards[i].history.budget = es.history_budget;
+	}
 
 	if (ui_changed)
 	{
@@ -301,7 +442,7 @@ fn void apply_settings(
 	if (ui_scale_changed)
 	{
 		canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
-		canvas.camera.offset = { (float)rl::get_screen_width() / 2.0f, canvas.usable_offset_y() };
+		canvas.camera.offset = { canvas.usable_offset_x(), canvas.usable_offset_y() };
 	}
 
 	if (reload_editor || metrics_changed)
@@ -423,6 +564,7 @@ struct App
 	problems::Problems* problems;
 	connections::Connections* connections;
 	menu::Menu* theme_menu;
+	menu::Menu* profile_menu;
 	menu::Menu* context_menu;
 	menu::Menu* close_menu;
 	menu::Menu* delete_menu;
@@ -430,12 +572,25 @@ struct App
 	menu::Menu* definition_menu;
 	search::Search* search;
 	symbols::Symbols* symbols;
+	console::ConsoleManager* console_manager;
+	console::Console* console;
+	console::ConsolePanel* console_panel;
+	git::State* git;
+	git::Panel* git_panel;
+	git::DiffView* diff_view;
+	git::ConflictView* conflict_view;
+	git::HistoryView* history_view;
 	editor::EditorMetrics metrics;
 	bool* project_open;
 	bool* content_changed;
 	bool* quit_requested;
 	UiMode* ui_mode;
 	UiMode* focus_saved_mode;
+	UiMode* console_saved_mode;
+	UiMode* scm_saved_mode;
+	UiMode* diff_saved_mode;
+	UiMode* conflict_saved_mode;
+	UiMode* history_saved_mode;
 	int* edit_grace_frames;
 	topbar::TopBar* bar;
 	keymap::Keymap* keymap;
@@ -509,6 +664,7 @@ fn void close_overlays(App* app)
 	app.problems.close();
 	app.name_prompt.close();
 	app.theme_menu.close();
+	app.profile_menu.close();
 	app.context_menu.close();
 	app.close_menu.close();
 	app.delete_menu.close();
@@ -525,11 +681,106 @@ fn void poll_global(keymap::Keymap* keymap, App* app)
 	if (cmd >= 0) run_command((commands::CommandId)cmd, app);
 }
 
+fn bool is_select_command(int cmd)
+{
+	return cmd == (int)commands::CommandId.SELECT_LEFT || cmd == (int)commands::CommandId.SELECT_RIGHT
+		|| cmd == (int)commands::CommandId.SELECT_UP
+		|| cmd == (int)commands::CommandId.SELECT_DOWN;
+}
+
+fn int held_move_dir(keymap::Keymap* keymap)
+{
+	if (keymap.held(
+		(int)commands::CommandId.SELECT_LEFT,
+		commands::CTX_MOVE
+	) || rl::is_key_down(rl::RLKeyboardKey.LEFT)) return (int)commands::CommandId.SELECT_LEFT;
+	if (keymap.held(
+		(int)commands::CommandId.SELECT_RIGHT,
+		commands::CTX_MOVE
+	) || rl::is_key_down(rl::RLKeyboardKey.RIGHT)) return (int)commands::CommandId.SELECT_RIGHT;
+	if (keymap.held(
+		(int)commands::CommandId.SELECT_UP,
+		commands::CTX_MOVE
+	) || rl::is_key_down(rl::RLKeyboardKey.UP)) return (int)commands::CommandId.SELECT_UP;
+	if (keymap.held(
+		(int)commands::CommandId.SELECT_DOWN,
+		commands::CTX_MOVE
+	) || rl::is_key_down(rl::RLKeyboardKey.DOWN)) return (int)commands::CommandId.SELECT_DOWN;
+	return 0;
+}
+
 fn int target_card_index(project::Project* project)
 {
 	if (project.selected >= 0 && project.selected < (int)project.cards.len()) return project.selected;
 	if (project.focused >= 0 && project.focused < (int)project.cards.len()) return project.focused;
 	return -1;
+}
+
+fn int focus_mode_target(project::Project* project, UiMode mode)
+{
+	int index = mode == UiMode.EDIT ? project.focused : project.selected;
+	if (index < 0 || index >= (int)project.cards.len())
+	{
+		index = mode == UiMode.EDIT ? project.selected : project.focused;
+	}
+	if (index < 0 || index >= (int)project.cards.len()) return -1;
+	return index;
+}
+
+fn void focus_console(App* app)
+{
+	if (!app.console_manager.visible) app.console_manager.open();
+	if (*app.ui_mode != UiMode.CONSOLE)
+	{
+		*app.console_saved_mode = *app.ui_mode;
+		*app.ui_mode = UiMode.CONSOLE;
+	}
+	app.console_panel.focused = true;
+	app.console_panel.focus_requested = false;
+}
+
+fn void leave_console(App* app)
+{
+	if (*app.ui_mode != UiMode.CONSOLE) return;
+	*app.ui_mode = *app.console_saved_mode;
+	app.console_panel.focused = false;
+}
+
+fn void run_profile(App* app, config::RunProfile* profile)
+{
+	if (!*app.project_open)
+	{
+		app.notifier.push("No project open");
+		return;
+	}
+	sync_app_console(app);
+	Console* console = app.console;
+	if (!console) return;
+	if (console.runner.running())
+	{
+		app.notifier.push("A command is already running");
+		return;
+	}
+	focus_console(app);
+	@pool()
+	{
+		List{console::ConsoleEnvVar} env;
+		env.init(tmem);
+		for (sz i = 0; i < profile.env.len(); i++)
+		{
+			env.push({ .key = profile.env[i].key, .value = profile.env[i].value });
+		}
+		String wrapped = console::console_profile_command(tmem, profile.cwd, env.entries[0:env.len()], profile.command);
+		String display = string::format(tmem, "%s: %s", profile.name, profile.command);
+		(void)console.run_display(display, wrapped);
+	};
+	app.console_panel.pinned = app.console_panel.auto_scroll;
+}
+
+fn void sync_app_console(App* app)
+{
+	app.console = app.console_manager.active_console();
+	app.console_panel = app.console_manager.active_panel();
 }
 
 fn void open_context_menu(App* app, context::ContextTarget target, int card, int folder, RLVector2 world, int offset)
@@ -634,6 +885,7 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				if (editor::save_buffer(&project.cards[index], project.allocator))
 				{
+					app.git.mark_dirty(rl::get_time());
 					app.notifier.push("Saved");
 				}
 				else
@@ -1046,12 +1298,14 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				else if (project.grabbing)
 				{
+					project.snap_selected_to_grid(app.canvas.camera.zoom);
 					project.grabbing = false;
 					*app.ui_mode = UiMode.TOP_BAR;
 					app.bar.clamp_selection(*app.project_open, has_focused_buffer(project));
 				}
 				else if (project.has_selected_item())
 				{
+					project.begin_grab();
 					project.grabbing = true;
 				}
 				else
@@ -1073,9 +1327,8 @@ fn void run_command(commands::CommandId id, App* app)
 					*app.ui_mode = *app.focus_saved_mode;
 					return;
 				}
-				int index = project.focused;
-				if (index < 0) index = project.selected;
-				if (index < 0 || index >= (int)project.cards.len())
+				int index = focus_mode_target(project, *app.ui_mode);
+				if (index < 0)
 				{
 					app.notifier.push("No file to focus");
 					return;
@@ -1088,6 +1341,203 @@ fn void run_command(commands::CommandId id, App* app)
 				*app.focus_saved_mode = *app.ui_mode;
 				*app.ui_mode = UiMode.EDIT;
 				*app.edit_grace_frames = 2;
+				return;
+			}
+		case commands::CommandId.TOGGLE_CONSOLE:
+
+			{
+				if (app.console_manager.visible && *app.ui_mode == UiMode.CONSOLE)
+				{
+					app.console_manager.close();
+					*app.ui_mode = *app.console_saved_mode;
+				}
+				else
+				{
+					focus_console(app);
+				}
+				return;
+			}
+		case commands::CommandId.TOGGLE_SCM:
+
+			{
+				if (app.git_panel.visible && *app.ui_mode == UiMode.SCM)
+				{
+					app.git_panel.close();
+					*app.ui_mode = *app.scm_saved_mode;
+				}
+				else
+				{
+					if (*app.ui_mode != UiMode.SCM) *app.scm_saved_mode = *app.ui_mode;
+					app.git_panel.open();
+					*app.ui_mode = UiMode.SCM;
+				}
+				return;
+			}
+		case commands::CommandId.CONSOLE_RUN:
+
+			{
+				focus_console(app);
+				(void)app.console.submit();
+				app.console_panel.pinned = app.console_panel.auto_scroll;
+				return;
+			}
+		case commands::CommandId.CONSOLE_HISTORY_PREV:
+
+			{
+				focus_console(app);
+				(void)app.console.history.previous(&app.console.input);
+				app.console_panel.input_scroll = 0.0f;
+				return;
+			}
+		case commands::CommandId.CONSOLE_HISTORY_NEXT:
+
+			{
+				focus_console(app);
+				(void)app.console.history.next(&app.console.input);
+				app.console_panel.input_scroll = 0.0f;
+				return;
+			}
+		case commands::CommandId.CONSOLE_CLEAR:
+
+			{
+				focus_console(app);
+				app.console.clear();
+				app.console_panel.scroll = 0;
+				app.console_panel.output_scroll_x = 0.0f;
+				app.console_panel.pinned = app.console_panel.auto_scroll;
+				app.console_panel.clear_selection();
+				app.console_panel.find_dirty = true;
+				return;
+			}
+		case commands::CommandId.CONSOLE_KILL:
+
+			{
+				focus_console(app);
+				app.console.kill();
+				return;
+			}
+		case commands::CommandId.CONSOLE_COPY:
+
+			{
+				app.console_panel.copy_selection_or_all(app.console);
+				return;
+			}
+		case commands::CommandId.CONSOLE_FIND:
+
+			{
+				focus_console(app);
+				app.console_panel.find_open_panel();
+				app.console_panel.find_refresh(app.console);
+				return;
+			}
+		case commands::CommandId.CONSOLE_PASTE:
+
+			{
+				focus_console(app);
+				app.console_panel.paste(app.console);
+				return;
+			}
+		case commands::CommandId.CONSOLE_SCROLL_UP:
+
+			{
+				focus_console(app);
+				app.console_panel.scroll_by(app.console, app.metrics, -app.console_panel.visible_rows(app.metrics));
+				return;
+			}
+		case commands::CommandId.CONSOLE_SCROLL_DOWN:
+
+			{
+				focus_console(app);
+				app.console_panel.scroll_by(app.console, app.metrics, app.console_panel.visible_rows(app.metrics));
+				return;
+			}
+		case commands::CommandId.CONSOLE_LEAVE_FOCUS:
+
+			{
+				leave_console(app);
+				return;
+			}
+		case commands::CommandId.CONSOLE_NEW_SESSION:
+
+			{
+				(void)app.console_manager.add_session();
+				sync_app_console(app);
+				focus_console(app);
+				return;
+			}
+		case commands::CommandId.CONSOLE_CLOSE_SESSION:
+
+			{
+				(void)app.console_manager.close_session(app.console_manager.active);
+				sync_app_console(app);
+				if (!app.console_manager.visible)
+				{
+					*app.ui_mode = *app.console_saved_mode;
+				}
+				else
+				{
+					app.console_panel.focused = true;
+				}
+				return;
+			}
+		case commands::CommandId.CONSOLE_NEXT_SESSION:
+
+			{
+				int count = (int)app.console_manager.sessions.len();
+				if (count > 1)
+				{
+					app.console_manager.select((app.console_manager.active + 1) % count);
+				}
+				sync_app_console(app);
+				focus_console(app);
+				return;
+			}
+		case commands::CommandId.CONSOLE_PREV_SESSION:
+
+			{
+				int count = (int)app.console_manager.sessions.len();
+				if (count > 1)
+				{
+					int next = app.console_manager.active - 1;
+					if (next < 0) next = count - 1;
+					app.console_manager.select(next);
+				}
+				sync_app_console(app);
+				focus_console(app);
+				return;
+			}
+		case commands::CommandId.CONSOLE_RUN_PROFILE:
+
+			{
+				if (!*app.project_open)
+				{
+					app.notifier.push("No project open");
+					return;
+				}
+				if (app.config.run_profiles.len() == 0)
+				{
+					app.notifier.push("No run profiles");
+					return;
+				}
+				if (app.config.run_profiles.len() == 1)
+				{
+					run_profile(app, &app.config.run_profiles[0]);
+					return;
+				}
+				@pool()
+				{
+					List{String} labels;
+					labels.init(tmem);
+					for (sz i = 0; i < app.config.run_profiles.len(); i++)
+					{
+						labels.push(app.config.run_profiles[i].name);
+					}
+					RLVector2 center = {
+						(float)rl::get_screen_width() / 2.0f - 100.0f,
+						(float)rl::get_screen_height() / 2.0f,
+					};
+					app.profile_menu.open_at(center, labels.entries[0:labels.len()]);
+				};
 				return;
 			}
 		case commands::CommandId.TOGGLE_CONNECTIONS:
@@ -1169,12 +1619,14 @@ fn void run_command(commands::CommandId id, App* app)
 				int index = target_card_index(project);
 				if (index < 0) return;
 				RLVector2 pos = project.cards[index].center();
-				if (project.duplicate_card(index, pos) < 0)
+				int duplicate = project.duplicate_card(index, pos);
+				if (duplicate < 0)
 				{
 					app.notifier.push("Could not duplicate");
 				}
 				else
 				{
+					project.snap_card_to_grid(duplicate, app.canvas.camera.zoom);
 					app.notifier.push("Duplicated");
 				}
 				return;
@@ -1522,6 +1974,72 @@ fn void reload_editor_font(
 	editor::set_font_size(draw_size);
 }
 
+fn bool debug_ui_enabled()
+{
+	@pool()
+	{
+		String? value = env::get_var(tmem, "YUN_DEBUG_UI");
+		if (catch excuse = value) return false;
+		return value.len > 0 && value[0] != '0';
+	};
+}
+
+fn void log_ui_diagnostics(project::Project* project)
+{
+	if (!debug_ui_enabled()) return;
+	@pool()
+	{
+		int monitor = rl::get_current_monitor();
+		float scale = rl::get_window_scale_dpi()[0];
+		String cwd  = rl::get_working_directory().str_view();
+		String exe  = rl::get_application_directory().str_view();
+
+		String platform = "linux";
+		$if env::WIN32:
+			platform = "windows";
+		$else
+			$if env::DARWIN:
+				platform = "macos";
+			$endif
+		$endif
+
+		String exe_icons = string::format(tmem, "%sassets/icons", exe);
+		String exe_font  = string::format(tmem, "%s%s", exe, FONT_PATH);
+		io::printfn(
+			"yun ui: platform=%s window=%dx%d screen=%dx%d render=%dx%d monitor=%d %dx%d phys=%dx%dmm dpi_scale=%.2f ui_scale=%.2f layout=%.2f font=%.2f",
+			platform,
+			rl::get_screen_width(),
+			rl::get_screen_height(),
+			rl::get_screen_width(),
+			rl::get_screen_height(),
+			rl::get_render_width(),
+			rl::get_render_height(),
+			monitor,
+			rl::get_monitor_width(monitor),
+			rl::get_monitor_height(monitor),
+			rl::get_monitor_physical_width(monitor),
+			rl::get_monitor_physical_height(monitor),
+			(double)scale,
+			(double)ui::scale(),
+			(double)ui::layout_scale(),
+			(double)ui::font_scale()
+		);
+		io::printfn(
+			"yun ui: theme=%s ui_icons=%s file_icons=%s cwd_icons=%s exe_icons=%s cwd_font=%s exe_font=%s cards=%d cwd=\"%s\" exe=\"%s\"",
+			theme::current_name(),
+			icons::ui_icon_theme_name(),
+			icons::file_icon_theme_current_name(),
+			file::exists("assets/icons") ? "yes" : "no",
+			file::exists(exe_icons) ? "yes" : "no",
+			file::exists(FONT_PATH) ? "yes" : "no",
+			file::exists(exe_font) ? "yes" : "no",
+			(int)project.cards.len(),
+			cwd,
+			exe
+		);
+	};
+}
+
 fn void update_dpi(
 	fonts::Fonts* fonts,
 	config::Config* config,
@@ -1579,7 +2097,7 @@ fn void update_dpi(
 	);
 
 	canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
-	canvas.camera.offset = { (float)rl::get_screen_width() / 2.0f, canvas.usable_offset_y() };
+	canvas.camera.offset = { canvas.usable_offset_x(), canvas.usable_offset_y() };
 }
 
 fn int parse_int(String s)
@@ -1650,6 +2168,9 @@ fn int main(String[] args)
 	menu::Menu theme_menu;
 	theme_menu.init(mem);
 
+	menu::Menu profile_menu;
+	profile_menu.init(mem);
+
 	menu::Menu close_menu;
 	close_menu.init(mem);
 
@@ -1682,6 +2203,32 @@ fn int main(String[] args)
 
 	symbols::Symbols symbols;
 	symbols.init(mem);
+
+	console::ConsoleManager console_manager;
+	console_manager.init(mem);
+	defer console_manager.destroy();
+
+	git::State git_state;
+	git_state.init(mem);
+	defer git_state.destroy();
+
+	git::Panel git_panel;
+	git_panel.init(mem);
+	defer git_panel.destroy();
+
+	git::DiffView diff_view;
+	diff_view.init(mem);
+	defer diff_view.destroy();
+
+	git::ConflictView conflict_view;
+	conflict_view.init(mem);
+	defer conflict_view.destroy();
+
+	git::HistoryView history_view;
+	history_view.init(mem);
+	defer history_view.destroy();
+	console::Console* console            = console_manager.active_console();
+	console::ConsolePanel* console_panel = console_manager.active_panel();
 
 	keymap::Keymap keymap;
 	keymap.init(mem);
@@ -1725,6 +2272,7 @@ fn int main(String[] args)
 	defer context_menu.destroy();
 	defer reload_menu.destroy();
 	defer theme_menu.destroy();
+	defer profile_menu.destroy();
 	defer close_menu.destroy();
 	defer delete_menu.destroy();
 	defer definition_menu.destroy();
@@ -1744,6 +2292,11 @@ fn int main(String[] args)
 	double font_indicator_until = 0.0;
 	UiMode ui_mode              = UiMode.MOVE;
 	UiMode focus_saved_mode     = UiMode.MOVE;
+	UiMode console_saved_mode   = UiMode.MOVE;
+	UiMode scm_saved_mode       = UiMode.MOVE;
+	UiMode diff_saved_mode      = UiMode.MOVE;
+	UiMode conflict_saved_mode  = UiMode.MOVE;
+	UiMode history_saved_mode   = UiMode.MOVE;
 	int edit_grace_frames       = 0;
 	bool selftest               = false;
 	bool benchmark_on           = false;
@@ -1799,7 +2352,8 @@ fn int main(String[] args)
 				&editor_font,
 				&metrics,
 				&ui_size,
-				&font
+				&font,
+				&console_manager
 			);
 			open_job = project::open_job_create(project.allocator, &project, resolved);
 			opening = true;
@@ -1818,7 +2372,8 @@ fn int main(String[] args)
 			&editor_font,
 			&metrics,
 			&ui_size,
-			&font
+			&font,
+			&console_manager
 		);
 		if (benchmark_cards > 0)
 		{
@@ -1863,6 +2418,7 @@ fn int main(String[] args)
 		.problems = &problems,
 		.connections = &connections,
 		.theme_menu = &theme_menu,
+		.profile_menu = &profile_menu,
 		.context_menu = &context_menu,
 		.close_menu = &close_menu,
 		.delete_menu = &delete_menu,
@@ -1870,12 +2426,25 @@ fn int main(String[] args)
 		.definition_menu = &definition_menu,
 		.search = &search,
 		.symbols = &symbols,
+		.console_manager = &console_manager,
+		.console = console,
+		.console_panel = console_panel,
+		.git = &git_state,
+		.git_panel = &git_panel,
+		.diff_view = &diff_view,
+		.conflict_view = &conflict_view,
+		.history_view = &history_view,
 		.metrics = metrics,
 		.project_open = &project_open,
 		.content_changed = &content_changed,
 		.quit_requested = &quit_requested,
 		.ui_mode = &ui_mode,
 		.focus_saved_mode = &focus_saved_mode,
+		.console_saved_mode = &console_saved_mode,
+		.scm_saved_mode = &scm_saved_mode,
+		.diff_saved_mode = &diff_saved_mode,
+		.conflict_saved_mode = &conflict_saved_mode,
+		.history_saved_mode = &history_saved_mode,
 		.edit_grace_frames = &edit_grace_frames,
 		.bar = &bar,
 		.keymap = &keymap,
@@ -1892,10 +2461,14 @@ fn int main(String[] args)
 		.pending_world = &pending_world,
 	};
 
-	RLVector2 last_arrow_mouse  =  { -1.0f, -1.0f };
-	RLVector2 last_arrow_target =  { 0.0f, 0.0f };
-	float last_arrow_zoom       = -1.0f;
-	bool arrow_hovered_cache    =  false;
+	RLVector2 last_arrow_mouse     =  { -1.0f, -1.0f };
+	RLVector2 last_arrow_target    =  { 0.0f, 0.0f };
+	float last_arrow_zoom          = -1.0f;
+	bool arrow_hovered_cache       =  false;
+	bool diagnostics_logged        =  false;
+	input::RepeatState move_repeat =  { };
+	ulong last_git_error_revision  =  0;
+	ulong last_git_action_revision =  0;
 
 	int frame_count    = 0;
 	double prof_update = 0.0;
@@ -1912,6 +2485,21 @@ fn int main(String[] args)
 	{
 		frame_count++;
 		ui::reset_cursor();
+		canvas.left_inset = git_panel.visible ? git_panel.width(&canvas) : 0.0f;
+		console = console_manager.active_console();
+		console_panel = console_manager.active_panel();
+		app.console = console;
+		app.console_panel = console_panel;
+		if (ui_mode == UiMode.CONSOLE && !console_manager.visible)
+		{
+			ui_mode = console_saved_mode;
+			console_panel.focused = false;
+		}
+		if (ui_mode == UiMode.SCM && !git_panel.visible) ui_mode = scm_saved_mode;
+		if (ui_mode == UiMode.DIFF && !diff_view.open) ui_mode = diff_saved_mode;
+		if (ui_mode == UiMode.CONFLICT && !conflict_view.open) ui_mode = conflict_saved_mode;
+		if (ui_mode == UiMode.HISTORY && !history_view.open) ui_mode = history_saved_mode;
+		if (ui_mode != UiMode.MOVE || project.grabbing) move_repeat.reset();
 		if (selftest && frame_count > 3) break;
 		bool bench_ready = benchmark_on && (benchmark_synthetic || project_open);
 		if (bench_ready)
@@ -1953,6 +2541,58 @@ fn int main(String[] args)
 		double scan_t0     = rl::get_time();
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
+		if (project_open)
+		{
+			git_state.update((String)project.root, project.cards_revision, rl::get_time(), rl::is_window_focused());
+		}
+		if (diff_view.sync(&git_state))
+		{
+			if (ui_mode != UiMode.DIFF) diff_saved_mode = ui_mode;
+			ui_mode = UiMode.DIFF;
+		}
+		if (git_state.error_revision != last_git_error_revision)
+		{
+			last_git_error_revision = git_state.error_revision;
+			if (git_state.error.kind != git::GitErrorKind.NONE && !git_state.error_quiet)
+			{
+				notifier.push(git_state.error.message);
+			}
+		}
+		if (git_state.action_revision != last_git_action_revision)
+		{
+			last_git_action_revision = git_state.action_revision;
+			if (git_state.action.success)
+			{
+				switch (git_state.action.kind)
+				{
+					case git::GitRequestKind.FETCH:
+						notifier.push("Fetched");
+					case git::GitRequestKind.PULL:
+						notifier.push("Pulled");
+					case git::GitRequestKind.PUSH:
+						notifier.push("Pushed");
+					case git::GitRequestKind.PUBLISH:
+						notifier.push("Published branch");
+					case git::GitRequestKind.DETECT:
+					case git::GitRequestKind.STATUS:
+					case git::GitRequestKind.DIFF:
+					case git::GitRequestKind.STAGE:
+					case git::GitRequestKind.UNSTAGE:
+					case git::GitRequestKind.DISCARD:
+					case git::GitRequestKind.COMMIT:
+					case git::GitRequestKind.BRANCH_LIST:
+					case git::GitRequestKind.BRANCH_SWITCH:
+					case git::GitRequestKind.BRANCH_CREATE:
+					case git::GitRequestKind.MERGE_ABORT:
+					case git::GitRequestKind.APPLY_PATCH:
+					case git::GitRequestKind.LOG:
+					case git::GitRequestKind.COMMIT_FILES:
+						break;
+				}
+			}
+		}
+		console_manager.pump();
+		notify_console_finishes(&console_manager, &notifier, ui_mode == UiMode.CONSOLE && console_manager.visible);
 		scan_ms += (rl::get_time() - scan_t0) * 1000.0;
 
 		apply_settings(
@@ -1965,8 +2605,14 @@ fn int main(String[] args)
 			&editor_font,
 			&metrics,
 			&ui_size,
-			&font
+			&font,
+			&console_manager
 		);
+		if (!diagnostics_logged)
+		{
+			diagnostics_logged = true;
+			log_ui_diagnostics(&project);
+		}
 
 		if (opening)
 		{
@@ -1982,7 +2628,11 @@ fn int main(String[] args)
 				if (open_job.phase == project::OpenPhase.DONE)
 				{
 					project_open = true;
-					finish_open(&project, &canvas, &config, &keymap, &notifier);
+					console_manager.reset((String)project.root);
+					finish_open(&project, &canvas, &config, &keymap, &notifier, &console_manager);
+					git_state.set_project((String)project.root);
+					console = console_manager.active_console();
+					console_panel = console_manager.active_panel();
 					search.close();
 					symbols.close();
 					symbols.start_scan(&project);
@@ -1998,7 +2648,8 @@ fn int main(String[] args)
 						&editor_font,
 						&metrics,
 						&ui_size,
-						&font
+						&font,
+						&console_manager
 					);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
@@ -2145,6 +2796,14 @@ fn int main(String[] args)
 					}
 					else
 					{
+						if (pending_kind == 0)
+						{
+							project.snap_card_to_grid(result, canvas.camera.zoom);
+						}
+						else
+						{
+							project.snap_cluster_to_grid(result, canvas.camera.zoom);
+						}
 						name_prompt.close();
 					}
 				}
@@ -2225,6 +2884,15 @@ fn int main(String[] args)
 			}
 			if (!theme_menu.consumed) poll_global(&keymap, &app);
 		}
+		else if (profile_menu.open)
+		{
+			int chosen = profile_menu.update(&keymap);
+			if (chosen >= 0 && chosen < (int)config.run_profiles.len())
+			{
+				run_profile(&app, &config.run_profiles[chosen]);
+			}
+			if (!profile_menu.consumed) poll_global(&keymap, &app);
+		}
 		else if (context_menu.open)
 		{
 			int chosen = context_menu.update(&keymap);
@@ -2269,12 +2937,14 @@ fn int main(String[] args)
 					case context::ContextAction.DUPLICATE_CARD:
 
 						{
-							if (project.duplicate_card(app.context_card, app.context_world) < 0)
+							int duplicate = project.duplicate_card(app.context_card, app.context_world);
+							if (duplicate < 0)
 							{
 								notifier.push("Could not duplicate");
 							}
 							else
 							{
+								project.snap_card_to_grid(duplicate, canvas.camera.zoom);
 								notifier.push("Duplicated");
 							}
 							break;
@@ -2467,8 +3137,118 @@ fn int main(String[] args)
 			RLVector2 mouse       = rl::get_mouse_position();
 			RLVector2 world       = canvas.screen_to_world(mouse);
 			bool over_connections = connections.contains_screen(mouse);
-			bool over_top         = topbar::contains_screen(mouse) || over_connections;
-			bool has_buffer       = has_focused_buffer(&project);
+			if (diff_view.open)
+			{
+				diff_view.update(&git_state, &canvas, rl::get_time());
+				if (diff_view.close_requested)
+				{
+					diff_view.close_requested = false;
+					ui_mode = diff_saved_mode;
+				}
+			}
+			if (conflict_view.open)
+			{
+				conflict_view.update(&git_state, &canvas, rl::get_time());
+				if (conflict_view.close_requested)
+				{
+					conflict_view.close_requested = false;
+					ui_mode = conflict_saved_mode;
+				}
+			}
+			if (history_view.open && !diff_view.open && !conflict_view.open)
+			{
+				history_view.update(&git_state, &canvas, rl::get_time());
+				if (history_view.close_requested)
+				{
+					history_view.close_requested = false;
+					ui_mode = history_saved_mode;
+				}
+			}
+			if (!diff_view.open && !conflict_view.open)
+			{
+				console_panel.update_mouse(&console_manager, console, metrics, mouse);
+			}
+			console_manager.sync_height();
+			console = console_manager.active_console();
+			console_panel = console_manager.active_panel();
+			app.console = console;
+			app.console_panel = console_panel;
+			git_panel.bottom_inset = console_manager.visible ? ui::pxf(console_panel.height) : 0.0f;
+			bool over_console  = console_panel.contains_screen(mouse);
+			bool over_git      = git_panel.contains_screen(&canvas, mouse);
+			bool editors_dirty = false;
+			for (sz i = 0; i < project.cards.len(); i++)
+			{
+				if (project.cards[i].dirty)
+				{
+					editors_dirty = true;
+					break;
+				}
+			}
+			if (!diff_view.open && !conflict_view.open && !history_view.open)
+			{
+				git_panel.update(&git_state, &canvas, rl::get_time(), ui_mode == UiMode.SCM, editors_dirty);
+			}
+			if (git_panel.focus_requested)
+			{
+				if (ui_mode != UiMode.SCM) scm_saved_mode = ui_mode;
+				ui_mode = UiMode.SCM;
+				git_panel.focused = true;
+				git_panel.focus_requested = false;
+			}
+			if (ui_mode == UiMode.SCM && git_panel.leave_requested)
+			{
+				ui_mode = scm_saved_mode;
+				git_panel.focused = false;
+			}
+			if (ui_mode == UiMode.SCM && rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && !over_git)
+			{
+				ui_mode = scm_saved_mode;
+				git_panel.focused = false;
+			}
+			String git_open_path = "";
+			if (git_panel.take_open(&git_open_path))
+			{
+				navigate_to_location(&project, &canvas, metrics, git_open_path, 0, 0);
+				git_open_path.free(mem);
+				ui_mode = UiMode.EDIT;
+				edit_grace_frames = 2;
+			}
+			String resolve_rel = "";
+			String resolve_abs = "";
+			if (git_panel.take_resolve(&resolve_rel, &resolve_abs))
+			{
+				conflict_view.open_file(resolve_rel, resolve_abs);
+				resolve_rel.free(mem);
+				resolve_abs.free(mem);
+				if (ui_mode != UiMode.CONFLICT) conflict_saved_mode = ui_mode;
+				ui_mode = UiMode.CONFLICT;
+			}
+			String history_path = "";
+			if (git_panel.take_history(&history_path))
+			{
+				history_view.open_history(&git_state, history_path);
+				if (history_path.len > 0) history_path.free(mem);
+				if (ui_mode != UiMode.HISTORY) history_saved_mode = ui_mode;
+				ui_mode = UiMode.HISTORY;
+			}
+			bool over_top   = diff_view.open || topbar::contains_screen(
+				mouse
+			) || over_connections || over_console || over_git;
+			bool has_buffer = has_focused_buffer(&project);
+
+			if (ui_mode == UiMode.CONSOLE && rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && !over_console)
+			{
+				ui_mode = console_saved_mode;
+				console_panel.focused = false;
+			}
+			if (console_panel.focus_requested)
+			{
+				if (ui_mode != UiMode.CONSOLE) console_saved_mode = ui_mode;
+				ui_mode = UiMode.CONSOLE;
+				console_panel.focused = true;
+				console_panel.focus_requested = false;
+			}
 
 			bool font_wheel = false;
 			if (!over_top && project::ctrl_down())
@@ -2492,13 +3272,41 @@ fn int main(String[] args)
 				}
 			}
 
-			int key_cmd = keymap.poll(commands::CTX_GLOBAL);
+			if (ui_mode == UiMode.EDIT)
+			{
+				if (keymap.pressed((int)commands::CommandId.FIND, commands::CTX_EDIT))
+				{
+					run_command(commands::CommandId.FIND, &app);
+				}
+				else if (keymap.pressed((int)commands::CommandId.REPLACE, commands::CTX_EDIT))
+				{
+					run_command(commands::CommandId.REPLACE, &app);
+				}
+			}
+
+			int key_cmd = -1;
+			if (!diff_view.open && !conflict_view.open && !history_view.open) key_cmd = keymap.poll(
+				commands::CTX_GLOBAL
+			);
 			if (key_cmd >= 0) run_command((commands::CommandId)key_cmd, &app);
 
-			int bar_cmd = bar.update(mouse, project_open, has_buffer);
+			int bar_cmd = -1;
+			if (!diff_view.open && !conflict_view.open && !history_view.open) bar_cmd = bar.update(
+				mouse,
+				project_open,
+				has_buffer
+			);
 			if (bar_cmd >= 0) run_command((commands::CommandId)bar_cmd, &app);
 
-			if (ui_mode == UiMode.TOP_BAR)
+			if (ui_mode == UiMode.CONSOLE)
+			{
+				if (console_panel.update_input(console, &keymap, metrics))
+				{
+					ui_mode = console_saved_mode;
+					console_panel.focused = false;
+				}
+			}
+			else if (ui_mode == UiMode.TOP_BAR)
 			{
 				int bar_key_cmd = keymap.poll_exact(commands::CTX_TOP_BAR);
 				if (bar_key_cmd < 0 && rl::is_key_pressed(rl::RLKeyboardKey.SPACE))
@@ -2510,6 +3318,30 @@ fn int main(String[] args)
 					bar_key_cmd = (int)commands::CommandId.FOCUS_CANVAS;
 				}
 				if (bar_key_cmd >= 0) run_command((commands::CommandId)bar_key_cmd, &app);
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+			}
+			else if (ui_mode == UiMode.DIFF)
+			{
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+			}
+			else if (ui_mode == UiMode.CONFLICT)
+			{
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+			}
+			else if (ui_mode == UiMode.HISTORY)
+			{
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+			}
+			else if (ui_mode == UiMode.SCM)
+			{
 				while (rl::get_char_pressed() != 0)
 				{
 				}
@@ -2528,6 +3360,7 @@ fn int main(String[] args)
 						rl::RLKeyboardKey.ESCAPE
 					) || rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
 					{
+						project.snap_selected_to_grid(canvas.camera.zoom);
 						project.grabbing = false;
 					}
 					else
@@ -2548,7 +3381,10 @@ fn int main(String[] args)
 						if (rl::is_key_down(
 							rl::RLKeyboardKey.DOWN
 						) || rl::is_key_down(rl::RLKeyboardKey.J)) delta[1] += step;
-						if (delta[0] != 0.0f || delta[1] != 0.0f) project.move_selected(delta);
+						if (delta[0] != 0.0f || delta[1] != 0.0f)
+						{
+							project.apply_grab_delta(delta, project.grid_snap_step(&canvas));
+						}
 
 						Rect item = project.selected_item_rect();
 						if (item.width > 0.0f && item.height > 0.0f)
@@ -2620,7 +3456,25 @@ fn int main(String[] args)
 					if (move_cmd < 0 && rl::is_key_pressed(
 						rl::RLKeyboardKey.KP_SUBTRACT
 					)) move_cmd = (int)commands::CommandId.ZOOM_OUT;
-					if (move_cmd >= 0) run_command((commands::CommandId)move_cmd, &app);
+					int held_dir    = held_move_dir(&keymap);
+					double move_now = rl::get_time();
+					if (move_cmd >= 0)
+					{
+						run_command((commands::CommandId)move_cmd, &app);
+						if (is_select_command(move_cmd))
+						{
+							move_repeat.start(held_dir, move_now);
+						}
+						else
+						{
+							move_repeat.reset();
+						}
+					}
+					else
+					{
+						int repeat_cmd = move_repeat.tick(held_dir, move_now);
+						if (repeat_cmd != 0) run_command((commands::CommandId)repeat_cmd, &app);
+					}
 
 					bool selection_changed = project.selected != before || project.selected_cluster != before_cluster;
 					if (selection_changed)
@@ -2735,15 +3589,25 @@ fn int main(String[] args)
 					String path = files.paths[i].str_view().copy(mem);
 					if (!rl::is_path_file(files.paths[i]))
 					{
-						if (project.add_folder_from_disk(path, world) < 0)
+						int folder_index = project.add_folder_from_disk(path, world);
+						if (folder_index < 0)
 						{
 							notifier.push("Drop folders from inside the project root");
 						}
+						else
+						{
+							project.snap_cluster_to_grid(folder_index, canvas.camera.zoom);
+						}
 						continue;
 					}
-					if (project.add_card(path, world) < 0)
+					int card_index = project.add_card(path, world);
+					if (card_index < 0)
 					{
 						notifier.push("Could not add dropped file");
+					}
+					else
+					{
+						project.snap_card_to_grid(card_index, canvas.camera.zoom);
 					}
 				}
 				rl::unload_dropped_files(files);
@@ -2752,13 +3616,27 @@ fn int main(String[] args)
 			if (project.focus_card >= 0) project.update_focus_rect(&canvas);
 
 			content_changed = false;
-			bool suppress_edit_input = ui_mode == UiMode.EDIT && edit_grace_frames > 0;
+			bool suppress_edit_input = (ui_mode == UiMode.EDIT && edit_grace_frames > 0) || ui_mode == UiMode.CONSOLE;
 			double update_t0         = rl::get_time();
 			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
 			if (project.focus_toggle_requested)
 			{
 				project.focus_toggle_requested = false;
 				run_command(commands::CommandId.TOGGLE_FOCUS_MODE, &app);
+			}
+			if (project.autosave_enabled && rl::get_time() - project.last_autosave >= project.autosave_interval)
+			{
+				project.last_autosave = rl::get_time();
+				for (sz i = 0; i < project.cards.len(); i++)
+				{
+					if (project.cards[i].dirty && project.cards[i].buffer)
+					{
+						if (editor::save_buffer(&project.cards[i], project.allocator))
+						{
+							git_state.mark_dirty(rl::get_time());
+						}
+					}
+				}
 			}
 			update_ms += (rl::get_time() - update_t0) * 1000.0;
 			if (ui_mode == UiMode.EDIT && project.focused < 0)
@@ -3078,7 +3956,8 @@ fn int main(String[] args)
 
 		rl::@drawing()
 		{
-			bool focus_active = project.focus_card >= 0;
+			bool focus_active          = project.focus_card >= 0;
+			git::GitStatus* git_status = git_state.has_status ? &git_state.status : null;
 			if (focus_active)
 			{
 				rl::clear_background(theme::current().window_bg);
@@ -3092,13 +3971,21 @@ fn int main(String[] args)
 			{
 				if (focus_active)
 				{
-					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, project.focus_card);
+					project.draw_cards(
+						canvas.camera,
+						font,
+						editor_font,
+						metrics,
+						&find_bar,
+						project.focus_card,
+						git_status
+					);
 				}
 				else
 				{
 					project.draw_folders(canvas.camera);
 					import_index.draw(&project, canvas.camera, font);
-					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, -1);
+					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, -1, git_status);
 				}
 			};
 			if (focus_active)
@@ -3183,6 +4070,26 @@ fn int main(String[] args)
 				{
 					mode_label = "-- TOP BAR --";
 				}
+				else if (ui_mode == UiMode.CONSOLE)
+				{
+					mode_label = "-- CONSOLE --";
+				}
+				else if (ui_mode == UiMode.SCM)
+				{
+					mode_label = "-- SOURCE CONTROL --";
+				}
+				else if (ui_mode == UiMode.DIFF)
+				{
+					mode_label = "-- DIFF --";
+				}
+				else if (ui_mode == UiMode.CONFLICT)
+				{
+					mode_label = "-- CONFLICT --";
+				}
+				else if (ui_mode == UiMode.HISTORY)
+				{
+					mode_label = "-- HISTORY --";
+				}
 				else if (project.grabbing)
 				{
 					mode_label = "-- GRAB --";
@@ -3213,11 +4120,19 @@ fn int main(String[] args)
 				ui_mode == UiMode.TOP_BAR
 			);
 			connections.draw(font, &project, &import_index);
-			browser.draw();
+			console = console_manager.active_console();
+			console_panel = console_manager.active_panel();
+			app.console = console;
+			app.console_panel = console_panel;
+			console_panel.focused = ui_mode == UiMode.CONSOLE;
+			git_panel.draw(&git_state, &canvas, (float)ui::tpx(13));
+			console_panel.draw(&console_manager, console, font, editor_font, metrics);
+			browser.draw(git_status);
 			close_menu.draw();
 			delete_menu.draw();
 			reload_menu.draw();
 			theme_menu.draw();
+			profile_menu.draw();
 			context_menu.draw();
 			name_prompt.draw(font);
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
@@ -3226,6 +4141,9 @@ fn int main(String[] args)
 			search.draw(font);
 			symbols.draw(font);
 			definition_menu.draw();
+			history_view.draw(&git_state, &canvas);
+			diff_view.draw(&canvas);
+			conflict_view.draw(&canvas);
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
 			if (rl::is_key_down(rl::RLKeyboardKey.F3))
@@ -3309,6 +4227,6 @@ fn int main(String[] args)
 	}
 
 	if (project.focus_card >= 0) project.end_focus(&canvas);
-	if (project_open) workspace::save(&project, &canvas);
+	if (project_open) workspace::save(&project, &canvas, &console_manager);
 	return 0;
 }

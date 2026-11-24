@@ -46,6 +46,8 @@ struct CanvasSettings
 	float grid_cell;
 	float grid_min_px;
 	float grid_max_px;
+	bool snap_to_grid;
+	float snap_step;
 	float jump_zoom_min;
 	float jump_zoom_target;
 }
@@ -66,6 +68,8 @@ CanvasSettings g_canvas_settings = {
 	.grid_cell = BASE_CELL,
 	.grid_min_px = MIN_GRID_PX,
 	.grid_max_px = MAX_GRID_PX,
+	.snap_to_grid = true,
+	.snap_step = 0.0f,
 	.jump_zoom_min = 0.6f,
 	.jump_zoom_target = 1.0f,
 };
@@ -86,6 +90,8 @@ fn void set_settings(CanvasSettings value)
 	if (value.drag_threshold < 0.0f) value.drag_threshold = 0.0f;
 	if (value.max_pan_delta < 1.0f) value.max_pan_delta = 1.0f;
 	if (value.grid_cell < 1.0f) value.grid_cell = 1.0f;
+	if (value.snap_step < 0.0f) value.snap_step = 0.0f;
+	if (value.snap_step > 1024.0f) value.snap_step = 1024.0f;
 
 	if (value.max_zoom < 0.02f) value.max_zoom = 0.02f;
 	if (value.max_zoom > 100.0f) value.max_zoom = 100.0f;
@@ -109,6 +115,7 @@ struct Canvas
 	RLCamera2D target;
 	RLVector2 velocity;
 	float top_inset;
+	float left_inset;
 	bool pointer_over_ui;
 	bool block_zoom;
 	bool block_pan;
@@ -129,11 +136,12 @@ fn void Canvas.init(&self)
 	self.camera = initial;
 	self.target = initial;
 	self.top_inset = 0.0f;
+	self.left_inset = 0.0f;
 }
 
 fn void Canvas.update(&self)
 {
-	self.camera.offset = { (float)rl::get_screen_width() / 2.0f, self.usable_offset_y() };
+	self.camera.offset = { self.usable_offset_x(), self.usable_offset_y() };
 	self.target.offset = self.camera.offset;
 
 	float dt        = math::min(rl::get_frame_time(), MAX_FRAME_DT);
@@ -204,6 +212,25 @@ fn float Canvas.usable_offset_y(&self)
 	float height = (float)rl::get_screen_height() - self.top_inset;
 	if (height < 0.0f) height = 0.0f;
 	return self.top_inset + height / 2.0f;
+}
+
+fn float Canvas.usable_width(&self)
+{
+	float width = (float)rl::get_screen_width() - self.left_inset;
+	if (width < 0.0f) width = 0.0f;
+	return width;
+}
+
+fn float Canvas.usable_height(&self)
+{
+	float height = (float)rl::get_screen_height() - self.top_inset;
+	if (height < 0.0f) height = 0.0f;
+	return height;
+}
+
+fn float Canvas.usable_offset_x(&self)
+{
+	return self.left_inset + self.usable_width() / 2.0f;
 }
 
 fn void Canvas.begin_drag(&self, RLMouseButton button, RLVector2 mouse)
@@ -418,9 +445,13 @@ fn void Canvas.fit_zoom(&self, Rect content, int screen_w, int screen_h)
 {
 	if (content.width <= 0.0f || content.height <= 0.0f) return;
 	float margin = 40.0f;
-	float fit_x  = ((float)screen_w - margin * 2.0f) / content.width;
-	float fit_y  = ((float)screen_h - margin * 2.0f) / content.height;
-	float top    = math::min(g_canvas_settings.max_zoom, FIT_MAX_ZOOM);
+	float width  = (float)screen_w - self.left_inset;
+	float height = (float)screen_h - self.top_inset;
+	if (width < 1.0f) width = 1.0f;
+	if (height < 1.0f) height = 1.0f;
+	float fit_x = (width - margin * 2.0f) / content.width;
+	float fit_y = (height - margin * 2.0f) / content.height;
+	float top   = math::min(g_canvas_settings.max_zoom, FIT_MAX_ZOOM);
 	self.target.zoom = math::clamp(math::min(fit_x, fit_y), g_canvas_settings.min_zoom, top);
 	self.target.target = {
 		content.x + content.width / 2.0f,
@@ -433,9 +464,13 @@ fn void Canvas.fit_zoom_floor(&self, Rect content, int screen_w, int screen_h, f
 	self.fit_zoom(content, screen_w, screen_h);
 	if (floor <= 0.0f || self.target.zoom >= floor) return;
 	self.target.zoom = floor;
+	float width  = (float)screen_w - self.left_inset;
+	float height = (float)screen_h - self.top_inset;
+	if (width < 1.0f) width = 1.0f;
+	if (height < 1.0f) height = 1.0f;
 	self.target.target = {
-		content.x + (float)screen_w / (2.0f * floor),
-		content.y + (float)screen_h / (2.0f * floor),
+		content.x + width / (2.0f * floor),
+		content.y + height / (2.0f * floor),
 	};
 }
 
@@ -462,6 +497,18 @@ fn Rect Canvas.visible_world_rect(&self)
 	RLVector2 min = self.screen_to_world({ 0.0f, 0.0f });
 	RLVector2 max = self.screen_to_world({ (float)rl::get_screen_width(), (float)rl::get_screen_height() });
 	return { .x = min[0], .y = min[1], .width = max[0] - min[0], .height = max[1] - min[1] };
+}
+
+fn float snap_step(float zoom)
+{
+	if (g_canvas_settings.snap_step > 0.0f) return g_canvas_settings.snap_step;
+	return grid_step(zoom);
+}
+
+fn float snap_value(float value, float step)
+{
+	if (step <= 0.0f) return value;
+	return math::round(value / step) * step;
 }
 
 fn float grid_step(float zoom)

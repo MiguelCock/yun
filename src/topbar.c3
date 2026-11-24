@@ -7,12 +7,13 @@ import yun::icons;
 import yun::theme;
 import yun::ui;
 
-const float TOP_BAR_HEIGHT = 34.0f;
-const float BUTTON_WIDTH   = 104.0f;
-const float BUTTON_HEIGHT  = 24.0f;
-const float BUTTON_GAP     = 8.0f;
-const float PADDING_X      = 8.0f;
-const float PADDING_Y      = 5.0f;
+const float TOP_BAR_HEIGHT    = 34.0f;
+const float BUTTON_WIDTH      = 104.0f;
+const float ICON_BUTTON_WIDTH = 34.0f;
+const float BUTTON_HEIGHT     = 24.0f;
+const float BUTTON_GAP        = 8.0f;
+const float PADDING_X         = 8.0f;
+const float PADDING_Y         = 5.0f;
 
 struct TopBar
 {
@@ -31,12 +32,28 @@ fn bool contains_screen(RLVector2 screen)
 	return screen[0] >= 0.0f && screen[1] >= 0.0f && screen[1] <= ui::pxf(TOP_BAR_HEIGHT);
 }
 
+fn float button_width(usz index)
+{
+	CommandDef def = commands::bar_command(index);
+	return ui::pxf(def.icon_only ? ICON_BUTTON_WIDTH : BUTTON_WIDTH);
+}
+
+fn float button_x(usz index)
+{
+	float x = ui::pxf(PADDING_X);
+	for (usz i = 0; i < index; i++)
+	{
+		x += button_width(i) + ui::pxf(BUTTON_GAP);
+	}
+	return x;
+}
+
 fn Rect button_rect(usz index)
 {
 	return {
-		.x = ui::pxf(PADDING_X) + (float)index * (ui::pxf(BUTTON_WIDTH) + ui::pxf(BUTTON_GAP)),
+		.x = button_x(index),
 		.y = ui::pxf(PADDING_Y),
-		.width = ui::pxf(BUTTON_WIDTH),
+		.width = button_width(index),
 		.height = ui::pxf(BUTTON_HEIGHT),
 	};
 }
@@ -163,6 +180,10 @@ fn icons::IconKind icon_for_command(commands::CommandId id)
 			return icons::IconKind.SAVE;
 		case commands::CommandId.TOGGLE_SETTINGS:
 			return icons::IconKind.SETTINGS;
+		case commands::CommandId.TOGGLE_SCM:
+			return icons::IconKind.GIT;
+		case commands::CommandId.TOGGLE_CONSOLE:
+			return icons::IconKind.CONSOLE;
 		default:
 			return icons::IconKind.SETTINGS;
 	}
@@ -239,32 +260,40 @@ fn void TopBar.draw(
 			.topbar_hover : theme::current().topbar_button);
 		if (hovered && enabled) ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
 
-		String label           = def.label;
+		String label           = def.bar_label.len > 0 ? def.bar_label : def.label;
 		float button_text_size = (float)ui::tpx(15);
 		float icon_size        = icons::icon_size(16);
 		float gap              = (float)ui::px(6);
-		RLVector2 size         = rl::measure_text_ex(font, (ZString)label.ptr, button_text_size, 0.0f);
-		float start            = r.x + (r.width - (icon_size + gap + size[0])) * 0.5f;
 		RLColor color          = enabled ? theme::current().topbar_text : theme::current().topbar_disabled;
-		icons::draw(
-			icon_for_command(def.id),
-			{ .x = start, .y = r.y + (r.height - icon_size) * 0.5f, .width = icon_size, .height = icon_size },
-			color
-		);
-		rl::draw_text_ex(
-			font,
-			(ZString)label.ptr,
-			{ start + icon_size + gap, r.y + (r.height - size[1]) * 0.5f },
-			button_text_size,
-			0.0f,
-			color
-		);
-		if (hovered) ui::tooltip(label);
+		if (def.icon_only)
+		{
+			icons::draw(icon_for_command(def.id), icons::icon_box(r, 16), color);
+			if (hovered) ui::tooltip(def.label);
+		}
+		else
+		{
+			RLVector2 size = rl::measure_text_ex(font, (ZString)label.ptr, button_text_size, 0.0f);
+			float start    = r.x + (r.width - (icon_size + gap + size[0])) * 0.5f;
+			icons::draw(
+				icon_for_command(def.id),
+				{ .x = start, .y = r.y + (r.height - icon_size) * 0.5f, .width = icon_size, .height = icon_size },
+				color
+			);
+			rl::draw_text_ex(
+				font,
+				(ZString)label.ptr,
+				{ start + icon_size + gap, r.y + (r.height - size[1]) * 0.5f },
+				button_text_size,
+				0.0f,
+				color
+			);
+			if (hovered) ui::tooltip(label);
+		}
 	}
 
-	float name_x = ui::pxf(
-		PADDING_X
-	) + (float)commands::bar_command_count() * (ui::pxf(BUTTON_WIDTH) + ui::pxf(BUTTON_GAP)) + (float)ui::px(12);
+	float name_x = button_x((usz)commands::bar_command_count());
+	if (commands::bar_command_count() > 0) name_x += ui::pxf(BUTTON_GAP);
+	name_x += (float)ui::px(12);
 	if (focused && self.selected >= 0 && self.selected < (int)commands::bar_command_count() && button_enabled(
 		(usz)self.selected,
 		has_project,

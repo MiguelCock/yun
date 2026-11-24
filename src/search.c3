@@ -29,7 +29,31 @@ const int MAX_SEARCH_WORKERS   = 4;
 const int PUMP_BATCH_BUDGET    = 32;
 const int QUERY_MAX            = 256;
 const double RESTART_DEBOUNCE  = 0.15;
-const float TOP_MARGIN         = 24.0f;
+const double NAV_HOLD_DELAY    = 0.30;
+const double NAV_HOLD_INTERVAL = 0.04;
+
+struct SearchSettings
+{
+	int max_file_mb;
+	int max_matches_per_file;
+	int max_results;
+	int workers;
+	int debounce_ms;
+	int preview_length;
+}
+
+SearchSettings g_search_settings = { 2, 200, 2000, 4, 150, 120 };
+
+fn void set_settings(SearchSettings s)
+{
+	g_search_settings.max_file_mb = s.max_file_mb < 1 ? 1 : s.max_file_mb;
+	g_search_settings.max_matches_per_file = s.max_matches_per_file < 1 ? 1 : s.max_matches_per_file;
+	g_search_settings.max_results = s.max_results < 1 ? 1 : s.max_results;
+	g_search_settings.workers = s.workers < 1 ? 1 : s.workers;
+	g_search_settings.debounce_ms = s.debounce_ms < 1 ? 1 : s.debounce_ms;
+	g_search_settings.preview_length = s.preview_length < 1 ? 1 : s.preview_length;
+}
+const float TOP_MARGIN = 24.0f;
 
 struct SearchMatch
 {
@@ -89,6 +113,8 @@ struct Search
 	Atomic{bool} cancel;
 	int selected;
 	int scroll;
+	int hold_dir;
+	double hold_next;
 	usz total_matches;
 	bool restart_pending;
 	double restart_at;
@@ -145,7 +171,7 @@ fn String preview_of(Allocator allocator, String line)
 	usz start = 0;
 	while (start < line.len && (line[start] == ' ' || line[start] == '\t')) start++;
 	usz end = line.len;
-	if (end - start > (usz)PREVIEW_MAX) end = start + (usz)PREVIEW_MAX;
+	if (end - start > (usz)g_search_settings.preview_length) end = start + (usz)g_search_settings.preview_length;
 	return line[start:end - start].copy(allocator);
 }
 
@@ -162,14 +188,16 @@ fn void scan_content(
 	usz line  = 0;
 	usz start = 0;
 	usz found = 0;
-	while (start <= content.len && found < (usz)MAX_MATCHES_PER_FILE)
+	usz limit = (usz)g_search_settings.max_matches_per_file;
+	if (limit > (usz)MAX_MATCHES_PER_FILE) limit = (usz)MAX_MATCHES_PER_FILE;
+	while (start <= content.len && found < limit)
 	{
 		usz end = start;
 		while (end < content.len && content[end] != '\n') end++;
 		String text = content[start:end - start];
 		if (text.len > 0 && text[text.len - 1] == '\r') text = text[0:text.len - 1];
 
-		usz cap = (usz)MAX_MATCHES_PER_FILE - found;
+		usz cap = limit - found;
 		usz n   = find_in_line(text, query, case_sensitive, whole_word, columns[0:MAX_MATCHES_PER_FILE], cap);
 		for (usz i = 0; i < n; i++)
 		{
@@ -206,7 +234,7 @@ fn void scan_file_path(
 	{
 		long? size = path::file_size((Path)path);
 		if (catch excuse = size) return;
-		if (size > MAX_FILE_BYTES) return;
+		if (size > (long)g_search_settings.max_file_mb * 1024L * 1024L) return;
 
 		char[]? data = file::load(tmem, path);
 		if (catch excuse = data) return;
@@ -249,8 +277,8 @@ fn void search_worker(void* arg)
 
 fn void Search.init_pool(&self)
 {
-	int workers = os::num_cpu();
-	if (workers < 2) workers = 2;
+	int workers = g_search_settings.workers;
+	if (workers < 1) workers = 1;
 	if (workers > MAX_SEARCH_WORKERS) workers = MAX_SEARCH_WORKERS;
 	if (catch excuse = self.pool.init(self.allocator, workers))
 	{
@@ -285,6 +313,8 @@ fn void Search.init(&self, Allocator allocator)
 	self.generation = 0;
 	self.selected = 0;
 	self.scroll = 0;
+	self.hold_dir = 0;
+	self.hold_next = 0.0;
 	self.total_matches = 0;
 	self.restart_pending = false;
 	self.restart_at = 0.0;
@@ -369,6 +399,7 @@ fn void Search.show(&self)
 	self.case_sensitive = false;
 	self.whole_word = false;
 	self.restart_pending = false;
+	self.hold_dir = 0;
 	self.cancel_run();
 	self.clear_results();
 }
@@ -376,6 +407,7 @@ fn void Search.show(&self)
 fn void Search.close(&self)
 {
 	self.cancel_run();
+	self.hold_dir = 0;
 	self.open = false;
 }
 
@@ -392,7 +424,7 @@ fn void Search.cancel_run(&self)
 fn void Search.schedule_restart(&self, double now)
 {
 	self.restart_pending = true;
-	self.restart_at = now + RESTART_DEBOUNCE;
+	self.restart_at = now + (double)g_search_settings.debounce_ms / 1000.0;
 }
 
 fn void Search.start(&self, project::Project* project)
@@ -444,7 +476,7 @@ fn void Search.start(&self, project::Project* project)
 
 fn void Search.merge_batch(&self, SearchBatch* batch)
 {
-	if (batch.matches.len() > 0 && self.total_matches < (usz)MAX_RESULTS)
+	if (batch.matches.len() > 0 && self.total_matches < (usz)g_search_settings.max_results)
 	{
 		int group      = -1;
 		int*? existing =  self.group_index.get_ref(batch.path);
@@ -536,6 +568,28 @@ fn void Search.move_selection(&self, int delta)
 	if (next < 0) next = 0;
 	if (next >= count) next = count - 1;
 	self.selected = next;
+}
+
+fn void Search.begin_hold(&self, int dir, double now)
+{
+	self.hold_dir = dir;
+	self.hold_next = now + NAV_HOLD_DELAY;
+}
+
+fn void Search.hold_tick(&self, bool down, bool up, double now)
+{
+	if (self.hold_dir > 0 && !down)
+	{
+		self.hold_dir = 0;
+	}
+	else if (self.hold_dir < 0 && !up)
+	{
+		self.hold_dir = 0;
+	}
+	if (self.hold_dir == 0) return;
+	if (now < self.hold_next) return;
+	self.move_selection(self.hold_dir);
+	self.hold_next = now + NAV_HOLD_INTERVAL;
 }
 
 fn int Search.selected_ordinal(&self)
@@ -671,16 +725,25 @@ fn SearchTarget Search.update(&self, keymap::Keymap* keymap, project::Project* p
 		return self.activate();
 	}
 
-	int visible = self.visible_rows();
-	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_SEARCH))
+	int visible    = self.visible_rows();
+	bool down_held = keymap.held((int)commands::CommandId.LIST_DOWN, commands::CTX_SEARCH);
+	bool up_held   = keymap.held((int)commands::CommandId.LIST_UP, commands::CTX_SEARCH);
+	if (keymap.pressed((int)commands::CommandId.LIST_DOWN, commands::CTX_SEARCH))
 	{
 		self.consumed = true;
 		self.move_selection(1);
+		self.begin_hold(1, now);
 	}
-	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_SEARCH))
+	else if (keymap.pressed((int)commands::CommandId.LIST_UP, commands::CTX_SEARCH))
 	{
 		self.consumed = true;
 		self.move_selection(-1);
+		self.begin_hold(-1, now);
+	}
+	else
+	{
+		self.hold_tick(down_held, up_held, now);
+		if (self.hold_dir != 0) self.consumed = true;
 	}
 	if (keymap.pressed((int)commands::CommandId.LIST_PAGE_DOWN, commands::CTX_SEARCH))
 	{

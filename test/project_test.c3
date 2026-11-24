@@ -2,12 +2,14 @@ module yun::project @test;
 
 import raylib6::rl;
 import std::collections::list;
+import std::core::mem::alloc;
 import std::io::file;
 import std::io::path;
 import std::math;
 import yun::canvas;
 import yun::card;
 import yun::editor;
+import yun::text;
 
 fn void test_path_is_inside()
 {
@@ -446,11 +448,14 @@ fn void test_create_file_and_folder()
 		assert(first == 0);
 		assert(p.cards.len() == 1);
 		assert(p.focused == 0);
+		assert(p.selected == 0);
 		assert(path::exists(p.cards[0].path));
 
 		int second = p.create_file(ROOT_FOLDER, "hello.txt", { 0.0f, 0.0f });
 		assert(second == 1);
 		assert(p.cards.len() == 2);
+		assert(p.focused == 1);
+		assert(p.selected == 1);
 		assert(p.cards[1].name.compare_to("hello (1).txt") == 0);
 
 		int folder = p.create_folder_on_disk(ROOT_FOLDER, "sub", { 0.0f, 0.0f });
@@ -695,6 +700,7 @@ fn void test_discard_ephemeral()
 		int index = p.add_card((String)f, { 0.0f, 0.0f });
 		assert(index >= 0);
 		assert(p.focused == index);
+		assert(p.selected == index);
 		p.cards[index].ephemeral = true;
 
 		p.discard_ephemeral(p.focused);
@@ -1307,5 +1313,166 @@ fn void test_focus_mode_restores_rect_and_camera()
 		assert(canvas.camera.target[0] == 40.0f && canvas.camera.target[1] == 30.0f);
 
 		(void)path::rmtree(dir);
+	};
+}
+fn void test_focus_syncs_selection()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push({ .path = (Path)"/root/a.c3".copy(tmem), .name = "a.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.cards.push({ .path = (Path)"/root/b.c3".copy(tmem), .name = "b.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.focused = 1;
+		p.selected = 0;
+		p.selected_cluster = 0;
+
+		int index = p.focus(0);
+		assert(index == 1);
+		assert(p.focused == 1);
+		assert(p.selected == 1);
+		assert(p.selected_cluster == -1);
+		assert(p.cards[1].name.compare_to("a.c3") == 0);
+	};
+}
+
+fn void test_focus_same_card_syncs_selection()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push({ .path = (Path)"/root/a.c3".copy(tmem), .name = "a.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.cards.push({ .path = (Path)"/root/b.c3".copy(tmem), .name = "b.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.focused = 0;
+		p.selected = 1;
+		p.selected_cluster = 0;
+
+		assert(p.focus(0) == 0);
+		assert(p.focused == 0);
+		assert(p.selected == 0);
+		assert(p.selected_cluster == -1);
+	};
+}
+
+fn void test_nav_selection_keeps_focused_card()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push({ .path = (Path)"/root/a.c3".copy(tmem), .name = "a.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.cards.push({ .path = (Path)"/root/b.c3".copy(tmem), .name = "b.c3".copy(tmem), .folder = ROOT_FOLDER });
+		p.focused = 1;
+
+		p.select_card(0);
+		assert(p.selected == 0);
+		assert(p.focused == 1);
+	};
+}
+fn void test_snap_selected_to_grid()
+{
+	@pool()
+	{
+		canvas::CanvasSettings saved   = canvas::settings();
+		canvas::CanvasSettings enabled = saved;
+		enabled.snap_to_grid = true;
+		enabled.snap_step = 64.0f;
+		canvas::set_settings(enabled);
+		defer canvas::set_settings(saved);
+
+		Project p;
+		p.init(tmem);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.name = "a.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .x = 13.0f, .y = 29.0f, .width = 100.0f, .height = 80.0f },
+			}
+		);
+		p.selected = 0;
+		p.snap_selected_to_grid(1.0f);
+		assert(p.cards[0].rect.x == 0.0f);
+		assert(p.cards[0].rect.y == 0.0f);
+	};
+}
+fn void test_shift_line_selection()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		PieceTable* table = alloc::new(tmem, PieceTable);
+		(void)table.init_from_buffer(tmem, "abc\ndef\nghi");
+		History* history = alloc::new(tmem, History);
+		history.init(tmem);
+		p.cards.push(
+			{
+				.path = (Path)"/tmp/shift_select.c3".copy(tmem),
+				.name = "shift_select.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.open = true,
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 400.0f, .height = 300.0f },
+				.buffer = table,
+				.history = history,
+			}
+		);
+		p.focused = 0;
+		FileCard* card = &p.cards[0];
+		card.cursor = 1;
+		card.selection_anchor = 1;
+		card.preferred_column = 1;
+
+		EditorMetrics metrics = {
+			.char_width = 8.0f,
+			.line_height = 16.0f,
+			.padding_x = 4.0f,
+			.padding_y = 4.0f,
+			.font_size = 16.0f,
+		};
+
+		p.editor_move_select(EditorMove.DOWN, metrics, true);
+		assert(card.cursor == 5 && card.selection_anchor == 1);
+		p.editor_move_select(EditorMove.DOWN, metrics, true);
+		assert(card.cursor == 9 && card.selection_anchor == 1);
+		p.editor_move_select(EditorMove.UP, metrics, true);
+		assert(card.cursor == 5 && card.selection_anchor == 1);
+		p.editor_move_select(EditorMove.UP, metrics, true);
+		assert(card.cursor == 1 && card.selection_anchor == 1);
+		assert(!editor::has_selection(card.selection_anchor, card.cursor));
+
+		p.editor_move_select(EditorMove.LINE_END, metrics, true);
+		assert(card.cursor == 3 && card.selection_anchor == 1);
+	};
+}
+fn void test_keyboard_grab_snapping()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.name = "a.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .x = 10.0f, .y = 20.0f, .width = 100.0f, .height = 80.0f },
+			}
+		);
+		p.selected = 0;
+		p.begin_grab();
+		assert(p.grab_accum[0] == 10.0f && p.grab_accum[1] == 20.0f);
+
+		p.apply_grab_delta({ 10.0f, 10.0f }, 64.0f);
+		assert(p.cards[0].rect.x == 0.0f && p.cards[0].rect.y == 0.0f);
+		assert(p.grab_accum[0] == 20.0f && p.grab_accum[1] == 30.0f);
+
+		p.apply_grab_delta({ 40.0f, 40.0f }, 64.0f);
+		assert(p.cards[0].rect.x == 64.0f && p.cards[0].rect.y == 64.0f);
+		assert(p.grab_accum[0] == 60.0f && p.grab_accum[1] == 70.0f);
+
+		p.apply_grab_delta({ 1.0f, 1.0f }, 0.0f);
+		assert(p.cards[0].rect.x == 61.0f && p.cards[0].rect.y == 71.0f);
 	};
 }

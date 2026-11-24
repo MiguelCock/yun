@@ -4,6 +4,7 @@ import raylib6::rl;
 import std::io::file;
 import std::io::path;
 import yun::canvas;
+import yun::console;
 import yun::project;
 
 fn void test_relative_path_roundtrip()
@@ -146,6 +147,109 @@ fn void test_workspace_drops_unknown_cards()
 		p.reset();
 		assert(load(&p, &canvas));
 		assert(p.cards.len() == 0);
+
+		(void)path::rmtree(dir);
+	};
+}
+fn void test_workspace_console_roundtrip()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_ws_console_test");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+
+		Project p;
+		p.init(tmem);
+		p.root = dir.copy(tmem);
+
+		canvas::Canvas canvas;
+
+		console::ConsoleManager manager;
+		manager.init(mem);
+		defer manager.destroy();
+		manager.reset((String)dir);
+		manager.visible = true;
+		manager.height = 300.0f;
+		manager.active_console().history.add("c3c build");
+		manager.add_session_named("Build");
+		manager.active_console().history.add("c3c test");
+		manager.active = 1;
+
+		assert(save(&p, &canvas, &manager));
+
+		manager.reset((String)dir);
+		assert(load(&p, &canvas, &manager));
+		assert(manager.visible);
+		assert(manager.height == 300.0f);
+		assert(manager.sessions.len() == 2);
+		assert(manager.active == 1);
+		assert(manager.sessions[0].title.compare_to("Console 1") == 0);
+		assert(manager.sessions[1].title.compare_to("Build") == 0);
+		assert(manager.sessions[0].console.history.entries.len() == 1);
+		assert(manager.sessions[0].console.history.entries[0].compare_to("c3c build") == 0);
+		assert(manager.sessions[1].console.history.entries.len() == 1);
+		assert(manager.sessions[1].console.history.entries[0].compare_to("c3c test") == 0);
+
+		(void)path::rmtree(dir);
+	};
+}
+fn void test_console_persistence_toggles()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_ws_console_toggles");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+
+		Project p;
+		p.init(tmem);
+		p.root = dir.copy(tmem);
+		canvas::Canvas canvas;
+
+		console::ConsoleSettings saved = console::settings();
+		defer console::set_settings(saved);
+
+		console::ConsoleManager manager;
+		manager.init(mem);
+		defer manager.destroy();
+		manager.reset((String)dir);
+		manager.visible = true;
+		manager.height = 300.0f;
+		manager.add_session_named("Build");
+		manager.active_console().history.add("c3c test");
+
+		console::ConsoleSettings settings = saved;
+		settings.restore_sessions = false;
+		console::set_settings(settings);
+		assert(save(&p, &canvas, &manager));
+		manager.reset((String)dir);
+		assert(load(&p, &canvas, &manager));
+		assert(manager.sessions.len() == 1);
+		assert(manager.visible);
+		assert(manager.height == 300.0f);
+		assert(manager.sessions[0].console.history.entries.len() == 0);
+
+		settings.restore_sessions = true;
+		settings.persist_history = false;
+		console::set_settings(settings);
+		manager.add_session_named("Build");
+		manager.active_console().history.add("c3c test");
+		assert(save(&p, &canvas, &manager));
+		manager.reset((String)dir);
+		assert(load(&p, &canvas, &manager));
+		assert(manager.sessions.len() == 2);
+		assert(manager.sessions[1].title.compare_to("Build") == 0);
+		assert(manager.sessions[0].console.history.entries.len() == 0);
+		assert(manager.sessions[1].console.history.entries.len() == 0);
 
 		(void)path::rmtree(dir);
 	};

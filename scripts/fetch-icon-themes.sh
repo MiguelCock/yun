@@ -45,7 +45,7 @@ CODICON_ICONS=(
 	connections:plug quit:debug-disconnect preview:eye
 	maximize:screen-full restore:screen-normal minimize:chevron-down
 	close:close search:search problems:warning symbols:symbol-class
-	console:terminal keyboard:key theme:color-mode play:play
+	console:terminal git:source-control keyboard:key theme:color-mode play:play
 	stop:stop-circle trash:trash
 	chevron-down:chevron-down chevron-right:chevron-right
 )

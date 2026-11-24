@@ -26,11 +26,11 @@ Lua mods (#33–#36), large-file support (#14), very-large-project perf (#45), c
 
 ## Keyboard and modes
 
-Yun is keyboard-first and Vim-inspired. There are three modes, shown in the top bar (`-- MOVE --`, `-- EDIT --`, `-- TOP BAR --`), plus a `-- GRAB --` sub-state in MOVE. The status area also shows the current folder as a breadcrumb and elides it when space is tight. The FPS counter is hidden by default; hold `F3` to show it with the performance overlay. Overlays (command palette, search, symbol palette, problems panel, find bar, menus, prompts) are modal and handle their own keys.
+Yun is keyboard-first and Vim-inspired. There are three modes, shown in the top bar (`-- MOVE --`, `-- EDIT --`, `-- TOP BAR --`), plus a `-- GRAB --` sub-state in MOVE. The status area also shows the current folder as a breadcrumb and elides it when space is tight. The top bar exposes New, Open, Save, Git, and Console, followed by a compact settings icon. The FPS counter is hidden by default; hold `F3` to show it with the performance overlay. Overlays (command palette, search, symbol palette, problems panel, find bar, menus, prompts) are modal and handle their own keys.
 
 ### MOVE (default)
 
-The cursor is a card or folder on the canvas at the folder level you're in; no text is being edited. Arrows move between the current folder's direct children, so navigation follows the folder depth rather than every open card.
+The cursor is a card or folder on the canvas at the folder level you're in; no text is being edited. Arrows move between the current folder's direct children, so navigation follows the folder depth rather than every open card. Holding a movement key repeats the move after a short delay.
 
 | Key | Action |
 | --- | --- |
@@ -50,7 +50,7 @@ Mouse panning, zooming, clicking and dragging still work as before.
 
 ### EDIT
 
-Typing edits the focused card; arrow keys move the caret, `Tab` indents, and the usual editing shortcuts apply. `Esc` returns to MOVE and keeps the card selected, so you can keep browsing with `[` / `]`.
+Typing edits the focused card; arrow keys move the caret, `Shift+Up/Down` extends selection vertically, `Shift+Home/End` extends to line boundaries, `Ctrl+Left/Right` move by word, `Ctrl+Shift+Left/Right` select by word, `Ctrl+Backspace` / `Ctrl+Delete` delete words, `Tab` indents, and the usual editing shortcuts apply. `Esc` returns to MOVE and keeps the card selected, so you can keep browsing with `[` / `]`.
 
 ### TOP BAR
 
@@ -69,6 +69,8 @@ These work from any mode:
 | `F12` | Go to definition |
 | `Ctrl+Shift+M` | Problems panel |
 | `Ctrl+Shift+I` | Connections panel |
+| `Ctrl+J` | Toggle the console panel |
+| `Ctrl+Shift+G` | Toggle the Source Control panel |
 | `Ctrl+Shift+T` | Theme picker |
 | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` | New / open / save |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
@@ -79,6 +81,10 @@ These work from any mode:
 | `F3` (hold) | Show the awake/asleep editor counter and frame/update/draw/scan timings |
 
 Bindings are customizable via the `keymap` object in the config — global `~/.config/yun/config.json` or project `<root>/.yun/config.json` — e.g. `{ "keymap": { "save": "Ctrl+K" } }`.
+
+The console runs shell commands from the project root. `Ctrl+J` opens and focuses it; `Enter` runs the command, `Up`/`Down` walk history, `Ctrl+L` clears output, `Ctrl+C` kills a running command, `Ctrl+Left/Right` move by word, `Ctrl+Backspace/Delete` delete words, `Ctrl+Shift+C` copies the selection (or all output), `Ctrl+F` searches output, and `Esc` returns focus while leaving the panel open. The top edge can be dragged to resize it. Console actions are registered commands, so they can be rebound on the Keys page. The Console settings page controls limits, ANSI colors, headers, wheel speed, clear-on-run, kill-on-close, notifications, and history/session persistence. `F5` runs the current project profile (or opens a picker when several exist). `Ctrl+T` starts a new session, `Ctrl+W` closes the active one, and `Ctrl+Tab` / `Ctrl+Shift+Tab` switch sessions; the session tabs appear in the console header. Panel visibility/height, active session, and command history are restored per project from `.yun/workspace.json`. Typing a prefix of a previous command shows the rest as ghost text; `Right`, `End`, or `Tab` accepts it, and `Esc` dismisses it (toggle under Settings → Console). ANSI colors from build tools and test runners are rendered.
+
+The Source Control panel (`Ctrl+Shift+G`) shows the current branch, upstream, ahead/behind counts, merge conflicts, staged changes, working-tree changes, and untracked files. Click the branch row or press `B` to switch branches or create one from the current HEAD. The Fetch/Pull/Push/Sync buttons use the configured upstream and default remote; Push becomes Publish when the branch has no upstream. Pull is always `--ff-only`, and Yun never force-pushes. Click a file or focus the panel and press `Enter` to open it, `D` to view its diff, `C` to resolve a conflicted file, `H` to open history, `Space` to stage or unstage, and `Delete` to discard a working-tree change after confirmation. History shows recent commits; `Tab` switches to changed files and `Enter` opens a commit diff. The commit box supports multiline messages (`Ctrl+Enter` commits), and the panel has Stage All, Unstage All, Commit, Amend, and Refresh actions. Card and browser decorations use the same status. Diffs open in an overlay with inline and side-by-side modes (`Tab`); `[`/`]` select a hunk and `S`/`U` stage or unstage it. `Esc` returns to the panel. Git runs through argv arrays without a shell, reads status asynchronously, and never stores credentials. See [`docs/git.md`](docs/git.md) for the backend, security model, and limits.
 
 ## Getting started
 
@@ -138,13 +144,15 @@ Values are grouped into sections, for example:
 
 Unknown top-level keys or section keys warn and are ignored, and a missing config is valid (built-in defaults apply).
 
-The `editor` section covers font size and family (monospace fonts found on the system), line height, padding, indentation (tabs or spaces + width), auto-indent, caret blink, scroll margin, wheel-scroll lines and the line-number gutter. The `app` section also sets the interface font (`ui_font_family`) and text size (`ui_font_size`), a global `ui_scale` factor that scales the whole interface (geometry and text), a `corner_radius` for cards/panels/controls (0 keeps sharp corners), the UI/file icon themes (`ui_icon_theme`, `file_icon_theme`), and `skip_submodules` (default on) which keeps nested git repositories (submodules, vendored deps) out of the project scan. File/language icon overrides can be placed in `~/.config/yun/icons/<theme>/<name>.png` (platform config directory); see [`assets/icons/README.md`](assets/icons/README.md). Text and layout scale automatically with the display's DPI. The `canvas` section tunes navigation (zoom limits and step, keyboard pan distance, pan/zoom smoothing and toggle, inertia friction and stop speed, drag threshold, max pan delta, grid toggle and cell size, jump-zoom), and `minimap` controls the minimap (enabled, size and zoom threshold). The `arrows` section controls import connections (enabled, internal/external arrows and labels, line and hover thickness, arrowhead size, hover tolerance, rescan debounce and scan worker count).
+The `editor` section covers font size and family (monospace fonts found on the system), line height, padding, indentation (tabs or spaces + width), auto-indent, caret blink, scroll margin, wheel-scroll lines and the line-number gutter. The `app` section also sets the interface font (`ui_font_family`) and text size (`ui_font_size`), a global `ui_scale` factor that scales the whole interface (geometry and text), a `corner_radius` for cards/panels/controls (0 keeps sharp corners), the UI/file icon themes (`ui_icon_theme`, `file_icon_theme`), and `skip_submodules` (default on) which keeps nested git repositories (submodules, vendored deps) out of the project scan. File/language icon overrides can be placed in `~/.config/yun/icons/<theme>/<name>.png` (platform config directory); see [`assets/icons/README.md`](assets/icons/README.md). Text and layout scale automatically with the display's DPI. The `canvas` section tunes navigation (zoom limits and step, keyboard pan distance, pan/zoom smoothing and toggle, inertia friction and stop speed, drag threshold, max pan delta, grid toggle and cell size, grid snapping (on by default; hold Alt to bypass) and snap step, jump-zoom), and `minimap` controls the minimap (enabled, size and zoom threshold). The `arrows` section controls import connections (enabled, internal/external arrows and labels, line and hover thickness, arrowhead size, hover tolerance, rescan debounce and scan worker count). The `console` section controls retained output lines and size, history size and persistence, panel height, auto-scroll, wheel speed, ANSI colors, command headers, clear-on-run, kill-on-close, finish notifications, session restoration, and inline history autocomplete. The `git` section sets the Git binary, automatic refresh and debounce, discard confirmation, and the default remote. Git settings appear under Settings → Integrations. The `run` section defines named command profiles, for example `{ "run": { "build": { "command": "c3c build", "cwd": "src", "env": { "MODE": "debug" } } } }`; run one with `F5` or the palette.
 
 Language servers are configured under the `lsp` section: a map of language id to command, e.g. `"lsp": { "c3": "c3lsp", "python": "pylsp" }`. Yun detects the language id from the file extension and starts the server (rooted at the project); an override takes precedence over the built-in default. See [`docs/lsp.md`](docs/lsp.md) for the supported ids and defaults.
 
-In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's *Settings* button, or the command palette. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value. The panel's **Keys** section lists every command's shortcut: `Enter` captures a new chord, `Del` unbinds, `Backspace` resets it (when the search is empty), `Esc` cancels, and a *Reset all* row clears the current scope.
+In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's settings icon, or the command palette. Settings are grouped into General, Appearance, Editor, Canvas, Integrations, Keys, Console, and Advanced pages; the sidebar switches pages, `Ctrl+1`…`Ctrl+8` jump directly, and typing searches across all pages. Changes apply live; `Tab` switches between the global and project scopes and `Del` resets the selected value. The **Keys** page lists every command's shortcut: `Enter` captures a new chord, `Del` unbinds, `Backspace` resets it (when the search is empty), `Esc` cancels or clears the search, and a *Reset all* row clears the current scope.
 
 Keybindings use chords like `Ctrl+Shift+P`. Modifiers are `Ctrl` (shown as `Cmd` on macOS), `Shift`, `Alt` and `Super`; keys can be letters/digits, punctuation (`, . / ; ' [ ] - = \ \``), named keys (`Enter`, `Esc`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `CapsLock`, `PrintScreen`, `Pause`), function keys `F1`-`F12`, or keypad keys (`KP_0`-`KP_9`, `KP_Add`, `KP_Subtract`, `KP_Multiply`, `KP_Divide`, `KP_Enter`). Set a command's chord to `""` to unbind it. Editor and completion actions (undo/redo, indentation, cursor movement, completion next/prev/accept), canvas/mode/top-bar navigation (pan, zoom in/out/reset/fit, item select/cycle, enter/leave folder, cycle focus/grab, minimize, focus switching), overlay navigation (lists, accept/close, find next/replace, search toggles) and card actions (close/toggle/rename/duplicate/copy-path/delete, context menu, focus content) are registered commands too, so they can be rebound the same way.
+
+Bundled assets (fonts, icons, highlighting queries) are resolved from the current directory first and then from the executable's directory, so a shortcut or terminal can launch Yun from any working directory. Set `YUN_DEBUG_UI=1` to print window/render/monitor sizes, DPI and UI scale factors, theme and icon themes, asset paths, and the working/executable directories to stderr at startup.
 
 ## Versioning and releases
 
@@ -159,8 +167,8 @@ The version lives in [`project.json`](project.json) (and `yun::version.APP_VERSI
 Releases are built and published by [`.github/workflows/release.yml`](.github/workflows/release.yml). **Merging a PR never publishes anything** — the workflow only builds. To cut a release, set the version in `project.json` and `src/version.c3` and push a matching tag:
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 Tagging builds `linux-x64`, `macos-aarch64`, and `windows-x64` and attaches the archives (with SHA-256 checksums) to the GitHub Release. The tag must equal `v<version from project.json>`, otherwise publishing is aborted.

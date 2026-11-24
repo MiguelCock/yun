@@ -14,16 +14,15 @@ import yun::theme;
 import yun::topbar;
 import yun::ui;
 
-const int PANEL_WIDTH      = 780;
-const int ROW_HEIGHT       = 38;
-const int HEADER_HEIGHT    = 32;
-const int PADDING          = 12;
-const int TITLE_HEIGHT     = 46;
-const int FIELD_HEIGHT     = 36;
-const int FOOTER_HEIGHT    = 64;
-const int MAX_VISIBLE_ROWS = 10;
-const int QUERY_MAX        = 64;
-const int EDIT_MAX         = 128;
+const int PANEL_WIDTH   = 1000;
+const int ROW_HEIGHT    = 46;
+const int HEADER_HEIGHT = 32;
+const int PADDING       = 12;
+const int FIELD_HEIGHT  = 36;
+const int FOOTER_HEIGHT = 64;
+const int QUERY_MAX     = 64;
+const int EDIT_MAX      = 128;
+const int SIDEBAR_WIDTH = 190;
 
 enum RowKind : int
 {
@@ -31,6 +30,7 @@ enum RowKind : int
 	SETTING,
 	COMMAND,
 	ACTION,
+	PAGE_RESET,
 }
 
 struct Row
@@ -39,6 +39,7 @@ struct Row
 	settings::SettingId setting;
 	commands::CommandId command;
 	String section;
+	settings::SettingPage page;
 }
 
 struct Panel
@@ -58,6 +59,7 @@ struct Panel
 	bool capturing;
 	commands::CommandId capture_id;
 	bool consumed;
+	settings::SettingPage page;
 }
 
 fn bool matches(String section, String label, String key, String description, String query)
@@ -151,6 +153,7 @@ fn void Panel.init(&self, Allocator allocator)
 	self.capturing = false;
 	self.capture_id = (commands::CommandId)0;
 	self.consumed = false;
+	self.page = settings::SettingPage.GENERAL;
 }
 
 fn void Panel.destroy(&self)
@@ -231,49 +234,93 @@ fn void Panel.rebuild(&self)
 {
 	self.rows.clear();
 	String query = self.query_view();
-	for (usz i = 0; i < settings::SETTINGS.len; i++)
+	if (query.len == 0)
 	{
-		settings::SettingSpec s = settings::SETTINGS[i];
-		if (!matches(s.section, s.label, s.key, s.description, query)) continue;
-		if (!section_visible_before(i, query))
+		if (self.page == settings::SettingPage.KEYS)
 		{
-			self.rows.push({ .kind = RowKind.HEADER, .section = s.section });
-		}
-		self.rows.push(
+			self.rows.push({ .kind = RowKind.HEADER, .section = "Keybindings", .page = settings::SettingPage.KEYS });
+			self.rows.push({ .kind = RowKind.ACTION, .section = "keys", .page = settings::SettingPage.KEYS });
+			for (usz i = 0; i < commands::command_count(); i++)
 			{
-				.kind = RowKind.SETTING,
-				.section = s.section,
-				.setting = (settings::SettingId)i,
+				self.rows.push(
+					{
+						.kind = RowKind.COMMAND,
+						.section = "keys",
+						.command = (commands::CommandId)i,
+						.page = settings::SettingPage.KEYS,
+					}
+				);
 			}
-		);
-	}
-
-	bool any_command = false;
-	for (usz i = 0; i < commands::command_count(); i++)
-	{
-		if (command_matches((commands::CommandId)i, query))
+		}
+		else
 		{
-			any_command = true;
-			break;
+			String last_group = "";
+			bool has_settings = false;
+			for (usz i = 0; i < settings::SETTINGS.len; i++)
+			{
+				settings::SettingId id = (settings::SettingId)i;
+				if (settings::page_for(id) != self.page) continue;
+				String group = settings::group_for(id);
+				if (group.compare_to(last_group) != 0)
+				{
+					self.rows.push({ .kind = RowKind.HEADER, .section = group, .page = self.page });
+					last_group = group;
+				}
+				self.rows.push({ .kind = RowKind.SETTING, .section = group, .setting = id, .page = self.page });
+				has_settings = true;
+			}
+			if (has_settings)
+			{
+				self.rows.push({ .kind = RowKind.PAGE_RESET, .section = settings::page_label(self.page) });
+			}
 		}
 	}
-	if (any_command)
+	else
 	{
-		self.rows.push({ .kind = RowKind.HEADER, .section = "keys" });
-		self.rows.push({ .kind = RowKind.ACTION, .section = "keys" });
-		for (usz i = 0; i < commands::command_count(); i++)
+		settings::SettingPage last_page = settings::SettingPage.COUNT;
+		for (usz i = 0; i < settings::SETTINGS.len; i++)
 		{
-			if (!command_matches((commands::CommandId)i, query)) continue;
+			settings::SettingId id  = (settings::SettingId)i;
+			settings::SettingSpec s = settings::spec(id);
+			if (!matches(s.section, s.label, s.key, s.description, query)) continue;
+			settings::SettingPage page = settings::page_for(id);
+			if (page != last_page)
+			{
+				self.rows.push({ .kind = RowKind.HEADER, .section = settings::page_label(page), .page = page });
+				last_page = page;
+			}
 			self.rows.push(
-				{
-					.kind = RowKind.COMMAND,
-					.section = "keys",
-					.command = (commands::CommandId)i,
-				}
+				{ .kind = RowKind.SETTING, .section = settings::group_for(id), .setting = id, .page = page }
 			);
 		}
-	}
 
+		bool any_command = false;
+		for (usz i = 0; i < commands::command_count(); i++)
+		{
+			if (command_matches((commands::CommandId)i, query))
+			{
+				any_command = true;
+				break;
+			}
+		}
+		if (any_command)
+		{
+			self.rows.push({ .kind = RowKind.HEADER, .section = "Keybindings", .page = settings::SettingPage.KEYS });
+			self.rows.push({ .kind = RowKind.ACTION, .section = "keys", .page = settings::SettingPage.KEYS });
+			for (usz i = 0; i < commands::command_count(); i++)
+			{
+				if (!command_matches((commands::CommandId)i, query)) continue;
+				self.rows.push(
+					{
+						.kind = RowKind.COMMAND,
+						.section = "keys",
+						.command = (commands::CommandId)i,
+						.page = settings::SettingPage.KEYS,
+					}
+				);
+			}
+		}
+	}
 	self.clamp_selection();
 }
 
@@ -323,8 +370,9 @@ fn void Panel.clamp_scroll(&self)
 {
 	int rows = (int)self.rows.len();
 	if (self.selected < self.scroll) self.scroll = self.selected;
-	if (self.selected >= self.scroll + MAX_VISIBLE_ROWS) self.scroll = self.selected - MAX_VISIBLE_ROWS + 1;
-	int max_scroll = rows - MAX_VISIBLE_ROWS;
+	int visible = self.visible_rows();
+	if (self.selected >= self.scroll + visible) self.scroll = self.selected - visible + 1;
+	int max_scroll = rows - visible;
 	if (max_scroll < 0) max_scroll = 0;
 	if (self.scroll > max_scroll) self.scroll = max_scroll;
 	if (self.scroll < 0) self.scroll = 0;
@@ -534,35 +582,113 @@ fn void Panel.reset_all(
 	notifier.push("Keybindings reset");
 }
 
+fn Rect Panel.outer_rect(&self)
+{
+	float width  = math::min((float)ui::px(PANEL_WIDTH), (float)rl::get_screen_width() - (float)ui::px(40));
+	float y      = ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(18);
+	float height = math::min((float)ui::px(700), (float)rl::get_screen_height() - y - (float)ui::px(24));
+	return {
+		.x = ((float)rl::get_screen_width() - width) / 2.0f,
+		.y = y,
+		.width = width,
+		.height = height,
+	};
+}
+
+fn Rect Panel.sidebar_rect(&self)
+{
+	Rect outer = self.outer_rect();
+	return { .x = outer.x, .y = outer.y, .width = (float)ui::px(SIDEBAR_WIDTH), .height = outer.height };
+}
+
 fn Rect Panel.panel_rect(&self)
 {
-	float height = (float)(ui::px(
-		TITLE_HEIGHT
-	) + ui::px(
-		PADDING
-	) + ui::px(
-		FIELD_HEIGHT
-	) + ui::px(6) + ui::px(FOOTER_HEIGHT) + ui::px(PADDING)) + (float)(MAX_VISIBLE_ROWS * ui::px(ROW_HEIGHT));
-	float x      = ((float)rl::get_screen_width() - (float)ui::px(PANEL_WIDTH)) / 2.0f;
-	float y      = ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(18);
-	return { .x = x, .y = y, .width = (float)ui::px(PANEL_WIDTH), .height = height };
+	Rect outer = self.outer_rect();
+	return {
+		.x = outer.x + (float)ui::px(SIDEBAR_WIDTH),
+		.y = outer.y,
+		.width = outer.width - (float)ui::px(SIDEBAR_WIDTH),
+		.height = outer.height,
+	};
 }
 
 fn Rect Panel.field_rect(&self)
 {
-	Rect panel = self.panel_rect();
+	Rect panel        = self.panel_rect();
+	float scope_width = (float)ui::px(210);
 	return {
 		.x = panel.x + (float)ui::px(PADDING),
-		.y = panel.y + (float)ui::px(TITLE_HEIGHT),
-		.width = panel.width - (float)(ui::px(PADDING) * 2),
+		.y = panel.y + (float)ui::px(PADDING),
+		.width = panel.width - (float)(ui::px(PADDING) * 2) - scope_width,
 		.height = (float)ui::px(FIELD_HEIGHT),
 	};
 }
 
 fn float Panel.list_y(&self)
 {
-	return self.panel_rect().y + (float)(ui::px(TITLE_HEIGHT) + ui::px(FIELD_HEIGHT) + ui::px(6));
+	Rect field = self.field_rect();
+	return field.y + field.height + (float)ui::px(6);
 }
+
+fn int Panel.visible_rows(&self)
+{
+	Rect panel   = self.panel_rect();
+	float footer = panel.y + panel.height - (float)ui::px(FOOTER_HEIGHT);
+	int rows     = (int)((footer - self.list_y()) / (float)ui::px(ROW_HEIGHT));
+	return rows > 0 ? rows : 1;
+}
+
+fn Rect Panel.scope_rect(&self, bool project)
+{
+	Rect panel = self.panel_rect();
+	float w    = (float)ui::px(96);
+	float x    = panel.x + panel.width - (float)ui::px(PADDING) - w * 2.0f - (float)ui::px(4);
+	return {
+		.x = project ? x + w + (float)ui::px(4) : x,
+		.y = panel.y + (float)ui::px(PADDING) + (float)ui::px(3),
+		.width = w,
+		.height = (float)ui::px(30),
+	};
+}
+
+fn Rect Panel.page_rect(&self, int page)
+{
+	Rect sidebar = self.sidebar_rect();
+	return {
+		.x = sidebar.x + (float)ui::px(8),
+		.y = sidebar.y + (float)ui::px(64) + (float)ui::px(34) * (float)page,
+		.width = sidebar.width - (float)ui::px(16),
+		.height = (float)ui::px(30),
+	};
+}
+
+fn int Panel.page_at(&self, RLVector2 mouse)
+{
+	for (int i = 0; i < (int)settings::SettingPage.COUNT; i++)
+	{
+		if (mouse[0] >= self.page_rect(i)
+			.x && mouse[0] <= self.page_rect(i)
+				.x + self.page_rect(i)
+					.width && mouse[1] >= self.page_rect(i)
+						.y && mouse[1] <= self.page_rect(i).y + self.page_rect(i).height)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+fn void Panel.set_page(&self, settings::SettingPage page)
+{
+	if (page == settings::SettingPage.COUNT) return;
+	self.page = page;
+	self.query_len = 0;
+	self.query[0] = 0;
+	self.selected = 0;
+	self.scroll = 0;
+	self.rebuild();
+}
+
 
 fn int Panel.row_at(&self, RLVector2 mouse)
 {
@@ -580,6 +706,42 @@ fn int Panel.row_at(&self, RLVector2 mouse)
 		index++;
 	}
 	return -1;
+}
+
+fn void Panel.clear_query(&self)
+{
+	self.query_len = 0;
+	self.query[0] = 0;
+	self.selected = 0;
+	self.scroll = 0;
+	self.rebuild();
+}
+
+fn void Panel.reset_page(
+	&self,
+	keymap::Keymap* keymap,
+	config::Config* config,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
+{
+	if (self.page == settings::SettingPage.KEYS)
+	{
+		config.clear_keymap(self.scope);
+		keymap.build(config);
+	}
+	else
+	{
+		for (usz i = 0; i < settings::SETTINGS.len; i++)
+		{
+			settings::SettingId id = (settings::SettingId)i;
+			if (settings::page_for(id) == self.page) config.settings.clear(id, self.scope);
+		}
+	}
+	self.persist(config, project_open, project_root);
+	self.rebuild();
+	notifier.push("Page reset to defaults");
 }
 
 fn void Panel.update(
@@ -652,11 +814,32 @@ fn void Panel.update(
 		return;
 	}
 
-	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_SETTINGS))
+	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
 	{
 		self.consumed = true;
-		self.open = false;
+		if (self.query_len > 0)
+		{
+			self.clear_query();
+		}
+		else
+		{
+			self.open = false;
+		}
 		return;
+	}
+
+	if (rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL))
+	{
+		for (int i = 0; i < (int)settings::SettingPage.COUNT; i++)
+		{
+			if (rl::is_key_pressed((rl::RLKeyboardKey)((int)rl::RLKeyboardKey.ONE + i)))
+			{
+				self.consumed = true;
+				self.clear_query();
+				self.set_page((settings::SettingPage)i);
+				return;
+			}
+		}
 	}
 
 	bool typed = false;
@@ -710,6 +893,8 @@ fn void Panel.update(
 					self.command_unbind(keymap, config, project_open, project_root, notifier);
 				case RowKind.ACTION:
 					self.reset_all(keymap, config, project_open, project_root, notifier);
+				case RowKind.PAGE_RESET:
+					self.reset_page(keymap, config, project_open, project_root, notifier);
 				default:
 					break;
 			}
@@ -729,6 +914,8 @@ fn void Panel.update(
 					self.start_capture(self.rows[row].command);
 				case RowKind.ACTION:
 					self.reset_all(keymap, config, project_open, project_root, notifier);
+				case RowKind.PAGE_RESET:
+					self.reset_page(keymap, config, project_open, project_root, notifier);
 				default:
 					break;
 			}
@@ -745,12 +932,44 @@ fn void Panel.update(
 	}
 
 	Rect panel      = self.panel_rect();
+	Rect outer      = self.outer_rect();
 	RLVector2 mouse = rl::get_mouse_position();
-	bool inside     = mouse[0] >= panel.x && mouse[0] <= panel.x + panel.width && mouse[1] >= panel.y
-		&& mouse[1] <= panel.y + panel.height;
+	bool inside     = mouse[0] >= outer.x && mouse[0] <= outer.x + outer.width && mouse[1] >= outer.y
+		&& mouse[1] <= outer.y + outer.height;
 	if (!inside)
 	{
 		if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT)) self.open = false;
+		return;
+	}
+
+	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
+	{
+		int page = self.page_at(mouse);
+		if (page >= 0)
+		{
+			self.consumed = true;
+			self.set_page((settings::SettingPage)page);
+			return;
+		}
+		Rect global_scope  = self.scope_rect(false);
+		Rect project_scope = self.scope_rect(true);
+		if (mouse[0] >= global_scope.x && mouse[0] <= global_scope.x + global_scope.width && mouse[1] >= global_scope.y
+			&& mouse[1] <= global_scope.y + global_scope.height)
+		{
+			self.scope = settings::SettingLayer.GLOBAL;
+			return;
+		}
+		if (project_open && mouse[0] >= project_scope.x && mouse[0] <= project_scope.x + project_scope.width
+			&& mouse[1] >= project_scope.y
+			&& mouse[1] <= project_scope.y + project_scope.height)
+		{
+			self.scope = settings::SettingLayer.PROJECT;
+			return;
+		}
+	}
+
+	if (mouse[0] < panel.x)
+	{
 		return;
 	}
 
@@ -774,6 +993,8 @@ fn void Panel.update(
 						self.start_capture(self.rows[row].command);
 					case RowKind.ACTION:
 						self.reset_all(keymap, config, project_open, project_root, notifier);
+					case RowKind.PAGE_RESET:
+						self.reset_page(keymap, config, project_open, project_root, notifier);
 					default:
 						break;
 				}
@@ -808,29 +1029,55 @@ fn void draw_text(RLFont font, String text, float x, float y, float size, RLColo
 	};
 }
 
-fn icons::IconKind section_icon(String section)
+
+fn icons::IconKind page_icon(settings::SettingPage page)
 {
-	if (section.compare_to("editor") == 0) return icons::IconKind.SYMBOLS;
-	if (section.compare_to("canvas") == 0) return icons::IconKind.MAXIMIZE;
-	if (section.compare_to("minimap") == 0) return icons::IconKind.PREVIEW;
-	if (section.compare_to("arrows") == 0) return icons::IconKind.CONNECTIONS;
-	if (section.compare_to("keys") == 0) return icons::IconKind.KEYBOARD;
-	return icons::IconKind.SETTINGS;
+	switch (page)
+	{
+		case settings::SettingPage.GENERAL:
+			return icons::IconKind.SETTINGS;
+		case settings::SettingPage.APPEARANCE:
+			return icons::IconKind.THEME;
+		case settings::SettingPage.EDITOR:
+			return icons::IconKind.SYMBOLS;
+		case settings::SettingPage.CANVAS:
+			return icons::IconKind.MAXIMIZE;
+		case settings::SettingPage.INTEGRATIONS:
+			return icons::IconKind.CONNECTIONS;
+		case settings::SettingPage.KEYS:
+			return icons::IconKind.KEYBOARD;
+		case settings::SettingPage.CONSOLE:
+			return icons::IconKind.CONSOLE;
+		case settings::SettingPage.ADVANCED:
+			return icons::IconKind.SETTINGS;
+		case settings::SettingPage.COUNT:
+			return icons::IconKind.SETTINGS;
+	}
 }
 
 fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap, config::Config* config)
 {
 	if (!self.open) return;
 
-	Rect panel = self.panel_rect();
-	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
+	Rect outer   = self.outer_rect();
+	Rect panel   = self.panel_rect();
+	Rect sidebar = self.sidebar_rect();
+	ui::panel(outer, theme::current().panel_bg, theme::current().panel_border);
+	ui::rounded_rect(sidebar, ui::corner_radius(), theme::current().panel_bg_alt);
+	rl::draw_line(
+		(int)(sidebar.x + sidebar.width),
+		(int)sidebar.y,
+		(int)(sidebar.x + sidebar.width),
+		(int)(sidebar.y + sidebar.height),
+		theme::current()
+		.panel_border);
 
 	float title_icon = icons::icon_size(20);
 	icons::draw(
 		icons::IconKind.SETTINGS,
 		{
-			.x = panel.x + (float)ui::px(PADDING),
-			.y = panel.y + (float)ui::px(12),
+			.x = sidebar.x + (float)ui::px(PADDING),
+			.y = sidebar.y + (float)ui::px(12),
 			.width = title_icon,
 			.height = title_icon
 		},
@@ -839,24 +1086,63 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 	draw_text(
 		font,
 		"Settings",
-		panel.x + (float)ui::px(PADDING) + title_icon + (float)ui::px(8),
-		panel.y + (float)ui::px(12),
-		(float)ui::tpx(24),
+		sidebar.x + (float)ui::px(PADDING) + title_icon + (float)ui::px(8),
+		sidebar.y + (float)ui::px(12),
+		(float)ui::tpx(22),
 		theme::current()
 		.panel_header);
-	@pool()
+
+	for (int i = 0; i < (int)settings::SettingPage.COUNT; i++)
 	{
-		String label   = string::format(tmem, "Scope: %s%s", self.scope_label(), project_open ? "" : " (no project)");
-		RLVector2 size = rl::measure_text_ex(font, label.zstr_tcopy(), (float)ui::tpx(18), 0.0f);
-		rl::draw_text_ex(
+		Rect pr = self.page_rect(i);
+		if (i == (int)self.page)
+		{
+			ui::row(pr, theme::current().panel_selected);
+		}
+		float icon_size = icons::icon_size(16);
+		icons::draw(
+			page_icon((settings::SettingPage)i),
+			{
+				.x = pr.x + (float)ui::px(6),
+				.y = pr.y + (pr.height - icon_size) * 0.5f,
+				.width = icon_size,
+				.height = icon_size,
+			},
+			i == (int)self.page ? theme::current()
+			.panel_text : theme::current().panel_dim);
+		draw_text(
 			font,
-			label.zstr_tcopy(),
-			{ panel.x + panel.width - (float)ui::px(PADDING) - size[0], panel.y + (float)ui::px(15) },
+			settings::page_label((settings::SettingPage)i),
+			pr.x + (float)ui::px(6) + icon_size + (float)ui::px(6),
+			pr.y + (float)ui::px(5),
 			(float)ui::tpx(18),
-			0.0f,
-			theme::current()
-			.panel_dim);
-	};
+			i == (int)self.page ? theme::current()
+			.panel_text : theme::current().panel_dim);
+	}
+
+	Rect global_scope    = self.scope_rect(false);
+	Rect project_scope   = self.scope_rect(true);
+	bool project_enabled = project_open;
+	ui::rounded_rect(global_scope, ui::row_radius(), self.scope == settings::SettingLayer.GLOBAL ? theme::current()
+		.panel_selected : theme::current().panel_field);
+	ui::rounded_rect(project_scope, ui::row_radius(), self.scope == settings::SettingLayer.PROJECT ? theme::current()
+		.panel_selected : theme::current().panel_field);
+	draw_text(
+		font,
+		"Global",
+		global_scope.x + (float)ui::px(12),
+		global_scope.y + (float)ui::px(6),
+		(float)ui::tpx(16),
+		theme::current()
+		.panel_text);
+	draw_text(
+		font,
+		"Project",
+		project_scope.x + (float)ui::px(12),
+		project_scope.y + (float)ui::px(6),
+		(float)ui::tpx(16),
+		project_enabled ? theme::current()
+		.panel_text : theme::current().panel_disabled);
 
 	Rect field = self.field_rect();
 	ui::rounded_rect(field, ui::row_radius(), theme::current().panel_field);
@@ -900,7 +1186,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		{
 			float header_icon = icons::icon_size(16);
 			icons::draw(
-				section_icon(row.section),
+				page_icon(row.page),
 				{
 					.x = panel.x + (float)ui::px(PADDING),
 					.y = y + (float)ui::px(7),
@@ -941,7 +1227,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		{
 			self.draw_command_row(font, panel, row, selected, y, keymap, config);
 		}
-		else
+		else if (row.kind == RowKind.ACTION)
 		{
 			draw_text(
 				font,
@@ -951,6 +1237,21 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 				(float)ui::tpx(20),
 				theme::current()
 				.panel_text);
+		}
+		else
+		{
+			@pool()
+			{
+				String label = string::format(tmem, "Reset %s to defaults", row.section);
+				draw_text(
+					font,
+					label,
+					panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
+					y + (float)ui::px(9),
+					(float)ui::tpx(20),
+					theme::current()
+					.panel_text);
+			};
 		}
 		y += (float)ui::px(ROW_HEIGHT);
 	}
@@ -964,11 +1265,14 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		Row row = self.rows[index];
 		if (row.kind == RowKind.SETTING)
 		{
-			draw_text(font, settings::spec(row.setting)
-				.description, panel.x + (float)ui::px(
-					PADDING
-				), footer_y + (float)ui::px(10), (float)ui::tpx(18), theme::current()
-					.panel_dim);
+			draw_text(
+				font,
+				"Enter: edit/toggle   Del: reset   Tab: scope",
+				panel.x + (float)ui::px(PADDING),
+				footer_y + (float)ui::px(10),
+				(float)ui::tpx(18),
+				theme::current()
+				.panel_dim);
 		}
 		else if (row.kind == RowKind.COMMAND)
 		{
@@ -981,11 +1285,22 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 				theme::current()
 				.panel_dim);
 		}
-		else
+		else if (row.kind == RowKind.ACTION)
 		{
 			draw_text(
 				font,
 				"Enter: reset all keybindings in this scope",
+				panel.x + (float)ui::px(PADDING),
+				footer_y + (float)ui::px(10),
+				(float)ui::tpx(18),
+				theme::current()
+				.panel_dim);
+		}
+		else
+		{
+			draw_text(
+				font,
+				"Enter: reset this page to defaults",
 				panel.x + (float)ui::px(PADDING),
 				footer_y + (float)ui::px(10),
 				(float)ui::tpx(18),
@@ -1010,10 +1325,18 @@ fn void Panel.draw_setting_row(&self, RLFont font, Rect panel, Row row, bool sel
 		font,
 		spec.label,
 		panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
-		y + (float)ui::px(9),
-		(float)ui::tpx(20),
+		y + (float)ui::px(5),
+		(float)ui::tpx(19),
 		theme::current()
 		.panel_text);
+	draw_text(
+		font,
+		spec.description,
+		panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
+		y + (float)ui::px(25),
+		(float)ui::tpx(14),
+		theme::current()
+		.panel_dim);
 
 	@pool()
 	{
@@ -1046,7 +1369,7 @@ fn void Panel.draw_setting_row(&self, RLFont font, Rect panel, Row row, bool sel
 		rl::draw_text_ex(font, value_text.str_view()
 			.zstr_tcopy(), {
 				panel.x + panel.width - (float)ui::px(PADDING) - value_size[0],
-				y + (float)ui::px(9)
+				y + (float)ui::px(6)
 			}, (float)ui::tpx(20), 0.0f, selected ? theme::current()
 				.panel_text : theme::current().panel_dim);
 		value_text.free();

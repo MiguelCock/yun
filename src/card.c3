@@ -3,6 +3,8 @@ module yun::card;
 import raylib6::rl;
 import std::io::path;
 import std::math;
+import yun::canvas;
+import yun::git;
 import yun::highlight;
 import yun::icons;
 import yun::markdown;
@@ -134,7 +136,14 @@ fn void draw_title_button(Rect button, icons::IconKind icon, bool active, bool h
 		.card_focus : theme::current().card_text);
 }
 
-fn void FileCard.draw(&self, bool focused, RLCamera2D camera, RLVector2 mouse_world, bool focus_mode)
+fn void FileCard.draw(
+	&self,
+	bool focused,
+	RLCamera2D camera,
+	RLVector2 mouse_world,
+	bool focus_mode,
+	git::GitStatus* git_status
+)
 {
 	float zoom   = camera.zoom;
 	Rect r       = self.effective_rect();
@@ -196,6 +205,36 @@ fn void FileCard.draw(&self, bool focused, RLCamera2D camera, RLVector2 mouse_wo
 		theme::current()
 		.card_dirty);
 
+	git::GitEntry* git_entry = git::status_entry(git_status, (String)self.path);
+	if (git_entry)
+	{
+		RLColor git_color = git::entry_color(git_entry);
+		rl::draw_rectangle_rec(
+			{
+				.x = r.x,
+				.y = r.y + radius,
+				.width = screen_thickness(3.0f, zoom),
+				.height = r.height - radius * 2.0f,
+			},
+			git_color
+		);
+		char badge = git::entry_badge(git_entry);
+		if (badge != ' ')
+		{
+			char[2] label    = { badge, 0 };
+			float badge_size = (float)ui::tpx(12);
+			float badge_x    = preview_button.x - (self.dirty ? (float)ui::px(20) : (float)ui::px(10));
+			rl::draw_text_ex(
+				ui::font(),
+				(ZString)&label[0],
+				{ badge_x, r.y + (ui::pxf(CARD_TITLE_HEIGHT) - badge_size) * 0.5f },
+				badge_size,
+				0.0f,
+				git_color
+			);
+		}
+	}
+
 	bool maximize_hovered = rect_has_point(maximize_button, mouse_world);
 	draw_title_button(
 		maximize_button,
@@ -252,6 +291,40 @@ fn int FileCard.resize_handle_at(&self, RLVector2 world, RLCamera2D camera)
 		}
 	}
 	return -1;
+}
+
+fn Rect snap_resize_rect(Rect r, int handle, float step, float min_w, float min_h)
+{
+	if (step <= 0.0f) return r;
+	float right  = r.x + r.width;
+	float bottom = r.y + r.height;
+	if (handle == 0 || handle == 6 || handle == 7)
+	{
+		r.x = canvas::snap_value(r.x, step);
+		r.width = right - r.x;
+		if (r.width < min_w) r.x = right - min_w;
+		r.width = right - r.x;
+	}
+	if (handle == 2 || handle == 3 || handle == 4)
+	{
+		right = canvas::snap_value(right, step);
+		r.width = right - r.x;
+		if (r.width < min_w) r.width = min_w;
+	}
+	if (handle == 0 || handle == 1 || handle == 2)
+	{
+		r.y = canvas::snap_value(r.y, step);
+		r.height = bottom - r.y;
+		if (r.height < min_h) r.y = bottom - min_h;
+		r.height = bottom - r.y;
+	}
+	if (handle == 4 || handle == 5 || handle == 6)
+	{
+		bottom = canvas::snap_value(bottom, step);
+		r.height = bottom - r.y;
+		if (r.height < min_h) r.height = min_h;
+	}
+	return r;
 }
 
 fn void FileCard.resize_from(&self, int handle, RLVector2 delta, float min_w, float min_h)

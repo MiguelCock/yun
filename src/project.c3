@@ -14,6 +14,7 @@ import yun::commands;
 import yun::completion;
 import yun::editor;
 import yun::findbar;
+import yun::git;
 import yun::gitignore;
 import yun::highlight;
 import yun::icons;
@@ -110,6 +111,8 @@ struct Project
 	int selected_cluster;
 	int current_folder;
 	bool grabbing;
+	bool grab_accum_valid;
+	RLVector2 grab_accum;
 	bool focus_toggle_requested;
 	int hover_card;
 	bool drag_card;
@@ -119,13 +122,25 @@ struct Project
 	bool drag_cluster_title;
 	bool cluster_moved;
 	RLVector2 drag_world;
+	RLVector2 drag_origin_world;
+	Rect drag_origin_rect;
+	Rect drag_cluster_origin_bounds;
 	double last_input_time;
 	double last_poll;
+	double poll_seconds;
+	double jump_highlight_seconds;
+	bool external_reload;
+	bool sleep_editors;
+	bool autosave_enabled;
+	double autosave_interval;
+	double last_autosave;
 	int pending_reload;
 	int pending_close;
 	bool resizing;
 	int resize_card;
 	int resize_handle;
+	RLVector2 resize_origin_world;
+	Rect resize_origin_rect;
 	bool selecting;
 	double last_click_time;
 	RLVector2 last_click_pos;
@@ -160,11 +175,20 @@ fn void Project.init(&self, Allocator allocator)
 	self.selected_cluster = -1;
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
+	self.grab_accum_valid = false;
+	self.grab_accum = { 0.0f, 0.0f };
 	self.focus_toggle_requested = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
 	self.drag_cluster_title = false;
 	self.last_poll = 0.0;
+	self.poll_seconds = POLL_SECONDS;
+	self.jump_highlight_seconds = JUMP_HIGHLIGHT_SECONDS;
+	self.external_reload = true;
+	self.sleep_editors = true;
+	self.autosave_enabled = false;
+	self.autosave_interval = 30.0;
+	self.last_autosave = 0.0;
 	self.pending_reload = -1;
 	self.pending_close = -1;
 	self.resizing = false;
@@ -243,6 +267,8 @@ fn void Project.reset(&self)
 	self.selected_cluster = -1;
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
+	self.grab_accum_valid = false;
+	self.grab_accum = { 0.0f, 0.0f };
 	self.focus_toggle_requested = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
@@ -268,7 +294,7 @@ fn void Project.mark_jump(&self, String path, usz line, double now)
 	if (self.jump_path.len) self.jump_path.free(self.allocator);
 	self.jump_path = path.copy(self.allocator);
 	self.jump_line = line;
-	self.jump_until = now + JUMP_HIGHLIGHT_SECONDS;
+	self.jump_until = now + self.jump_highlight_seconds;
 }
 
 fn void Project.clear_jump(&self)
@@ -811,6 +837,8 @@ fn int Project.add_card(&self, String abs, RLVector2 world_pos)
 	if (existing >= 0)
 	{
 		self.focused = existing;
+		self.selected = existing;
+		self.selected_cluster = -1;
 		return existing;
 	}
 
@@ -823,6 +851,8 @@ fn int Project.add_card(&self, String abs, RLVector2 world_pos)
 	}
 
 	self.focused = self.append_card(final, world_pos);
+	self.selected = self.focused;
+	self.selected_cluster = -1;
 	return self.focused;
 }
 
@@ -1262,6 +1292,8 @@ fn bool OpenJob.step(&self, usz budget)
 		case OpenPhase.LAYOUT:
 			self.project.rebuild_folder_index();
 			self.project.focused = -1;
+			self.project.selected = -1;
+			self.project.selected_cluster = -1;
 			self.phase = OpenPhase.DONE;
 			return true;
 		case OpenPhase.DONE:
@@ -1349,6 +1381,8 @@ fn int Project.create_file(&self, int folder_index, String name, RLVector2 world
 	(void)created.close();
 
 	self.focused = self.append_card((String)dest, world_pos);
+	self.selected = self.focused;
+	self.selected_cluster = -1;
 	return self.focused;
 }
 
@@ -1498,11 +1532,18 @@ fn bool Project.delete_card_file(&self, int index)
 fn int Project.focus(&self, int index)
 {
 	if (index < 0 || index >= (int)self.cards.len()) return self.focused;
-	if (index == self.focused) return index;
+	if (index == self.focused)
+	{
+		self.selected = index;
+		self.selected_cluster = -1;
+		return index;
+	}
 	FileCard card = self.cards[index];
 	self.cards.remove_at(index);
 	self.cards.push(card);
 	self.focused = (int)(self.cards.len() - 1);
+	self.selected = self.focused;
+	self.selected_cluster = -1;
 	self.cards[self.focused].selection_anchor = self.cards[self.focused].cursor;
 	return self.focused;
 }
@@ -1788,6 +1829,47 @@ fn bool Project.leave_folder(&self)
 	return true;
 }
 
+fn void Project.begin_grab(&self)
+{
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+	{
+		Rect bounds = self.cluster_bounds(self.selected_cluster);
+		self.grab_accum = { bounds.x, bounds.y };
+		self.grab_accum_valid = true;
+	}
+	else if (self.selected >= 0 && self.selected < (int)self.cards.len())
+	{
+		self.grab_accum = { self.cards[self.selected].rect.x, self.cards[self.selected].rect.y };
+		self.grab_accum_valid = true;
+	}
+	else
+	{
+		self.grab_accum_valid = false;
+	}
+}
+
+fn void Project.apply_grab_delta(&self, RLVector2 delta, float step)
+{
+	if (!self.grab_accum_valid) self.begin_grab();
+	if (!self.grab_accum_valid) return;
+	self.grab_accum[0] += delta[0];
+	self.grab_accum[1] += delta[1];
+	float target_x = step > 0.0f ? canvas::snap_value(self.grab_accum[0], step) : self.grab_accum[0];
+	float target_y = step > 0.0f ? canvas::snap_value(self.grab_accum[1], step) : self.grab_accum[1];
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+	{
+		Rect current   = self.cluster_bounds(self.selected_cluster);
+		RLVector2 move = { target_x - current.x, target_y - current.y };
+		if (move[0] != 0.0f || move[1] != 0.0f) self.move_cluster(self.selected_cluster, move);
+	}
+	else if (self.selected >= 0 && self.selected < (int)self.cards.len())
+	{
+		self.cards[self.selected].rect.x = target_x;
+		self.cards[self.selected].rect.y = target_y;
+		self.invalidate_bounds_for_card(self.selected);
+	}
+}
+
 fn void Project.move_selected(&self, RLVector2 delta)
 {
 	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
@@ -1922,8 +2004,8 @@ fn void Project.apply_focus_rect(&self, Canvas* canvas)
 {
 	int index = self.focus_card;
 	if (index < 0 || index >= (int)self.cards.len()) return;
-	float width  = (float)rl::get_screen_width();
-	float height = (float)rl::get_screen_height() - canvas.top_inset;
+	float width  = canvas.usable_width();
+	float height = canvas.usable_height();
 	if (width < 1.0f) width = 1.0f;
 	if (height < 1.0f) height = 1.0f;
 	RLVector2 center = canvas.target.target;
@@ -1947,8 +2029,8 @@ fn bool Project.begin_focus(&self, int index, Canvas* canvas)
 	self.focus_saved_rect = self.cards[at].rect;
 	self.focus_saved_camera = canvas.camera;
 	self.focus_saved_target = canvas.target;
-	self.focus_screen_w = (float)rl::get_screen_width();
-	self.focus_screen_h = (float)rl::get_screen_height();
+	self.focus_screen_w = canvas.usable_width();
+	self.focus_screen_h = canvas.usable_height();
 	self.focus_card = at;
 
 	RLVector2 center = self.cards[at].center();
@@ -1964,8 +2046,8 @@ fn bool Project.begin_focus(&self, int index, Canvas* canvas)
 fn void Project.update_focus_rect(&self, Canvas* canvas)
 {
 	if (self.focus_card < 0) return;
-	float width  = (float)rl::get_screen_width();
-	float height = (float)rl::get_screen_height();
+	float width  = canvas.usable_width();
+	float height = canvas.usable_height();
 	if (width == self.focus_screen_w && height == self.focus_screen_h) return;
 	self.focus_screen_w = width;
 	self.focus_screen_h = height;
@@ -2192,6 +2274,8 @@ fn void Project.update(
 				self.resize_card = self.focus(card_hit);
 				self.resize_handle = handle;
 				self.drag_world = world;
+				self.resize_origin_world = world;
+				self.resize_origin_rect = self.cards[self.resize_card].rect;
 			}
 			else if (region == editor::CardRegion.MAXIMIZE)
 			{
@@ -2297,6 +2381,8 @@ fn void Project.update(
 				self.drag_index = index;
 				self.drag_card = true;
 				self.drag_world = world;
+				self.drag_origin_world = world;
+				self.drag_origin_rect = card.rect;
 			}
 		}
 		else
@@ -2309,6 +2395,8 @@ fn void Project.update(
 				self.drag_cluster_title = self.cluster_title_hit(cluster_hit, world);
 				self.cluster_moved = false;
 				self.drag_world = world;
+				self.drag_origin_world = world;
+				self.drag_cluster_origin_bounds = self.cluster_bounds(cluster_hit);
 			}
 		}
 	}
@@ -2349,8 +2437,18 @@ fn void Project.update(
 		}
 		else
 		{
-			RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
-			self.cards[self.drag_index].move_by(delta);
+			float step = self.grid_snap_step(canvas);
+			if (step > 0.0f)
+			{
+				RLVector2 total = { world[0] - self.drag_origin_world[0], world[1] - self.drag_origin_world[1] };
+				self.cards[self.drag_index].rect.x = canvas::snap_value(self.drag_origin_rect.x + total[0], step);
+				self.cards[self.drag_index].rect.y = canvas::snap_value(self.drag_origin_rect.y + total[1], step);
+			}
+			else
+			{
+				RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
+				self.cards[self.drag_index].move_by(delta);
+			}
 			self.invalidate_bounds_for_card(self.drag_index);
 			self.drag_world = world;
 		}
@@ -2369,7 +2467,22 @@ fn void Project.update(
 			if (math::abs(delta[0]) > 0.01f || math::abs(delta[1]) > 0.01f) self.cluster_moved = true;
 			if (self.cluster_moved)
 			{
-				self.move_cluster(self.drag_cluster_index, delta);
+				float step = self.grid_snap_step(canvas);
+				if (step > 0.0f)
+				{
+					RLVector2 total = {
+						world[0] - self.drag_origin_world[0],
+						world[1] - self.drag_origin_world[1],
+					};
+					float target_x = canvas::snap_value(self.drag_cluster_origin_bounds.x + total[0], step);
+					float target_y = canvas::snap_value(self.drag_cluster_origin_bounds.y + total[1], step);
+					Rect current   = self.folders[self.drag_cluster_index].bounds;
+					self.move_cluster(self.drag_cluster_index, { target_x - current.x, target_y - current.y });
+				}
+				else
+				{
+					self.move_cluster(self.drag_cluster_index, delta);
+				}
 				self.drag_world = world;
 			}
 		}
@@ -2385,10 +2498,30 @@ fn void Project.update(
 		}
 		else
 		{
-			RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
-			float min_w     = editor::min_card_width(metrics);
-			float min_h     = editor::min_card_height(metrics);
-			self.cards[self.resize_card].resize_from(self.resize_handle, delta, min_w, min_h);
+			float min_w = editor::min_card_width(metrics);
+			float min_h = editor::min_card_height(metrics);
+			float step  = self.grid_snap_step(canvas);
+			if (step > 0.0f)
+			{
+				RLVector2 total = {
+					world[0] - self.resize_origin_world[0],
+					world[1] - self.resize_origin_world[1],
+				};
+				self.cards[self.resize_card].rect = self.resize_origin_rect;
+				self.cards[self.resize_card].resize_from(self.resize_handle, total, min_w, min_h);
+				self.cards[self.resize_card].rect = card::snap_resize_rect(
+					self.cards[self.resize_card].rect,
+					self.resize_handle,
+					step,
+					min_w,
+					min_h
+				);
+			}
+			else
+			{
+				RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
+				self.cards[self.resize_card].resize_from(self.resize_handle, delta, min_w, min_h);
+			}
 			self.invalidate_bounds_for_card(self.resize_card);
 			self.drag_world = world;
 		}
@@ -2443,6 +2576,12 @@ fn void Project.refresh_sleep(&self, Rect visible, float zoom)
 	int asleep = 0;
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
+		if (!self.sleep_editors)
+		{
+			self.cards[i].sleeping = false;
+			awake++;
+			continue;
+		}
 		bool is_focused = (int)i == self.focused || (int)i == self.focus_card;
 		bool big_enough = self.cards[i].rect.width * zoom >= CARD_MIN_DRAW_PX;
 		bool on_screen  = self.card_visible(
@@ -2465,8 +2604,9 @@ fn void Project.refresh_sleep(&self, Rect visible, float zoom)
 
 fn void Project.poll_external(&self, double now)
 {
+	if (!self.external_reload) return;
 	if (self.pending_reload >= 0) return;
-	if (now - self.last_poll < POLL_SECONDS) return;
+	if (now - self.last_poll < self.poll_seconds) return;
 	self.last_poll = now;
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
@@ -2486,6 +2626,8 @@ enum EditorMove : int
 	RIGHT,
 	UP,
 	DOWN,
+	WORD_LEFT,
+	WORD_RIGHT,
 	LINE_START,
 	LINE_END,
 	PAGE_UP,
@@ -2692,6 +2834,28 @@ fn bool Project.editor_outdent(&self)
 	return true;
 }
 
+fn bool Project.editor_delete_word(&self, bool back)
+{
+	FileCard* card = self.focused_editable_card();
+	if (!card) return false;
+	PieceTable* table = card.buffer;
+	History* history  = card.history;
+	double now        = rl::get_time();
+	usz start         = 0;
+	usz end           = 0;
+	editor::selection_range(card.selection_anchor, card.cursor, &start, &end);
+	if (start == end)
+	{
+		usz length = 0;
+		editor::word_delete_range(table, card.cursor, back, &start, &length);
+		end = start + length;
+	}
+	if (start == end) return false;
+	card.cursor = history.replace(table, start, end - start, "", now);
+	card.selection_anchor = card.cursor;
+	return true;
+}
+
 fn bool Project.editor_delete(&self, bool back)
 {
 	FileCard* card = self.focused_editable_card();
@@ -2720,11 +2884,16 @@ fn bool Project.editor_delete(&self, bool back)
 
 fn void Project.editor_move(&self, EditorMove move, EditorMetrics metrics)
 {
+	self.editor_move_select(move, metrics, shift_down());
+}
+
+fn void Project.editor_move_select(&self, EditorMove move, EditorMetrics metrics, bool select)
+{
 	FileCard* card = self.focused_editable_card();
 	if (!card) return;
 	PieceTable* table = card.buffer;
 	History* history  = card.history;
-	bool shift        = shift_down();
+	bool shift        = select;
 	bool vertical     = false;
 	history.break_coalescing();
 	switch (move)
@@ -2734,6 +2903,12 @@ fn void Project.editor_move(&self, EditorMove move, EditorMetrics metrics)
 			break;
 		case EditorMove.RIGHT:
 			card.cursor = editor::cursor_next(table, card.cursor);
+			break;
+		case EditorMove.WORD_LEFT:
+			card.cursor = editor::cursor_word_left(table, card.cursor);
+			break;
+		case EditorMove.WORD_RIGHT:
+			card.cursor = editor::cursor_word_right(table, card.cursor);
 			break;
 		case EditorMove.LINE_START:
 			card.cursor = editor::cursor_home(table, card.cursor);
@@ -2818,6 +2993,50 @@ fn bool Project.completion_accept_cmd(&self, EditorMetrics metrics)
 fn bool ctrl_down()
 {
 	return rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
+}
+
+fn bool alt_down()
+{
+	return rl::is_key_down(rl::RLKeyboardKey.LEFT_ALT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_ALT);
+}
+
+fn float Project.grid_snap_step(&self, canvas::Canvas* canvas)
+{
+	if (!canvas::settings().snap_to_grid || alt_down()) return 0.0f;
+	return canvas::snap_step(canvas.camera.zoom);
+}
+
+fn void Project.snap_card_to_grid(&self, int index, float zoom)
+{
+	if (!canvas::settings().snap_to_grid || alt_down()) return;
+	if (index < 0 || index >= (int)self.cards.len()) return;
+	float step = canvas::snap_step(zoom);
+	self.cards[index].rect.x = canvas::snap_value(self.cards[index].rect.x, step);
+	self.cards[index].rect.y = canvas::snap_value(self.cards[index].rect.y, step);
+	self.invalidate_bounds_for_card(index);
+}
+
+fn void Project.snap_selected_to_grid(&self, float zoom)
+{
+	if (self.selected_cluster >= 0)
+	{
+		self.snap_cluster_to_grid(self.selected_cluster, zoom);
+	}
+	else if (self.selected >= 0)
+	{
+		self.snap_card_to_grid(self.selected, zoom);
+	}
+}
+
+fn void Project.snap_cluster_to_grid(&self, int index, float zoom)
+{
+	if (!canvas::settings().snap_to_grid || alt_down()) return;
+	if (index < 0 || index >= (int)self.folders.len()) return;
+	float step  = canvas::snap_step(zoom);
+	Rect bounds = self.cluster_bounds(index);
+	float x     = canvas::snap_value(bounds.x, step);
+	float y     = canvas::snap_value(bounds.y, step);
+	self.move_cluster(index, { x - bounds.x, y - bounds.y });
 }
 
 fn bool shift_down()
@@ -2914,6 +3133,14 @@ fn void Project.handle_keyboard(
 	{
 		if (self.editor_delete(false)) changed = true;
 	}
+	if (keymap.pressed_repeat((int)commands::CommandId.DELETE_WORD_BACK, commands::CTX_EDIT))
+	{
+		if (self.editor_delete_word(true)) changed = true;
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.DELETE_WORD_FORWARD, commands::CTX_EDIT))
+	{
+		if (self.editor_delete_word(false)) changed = true;
+	}
 
 	if (!ctrl_down())
 	{
@@ -2959,37 +3186,85 @@ fn void Project.handle_keyboard(
 		}
 	}
 
+	bool any_move = false;
 	if (keymap.pressed_move((int)commands::CommandId.CURSOR_LEFT, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.LEFT, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.CURSOR_RIGHT, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.RIGHT, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.CURSOR_UP, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.UP, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.CURSOR_DOWN, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.DOWN, metrics);
+		any_move = true;
 	}
-	if (keymap.pressed((int)commands::CommandId.LINE_START, commands::CTX_EDIT))
+	if (keymap.pressed_move((int)commands::CommandId.CURSOR_WORD_LEFT, commands::CTX_EDIT))
+	{
+		self.editor_move(EditorMove.WORD_LEFT, metrics);
+		any_move = true;
+	}
+	if (keymap.pressed_move((int)commands::CommandId.CURSOR_WORD_RIGHT, commands::CTX_EDIT))
+	{
+		self.editor_move(EditorMove.WORD_RIGHT, metrics);
+		any_move = true;
+	}
+	if (keymap.pressed_move((int)commands::CommandId.LINE_START, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.LINE_START, metrics);
+		any_move = true;
 	}
-	if (keymap.pressed((int)commands::CommandId.LINE_END, commands::CTX_EDIT))
+	if (keymap.pressed_move((int)commands::CommandId.LINE_END, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.LINE_END, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.PAGE_UP, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.PAGE_UP, metrics);
+		any_move = true;
 	}
 	if (keymap.pressed_move((int)commands::CommandId.PAGE_DOWN, commands::CTX_EDIT))
 	{
 		self.editor_move(EditorMove.PAGE_DOWN, metrics);
+		any_move = true;
+	}
+	if (shift_down() && !any_move)
+	{
+		bool fallback_move  = false;
+		EditorMove fallback = EditorMove.LEFT;
+		if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT))
+		{
+			fallback = EditorMove.LEFT;
+			fallback_move = true;
+		}
+		else if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT))
+		{
+			fallback = EditorMove.RIGHT;
+			fallback_move = true;
+		}
+		else if (rl::is_key_pressed(rl::RLKeyboardKey.UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP))
+		{
+			fallback = EditorMove.UP;
+			fallback_move = true;
+		}
+		else if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN))
+		{
+			fallback = EditorMove.DOWN;
+			fallback_move = true;
+		}
+		if (fallback_move)
+		{
+			self.editor_move_select(fallback, metrics, true);
+		}
 	}
 
 	if (completion::completion_is_open()) completion::completion_refilter(table, card.cursor);
@@ -3066,6 +3341,41 @@ fn void Project.draw_folders(&self, RLCamera2D camera)
 	}
 }
 
+fn void Project.draw_snap_guides(&self, RLCamera2D camera)
+{
+	if (!canvas::settings().snap_to_grid || alt_down()) return;
+	if (!self.drag_card && !self.drag_cluster && !self.resizing && !self.grabbing) return;
+	Rect r;
+	if (self.resizing)
+	{
+		if (self.resize_card < 0 || self.resize_card >= (int)self.cards.len()) return;
+		r = self.cards[self.resize_card].rect;
+	}
+	else if (self.drag_card)
+	{
+		if (self.drag_index < 0 || self.drag_index >= (int)self.cards.len()) return;
+		r = self.cards[self.drag_index].rect;
+	}
+	else if (self.drag_cluster)
+	{
+		if (self.drag_cluster_index < 0 || self.drag_cluster_index >= (int)self.folders.len()) return;
+		r = self.cluster_visual_bounds(self.drag_cluster_index);
+	}
+	else
+	{
+		r = self.selected_item_rect();
+		if (r.width <= 0.0f) return;
+	}
+	Rect view       = visible_world_rect(camera);
+	float thickness = card::screen_thickness(1.0f, camera.zoom);
+	RLColor base    = theme::current().card_focus;
+	RLColor guide   = { base[0], base[1], base[2], 150 };
+	rl::draw_line_ex({ r.x, view.y }, { r.x, view.y + view.height }, thickness, guide);
+	rl::draw_line_ex({ r.x + r.width, view.y }, { r.x + r.width, view.y + view.height }, thickness, guide);
+	rl::draw_line_ex({ view.x, r.y }, { view.x + view.width, r.y }, thickness, guide);
+	rl::draw_line_ex({ view.x, r.y + r.height }, { view.x + view.width, r.y + r.height }, thickness, guide);
+}
+
 fn void Project.draw_cards(
 	&self,
 	RLCamera2D camera,
@@ -3073,7 +3383,8 @@ fn void Project.draw_cards(
 	RLFont editor_font,
 	EditorMetrics metrics,
 	findbar::FindBar* find_bar,
-	int only_card
+	int only_card,
+	git::GitStatus* git_status
 )
 {
 	double elapsed = rl::get_time() - self.last_input_time;
@@ -3115,7 +3426,7 @@ fn void Project.draw_cards(
 				card.draw_lod(camera.zoom);
 				continue;
 			}
-			card.draw(is_focused, camera, mouse_world, self.focus_card >= 0);
+			card.draw(is_focused, camera, mouse_world, self.focus_card >= 0, git_status);
 			if (!is_focused && (int)i == self.selected)
 			{
 				ui::rounded_rect_lines(
@@ -3181,7 +3492,7 @@ fn void Project.draw_cards(
 				double now = rl::get_time();
 				if (now < self.jump_until)
 				{
-					float fade    = jump_fade(now, self.jump_until, JUMP_HIGHLIGHT_SECONDS);
+					float fade    = jump_fade(now, self.jump_until, self.jump_highlight_seconds);
 					RLColor base  = theme::current().card_focus;
 					RLColor color = { base[0], base[1], base[2], (char)(fade * (float)JUMP_HIGHLIGHT_ALPHA) };
 					Rect line_rect = {
@@ -3295,6 +3606,7 @@ fn void Project.draw_cards(
 			if (is_focused && self.focus_card < 0) card.draw_handles(camera, theme::current().editor_handle);
 		}
 	};
+	self.draw_snap_guides(camera);
 }
 fn void Project.toggle_preview(&self, int index)
 {

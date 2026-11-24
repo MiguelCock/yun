@@ -9,6 +9,7 @@ import std::io::os;
 import std::math;
 import yun::card;
 import yun::highlight;
+import yun::input;
 import yun::lsp;
 import yun::markdown;
 import yun::text;
@@ -32,6 +33,8 @@ struct EditorSettings
 	int indent_width;
 	bool indent_spaces;
 	bool auto_indent;
+	usz history_budget;
+	int diagnostic_segments;
 }
 
 EditorSettings g_editor_settings = {
@@ -45,6 +48,8 @@ EditorSettings g_editor_settings = {
 	.indent_width = 4,
 	.indent_spaces = false,
 	.auto_indent = true,
+	.history_budget = text::HISTORY_BUDGET,
+	.diagnostic_segments = MAX_DIAGNOSTIC_SEGMENTS,
 };
 
 fn EditorSettings settings()
@@ -368,7 +373,7 @@ fn bool has_selection(usz anchor, usz cursor)
 
 fn bool word_char(char c)
 {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+	return input::word_class(c) == input::WordClass.WORD;
 }
 
 fn void word_range(PieceTable* table, usz offset, usz* start, usz* end)
@@ -576,6 +581,7 @@ fn void ensure_buffer(FileCard* card, Allocator allocator)
 	{
 		History* history = alloc::new(allocator, History);
 		history.init(allocator);
+		history.budget = g_editor_settings.history_budget;
 		card.history = history;
 	}
 	if (!card.highlight && card.buffer)
@@ -959,6 +965,56 @@ fn usz cursor_next(PieceTable* table, usz cursor)
 	return table.next_boundary(cursor);
 }
 
+fn usz cursor_word_left(PieceTable* table, usz cursor)
+{
+	usz length = table.length();
+	if (cursor > length) cursor = length;
+	usz pos = cursor;
+	while (pos > 0)
+	{
+		usz prev = table.prev_boundary(pos - 1);
+		if (input::word_class(table.byte_at(prev)) != input::WordClass.SPACE) break;
+		pos = prev;
+	}
+	if (pos == 0) return 0;
+	usz prev             = table.prev_boundary(pos - 1);
+	input::WordClass cls = input::word_class(table.byte_at(prev));
+	while (pos > 0)
+	{
+		prev = table.prev_boundary(pos - 1);
+		if (input::word_class(table.byte_at(prev)) != cls) break;
+		pos = prev;
+	}
+	return pos;
+}
+
+fn usz cursor_word_right(PieceTable* table, usz cursor)
+{
+	usz length = table.length();
+	if (cursor >= length) return length;
+	input::WordClass cls = input::word_class(table.byte_at(cursor));
+	usz pos              = cursor;
+	while (pos < length && input::word_class(table.byte_at(pos)) == cls)
+	{
+		pos = table.next_boundary(pos);
+	}
+	return pos;
+}
+
+fn void word_delete_range(PieceTable* table, usz cursor, bool back, usz* start, usz* length)
+{
+	if (back)
+	{
+		*start = cursor_word_left(table, cursor);
+		*length = cursor - *start;
+	}
+	else
+	{
+		*start = cursor;
+		*length = cursor_word_right(table, cursor) - cursor;
+	}
+}
+
 fn usz cursor_home(PieceTable* table, usz cursor)
 {
 	return table.line_start(table.line_of(cursor));
@@ -1243,14 +1299,16 @@ fn void draw_diagnostics(
 	apply_scissor(area, camera);
 	VisibleRange range = visible_lines(table.line_count(), scroll_y, area.height, metrics.line_height);
 	int segments       = 0;
-	for (usz i = 0; i < diags.len && segments < MAX_DIAGNOSTIC_SEGMENTS; i++)
+	int segment_limit  = g_editor_settings.diagnostic_segments > 0 ? g_editor_settings.diagnostic_segments
+		: MAX_DIAGNOSTIC_SEGMENTS;
+	for (usz i = 0; i < diags.len && segments < segment_limit; i++)
 	{
 		usz start = 0;
 		usz end   = 0;
 		diagnostic_offsets(table, diags[i], &start, &end);
 		usz first_line = table.line_of(start);
 		usz last_line  = table.line_of(end);
-		for (usz line = first_line; line <= last_line && segments < MAX_DIAGNOSTIC_SEGMENTS; line++)
+		for (usz line = first_line; line <= last_line && segments < segment_limit; line++)
 		{
 			if (line < range.first || line >= range.last) continue;
 			usz line_start = table.line_start(line);

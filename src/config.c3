@@ -28,6 +28,20 @@ struct LspCommand
 	String command;
 }
 
+struct RunEnv
+{
+	String key;
+	String value;
+}
+
+struct RunProfile
+{
+	String name;
+	String command;
+	String cwd;
+	List{RunEnv} env;
+}
+
 struct Config
 {
 	Allocator allocator;
@@ -35,7 +49,9 @@ struct Config
 	List{KeyBinding} keymap_global;
 	List{KeyBinding} keymap_project;
 	List{LspCommand} lsp;
+	List{RunProfile} run_profiles;
 	List{String} warnings;
+	bool lsp_enabled;
 }
 
 fn void Config.init(&self, Allocator allocator)
@@ -45,7 +61,9 @@ fn void Config.init(&self, Allocator allocator)
 	self.keymap_global.init(allocator);
 	self.keymap_project.init(allocator);
 	self.lsp.init(allocator);
+	self.run_profiles.init(allocator);
 	self.warnings.init(allocator);
+	self.lsp_enabled = true;
 }
 
 fn void Config.destroy(&self)
@@ -53,10 +71,12 @@ fn void Config.destroy(&self)
 	self.settings.destroy();
 	self.free_keymap();
 	self.free_lsp();
+	self.free_run_profiles();
 	self.free_warnings();
 	self.keymap_global.free();
 	self.keymap_project.free();
 	self.lsp.free();
+	self.run_profiles.free();
 	self.warnings.free();
 }
 
@@ -122,6 +142,7 @@ fn void Config.reset(&self)
 	self.settings.reset();
 	self.free_keymap();
 	self.free_lsp();
+	self.free_run_profiles();
 	self.free_warnings();
 }
 
@@ -230,6 +251,130 @@ fn void Config.apply_lsp(&self, Object* map)
 	};
 }
 
+fn void RunProfile.free(&self, Allocator allocator)
+{
+	if (self.name.len > 0) self.name.free(allocator);
+	if (self.command.len > 0) self.command.free(allocator);
+	if (self.cwd.len > 0) self.cwd.free(allocator);
+	for (sz i = 0; i < self.env.len(); i++)
+	{
+		if (self.env[i].key.len > 0) self.env[i].key.free(allocator);
+		if (self.env[i].value.len > 0) self.env[i].value.free(allocator);
+	}
+	self.env.free();
+}
+
+fn void Config.free_run_profiles(&self)
+{
+	for (sz i = 0; i < self.run_profiles.len(); i++) self.run_profiles[i].free(self.allocator);
+	self.run_profiles.clear();
+}
+
+fn void Config.set_run_profile(&self, RunProfile profile)
+{
+	for (sz i = 0; i < self.run_profiles.len(); i++)
+	{
+		if (self.run_profiles[i].name.compare_to(profile.name) == 0)
+		{
+			self.run_profiles[i].free(self.allocator);
+			self.run_profiles[i] = profile;
+			return;
+		}
+	}
+	self.run_profiles.push(profile);
+}
+
+fn bool run_env_name_valid(String key)
+{
+	if (key.len == 0) return false;
+	char c = key[0];
+	if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_')) return false;
+	for (usz i = 1; i < key.len; i++)
+	{
+		c = key[i];
+		if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+fn void Config.apply_run_profile(&self, String name, Object* value)
+{
+	if (name.len == 0 || !value.is_map())
+	{
+		self.add_warning(string::format(self.allocator, "Config run profile \"%s\" must be an object", name));
+		return;
+	}
+	Object*? command_obj = value.get("command");
+	if (catch excuse = command_obj)
+	{
+		self.add_warning(string::format(self.allocator, "Run profile \"%s\" is missing a command", name));
+		return;
+	}
+	if (!command_obj.is_string() || command_obj.s.len == 0)
+	{
+		self.add_warning(string::format(self.allocator, "Run profile \"%s\" command must be a non-empty string", name));
+		return;
+	}
+	String cwd       = ".";
+	Object*? cwd_obj = value.get("cwd");
+	if (try cwd_value = cwd_obj)
+	{
+		if (!cwd_value.is_string() || cwd_value.s.len == 0)
+		{
+			self.add_warning(string::format(self.allocator, "Run profile \"%s\" cwd must be a non-empty string", name));
+			return;
+		}
+		cwd = cwd_value.s;
+	}
+	List{RunEnv} env;
+	env.init(self.allocator);
+	Object*? env_obj = value.get("env");
+	if (try env_value_obj = env_obj)
+	{
+		if (!env_value_obj.is_map())
+		{
+			self.add_warning(string::format(self.allocator, "Run profile \"%s\" env must be an object", name));
+			env.free();
+			return;
+		}
+		env_value_obj.@each_entry(; String key, Object* env_value)
+		{
+			if (!run_env_name_valid(key) || !env_value.is_string())
+			{
+				self.add_warning(
+					string::format(
+						self.allocator,
+						"Run profile \"%s\" env entries must use valid names and string values",
+						name
+					)
+				);
+			}
+			else
+			{
+				env.push({ .key = key.copy(self.allocator), .value = env_value.s.copy(self.allocator) });
+			}
+		};
+	}
+	RunProfile profile = {
+		.name = name.copy(self.allocator),
+		.command = command_obj.s.copy(self.allocator),
+		.cwd = cwd.copy(self.allocator),
+		.env = env,
+	};
+	self.set_run_profile(profile);
+}
+
+fn void Config.apply_run(&self, Object* map)
+{
+	map.@each_entry(; String name, Object* value)
+	{
+		self.apply_run_profile(name, value);
+	};
+}
+
 fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
 {
 	if (!obj.is_map())
@@ -240,7 +385,7 @@ fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
 
 	obj.@each_entry(; String key, Object* value)
 	{
-		bool handled = key.compare_to("keymap") == 0 || key.compare_to("lsp") == 0;
+		bool handled = key.compare_to("keymap") == 0 || key.compare_to("lsp") == 0 || key.compare_to("run") == 0;
 		if (!handled && settings::is_section(key))
 		{
 			self.settings.apply_section(key, value, layer, &self.warnings);
@@ -282,6 +427,22 @@ fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
 		else
 		{
 			self.add_warning("Config \"lsp\" must be an object");
+		}
+	}
+	if (obj.has_key("run"))
+	{
+		Object*? run = obj.get("run");
+		if (catch excuse = run)
+		{
+			self.add_warning("Config \"run\" is invalid");
+		}
+		else if (run.is_map())
+		{
+			self.apply_run(run);
+		}
+		else
+		{
+			self.add_warning("Config \"run\" must be an object");
 		}
 	}
 }
@@ -368,6 +529,7 @@ fn void Config.load(&self, String project_root)
 	self.reset();
 	self.load_global();
 	self.load_project(project_root);
+	self.lsp_enabled = self.settings.get_bool(settings::SettingId.LSP_ENABLED);
 	self.settings.mark_all_changed();
 }
 
