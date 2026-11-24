@@ -1221,6 +1221,7 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				else if (project.has_selected_item())
 				{
+					project.begin_grab();
 					project.grabbing = true;
 				}
 				else
@@ -3066,7 +3067,10 @@ fn int main(String[] args)
 						if (rl::is_key_down(
 							rl::RLKeyboardKey.DOWN
 						) || rl::is_key_down(rl::RLKeyboardKey.J)) delta[1] += step;
-						if (delta[0] != 0.0f || delta[1] != 0.0f) project.move_selected(delta);
+						if (delta[0] != 0.0f || delta[1] != 0.0f)
+						{
+							project.apply_grab_delta(delta, project.grid_snap_step(&canvas));
+						}
 
 						Rect item = project.selected_item_rect();
 						if (item.width > 0.0f && item.height > 0.0f)
