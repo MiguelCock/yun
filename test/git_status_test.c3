@@ -133,7 +133,8 @@ fn void test_status_integration()
 		return;
 	}
 
-	String dir = "/tmp/yun_git_status_test";
+	String dir = git_test_helpers::temp_dir("yun_git_status_test");
+	defer dir.free(mem);
 	(void)path::delete((PathCommon)dir);
 	if (catch excuse = path::mkdir(dir, recursive: true)) return;
 	defer (void)path::delete((PathCommon)dir);
@@ -183,7 +184,8 @@ fn void test_actions_integration()
 		return;
 	}
 
-	String dir = "/tmp/yun_git_actions_test";
+	String dir = git_test_helpers::temp_dir("yun_git_actions_test");
+	defer dir.free(mem);
 	(void)path::delete((PathCommon)dir);
 	if (catch excuse = path::mkdir(dir, recursive: true)) return;
 	defer (void)path::delete((PathCommon)dir);

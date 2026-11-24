@@ -5,16 +5,21 @@ import std::core::dstring;
 import std::core::mem::alloc;
 import std::io::file;
 import std::io::path;
-import std::time::clock;
 
 const int STATUS_TIMEOUT_MS   = 30000;
 const int DETECT_TIMEOUT_MS   = 10000;
 const int DIFF_TIMEOUT_MS     = 60000;
 const int ACTION_TIMEOUT_MS   = 120000;
+const int BRANCH_TIMEOUT_MS   = 15000;
+const int REMOTE_TIMEOUT_MS   = 300000;
+const int HISTORY_TIMEOUT_MS  = 30000;
 const usz STATUS_OUTPUT_CAP   = 4 * 1024 * 1024;
 const usz DETECT_OUTPUT_CAP   = 64 * 1024;
 const usz DIFF_OUTPUT_CAP     = 16 * 1024 * 1024;
 const usz ACTION_OUTPUT_CAP   = 4 * 1024 * 1024;
+const usz BRANCH_OUTPUT_CAP   = 512 * 1024;
+const usz REMOTE_OUTPUT_CAP   = 2 * 1024 * 1024;
+const usz HISTORY_OUTPUT_CAP  = 4 * 1024 * 1024;
 const double PERIODIC_REFRESH = 5.0;
 
 struct GitSettings
@@ -58,6 +63,9 @@ struct State
 	GitStatus status;
 	bool has_status;
 	ulong status_revision;
+	List{GitBranch} branches;
+	ulong branches_revision;
+	bool branches_loaded;
 	bool is_repo;
 	bool checked;
 	bool dirty;
@@ -73,11 +81,22 @@ struct State
 	GitAction action;
 	ulong action_revision;
 	bool busy;
+	bool sync_pending;
 	GitDiffResult diff;
 	ulong diff_revision;
 	int last_cards_revision;
 	double last_periodic;
 	bool last_focus;
+	double current_now;
+	String patch_file;
+	List{GitCommit} commits;
+	ulong commits_revision;
+	bool history_requested;
+	String pending_history_path;
+	List{GitCommitFile} commit_files;
+	ulong commit_files_revision;
+	bool commit_files_requested;
+	String pending_commit_hash;
 }
 
 fn void State.init(&self, Allocator allocator)
@@ -90,6 +109,9 @@ fn void State.init(&self, Allocator allocator)
 	self.status.init(allocator);
 	self.has_status = false;
 	self.status_revision = 0;
+	self.branches.init(allocator);
+	self.branches_revision = 0;
+	self.branches_loaded = false;
 	self.is_repo = false;
 	self.checked = false;
 	self.dirty = false;
@@ -105,11 +127,22 @@ fn void State.init(&self, Allocator allocator)
 	self.action.init(allocator);
 	self.action_revision = 0;
 	self.busy = false;
+	self.sync_pending = false;
 	self.diff.init(allocator);
 	self.diff_revision = 0;
 	self.last_cards_revision = -1;
 	self.last_periodic = 0.0;
 	self.last_focus = false;
+	self.current_now = 0.0;
+	self.patch_file = "";
+	self.commits.init(allocator);
+	self.commits_revision = 0;
+	self.history_requested = false;
+	self.pending_history_path = "";
+	self.commit_files.init(allocator);
+	self.commit_files_revision = 0;
+	self.commit_files_requested = false;
+	self.pending_commit_hash = "";
 }
 
 fn void State.destroy(&self)
@@ -119,10 +152,48 @@ fn void State.destroy(&self)
 	if (self.project_root.len > 0) self.project_root.free(self.allocator);
 	if (self.repo_root.len > 0) self.repo_root.free(self.allocator);
 	if (self.binary.len > 0) self.binary.free(self.allocator);
+	self.clear_patch_file();
+	self.clear_history();
+	self.commits.free();
+	self.commit_files.free();
 	self.status.destroy();
+	self.clear_branches();
+	self.branches.free();
 	self.error.clear();
 	self.action.destroy();
 	self.diff.destroy();
+}
+
+fn void State.clear_patch_file(&self)
+{
+	if (self.patch_file.len == 0) return;
+	(void)file::delete(self.patch_file);
+	self.patch_file.free(self.allocator);
+	self.patch_file = "";
+}
+
+fn void State.clear_history(&self)
+{
+	for (sz i = 0; i < self.commits.len(); i++) self.commits[i].destroy(self.allocator);
+	self.commits.clear();
+	for (sz i = 0; i < self.commit_files.len(); i++) self.commit_files[i].destroy(self.allocator);
+	self.commit_files.clear();
+	if (self.pending_history_path.len > 0) self.pending_history_path.free(self.allocator);
+	if (self.pending_commit_hash.len > 0) self.pending_commit_hash.free(self.allocator);
+	self.pending_history_path = "";
+	self.pending_commit_hash = "";
+	self.history_requested = false;
+	self.commit_files_requested = false;
+}
+
+fn void State.clear_branches(&self)
+{
+	for (sz i = 0; i < self.branches.len(); i++)
+	{
+		self.branches[i].destroy(self.allocator);
+	}
+	self.branches.clear();
+	self.branches_revision++;
 }
 
 fn void State.clear_status(&self)
@@ -141,6 +212,7 @@ fn void State.cancel_in_flight(&self)
 	self.in_flight_id = 0;
 	self.refreshing = false;
 	self.busy = false;
+	self.clear_patch_file();
 }
 
 fn void State.set_project(&self, String root)
@@ -151,6 +223,9 @@ fn void State.set_project(&self, String root)
 	if (self.repo_root.len > 0) self.repo_root.free(self.allocator);
 	self.repo_root = "";
 	self.clear_status();
+	self.clear_branches();
+	self.clear_history();
+	self.branches_loaded = false;
 	self.checked = false;
 	self.is_repo = false;
 	self.dirty = root.len > 0;
@@ -191,7 +266,8 @@ fn bool State.send(
 	String path,
 	String orig_path,
 	bool staged,
-	bool untracked
+	bool untracked,
+	String rev = ""
 )
 {
 	GitRequest request = {
@@ -202,6 +278,7 @@ fn bool State.send(
 		.output_cap = output_cap,
 		.staged = staged,
 		.untracked = untracked,
+		.rev = rev.len > 0 ? rev.copy(self.allocator) : "",
 		.path = path.len > 0 ? path.copy(self.allocator) : "",
 		.orig_path = orig_path.len > 0 ? orig_path.copy(self.allocator) : "",
 	};
@@ -344,6 +421,77 @@ fn void State.start_status(&self)
 	self.refreshing = true;
 }
 
+fn void State.start_branch_list(&self)
+{
+	if (self.busy_or_refreshing()) return;
+	String[] argv = git_branch_list_argv(self.allocator, self.binary, self.repo_root);
+	if (!self.send(GitRequestKind.BRANCH_LIST, argv, BRANCH_TIMEOUT_MS, BRANCH_OUTPUT_CAP, "", "", false, false))
+	{
+		self.branches_loaded = true;
+		self.dirty = false;
+		return;
+	}
+	self.refreshing = true;
+}
+
+fn void State.start_log(&self)
+{
+	if (self.busy_or_refreshing()) return;
+	String[] argv = git_log_argv(self.allocator, self.binary, self.repo_root, self.pending_history_path);
+	self.history_requested = false;
+	self.refreshing = true;
+	if (!self.send(GitRequestKind.LOG, argv, HISTORY_TIMEOUT_MS, HISTORY_OUTPUT_CAP, "", "", false, false))
+	{
+		self.refreshing = false;
+		return;
+	}
+}
+
+fn void State.start_commit_files(&self)
+{
+	if (self.busy_or_refreshing()) return;
+	String[] argv = git_commit_files_argv(self.allocator, self.binary, self.repo_root, self.pending_commit_hash);
+	self.commit_files_requested = false;
+	self.refreshing = true;
+	if (!self.send(GitRequestKind.COMMIT_FILES, argv, HISTORY_TIMEOUT_MS, HISTORY_OUTPUT_CAP, "", "", false, false))
+	{
+		self.refreshing = false;
+		return;
+	}
+}
+
+fn void State.handle_log(&self, GitResult* result)
+{
+	if (result.exit_code != 0)
+	{
+		self.set_error(GitErrorKind.COMMAND_FAILED, "Could not load Git history.", result.error.str_view());
+		return;
+	}
+	List{GitCommit} next;
+	next.init(self.allocator);
+	parse_log(self.allocator, result.output.str_view(), &next);
+	for (sz i = 0; i < self.commits.len(); i++) self.commits[i].destroy(self.allocator);
+	self.commits.free();
+	self.commits = next;
+	self.commits_revision++;
+}
+
+fn void State.handle_commit_files(&self, GitResult* result)
+{
+	if (result.exit_code != 0)
+	{
+		self.set_error(GitErrorKind.COMMAND_FAILED, "Could not load commit details.", result.error.str_view());
+		return;
+	}
+	List{GitCommitFile} next;
+	next.init(self.allocator);
+	parse_commit_files(self.allocator, result.output.str_view(), &next);
+	for (sz i = 0; i < self.commit_files.len(); i++) self.commit_files[i].destroy(self.allocator);
+	self.commit_files.free();
+	self.commit_files = next;
+	self.commit_files_revision++;
+}
+
 fn void State.handle_detect(&self, GitResult* result)
 {
 	if (result.spawn_failed)
@@ -389,6 +537,8 @@ fn void State.handle_detect(&self, GitResult* result)
 	self.repo_root = root.copy(self.allocator);
 	self.checked = true;
 	self.is_repo = true;
+	self.branches_loaded = false;
+	self.clear_branches();
 	self.clear_error();
 	self.dirty = true;
 	self.dirty_at = 0.0;
@@ -442,6 +592,8 @@ fn void State.handle_diff(&self, GitResult* result)
 	self.diff.init(self.allocator);
 	self.diff.valid = true;
 	self.diff.staged = result.staged;
+	self.diff.untracked = result.untracked;
+	self.diff.rev = result.rev.len > 0 ? result.rev.copy(self.allocator) : "";
 	self.diff.path = result.path.len > 0 ? result.path.copy(self.allocator) : "";
 	self.diff.orig_path = result.orig_path.len > 0 ? result.orig_path.copy(self.allocator) : "";
 	self.diff.exit_code = result.exit_code;
@@ -485,13 +637,71 @@ fn void State.handle_action(&self, GitResult* result)
 	if (self.action.success)
 	{
 		self.clear_error();
+		if (self.action.kind == GitRequestKind.BRANCH_SWITCH || self.action.kind == GitRequestKind.BRANCH_CREATE)
+		{
+			self.branches_loaded = false;
+			self.clear_status();
+		}
 	}
 	else
 	{
 		GitErrorKind kind = classify_error(self.action.error);
 		self.set_error(kind, error_message(kind, self.action.error), self.action.error);
 	}
-	self.mark_dirty(now_seconds());
+	if (self.sync_pending)
+	{
+		if (result.kind == GitRequestKind.PULL && self.action.success)
+		{
+			self.sync_pending = false;
+			(void)self.push(false);
+		}
+		else if (!self.action.success)
+		{
+			self.sync_pending = false;
+		}
+	}
+	self.mark_dirty(self.current_now);
+}
+
+fn void State.handle_branch_list(&self, GitResult* result)
+{
+	self.branches_loaded = true;
+	if (result.spawn_failed)
+	{
+		self.dirty = false;
+		self.set_error(GitErrorKind.NOT_FOUND, "Git is not installed or not on PATH.", "");
+		return;
+	}
+	if (result.timed_out)
+	{
+		self.dirty = false;
+		self.set_error(GitErrorKind.TIMEOUT, "Git did not finish listing branches.", "");
+		return;
+	}
+	if (result.exit_code != 0)
+	{
+		self.dirty = false;
+		GitErrorKind kind = classify_error(result.error.str_view());
+		self.set_error(kind, error_message(kind, result.error.str_view()), result.error.str_view());
+		return;
+	}
+	List{GitBranch} next;
+	next.init(self.allocator);
+	if (!parse_branches(self.allocator, result.output.str_view(), &next))
+	{
+		for (sz i = 0; i < next.len(); i++) next[i].destroy(self.allocator);
+		next.free();
+		self.dirty = false;
+		self.set_error(GitErrorKind.COMMAND_FAILED, "Could not parse Git branches.", "");
+		return;
+	}
+	self.clear_branches();
+	self.branches.free();
+	self.branches = next;
+	self.branches_revision++;
+	self.clear_error();
+	self.dirty = true;
+	self.dirty_at = 0.0;
 }
 
 fn void State.handle_result(&self, GitResult* result)
@@ -512,21 +722,31 @@ fn void State.handle_result(&self, GitResult* result)
 			self.handle_status(result);
 		case GitRequestKind.DIFF:
 			self.handle_diff(result);
+		case GitRequestKind.BRANCH_LIST:
+			self.handle_branch_list(result);
 		case GitRequestKind.STAGE:
 		case GitRequestKind.UNSTAGE:
 		case GitRequestKind.DISCARD:
 		case GitRequestKind.COMMIT:
+		case GitRequestKind.BRANCH_SWITCH:
+		case GitRequestKind.BRANCH_CREATE:
+		case GitRequestKind.FETCH:
+		case GitRequestKind.PULL:
+		case GitRequestKind.PUSH:
+		case GitRequestKind.PUBLISH:
+		case GitRequestKind.MERGE_ABORT:
+		case GitRequestKind.APPLY_PATCH:
 			self.handle_action(result);
+		case GitRequestKind.LOG:
+			self.handle_log(result);
+		case GitRequestKind.COMMIT_FILES:
+			self.handle_commit_files(result);
 	}
+	if (kind == GitRequestKind.APPLY_PATCH) self.clear_patch_file();
 	result.destroy(self.allocator);
 	self.in_flight_id = 0;
 	self.refreshing = false;
-	if (self.is_repo && (self.dirty || self.refresh_requested) && !self.busy) self.dirty_at = now_seconds();
-}
-
-fn double now_seconds()
-{
-	return (double)(clock::now().to_now().to_ms()) / 1000.0;
+	if (self.is_repo && (self.dirty || self.refresh_requested) && !self.busy) self.dirty_at = self.current_now;
 }
 
 fn void State.pump(&self)
@@ -543,6 +763,7 @@ fn void State.pump(&self)
 fn void State.update(&self, String project_root, int cards_revision, double now, bool window_focused)
 {
 	if (self.project_root.len == 0 || self.project_root.compare_to(project_root) != 0) return;
+	self.current_now = now;
 	self.pump();
 
 	String wanted_binary = g_git_settings.binary.len > 0 ? g_git_settings.binary : "git";
@@ -554,6 +775,8 @@ fn void State.update(&self, String project_root, int cards_revision, double now,
 		self.checked = false;
 		self.is_repo = false;
 		self.clear_status();
+		self.clear_branches();
+		self.branches_loaded = false;
 		if (self.repo_root.len > 0) self.repo_root.free(self.allocator);
 		self.repo_root = "";
 		self.error.clear();
@@ -612,9 +835,200 @@ fn void State.update(&self, String project_root, int cards_revision, double now,
 		return;
 	}
 
+	if (self.history_requested)
+	{
+		self.start_log();
+		return;
+	}
+	if (self.commit_files_requested)
+	{
+		self.start_commit_files();
+		return;
+	}
+
+	if (!self.branches_loaded)
+	{
+		self.dirty = false;
+		self.refresh_requested = false;
+		self.start_branch_list();
+		return;
+	}
+
 	self.dirty = false;
 	self.refresh_requested = false;
 	self.start_status();
+}
+
+fn void State.request_branches(&self)
+{
+	self.branches_loaded = false;
+	self.dirty = true;
+	self.refresh_requested = true;
+	self.dirty_at = 0.0;
+}
+
+fn bool State.switch_branch(&self, String name)
+{
+	if (self.busy_or_refreshing() || !self.is_repo || name.len == 0) return false;
+	String[] argv = git_branch_switch_argv(self.allocator, self.binary, self.repo_root, name);
+	self.busy = true;
+	if (!self.send(GitRequestKind.BRANCH_SWITCH, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn bool State.create_branch(&self, String name)
+{
+	if (self.busy_or_refreshing() || !self.is_repo || name.len == 0) return false;
+	String[] argv = git_branch_create_argv(self.allocator, self.binary, self.repo_root, name);
+	self.busy = true;
+	if (!self.send(GitRequestKind.BRANCH_CREATE, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn String State.default_remote(&self)
+{
+	return g_git_settings.default_remote.len > 0 ? g_git_settings.default_remote : "origin";
+}
+
+fn bool State.sync(&self)
+{
+	if (!self.has_status || self.status.upstream.len == 0 || !self.pull()) return false;
+	self.sync_pending = true;
+	return true;
+}
+
+fn bool State.fetch(&self)
+{
+	if (self.busy_or_refreshing() || !self.is_repo) return false;
+	String[] argv = git_fetch_argv(self.allocator, self.binary, self.repo_root, self.default_remote());
+	self.busy = true;
+	if (!self.send(GitRequestKind.FETCH, argv, REMOTE_TIMEOUT_MS, REMOTE_OUTPUT_CAP, "", "", false, false))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn bool State.pull(&self)
+{
+	if (self.busy_or_refreshing() || !self.is_repo || !self.has_status || self.status.branch.len == 0)
+	{
+		return false;
+	}
+	String[] argv = git_pull_argv(self.allocator, self.binary, self.repo_root);
+	self.busy = true;
+	if (!self.send(GitRequestKind.PULL, argv, REMOTE_TIMEOUT_MS, REMOTE_OUTPUT_CAP, "", "", false, false))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn bool State.push(&self, bool publish)
+{
+	if (self.busy_or_refreshing() || !self.is_repo || !self.has_status || self.status.branch.len == 0)
+	{
+		return false;
+	}
+	String[] argv = git_push_argv(
+		self.allocator,
+		self.binary,
+		self.repo_root,
+		self.default_remote(),
+		self.status.branch,
+		publish
+	);
+	self.busy = true;
+	if (!self.send(
+		publish ? GitRequestKind.PUBLISH : GitRequestKind.PUSH,
+		argv,
+		REMOTE_TIMEOUT_MS,
+		REMOTE_OUTPUT_CAP,
+		"",
+		"",
+		false,
+		false
+	))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn bool State.abort_merge(&self)
+{
+	if (self.busy_or_refreshing() || !self.is_repo) return false;
+	String[] argv = git_merge_abort_argv(self.allocator, self.binary, self.repo_root);
+	self.busy = true;
+	if (!self.send(GitRequestKind.MERGE_ABORT, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
+	{
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn void State.request_history(&self, String path)
+{
+	if (self.pending_history_path.len > 0) self.pending_history_path.free(self.allocator);
+	self.pending_history_path = path.len > 0 ? path.copy(self.allocator) : "";
+	self.history_requested = true;
+	self.refresh_requested = true;
+}
+
+fn void State.request_commit_files(&self, String hash)
+{
+	if (self.pending_commit_hash.len > 0) self.pending_commit_hash.free(self.allocator);
+	self.pending_commit_hash = hash.len > 0 ? hash.copy(self.allocator) : "";
+	self.commit_files_requested = true;
+	self.refresh_requested = true;
+}
+
+fn bool State.apply_patch(&self, String patch, bool reverse)
+{
+	if (self.busy_or_refreshing() || !self.is_repo || patch.len == 0) return false;
+	Path? temp = path::temp_directory(tmem);
+	if (catch excuse = temp) return false;
+	String patch_file = string::format(self.allocator, "%s/yun_git_patch_%d.patch", (String)temp, (long)self.next_id);
+	if (catch excuse = file::save(patch_file, patch))
+	{
+		patch_file.free(self.allocator);
+		return false;
+	}
+	self.clear_patch_file();
+	self.patch_file = patch_file;
+	String[] argv = git_apply_patch_argv(self.allocator, self.binary, self.repo_root, self.patch_file, reverse);
+	self.busy = true;
+	if (!self.send(GitRequestKind.APPLY_PATCH, argv, ACTION_TIMEOUT_MS, ACTION_OUTPUT_CAP, "", "", false, false))
+	{
+		self.clear_patch_file();
+		self.busy = false;
+		return false;
+	}
+	return true;
+}
+
+fn bool State.request_commit_diff(&self, String rev, String path, String orig_path)
+{
+	if (self.busy_or_refreshing() || !self.is_repo || rev.len == 0) return false;
+	String[] argv = git_show_diff_argv(self.allocator, self.binary, self.repo_root, rev, path, orig_path);
+	if (!self.send(GitRequestKind.DIFF, argv, DIFF_TIMEOUT_MS, DIFF_OUTPUT_CAP, path, orig_path, false, false, rev))
+	{
+		return false;
+	}
+	self.refreshing = true;
+	return true;
 }
 
 fn bool State.request_diff(&self, String path, String orig_path, bool staged, bool untracked)

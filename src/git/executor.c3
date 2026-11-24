@@ -4,6 +4,7 @@ import std::collections::list;
 import std::core::dstring;
 import std::core::mem::alloc;
 import std::os::env;
+import std::os::posix;
 import std::os::process;
 import std::thread;
 import std::thread::channel;
@@ -24,6 +25,7 @@ struct GitRequest
 	usz output_cap;
 	bool staged;
 	bool untracked;
+	String rev;
 	String path;
 	String orig_path;
 }
@@ -38,6 +40,8 @@ struct GitResult
 	bool timed_out;
 	bool truncated;
 	bool staged;
+	bool untracked;
+	String rev;
 	String path;
 	String orig_path;
 	DString output;
@@ -67,6 +71,7 @@ fn void git_free_argv(Allocator allocator, String[] argv)
 
 fn void GitResult.destroy(&self, Allocator allocator)
 {
+	if (self.rev.len > 0) self.rev.free(allocator);
 	if (self.path.len > 0) self.path.free(allocator);
 	if (self.orig_path.len > 0) self.orig_path.free(allocator);
 	self.output.free();
@@ -133,6 +138,8 @@ fn GitResult git_run_request(GitExecutor* executor, GitRequest* request)
 	result.timed_out = false;
 	result.truncated = false;
 	result.staged = request.staged;
+	result.untracked = request.untracked;
+	result.rev = request.rev.len > 0 ? request.rev.copy(executor.allocator) : "";
 	result.path = request.path.len > 0 ? request.path.copy(executor.allocator) : "";
 	result.orig_path = request.orig_path.len > 0 ? request.orig_path.copy(executor.allocator) : "";
 	result.output.init(executor.allocator);
@@ -165,16 +172,42 @@ fn GitResult git_run_request(GitExecutor* executor, GitRequest* request)
 			&result.truncated
 		);
 
-		bool? running = process.is_running();
-		if (try value = running)
-		{
-			alive = value;
-		}
-		else
-		{
-			alive = false;
-		}
-		if (!alive) break;
+		$if env::WIN32:
+			bool? running = process.is_running();
+			if (try value = running)
+			{
+				alive = value;
+			}
+			else
+			{
+				alive = false;
+			}
+			if (!alive) break;
+		$else
+			int status = 0;
+			int child  = (int)process.child;
+			int waited = child > 0 ? (int)posix::waitpid(child, &status, posix::WNOHANG) : -1;
+			if (waited == 0)
+			{
+				alive = true;
+			}
+			else
+			{
+				if (waited == child)
+				{
+					result.exit_code = posix::wIFEXITED(status) ? (int)posix::wEXITSTATUS(status) : 1;
+				}
+				else
+				{
+					result.exit_code = -1;
+				}
+				process.return_status = result.exit_code;
+				process.child = 0;
+				process.is_alive = false;
+				alive = false;
+			}
+			if (!alive) break;
+		$endif
 
 		if (GitExecutor.cancelled(executor, request.id))
 		{
@@ -192,12 +225,27 @@ fn GitResult git_run_request(GitExecutor* executor, GitRequest* request)
 	}
 
 	drain_process(&process, &result.output, &result.error, request.output_cap, DEFAULT_ERROR_CAP, &result.truncated);
-	if (alive || result.cancelled || result.timed_out)
-	{
-		(void)process.terminate();
-	}
-	int? code = process.join();
-	if (try value = code) result.exit_code = (int)value;
+	$if env::WIN32:
+		if (alive || result.cancelled || result.timed_out)
+		{
+			(void)process.terminate();
+		}
+		int? code = process.join();
+		if (try value = code) result.exit_code = (int)value;
+	$else
+		if (result.cancelled || result.timed_out)
+		{
+			int child = (int)process.child;
+			if (child > 0)
+			{
+				int status = 0;
+				(void)posix::waitpid(child, &status, 0);
+				result.exit_code = posix::wIFEXITED(status) ? (int)posix::wEXITSTATUS(status) : 1;
+				process.child = 0;
+				process.is_alive = false;
+			}
+		}
+	$endif
 	return result;
 }
 
@@ -216,6 +264,7 @@ fn int git_worker_main(void* arg)
 		GitRequest request = maybe;
 		GitResult result   = git_run_request(executor, &request);
 		git_free_argv(executor.allocator, request.argv);
+		if (request.rev.len > 0) request.rev.free(executor.allocator);
 		if (request.path.len > 0) request.path.free(executor.allocator);
 		if (request.orig_path.len > 0) request.orig_path.free(executor.allocator);
 		if (catch excuse = executor.results.push(result))
@@ -269,6 +318,7 @@ fn bool GitExecutor.submit(&self, GitRequest* request)
 	if (!self.ensure_started())
 	{
 		git_free_argv(self.allocator, request.argv);
+		if (request.rev.len > 0) request.rev.free(self.allocator);
 		if (request.path.len > 0) request.path.free(self.allocator);
 		if (request.orig_path.len > 0) request.orig_path.free(self.allocator);
 		return false;
@@ -276,6 +326,7 @@ fn bool GitExecutor.submit(&self, GitRequest* request)
 	if (catch excuse = self.requests.push(*request))
 	{
 		git_free_argv(self.allocator, request.argv);
+		if (request.rev.len > 0) request.rev.free(self.allocator);
 		if (request.path.len > 0) request.path.free(self.allocator);
 		if (request.orig_path.len > 0) request.orig_path.free(self.allocator);
 		return false;
@@ -317,6 +368,7 @@ fn void GitExecutor.stop(&self)
 		if (catch excuse = maybe) break;
 		GitRequest request = maybe;
 		git_free_argv(self.allocator, request.argv);
+		if (request.rev.len > 0) request.rev.free(self.allocator);
 		if (request.path.len > 0) request.path.free(self.allocator);
 		if (request.orig_path.len > 0) request.orig_path.free(self.allocator);
 	}

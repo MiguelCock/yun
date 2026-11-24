@@ -21,7 +21,13 @@ Status parsing is NUL-delimited. It handles branch headers (`branch.oid`, `branc
 
 The Source Control panel (`Ctrl+Shift+G`) docks on the left and lists merge conflicts, staged changes, working-tree changes, and untracked files. Cards and browser rows receive a coloured status stripe/letter.
 
-Diff commands use `--no-color --no-ext-diff --no-textconv`, so repository-configured diff drivers cannot execute. `src/git/diff.c3` parses unified diffs into hunks and typed lines; `src/git/diff_view.c3` renders inline and side-by-side modes.
+Click the branch row (or press `B`) to open the branch picker. It lists local branches with the current branch marked and the upstream shown; `Enter` switches, `N` creates a branch from the current HEAD, and `R` refreshes the list. Switching is blocked by Git when local changes would be overwritten and the error is shown in the panel.
+
+Conflicted files appear under Merge Changes. Press `C` on a selected conflict to open the resolution view: `1`/`2`/`3` choose Current, Incoming, or Both, `S` saves and stages the resolved file, and `A` aborts the merge. The view shows the conflict labels and base text when available.
+
+The remote bar provides Fetch, Pull, Push/Publish, and Sync. Fetch and Push use `git.default_remote`; Pull uses the branch upstream with `--ff-only`; Publish runs `git push -u <remote> <branch>` when no upstream exists; Sync runs Pull followed by Push. Remote commands set `credential.interactive=false` so Git cannot wait on a terminal prompt; credential helpers and SSH agents still work. Pull and Sync are disabled while editors have unsaved changes.
+
+Diff commands use `--no-color --no-ext-diff --no-textconv`, so repository-configured diff drivers cannot execute. `src/git/diff.c3` parses unified diffs into hunks and typed lines; `src/git/diff_view.c3` renders inline and side-by-side modes. In the diff overlay, `[`/`]` select a hunk and `S`/`U` stage or unstage it. Hunk patches are written to a temporary file and applied with `git apply --cached` (or `--reverse` for staged diffs); the viewer refreshes after each action.
 
 ## Security
 
@@ -37,3 +43,7 @@ Diff commands use `--no-color --no-ext-diff --no-textconv`, so repository-config
 - Nested repositories and submodules do not get separate status.
 - Hunk staging and commit history are separate milestones.
 - Untracked files are shown as added-file diffs via `git diff --no-index`.
+
+## History
+
+Press `H` in the Source Control panel to open recent history (or history for the selected file). The overlay lists commits with hash, date, and subject; the details pane shows author/date and changed files. `Tab` switches focus to the file list and `Enter` opens a per-file commit diff in the normal diff overlay. History is capped at 200 commits and 1000 changed files per commit.
