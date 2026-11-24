@@ -609,12 +609,16 @@ fn void DiffView.draw(&self, Canvas* canvas)
 	ui::rounded_top(header, ui::corner_radius(), theme::current().panel_bg_alt);
 	@pool()
 	{
-		String title = string::format(
-			tmem,
-			"%s  %s",
-			self.staged ? "Staged" : "Working tree",
-			diff_basename(self.path)
-		);
+		String title;
+		if (self.rev.len > 0)
+		{
+			String short_rev = self.rev.len > 7 ? self.rev[0:7] : self.rev;
+			title = string::format(tmem, "Commit %s  %s", short_rev, diff_basename(self.path));
+		}
+		else
+		{
+			title = string::format(tmem, "%s  %s", self.staged ? "Staged" : "Working tree", diff_basename(self.path));
+		}
 		rl::draw_text_ex(
 			ui::font(),
 			title.zstr_tcopy(),

@@ -130,6 +130,7 @@ fn String[] git_commit_files_argv(Allocator allocator, String binary, String roo
 		list.push(root);
 		list.push("diff-tree");
 		list.push("--no-commit-id");
+		list.push("--root");
 		list.push("--name-status");
 		list.push("-r");
 		list.push("-z");

@@ -52,9 +52,9 @@ fn void test_history_commands()
 	assert(log[10].compare_to("src/main.c3") == 0);
 	String[] files = git_commit_files_argv(mem, "git", "/repo", "abc123");
 	defer git_free_argv(mem, files);
-	assert(files.len == 9);
+	assert(files.len == 10);
 	assert(files[3].compare_to("diff-tree") == 0);
-	assert(files[8].compare_to("abc123") == 0);
+	assert(files[9].compare_to("abc123") == 0);
 }
 
 fn void test_history_integration()
