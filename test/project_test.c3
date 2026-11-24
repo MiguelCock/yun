@@ -1446,3 +1446,33 @@ fn void test_shift_line_selection()
 		assert(card.cursor == 3 && card.selection_anchor == 1);
 	};
 }
+fn void test_keyboard_grab_snapping()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.name = "a.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .x = 10.0f, .y = 20.0f, .width = 100.0f, .height = 80.0f },
+			}
+		);
+		p.selected = 0;
+		p.begin_grab();
+		assert(p.grab_accum[0] == 10.0f && p.grab_accum[1] == 20.0f);
+
+		p.apply_grab_delta({ 10.0f, 10.0f }, 64.0f);
+		assert(p.cards[0].rect.x == 0.0f && p.cards[0].rect.y == 0.0f);
+		assert(p.grab_accum[0] == 20.0f && p.grab_accum[1] == 30.0f);
+
+		p.apply_grab_delta({ 40.0f, 40.0f }, 64.0f);
+		assert(p.cards[0].rect.x == 64.0f && p.cards[0].rect.y == 64.0f);
+		assert(p.grab_accum[0] == 60.0f && p.grab_accum[1] == 70.0f);
+
+		p.apply_grab_delta({ 1.0f, 1.0f }, 0.0f);
+		assert(p.cards[0].rect.x == 61.0f && p.cards[0].rect.y == 71.0f);
+	};
+}

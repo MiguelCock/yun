@@ -110,6 +110,8 @@ struct Project
 	int selected_cluster;
 	int current_folder;
 	bool grabbing;
+	bool grab_accum_valid;
+	RLVector2 grab_accum;
 	bool focus_toggle_requested;
 	int hover_card;
 	bool drag_card;
@@ -172,6 +174,8 @@ fn void Project.init(&self, Allocator allocator)
 	self.selected_cluster = -1;
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
+	self.grab_accum_valid = false;
+	self.grab_accum = { 0.0f, 0.0f };
 	self.focus_toggle_requested = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
@@ -262,6 +266,8 @@ fn void Project.reset(&self)
 	self.selected_cluster = -1;
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
+	self.grab_accum_valid = false;
+	self.grab_accum = { 0.0f, 0.0f };
 	self.focus_toggle_requested = false;
 	self.drag_card = false;
 	self.drag_cluster = false;
@@ -1822,6 +1828,47 @@ fn bool Project.leave_folder(&self)
 	return true;
 }
 
+fn void Project.begin_grab(&self)
+{
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+	{
+		Rect bounds = self.cluster_bounds(self.selected_cluster);
+		self.grab_accum = { bounds.x, bounds.y };
+		self.grab_accum_valid = true;
+	}
+	else if (self.selected >= 0 && self.selected < (int)self.cards.len())
+	{
+		self.grab_accum = { self.cards[self.selected].rect.x, self.cards[self.selected].rect.y };
+		self.grab_accum_valid = true;
+	}
+	else
+	{
+		self.grab_accum_valid = false;
+	}
+}
+
+fn void Project.apply_grab_delta(&self, RLVector2 delta, float step)
+{
+	if (!self.grab_accum_valid) self.begin_grab();
+	if (!self.grab_accum_valid) return;
+	self.grab_accum[0] += delta[0];
+	self.grab_accum[1] += delta[1];
+	float target_x = step > 0.0f ? canvas::snap_value(self.grab_accum[0], step) : self.grab_accum[0];
+	float target_y = step > 0.0f ? canvas::snap_value(self.grab_accum[1], step) : self.grab_accum[1];
+	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+	{
+		Rect current   = self.cluster_bounds(self.selected_cluster);
+		RLVector2 move = { target_x - current.x, target_y - current.y };
+		if (move[0] != 0.0f || move[1] != 0.0f) self.move_cluster(self.selected_cluster, move);
+	}
+	else if (self.selected >= 0 && self.selected < (int)self.cards.len())
+	{
+		self.cards[self.selected].rect.x = target_x;
+		self.cards[self.selected].rect.y = target_y;
+		self.invalidate_bounds_for_card(self.selected);
+	}
+}
+
 fn void Project.move_selected(&self, RLVector2 delta)
 {
 	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
@@ -3296,7 +3343,7 @@ fn void Project.draw_folders(&self, RLCamera2D camera)
 fn void Project.draw_snap_guides(&self, RLCamera2D camera)
 {
 	if (!canvas::settings().snap_to_grid || alt_down()) return;
-	if (!self.drag_card && !self.drag_cluster && !self.resizing) return;
+	if (!self.drag_card && !self.drag_cluster && !self.resizing && !self.grabbing) return;
 	Rect r;
 	if (self.resizing)
 	{
