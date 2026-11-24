@@ -9,6 +9,7 @@ import std::io::os;
 import std::math;
 import yun::card;
 import yun::highlight;
+import yun::input;
 import yun::lsp;
 import yun::markdown;
 import yun::text;
@@ -372,7 +373,7 @@ fn bool has_selection(usz anchor, usz cursor)
 
 fn bool word_char(char c)
 {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+	return input::word_class(c) == input::WordClass.WORD;
 }
 
 fn void word_range(PieceTable* table, usz offset, usz* start, usz* end)
@@ -962,6 +963,56 @@ fn usz cursor_next(PieceTable* table, usz cursor)
 {
 	if (cursor >= table.length()) return table.length();
 	return table.next_boundary(cursor);
+}
+
+fn usz cursor_word_left(PieceTable* table, usz cursor)
+{
+	usz length = table.length();
+	if (cursor > length) cursor = length;
+	usz pos = cursor;
+	while (pos > 0)
+	{
+		usz prev = table.prev_boundary(pos - 1);
+		if (input::word_class(table.byte_at(prev)) != input::WordClass.SPACE) break;
+		pos = prev;
+	}
+	if (pos == 0) return 0;
+	usz prev             = table.prev_boundary(pos - 1);
+	input::WordClass cls = input::word_class(table.byte_at(prev));
+	while (pos > 0)
+	{
+		prev = table.prev_boundary(pos - 1);
+		if (input::word_class(table.byte_at(prev)) != cls) break;
+		pos = prev;
+	}
+	return pos;
+}
+
+fn usz cursor_word_right(PieceTable* table, usz cursor)
+{
+	usz length = table.length();
+	if (cursor >= length) return length;
+	input::WordClass cls = input::word_class(table.byte_at(cursor));
+	usz pos              = cursor;
+	while (pos < length && input::word_class(table.byte_at(pos)) == cls)
+	{
+		pos = table.next_boundary(pos);
+	}
+	return pos;
+}
+
+fn void word_delete_range(PieceTable* table, usz cursor, bool back, usz* start, usz* length)
+{
+	if (back)
+	{
+		*start = cursor_word_left(table, cursor);
+		*length = cursor - *start;
+	}
+	else
+	{
+		*start = cursor;
+		*length = cursor_word_right(table, cursor) - cursor;
+	}
 }
 
 fn usz cursor_home(PieceTable* table, usz cursor)

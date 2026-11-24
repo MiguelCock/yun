@@ -62,6 +62,10 @@ enum CommandId
 	CURSOR_RIGHT,
 	CURSOR_UP,
 	CURSOR_DOWN,
+	CURSOR_WORD_LEFT,
+	CURSOR_WORD_RIGHT,
+	DELETE_WORD_BACK,
+	DELETE_WORD_FORWARD,
 	LINE_START,
 	LINE_END,
 	PAGE_UP,
@@ -300,6 +304,38 @@ const CommandDef[] COMMAND_DEFS = {
 		.shortcut = "Down",
 		.in_top_bar = false,
 		.contexts = CTX_EDIT,
+	},
+	{
+		.id = CommandId.CURSOR_WORD_LEFT,
+		.label = "Cursor Word Left",
+		.shortcut = "Ctrl+Left",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CURSOR_WORD_RIGHT,
+		.label = "Cursor Word Right",
+		.shortcut = "Ctrl+Right",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.DELETE_WORD_BACK,
+		.label = "Delete Word Back",
+		.shortcut = "Ctrl+Backspace",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.DELETE_WORD_FORWARD,
+		.label = "Delete Word Forward",
+		.shortcut = "Ctrl+Delete",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT,
+		.repeat = true,
 	},
 	{
 		.id = CommandId.LINE_START,
@@ -900,6 +936,14 @@ fn String command_name(CommandId id)
 			return "cursor_up";
 		case CommandId.CURSOR_DOWN:
 			return "cursor_down";
+		case CommandId.CURSOR_WORD_LEFT:
+			return "cursor_word_left";
+		case CommandId.CURSOR_WORD_RIGHT:
+			return "cursor_word_right";
+		case CommandId.DELETE_WORD_BACK:
+			return "delete_word_back";
+		case CommandId.DELETE_WORD_FORWARD:
+			return "delete_word_forward";
 		case CommandId.LINE_START:
 			return "line_start";
 		case CommandId.LINE_END:
@@ -1167,6 +1211,10 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.CURSOR_RIGHT:
 		case CommandId.CURSOR_UP:
 		case CommandId.CURSOR_DOWN:
+		case CommandId.CURSOR_WORD_LEFT:
+		case CommandId.CURSOR_WORD_RIGHT:
+		case CommandId.DELETE_WORD_BACK:
+		case CommandId.DELETE_WORD_FORWARD:
 		case CommandId.LINE_START:
 		case CommandId.LINE_END:
 		case CommandId.PAGE_UP:

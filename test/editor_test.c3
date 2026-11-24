@@ -906,3 +906,39 @@ fn void test_title_button_rects()
 	assert(preview.x + preview.width < maximize.x);
 	assert(maximize.x + maximize.width < minimize.x);
 }
+fn void test_word_navigation()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "foo bar_baz!\nqux");
+		assert(cursor_word_right(&t, 0) == 3);
+		assert(cursor_word_right(&t, 3) == 4);
+		assert(cursor_word_right(&t, 4) == 11);
+		assert(cursor_word_right(&t, 11) == 12);
+		assert(cursor_word_right(&t, 12) == 13);
+		assert(cursor_word_left(&t, 16) == 13);
+		assert(cursor_word_left(&t, 13) == 11);
+		assert(cursor_word_left(&t, 11) == 4);
+
+		usz start  = 0;
+		usz length = 0;
+		word_delete_range(&t, 16, true, &start, &length);
+		assert(start == 13 && length == 3);
+		word_delete_range(&t, 4, false, &start, &length);
+		assert(start == 4 && length == 7);
+		t.destroy();
+	};
+}
+
+fn void test_word_navigation_utf8()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "café x");
+		assert(cursor_word_right(&t, 0) == 5);
+		assert(cursor_word_left(&t, 7) == 6);
+		t.destroy();
+	};
+}
