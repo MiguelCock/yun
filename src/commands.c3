@@ -143,6 +143,10 @@ enum CommandId
 	CONSOLE_NEXT_SESSION,
 	CONSOLE_PREV_SESSION,
 	CONSOLE_RUN_PROFILE,
+	CONSOLE_WORD_LEFT,
+	CONSOLE_WORD_RIGHT,
+	CONSOLE_DELETE_WORD_BACK,
+	CONSOLE_DELETE_WORD_FORWARD,
 	TOGGLE_CONNECTIONS,
 	QUIT,
 }
@@ -847,6 +851,38 @@ const CommandDef[] COMMAND_DEFS = {
 		.contexts = CTX_GLOBAL,
 	},
 	{
+		.id = CommandId.CONSOLE_WORD_LEFT,
+		.label = "Console Word Left",
+		.shortcut = "Ctrl+Left",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CONSOLE_WORD_RIGHT,
+		.label = "Console Word Right",
+		.shortcut = "Ctrl+Right",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CONSOLE_DELETE_WORD_BACK,
+		.label = "Console Delete Word Back",
+		.shortcut = "Ctrl+Backspace",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CONSOLE_DELETE_WORD_FORWARD,
+		.label = "Console Delete Word Forward",
+		.shortcut = "Ctrl+Delete",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
 		.id = CommandId.TOGGLE_CONNECTIONS,
 		.label = "Connections",
 		.shortcut = "Ctrl+Shift+I",
@@ -1098,6 +1134,14 @@ fn String command_name(CommandId id)
 			return "console_prev_session";
 		case CommandId.CONSOLE_RUN_PROFILE:
 			return "console_run_profile";
+		case CommandId.CONSOLE_WORD_LEFT:
+			return "console_word_left";
+		case CommandId.CONSOLE_WORD_RIGHT:
+			return "console_word_right";
+		case CommandId.CONSOLE_DELETE_WORD_BACK:
+			return "console_delete_word_back";
+		case CommandId.CONSOLE_DELETE_WORD_FORWARD:
+			return "console_delete_word_forward";
 		case CommandId.TOGGLE_CONNECTIONS:
 			return "toggle_connections";
 		case CommandId.QUIT:
@@ -1182,6 +1226,10 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.CONSOLE_NEXT_SESSION:
 		case CommandId.CONSOLE_PREV_SESSION:
 		case CommandId.CONSOLE_RUN_PROFILE:
+		case CommandId.CONSOLE_WORD_LEFT:
+		case CommandId.CONSOLE_WORD_RIGHT:
+		case CommandId.CONSOLE_DELETE_WORD_BACK:
+		case CommandId.CONSOLE_DELETE_WORD_FORWARD:
 		case CommandId.QUIT:
 			return true;
 		case CommandId.GO_TO_DEFINITION:

@@ -2,6 +2,7 @@ module yun::console;
 
 import std::collections::list;
 import std::core::dstring;
+import yun::input;
 
 const int DEFAULT_HISTORY = 100;
 
@@ -139,6 +140,67 @@ fn void ConsoleInput.delete_forward(&self)
 	if (self.cursor >= self.text.len()) return;
 	sz end = self.next_boundary(self.cursor);
 	self.text.delete(self.cursor, end - self.cursor);
+}
+
+fn void ConsoleInput.move_word_left(&self)
+{
+	if (self.cursor <= 0) return;
+	sz pos = self.cursor;
+	while (pos > 0)
+	{
+		sz prev = self.prev_boundary(pos);
+		if (input::word_class(self.text.char_at(prev)) != input::WordClass.SPACE) break;
+		pos = prev;
+	}
+	if (pos == 0)
+	{
+		self.cursor = 0;
+		return;
+	}
+	sz prev              = self.prev_boundary(pos);
+	input::WordClass cls = input::word_class(self.text.char_at(prev));
+	while (pos > 0)
+	{
+		prev = self.prev_boundary(pos);
+		if (input::word_class(self.text.char_at(prev)) != cls) break;
+		pos = prev;
+	}
+	self.cursor = pos;
+}
+
+fn void ConsoleInput.move_word_right(&self)
+{
+	sz len = self.text.len();
+	if (self.cursor >= len) return;
+	input::WordClass cls = input::word_class(self.text.char_at(self.cursor));
+	sz pos               = self.cursor;
+	while (pos < len && input::word_class(self.text.char_at(pos)) == cls)
+	{
+		pos = self.next_boundary(pos);
+	}
+	self.cursor = pos;
+}
+
+fn void ConsoleInput.delete_word_back(&self)
+{
+	if (self.cursor <= 0) return;
+	sz old_cursor = self.cursor;
+	self.move_word_left();
+	sz start = self.cursor;
+	self.cursor = old_cursor;
+	self.text.delete(start, old_cursor - start);
+	self.cursor = start;
+}
+
+fn void ConsoleInput.delete_word_forward(&self)
+{
+	sz len = self.text.len();
+	if (self.cursor >= len) return;
+	sz start = self.cursor;
+	self.move_word_right();
+	sz end = self.cursor;
+	self.cursor = start;
+	self.text.delete(start, end - start);
 }
 
 fn void ConsoleInput.move_left(&self)
