@@ -183,6 +183,24 @@ fn void ConsoleHistory.init(&self, Allocator allocator, int max_entries = DEFAUL
 	self.max_entries = max_entries > 0 ? max_entries : 1;
 }
 
+fn void ConsoleHistory.set_max(&self, int max_entries)
+{
+	int max = max_entries > 0 ? max_entries : 1;
+	if (self.max_entries == max) return;
+	self.max_entries = max;
+	while (self.entries.len() > (sz)max)
+	{
+		self.entries[0].free(self.allocator);
+		self.entries.remove_at(0);
+	}
+	if (self.cursor > self.entries.len()) self.cursor = self.entries.len();
+	if (self.browsing && self.cursor >= self.entries.len())
+	{
+		self.browsing = false;
+		self.cursor = self.entries.len();
+	}
+}
+
 fn void ConsoleHistory.clear_draft(&self)
 {
 	if (self.draft.len > 0) self.draft.free(self.allocator);

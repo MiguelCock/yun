@@ -28,6 +28,7 @@ enum SettingPage : int
 	CANVAS,
 	INTEGRATIONS,
 	KEYS,
+	CONSOLE,
 	ADVANCED,
 	COUNT,
 }
@@ -108,6 +109,11 @@ enum SettingId : int
 	SEARCH_WORKERS,
 	SEARCH_DEBOUNCE_MS,
 	SEARCH_PREVIEW_MAX,
+	CONSOLE_MAX_LINES,
+	CONSOLE_MAX_OUTPUT_KB,
+	CONSOLE_HISTORY_SIZE,
+	CONSOLE_PANEL_HEIGHT,
+	CONSOLE_AUTO_SCROLL,
 	LSP_ENABLED,
 	COUNT,
 }
@@ -902,6 +908,58 @@ const SettingSpec[] SETTINGS = {
 		.step = 10.0,
 	},
 	{
+		.section = "console",
+		.key = "max_lines",
+		.label = "Max output lines",
+		.description = "Maximum output lines retained by the console.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 2000 },
+		.min = 100.0,
+		.max = 100000.0,
+		.step = 100.0,
+	},
+	{
+		.section = "console",
+		.key = "max_output_kb",
+		.label = "Max output size",
+		.description = "Maximum console output retained, in kilobytes.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 1024 },
+		.min = 16.0,
+		.max = 1048576.0,
+		.step = 64.0,
+	},
+	{
+		.section = "console",
+		.key = "history_size",
+		.label = "History size",
+		.description = "Number of commands kept in console history.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 100 },
+		.min = 1.0,
+		.max = 10000.0,
+		.step = 10.0,
+	},
+	{
+		.section = "console",
+		.key = "panel_height",
+		.label = "Panel height",
+		.description = "Console panel height in logical pixels.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 220 },
+		.min = 120.0,
+		.max = 2000.0,
+		.step = 10.0,
+	},
+	{
+		.section = "console",
+		.key = "auto_scroll",
+		.label = "Auto-scroll",
+		.description = "Follow new console output unless scrolled up.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
 		.section = "lsp",
 		.key = "enabled",
 		.label = "Language servers",
@@ -960,6 +1018,7 @@ fn SettingPage page_for(SettingId id)
 		"canvas"
 	) == 0 || s.section.compare_to("minimap") == 0 || s.section.compare_to("arrows") == 0) return SettingPage.CANVAS;
 	if (s.section.compare_to("search") == 0) return SettingPage.ADVANCED;
+	if (s.section.compare_to("console") == 0) return SettingPage.CONSOLE;
 	if (s.section.compare_to("lsp") == 0) return SettingPage.INTEGRATIONS;
 	if (s.section.compare_to("app") == 0)
 	{
@@ -990,6 +1049,8 @@ fn String page_label(SettingPage page)
 			return "Integrations";
 		case SettingPage.KEYS:
 			return "Keys";
+		case SettingPage.CONSOLE:
+			return "Console";
 		case SettingPage.ADVANCED:
 			return "Advanced";
 		case SettingPage.COUNT:
@@ -1029,6 +1090,12 @@ fn String group_for(SettingId id)
 	if (s.section.compare_to("minimap") == 0) return "Minimap";
 	if (s.section.compare_to("arrows") == 0) return "Imports";
 	if (s.section.compare_to("search") == 0) return "Search limits";
+	if (s.section.compare_to("console") == 0)
+	{
+		if (s.key.compare_to("max_lines") == 0 || s.key.compare_to("max_output_kb") == 0) return "Limits";
+		if (s.key.compare_to("history_size") == 0) return "History";
+		return "Panel";
+	}
 	if (s.section.compare_to("lsp") == 0) return "Language servers";
 	return "General";
 }

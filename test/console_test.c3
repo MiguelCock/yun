@@ -405,3 +405,49 @@ fn void test_input_zstr_view_clears()
 	input.backspace();
 	assert(input.zstr_view().str_view().compare_to("ab") == 0);
 }
+fn void test_console_settings_limits()
+{
+	ConsoleBuffer buffer;
+	buffer.init(mem, 10, 1024 * 1024);
+	defer buffer.destroy();
+	buffer.append_stdout("1\n2\n3\n4\n5\n");
+	buffer.set_limits(2, 1024 * 1024);
+	assert(buffer.line_count() == 2);
+	console_test_helpers::expect_line(&buffer, 0, ConsoleStream.STDOUT, "4");
+	console_test_helpers::expect_line(&buffer, 1, ConsoleStream.STDOUT, "5");
+	assert(buffer.truncated);
+
+	ConsoleHistory history;
+	history.init(mem, 5);
+	defer history.destroy();
+	history.add("a");
+	history.add("b");
+	history.add("c");
+	history.set_max(2);
+	assert(history.entries.len() == 2);
+	assert(history.entries[0].compare_to("b") == 0);
+	assert(history.entries[1].compare_to("c") == 0);
+}
+
+fn void test_panel_apply_settings()
+{
+	ConsolePanel panel;
+	panel.init();
+
+	ConsoleSettings settings = {
+		.max_lines = 2000,
+		.max_output_kb = 1024,
+		.history_size = 100,
+		.panel_height = 320.0f,
+		.auto_scroll = false,
+	};
+	panel.apply_settings(settings);
+	assert(panel.height == 320.0f);
+	assert(!panel.auto_scroll);
+	panel.open();
+	assert(!panel.pinned);
+
+	settings.auto_scroll = true;
+	panel.apply_settings(settings);
+	assert(panel.pinned);
+}

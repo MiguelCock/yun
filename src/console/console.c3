@@ -2,6 +2,41 @@ module yun::console;
 
 const int PUMP_BUDGET = 64 * 1024;
 
+struct ConsoleSettings
+{
+	int max_lines;
+	int max_output_kb;
+	int history_size;
+	float panel_height;
+	bool auto_scroll;
+}
+
+ConsoleSettings g_console_settings = {
+	.max_lines = DEFAULT_MAX_LINES,
+	.max_output_kb = (int)(DEFAULT_MAX_BYTES / 1024),
+	.history_size = DEFAULT_HISTORY,
+	.panel_height = DEFAULT_HEIGHT,
+	.auto_scroll = true,
+};
+
+fn void set_settings(ConsoleSettings settings)
+{
+	if (settings.max_lines < 100) settings.max_lines = 100;
+	if (settings.max_lines > 100000) settings.max_lines = 100000;
+	if (settings.max_output_kb < 16) settings.max_output_kb = 16;
+	if (settings.max_output_kb > 1024 * 1024) settings.max_output_kb = 1024 * 1024;
+	if (settings.history_size < 1) settings.history_size = 1;
+	if (settings.history_size > 10000) settings.history_size = 10000;
+	if (settings.panel_height < MIN_HEIGHT) settings.panel_height = MIN_HEIGHT;
+	if (settings.panel_height > 2000.0f) settings.panel_height = 2000.0f;
+	g_console_settings = settings;
+}
+
+fn ConsoleSettings settings()
+{
+	return g_console_settings;
+}
+
 struct Console
 {
 	Allocator allocator;
@@ -53,6 +88,12 @@ fn bool Console.submit(&self)
 	self.history.add(command);
 	self.input.clear();
 	return ok;
+}
+
+fn void Console.apply_settings(&self, ConsoleSettings settings)
+{
+	self.buffer.set_limits(settings.max_lines, (usz)settings.max_output_kb * 1024);
+	self.history.set_max(settings.history_size);
 }
 
 fn void Console.pump(&self)
