@@ -79,6 +79,8 @@ struct ConsoleBuffer
 	usz max_bytes;
 	int revision;
 	bool truncated;
+	bool render_ansi;
+	bool show_headers;
 	ConsoleStreamState[2] streams;
 }
 
@@ -97,6 +99,8 @@ fn void ConsoleBuffer.init(
 	self.max_bytes = max_bytes;
 	self.revision = 0;
 	self.truncated = false;
+	self.render_ansi = true;
+	self.show_headers = true;
 	for (int i = 0; i < 2; i++)
 	{
 		self.streams[i].pending.init(allocator);
@@ -107,6 +111,26 @@ fn void ConsoleBuffer.init(
 		self.streams[i].style = { };
 		self.streams[i].span_start = 0;
 	}
+}
+
+fn void ConsoleBuffer.set_render_ansi(&self, bool enabled)
+{
+	if (self.render_ansi == enabled) return;
+	self.render_ansi = enabled;
+	if (!enabled)
+	{
+		for (int i = 0; i < 2; i++)
+		{
+			self.streams[i].spans.clear();
+			self.streams[i].style = { };
+			self.streams[i].span_start = (usz)self.streams[i].pending.len();
+		}
+	}
+}
+
+fn void ConsoleBuffer.set_show_headers(&self, bool enabled)
+{
+	self.show_headers = enabled;
 }
 
 fn void ConsoleBuffer.set_limits(&self, int max_lines, usz max_bytes)
@@ -600,7 +624,7 @@ fn void ConsoleBuffer.append_stream(&self, int index, String chunk)
 			}
 			if (b >= 0x40 && b <= 0x7E)
 			{
-				if (c == 'm') self.apply_sgr(index, (String)state.csi[0:state.csi_len]);
+				if (c == 'm' && self.render_ansi) self.apply_sgr(index, (String)state.csi[0:state.csi_len]);
 				state.csi_len = 0;
 				state.ansi_state = (int)ConsoleAnsiState.TEXT;
 				continue;
@@ -687,6 +711,7 @@ fn void ConsoleBuffer.append_stderr(&self, String text)
 fn void ConsoleBuffer.append_command(&self, String command)
 {
 	self.flush();
+	if (!self.show_headers) return;
 	String header = string::format(self.allocator, "$ %s", command);
 	self.push_line(ConsoleStream.COMMAND, header, null, 0);
 }

@@ -116,6 +116,11 @@ fn void ConsoleManager.open(&self)
 fn void ConsoleManager.close(&self)
 {
 	self.visible = false;
+	if (g_console_settings.kill_on_close)
+	{
+		Console* console = self.active_console();
+		if (console) console.kill();
+	}
 	ConsolePanel* panel = self.active_panel();
 	if (panel) panel.close();
 }

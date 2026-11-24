@@ -102,6 +102,8 @@ fn void test_page_mapping()
 	assert(settings::page_for(settings::SettingId.CANVAS_SNAP_TO_GRID) == settings::SettingPage.CANVAS);
 	assert(settings::page_for(settings::SettingId.CANVAS_SNAP_STEP) == settings::SettingPage.CANVAS);
 	assert(settings::page_for(settings::SettingId.CONSOLE_MAX_LINES) == settings::SettingPage.CONSOLE);
+	assert(settings::page_for(settings::SettingId.CONSOLE_NOTIFY) == settings::SettingPage.CONSOLE);
+	assert(settings::page_for(settings::SettingId.CONSOLE_RESTORE_SESSIONS) == settings::SettingPage.CONSOLE);
 	assert(settings::page_for(settings::SettingId.CONSOLE_AUTO_SCROLL) == settings::SettingPage.CONSOLE);
 	assert(settings::page_for(settings::SettingId.CONSOLE_AUTOCOMPLETE) == settings::SettingPage.CONSOLE);
 	assert(settings::page_for(settings::SettingId.LSP_ENABLED) == settings::SettingPage.INTEGRATIONS);
