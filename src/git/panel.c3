@@ -64,7 +64,6 @@ struct Panel
 	bool error_open;
 	bool branch_open;
 	bool branch_create;
-	bool sync_pending;
 	bool editors_dirty;
 	String branch_warning;
 	int branch_selected;
@@ -107,7 +106,6 @@ fn void Panel.init(&self, Allocator allocator)
 	self.error_open = false;
 	self.branch_open = false;
 	self.branch_create = false;
-	self.sync_pending = false;
 	self.editors_dirty = false;
 	self.branch_warning = "";
 	self.branch_selected = -1;
@@ -698,18 +696,6 @@ fn void Panel.sync_actions(&self, State* git)
 		self.branch_create = false;
 		self.branch_input_clear();
 	}
-	if (self.sync_pending)
-	{
-		if (git.action.kind == GitRequestKind.PULL)
-		{
-			self.sync_pending = false;
-			if (git.action.success) (void)git.push(false);
-		}
-		else if (!git.action.success)
-		{
-			self.sync_pending = false;
-		}
-	}
 }
 
 fn Rect Panel.branch_modal_rect(&self, Canvas* canvas)
@@ -933,10 +919,7 @@ fn bool Panel.can_pull(&self, State* git)
 fn void Panel.start_sync(&self, State* git)
 {
 	if (!self.can_pull(git)) return;
-	if (git.pull())
-	{
-		self.sync_pending = true;
-	}
+	(void)git.sync();
 }
 
 fn void Panel.handle_commit_key(&self, State* git)
@@ -1871,7 +1854,7 @@ fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
 		draw_button(fetch_button, "Fetch", self.can_remote(git), (float)ui::tpx(11));
 		draw_button(pull_button, "Pull", self.can_pull(git), (float)ui::tpx(11));
 		draw_button(push_button, upstream ? "Publish" : "Push", self.can_push(git), (float)ui::tpx(11));
-		draw_button(sync_button, self.sync_pending ? "Syncing" : "Sync", self.can_pull(git), (float)ui::tpx(11));
+		draw_button(sync_button, git.sync_pending ? "Syncing" : "Sync", self.can_pull(git), (float)ui::tpx(11));
 	}
 
 	rl::begin_scissor_mode((int)list.x, (int)list.y, (int)list.width, (int)list.height);

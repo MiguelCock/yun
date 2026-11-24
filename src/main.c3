@@ -3228,7 +3228,7 @@ fn int main(String[] args)
 			if (git_panel.take_history(&history_path))
 			{
 				history_view.open_history(&git_state, history_path);
-				history_path.free(mem);
+				if (history_path.len > 0) history_path.free(mem);
 				if (ui_mode != UiMode.HISTORY) history_saved_mode = ui_mode;
 				ui_mode = UiMode.HISTORY;
 			}

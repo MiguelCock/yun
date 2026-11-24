@@ -81,6 +81,7 @@ struct State
 	GitAction action;
 	ulong action_revision;
 	bool busy;
+	bool sync_pending;
 	GitDiffResult diff;
 	ulong diff_revision;
 	int last_cards_revision;
@@ -126,6 +127,7 @@ fn void State.init(&self, Allocator allocator)
 	self.action.init(allocator);
 	self.action_revision = 0;
 	self.busy = false;
+	self.sync_pending = false;
 	self.diff.init(allocator);
 	self.diff_revision = 0;
 	self.last_cards_revision = -1;
@@ -646,6 +648,18 @@ fn void State.handle_action(&self, GitResult* result)
 		GitErrorKind kind = classify_error(self.action.error);
 		self.set_error(kind, error_message(kind, self.action.error), self.action.error);
 	}
+	if (self.sync_pending)
+	{
+		if (result.kind == GitRequestKind.PULL && self.action.success)
+		{
+			self.sync_pending = false;
+			(void)self.push(false);
+		}
+		else if (!self.action.success)
+		{
+			self.sync_pending = false;
+		}
+	}
 	self.mark_dirty(self.current_now);
 }
 
@@ -882,6 +896,13 @@ fn bool State.create_branch(&self, String name)
 fn String State.default_remote(&self)
 {
 	return g_git_settings.default_remote.len > 0 ? g_git_settings.default_remote : "origin";
+}
+
+fn bool State.sync(&self)
+{
+	if (!self.has_status || self.status.upstream.len == 0 || !self.pull()) return false;
+	self.sync_pending = true;
+	return true;
 }
 
 fn bool State.fetch(&self)
