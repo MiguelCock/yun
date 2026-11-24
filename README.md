@@ -30,7 +30,7 @@ Yun is keyboard-first and Vim-inspired. There are three modes, shown in the top 
 
 ### MOVE (default)
 
-The cursor is a card or folder on the canvas at the folder level you're in; no text is being edited. Arrows move between the current folder's direct children, so navigation follows the folder depth rather than every open card.
+The cursor is a card or folder on the canvas at the folder level you're in; no text is being edited. Arrows move between the current folder's direct children, so navigation follows the folder depth rather than every open card. Holding a movement key repeats the move after a short delay.
 
 | Key | Action |
 | --- | --- |
