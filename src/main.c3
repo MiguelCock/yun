@@ -276,6 +276,7 @@ fn void apply_settings(
 		.history_size = (int)config.settings.get_int(settings::SettingId.CONSOLE_HISTORY_SIZE),
 		.panel_height = (float)config.settings.get_int(settings::SettingId.CONSOLE_PANEL_HEIGHT),
 		.auto_scroll = config.settings.get_bool(settings::SettingId.CONSOLE_AUTO_SCROLL),
+		.autocomplete = config.settings.get_bool(settings::SettingId.CONSOLE_AUTOCOMPLETE),
 	};
 	console::set_settings(cs_console);
 	console.apply_settings(console::settings());

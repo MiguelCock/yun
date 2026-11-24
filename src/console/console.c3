@@ -9,6 +9,7 @@ struct ConsoleSettings
 	int history_size;
 	float panel_height;
 	bool auto_scroll;
+	bool autocomplete;
 }
 
 ConsoleSettings g_console_settings = {
@@ -17,6 +18,7 @@ ConsoleSettings g_console_settings = {
 	.history_size = DEFAULT_HISTORY,
 	.panel_height = DEFAULT_HEIGHT,
 	.auto_scroll = true,
+	.autocomplete = true,
 };
 
 fn void set_settings(ConsoleSettings settings)

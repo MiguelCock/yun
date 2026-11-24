@@ -617,3 +617,67 @@ fn void test_buffer_ansi_spans()
 	assert(((int)truecolor.spans[0].fg[1] & 0xFF) == 2);
 	assert(((int)truecolor.spans[0].fg[2] & 0xFF) == 3);
 }
+fn void test_console_autocomplete()
+{
+	Console console;
+	console.init(mem);
+	defer console.destroy();
+
+	ConsolePanel panel;
+	panel.init();
+
+	assert(!panel.completion_active);
+	console.history.add("git status");
+	console.history.add("git stash");
+	console.input.set("git st");
+	panel.refresh_completion(&console);
+	assert(panel.completion_active);
+	assert(panel.completion_candidate(&console).compare_to("git stash") == 0);
+	assert(panel.completion_suffix(&console).compare_to("ash") == 0);
+
+	console.input.set("git s");
+	panel.refresh_completion(&console);
+	assert(panel.completion_suffix(&console).compare_to("tash") == 0);
+
+	panel.accept_completion(&console);
+	assert(console.input.text_view().compare_to("git stash") == 0);
+	assert(console.input.cursor == console.input.len());
+
+	console.history.clear();
+	console.history.add("Git Status");
+	console.input.set("git s");
+	panel.refresh_completion(&console);
+	assert(panel.completion_active);
+	assert(panel.completion_candidate(&console).compare_to("Git Status") == 0);
+
+	console.input.set("git status");
+	panel.refresh_completion(&console);
+	assert(!panel.completion_active);
+
+	console.input.set("git");
+	console.input.move_left();
+	panel.refresh_completion(&console);
+	assert(!panel.completion_active);
+	console.input.end();
+
+	panel.refresh_completion(&console);
+	assert(panel.completion_active);
+	panel.dismiss_completion();
+	assert(!panel.completion_active);
+	panel.refresh_completion(&console);
+	assert(!panel.completion_active);
+	panel.completion_dismissed = false;
+	panel.refresh_completion(&console);
+	assert(panel.completion_active);
+
+	console.history.browsing = true;
+	panel.refresh_completion(&console);
+	assert(!panel.completion_active);
+
+	console.history.browsing = false;
+	ConsoleSettings settings = console::settings();
+	settings.autocomplete = false;
+	panel.apply_settings(settings);
+	panel.refresh_completion(&console);
+	assert(!panel.completion_active);
+}
