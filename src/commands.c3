@@ -158,6 +158,8 @@ struct CommandDef
 	String label;
 	String shortcut;
 	bool in_top_bar;
+	bool icon_only;
+	String bar_label;
 	ulong contexts;
 	bool repeat;
 }
@@ -261,6 +263,7 @@ const CommandDef[] COMMAND_DEFS = {
 		.label = "Settings",
 		.shortcut = "Ctrl+Shift+S",
 		.in_top_bar = true,
+		.icon_only = true,
 		.contexts = CTX_GLOBAL,
 	},
 	{ .id = CommandId.UNDO, .label = "Undo", .shortcut = "Ctrl+Z", .in_top_bar = false, .contexts = CTX_EDIT },
@@ -734,14 +737,15 @@ const CommandDef[] COMMAND_DEFS = {
 		.id = CommandId.TOGGLE_CONSOLE,
 		.label = "Console",
 		.shortcut = "Ctrl+J",
-		.in_top_bar = false,
+		.in_top_bar = true,
 		.contexts = CTX_GLOBAL,
 	},
 	{
 		.id = CommandId.TOGGLE_SCM,
 		.label = "Source Control",
+		.bar_label = "Git",
 		.shortcut = "Ctrl+Shift+G",
-		.in_top_bar = false,
+		.in_top_bar = true,
 		.contexts = CTX_GLOBAL,
 	},
 	{
@@ -904,6 +908,15 @@ fn usz command_count()
 {
 	return COMMAND_DEFS.len;
 }
+
+const CommandId[] TOP_BAR_COMMANDS = {
+	CommandId.NEW_FILE,
+	CommandId.OPEN,
+	CommandId.SAVE,
+	CommandId.TOGGLE_SCM,
+	CommandId.TOGGLE_CONSOLE,
+	CommandId.TOGGLE_SETTINGS,
+};
 
 fn CommandDef command_def(CommandId id)
 {
@@ -1170,24 +1183,13 @@ fn int command_from_name(String name)
 
 fn usz bar_command_count()
 {
-	usz count = 0;
-	foreach (CommandDef def : COMMAND_DEFS)
-	{
-		if (def.in_top_bar) count++;
-	}
-	return count;
+	return TOP_BAR_COMMANDS.len;
 }
 
 fn CommandDef bar_command(usz slot)
 {
-	usz seen = 0;
-	foreach (CommandDef def : COMMAND_DEFS)
-	{
-		if (!def.in_top_bar) continue;
-		if (seen == slot) return def;
-		seen++;
-	}
-	return COMMAND_DEFS[0];
+	if (slot >= TOP_BAR_COMMANDS.len) return COMMAND_DEFS[0];
+	return command_def(TOP_BAR_COMMANDS[slot]);
 }
 
 fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)

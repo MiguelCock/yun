@@ -21,6 +21,9 @@ fn void test_button_rects()
 	assert(a.width == BUTTON_WIDTH);
 	assert(a.height == BUTTON_HEIGHT);
 	assert(b.x == a.x + a.width + BUTTON_GAP);
+	Rect settings = button_rect(5);
+	assert(settings.width == ICON_BUTTON_WIDTH);
+	assert(settings.x > b.x);
 }
 
 fn void test_hit_button()
@@ -39,14 +42,14 @@ fn void test_keyboard_selection()
 {
 	TopBar bar;
 	bar.init();
-	// bar commands: NEW_FILE, OPEN, SAVE, TOGGLE_SETTINGS
+	// bar commands: NEW_FILE, OPEN, SAVE, TOGGLE_SCM, TOGGLE_CONSOLE, TOGGLE_SETTINGS
 	bar.selected = 0;
 	bar.clamp_selection(false, false);
 	assert(bar.selected == 1); // NEW_FILE disabled -> OPEN
 
 	bar.move_selection(1, false, false);
-	assert(bar.selected == 3); // SAVE disabled -> TOGGLE_SETTINGS
-	assert(bar.activate(false, false) == (int)commands::CommandId.TOGGLE_SETTINGS);
+	assert(bar.selected == 3); // SAVE disabled -> TOGGLE_SCM
+	assert(bar.activate(false, false) == (int)commands::CommandId.TOGGLE_SCM);
 
 	bar.selected = 0;
 	bar.move_selection(1, true, true);
