@@ -53,6 +53,7 @@ enum UiMode : int
 	SCM,
 	DIFF,
 	CONFLICT,
+	HISTORY,
 }
 
 fn void set_project_title(project::Project* project)
@@ -578,6 +579,7 @@ struct App
 	git::Panel* git_panel;
 	git::DiffView* diff_view;
 	git::ConflictView* conflict_view;
+	git::HistoryView* history_view;
 	editor::EditorMetrics metrics;
 	bool* project_open;
 	bool* content_changed;
@@ -588,6 +590,7 @@ struct App
 	UiMode* scm_saved_mode;
 	UiMode* diff_saved_mode;
 	UiMode* conflict_saved_mode;
+	UiMode* history_saved_mode;
 	int* edit_grace_frames;
 	topbar::TopBar* bar;
 	keymap::Keymap* keymap;
@@ -2220,6 +2223,10 @@ fn int main(String[] args)
 	git::ConflictView conflict_view;
 	conflict_view.init(mem);
 	defer conflict_view.destroy();
+
+	git::HistoryView history_view;
+	history_view.init(mem);
+	defer history_view.destroy();
 	console::Console* console            = console_manager.active_console();
 	console::ConsolePanel* console_panel = console_manager.active_panel();
 
@@ -2289,6 +2296,7 @@ fn int main(String[] args)
 	UiMode scm_saved_mode       = UiMode.MOVE;
 	UiMode diff_saved_mode      = UiMode.MOVE;
 	UiMode conflict_saved_mode  = UiMode.MOVE;
+	UiMode history_saved_mode   = UiMode.MOVE;
 	int edit_grace_frames       = 0;
 	bool selftest               = false;
 	bool benchmark_on           = false;
@@ -2425,6 +2433,7 @@ fn int main(String[] args)
 		.git_panel = &git_panel,
 		.diff_view = &diff_view,
 		.conflict_view = &conflict_view,
+		.history_view = &history_view,
 		.metrics = metrics,
 		.project_open = &project_open,
 		.content_changed = &content_changed,
@@ -2435,6 +2444,7 @@ fn int main(String[] args)
 		.scm_saved_mode = &scm_saved_mode,
 		.diff_saved_mode = &diff_saved_mode,
 		.conflict_saved_mode = &conflict_saved_mode,
+		.history_saved_mode = &history_saved_mode,
 		.edit_grace_frames = &edit_grace_frames,
 		.bar = &bar,
 		.keymap = &keymap,
@@ -2488,6 +2498,7 @@ fn int main(String[] args)
 		if (ui_mode == UiMode.SCM && !git_panel.visible) ui_mode = scm_saved_mode;
 		if (ui_mode == UiMode.DIFF && !diff_view.open) ui_mode = diff_saved_mode;
 		if (ui_mode == UiMode.CONFLICT && !conflict_view.open) ui_mode = conflict_saved_mode;
+		if (ui_mode == UiMode.HISTORY && !history_view.open) ui_mode = history_saved_mode;
 		if (ui_mode != UiMode.MOVE || project.grabbing) move_repeat.reset();
 		if (selftest && frame_count > 3) break;
 		bool bench_ready = benchmark_on && (benchmark_synthetic || project_open);
@@ -2574,6 +2585,8 @@ fn int main(String[] args)
 					case git::GitRequestKind.BRANCH_CREATE:
 					case git::GitRequestKind.MERGE_ABORT:
 					case git::GitRequestKind.APPLY_PATCH:
+					case git::GitRequestKind.LOG:
+					case git::GitRequestKind.COMMIT_FILES:
 						break;
 				}
 			}
@@ -3142,6 +3155,15 @@ fn int main(String[] args)
 					ui_mode = conflict_saved_mode;
 				}
 			}
+			if (history_view.open && !diff_view.open && !conflict_view.open)
+			{
+				history_view.update(&git_state, &canvas, rl::get_time());
+				if (history_view.close_requested)
+				{
+					history_view.close_requested = false;
+					ui_mode = history_saved_mode;
+				}
+			}
 			if (!diff_view.open && !conflict_view.open)
 			{
 				console_panel.update_mouse(&console_manager, console, metrics, mouse);
@@ -3163,7 +3185,7 @@ fn int main(String[] args)
 					break;
 				}
 			}
-			if (!diff_view.open && !conflict_view.open)
+			if (!diff_view.open && !conflict_view.open && !history_view.open)
 			{
 				git_panel.update(&git_state, &canvas, rl::get_time(), ui_mode == UiMode.SCM, editors_dirty);
 			}
@@ -3201,6 +3223,14 @@ fn int main(String[] args)
 				resolve_abs.free(mem);
 				if (ui_mode != UiMode.CONFLICT) conflict_saved_mode = ui_mode;
 				ui_mode = UiMode.CONFLICT;
+			}
+			String history_path = "";
+			if (git_panel.take_history(&history_path))
+			{
+				history_view.open_history(&git_state, history_path);
+				history_path.free(mem);
+				if (ui_mode != UiMode.HISTORY) history_saved_mode = ui_mode;
+				ui_mode = UiMode.HISTORY;
 			}
 			bool over_top   = diff_view.open || topbar::contains_screen(
 				mouse
@@ -3255,11 +3285,17 @@ fn int main(String[] args)
 			}
 
 			int key_cmd = -1;
-			if (!diff_view.open && !conflict_view.open) key_cmd = keymap.poll(commands::CTX_GLOBAL);
+			if (!diff_view.open && !conflict_view.open && !history_view.open) key_cmd = keymap.poll(
+				commands::CTX_GLOBAL
+			);
 			if (key_cmd >= 0) run_command((commands::CommandId)key_cmd, &app);
 
 			int bar_cmd = -1;
-			if (!diff_view.open && !conflict_view.open) bar_cmd = bar.update(mouse, project_open, has_buffer);
+			if (!diff_view.open && !conflict_view.open && !history_view.open) bar_cmd = bar.update(
+				mouse,
+				project_open,
+				has_buffer
+			);
 			if (bar_cmd >= 0) run_command((commands::CommandId)bar_cmd, &app);
 
 			if (ui_mode == UiMode.CONSOLE)
@@ -3293,6 +3329,12 @@ fn int main(String[] args)
 				}
 			}
 			else if (ui_mode == UiMode.CONFLICT)
+			{
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+			}
+			else if (ui_mode == UiMode.HISTORY)
 			{
 				while (rl::get_char_pressed() != 0)
 				{
@@ -4044,6 +4086,10 @@ fn int main(String[] args)
 				{
 					mode_label = "-- CONFLICT --";
 				}
+				else if (ui_mode == UiMode.HISTORY)
+				{
+					mode_label = "-- HISTORY --";
+				}
 				else if (project.grabbing)
 				{
 					mode_label = "-- GRAB --";
@@ -4095,6 +4141,7 @@ fn int main(String[] args)
 			search.draw(font);
 			symbols.draw(font);
 			definition_menu.draw();
+			history_view.draw(&git_state, &canvas);
 			diff_view.draw(&canvas);
 			conflict_view.draw(&canvas);
 			notifier.draw();

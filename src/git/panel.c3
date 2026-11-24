@@ -76,6 +76,8 @@ struct Panel
 	String pending_resolve_rel;
 	String pending_resolve_abs;
 	bool resolve_pending;
+	bool history_pending;
+	String pending_history_path;
 	bool leave_requested;
 	bool focus_requested;
 }
@@ -117,6 +119,8 @@ fn void Panel.init(&self, Allocator allocator)
 	self.pending_resolve_rel = "";
 	self.pending_resolve_abs = "";
 	self.resolve_pending = false;
+	self.history_pending = false;
+	self.pending_history_path = "";
 	self.leave_requested = false;
 	self.focus_requested = false;
 }
@@ -127,6 +131,7 @@ fn void Panel.destroy(&self)
 	if (self.pending_open.len > 0) self.pending_open.free(self.allocator);
 	if (self.pending_resolve_rel.len > 0) self.pending_resolve_rel.free(self.allocator);
 	if (self.pending_resolve_abs.len > 0) self.pending_resolve_abs.free(self.allocator);
+	if (self.pending_history_path.len > 0) self.pending_history_path.free(self.allocator);
 	if (self.branch_warning.len > 0) self.branch_warning.free(self.allocator);
 }
 
@@ -1046,6 +1051,14 @@ fn void Panel.handle_list_key(&self, State* git, Canvas* canvas, double now)
 	if (rl::is_key_pressed(rl::RLKeyboardKey.SPACE)) self.stage_selected(git, now);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.D)) self.request_diff(git);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.C)) self.request_resolve(git);
+	if (rl::is_key_pressed(rl::RLKeyboardKey.H))
+	{
+		PanelRow* row   = self.selected_row();
+		GitEntry* entry = row ? self.entry_for(git, row.entry) : null;
+		if (self.pending_history_path.len > 0) self.pending_history_path.free(self.allocator);
+		self.pending_history_path = entry ? entry.path.copy(self.allocator) : "";
+		self.history_pending = true;
+	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.R)) git.refresh_now(now);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.B)) self.open_branch_picker(git);
 	if (rl::is_key_pressed(rl::RLKeyboardKey.DELETE)) self.begin_discard(git, now);
@@ -2089,9 +2102,6 @@ fn bool Panel.take_open(&self, String* path)
 	*path = self.pending_open;
 	self.pending_open = "";
 	self.open_pending = false;
-	self.pending_resolve_rel = "";
-	self.pending_resolve_abs = "";
-	self.resolve_pending = false;
 	return true;
 }
 fn bool Panel.take_resolve(&self, String* rel, String* abs)
@@ -2102,5 +2112,14 @@ fn bool Panel.take_resolve(&self, String* rel, String* abs)
 	self.pending_resolve_rel = "";
 	self.pending_resolve_abs = "";
 	self.resolve_pending = false;
+	return true;
+}
+
+fn bool Panel.take_history(&self, String* path)
+{
+	if (!self.history_pending) return false;
+	*path = self.pending_history_path;
+	self.pending_history_path = "";
+	self.history_pending = false;
 	return true;
 }

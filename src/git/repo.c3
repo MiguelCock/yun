@@ -276,3 +276,34 @@ fn String[] git_apply_patch_argv(Allocator allocator, String binary, String root
 		return finish_argv(allocator, &list);
 	};
 }
+fn String[] git_show_diff_argv(
+	Allocator allocator,
+	String binary,
+	String root,
+	String rev,
+	String path,
+	String orig_path
+)
+{
+	@pool()
+	{
+		List{String} list;
+		list.init(tmem);
+		list.push(binary);
+		list.push("--no-pager");
+		list.push("-C");
+		list.push(root);
+		list.push("show");
+		list.push("--format=");
+		list.push("--no-color");
+		list.push("--no-ext-diff");
+		list.push("--no-textconv");
+		list.push("--unified=3");
+		list.push("-M");
+		list.push(rev);
+		list.push("--");
+		list.push(path);
+		if (orig_path.len > 0 && orig_path.compare_to(path) != 0) list.push(orig_path);
+		return finish_argv(allocator, &list);
+	};
+}

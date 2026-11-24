@@ -25,6 +25,7 @@ struct GitRequest
 	usz output_cap;
 	bool staged;
 	bool untracked;
+	String rev;
 	String path;
 	String orig_path;
 }
@@ -40,6 +41,7 @@ struct GitResult
 	bool truncated;
 	bool staged;
 	bool untracked;
+	String rev;
 	String path;
 	String orig_path;
 	DString output;
@@ -69,6 +71,7 @@ fn void git_free_argv(Allocator allocator, String[] argv)
 
 fn void GitResult.destroy(&self, Allocator allocator)
 {
+	if (self.rev.len > 0) self.rev.free(allocator);
 	if (self.path.len > 0) self.path.free(allocator);
 	if (self.orig_path.len > 0) self.orig_path.free(allocator);
 	self.output.free();
@@ -136,6 +139,7 @@ fn GitResult git_run_request(GitExecutor* executor, GitRequest* request)
 	result.truncated = false;
 	result.staged = request.staged;
 	result.untracked = request.untracked;
+	result.rev = request.rev.len > 0 ? request.rev.copy(executor.allocator) : "";
 	result.path = request.path.len > 0 ? request.path.copy(executor.allocator) : "";
 	result.orig_path = request.orig_path.len > 0 ? request.orig_path.copy(executor.allocator) : "";
 	result.output.init(executor.allocator);
@@ -260,6 +264,7 @@ fn int git_worker_main(void* arg)
 		GitRequest request = maybe;
 		GitResult result   = git_run_request(executor, &request);
 		git_free_argv(executor.allocator, request.argv);
+		if (request.rev.len > 0) request.rev.free(executor.allocator);
 		if (request.path.len > 0) request.path.free(executor.allocator);
 		if (request.orig_path.len > 0) request.orig_path.free(executor.allocator);
 		if (catch excuse = executor.results.push(result))
@@ -313,6 +318,7 @@ fn bool GitExecutor.submit(&self, GitRequest* request)
 	if (!self.ensure_started())
 	{
 		git_free_argv(self.allocator, request.argv);
+		if (request.rev.len > 0) request.rev.free(self.allocator);
 		if (request.path.len > 0) request.path.free(self.allocator);
 		if (request.orig_path.len > 0) request.orig_path.free(self.allocator);
 		return false;
@@ -320,6 +326,7 @@ fn bool GitExecutor.submit(&self, GitRequest* request)
 	if (catch excuse = self.requests.push(*request))
 	{
 		git_free_argv(self.allocator, request.argv);
+		if (request.rev.len > 0) request.rev.free(self.allocator);
 		if (request.path.len > 0) request.path.free(self.allocator);
 		if (request.orig_path.len > 0) request.orig_path.free(self.allocator);
 		return false;
@@ -361,6 +368,7 @@ fn void GitExecutor.stop(&self)
 		if (catch excuse = maybe) break;
 		GitRequest request = maybe;
 		git_free_argv(self.allocator, request.argv);
+		if (request.rev.len > 0) request.rev.free(self.allocator);
 		if (request.path.len > 0) request.path.free(self.allocator);
 		if (request.orig_path.len > 0) request.orig_path.free(self.allocator);
 	}

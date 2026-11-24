@@ -47,6 +47,7 @@ struct DiffView
 	String orig_path;
 	bool staged;
 	bool untracked;
+	String rev;
 	bool patch_pending;
 	ulong patch_action_seen;
 	int selected_hunk;
@@ -74,6 +75,7 @@ fn void DiffView.init(&self, Allocator allocator)
 	self.orig_path = "";
 	self.staged = false;
 	self.untracked = false;
+	self.rev = "";
 	self.patch_pending = false;
 	self.patch_action_seen = 0;
 	self.selected_hunk = 0;
@@ -98,6 +100,7 @@ fn void DiffView.destroy(&self)
 	self.right_table.destroy();
 	if (self.path.len > 0) self.path.free(self.allocator);
 	if (self.orig_path.len > 0) self.orig_path.free(self.allocator);
+	if (self.rev.len > 0) self.rev.free(self.allocator);
 	if (self.error.len > 0) self.error.free(self.allocator);
 }
 
@@ -351,6 +354,7 @@ fn bool DiffView.sync(&self, State* git)
 		if (self.orig_path.len > 0) self.orig_path.free(self.allocator);
 		self.path = git.diff.path.len > 0 ? git.diff.path.copy(self.allocator) : "";
 		self.orig_path = "";
+		self.rev = git.diff.rev.len > 0 ? git.diff.rev.copy(self.allocator) : "";
 		self.staged = git.diff.staged;
 		return true;
 	}
@@ -364,6 +368,7 @@ fn bool DiffView.sync(&self, State* git)
 	if (self.orig_path.len > 0) self.orig_path.free(self.allocator);
 	self.path = git.diff.path.len > 0 ? git.diff.path.copy(self.allocator) : "";
 	self.orig_path = git.diff.orig_path.len > 0 ? git.diff.orig_path.copy(self.allocator) : "";
+	self.rev = git.diff.rev.len > 0 ? git.diff.rev.copy(self.allocator) : "";
 	self.staged = git.diff.staged;
 	self.untracked = git.diff.untracked;
 	self.selected_hunk = 0;
@@ -429,7 +434,8 @@ fn void DiffView.scroll_to_hunk(&self, Canvas* canvas)
 
 fn void DiffView.request_patch(&self, State* git)
 {
-	if (self.patch_pending || self.untracked || self.diff.hunks.len() == 0 || git.busy_or_refreshing()) return;
+	if (self.patch_pending || self.untracked || self.rev.len > 0 || self.diff.hunks.len() == 0
+		|| git.busy_or_refreshing()) return;
 	if (self.selected_hunk < 0 || self.selected_hunk >= (int)self.diff.hunks.len()) return;
 	String patch = build_hunk_patch(self.allocator, &self.diff, self.selected_hunk, self.path);
 	if (patch.len == 0) return;
@@ -700,7 +706,7 @@ fn void DiffView.draw(&self, Canvas* canvas)
 					(float)ui::tpx(13),
 					theme::current()
 					.panel_header);
-				if (hunk_selected && !self.untracked && self.error.len == 0)
+				if (hunk_selected && !self.untracked && self.rev.len == 0 && self.error.len == 0)
 				{
 					RLColor hint_color = self.patch_pending ? theme::current()
 						.panel_disabled : theme::current().git_modified;

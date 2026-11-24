@@ -123,3 +123,26 @@ fn String capture_git(String[] argv)
 	if (catch excuse = output) return "".copy(mem);
 	return ((String)output).copy(mem);
 }
+fn bool wait_history(State* state, String root, ulong revision, int timeout_ms)
+{
+	long start = now_ms();
+	while (now_ms() - start < timeout_ms)
+	{
+		state.update(root, 0, now_seconds(), false);
+		if (state.commits_revision > revision) return true;
+		(void)thread::sleep_ms(10);
+	}
+	return false;
+}
+
+fn bool wait_commit_files(State* state, String root, ulong revision, int timeout_ms)
+{
+	long start = now_ms();
+	while (now_ms() - start < timeout_ms)
+	{
+		state.update(root, 0, now_seconds(), false);
+		if (state.commit_files_revision > revision) return true;
+		(void)thread::sleep_ms(10);
+	}
+	return false;
+}

@@ -43,3 +43,7 @@ Diff commands use `--no-color --no-ext-diff --no-textconv`, so repository-config
 - Nested repositories and submodules do not get separate status.
 - Hunk staging and commit history are separate milestones.
 - Untracked files are shown as added-file diffs via `git diff --no-index`.
+
+## History
+
+Press `H` in the Source Control panel to open recent history (or history for the selected file). The overlay lists commits with hash, date, and subject; the details pane shows author/date and changed files. `Tab` switches focus to the file list and `Enter` opens a per-file commit diff in the normal diff overlay. History is capped at 200 commits and 1000 changed files per commit.

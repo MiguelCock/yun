@@ -47,6 +47,24 @@ enum GitRequestKind : int
 	PUBLISH,
 	MERGE_ABORT,
 	APPLY_PATCH,
+	LOG,
+	COMMIT_FILES,
+}
+
+struct GitCommit
+{
+	String hash;
+	String short_hash;
+	String author;
+	String date;
+	String subject;
+}
+
+struct GitCommitFile
+{
+	GitFileState state;
+	String path;
+	String orig_path;
 }
 
 struct GitBranch
@@ -105,6 +123,7 @@ struct GitDiffResult
 	bool valid;
 	bool staged;
 	bool untracked;
+	String rev;
 	String path;
 	String orig_path;
 	int exit_code;
@@ -184,6 +203,21 @@ fn bool entry_has_staged(GitEntry* entry)
 fn bool entry_has_unstaged(GitEntry* entry)
 {
 	return !entry.untracked && !entry.conflicted && entry.worktree != GitFileState.UNMODIFIED;
+}
+
+fn void GitCommit.destroy(&self, Allocator allocator)
+{
+	if (self.hash.len > 0) self.hash.free(allocator);
+	if (self.short_hash.len > 0) self.short_hash.free(allocator);
+	if (self.author.len > 0) self.author.free(allocator);
+	if (self.date.len > 0) self.date.free(allocator);
+	if (self.subject.len > 0) self.subject.free(allocator);
+}
+
+fn void GitCommitFile.destroy(&self, Allocator allocator)
+{
+	if (self.path.len > 0) self.path.free(allocator);
+	if (self.orig_path.len > 0) self.orig_path.free(allocator);
 }
 
 fn void GitBranch.destroy(&self, Allocator allocator)
@@ -287,6 +321,7 @@ fn void GitDiffResult.init(&self, Allocator allocator)
 	self.valid = false;
 	self.staged = false;
 	self.untracked = false;
+	self.rev = "";
 	self.path = "";
 	self.orig_path = "";
 	self.exit_code = 0;
@@ -297,6 +332,7 @@ fn void GitDiffResult.init(&self, Allocator allocator)
 
 fn void GitDiffResult.destroy(&self)
 {
+	if (self.rev.len > 0) self.rev.free(self.allocator);
 	if (self.path.len > 0) self.path.free(self.allocator);
 	if (self.orig_path.len > 0) self.orig_path.free(self.allocator);
 	if (self.output.len > 0) self.output.free(self.allocator);
