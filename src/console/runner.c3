@@ -22,6 +22,7 @@ struct ConsoleRunner
 	Allocator allocator;
 	Process process;
 	bool has_process;
+	bool process_group;
 	ConsoleStatus status;
 	int exit_code;
 	bool kill_requested;
@@ -33,6 +34,7 @@ fn void ConsoleRunner.init(&self, Allocator allocator)
 {
 	self.allocator = allocator;
 	self.has_process = false;
+	self.process_group = false;
 	self.status = ConsoleStatus.IDLE;
 	self.exit_code = 0;
 	self.kill_requested = false;
@@ -81,6 +83,84 @@ fn String console_windows_command(Allocator allocator, String root, String comma
 	return string::format(allocator, "chcp 65001 >nul & cd /D \"%s\" && %s", root, command);
 }
 
+extern fn uint win32_get_process_id(void* handle) @cname("GetProcessId");
+
+fn Process? console_spawn(String root, String command, bool group)
+{
+	@pool()
+	{
+		List{String} argv;
+		argv.init(tmem);
+		String wrapped = "";
+		$if env::WIN32:
+			wrapped = console_windows_command(tmem, root, command);
+			argv.push("cmd");
+			argv.push("/C");
+		$else
+			wrapped = console_posix_command(tmem, root, command);
+			if (group) argv.push("setsid");
+			argv.push("/bin/sh");
+			argv.push("-c");
+		$endif
+		argv.push(wrapped);
+
+		process::SpawnOptions options = process::SpawnOptions.INHERIT_ENV | process::SpawnOptions.ASYNC_OUTPUT;
+		$if env::WIN32:
+			options = options | process::SpawnOptions.NO_WINDOW;
+		$endif
+		return process::spawn(
+			argv.entries[0:argv.len()],
+			options,
+			{ },
+			process::CAPTURE,
+			process::CAPTURE,
+			process::CAPTURE
+		);
+	};
+}
+
+fn void ConsoleRunner.kill_tree(&self)
+{
+	if (!self.has_process) return;
+	$if env::WIN32:
+		uint pid = win32_get_process_id(self.process.hProcess);
+		if (pid != 0)
+		{
+			@pool()
+			{
+				String pid_text = string::format(tmem, "%d", (long)pid);
+				String[] argv   = { "taskkill", "/PID", pid_text, "/T", "/F" };
+				(void)process::run(
+					argv,
+					process::SpawnOptions.NO_WINDOW,
+					{ },
+					process::CAPTURE,
+					process::CAPTURE,
+					process::CAPTURE
+				);
+			};
+		}
+		(void)self.process.terminate();
+	$else
+		int child = (int)self.process.child;
+		if (child <= 0) return;
+		if (self.process_group)
+		{
+			(void)posix::kill(-child, 9);
+		}
+		else
+		{
+			@pool()
+			{
+				String pid_text = string::format(tmem, "%d", (long)child);
+				String[] argv   = { "pkill", "-TERM", "-P", pid_text };
+				(void)process::run(argv, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
+			};
+			(void)self.process.terminate();
+		}
+	$endif
+}
+
 fn bool ConsoleRunner.start(&self, ConsoleBuffer* output, String root, String command)
 {
 	if (self.running()) return false;
@@ -93,36 +173,21 @@ fn bool ConsoleRunner.start(&self, ConsoleBuffer* output, String root, String co
 	self.kill_requested = false;
 	if (output) output.append_command(command);
 
-	Process? spawned = { };
-	@pool()
+	bool grouped = false;
+	$if !env::WIN32:
+		$if !env::DARWIN:
+			grouped = true;
+		$endif
+	$endif
+	Process? spawned = console_spawn(root, command, grouped);
+	if (catch excuse = spawned)
 	{
-		List{String} argv;
-		argv.init(tmem);
-		String wrapped = "";
-		$if env::WIN32:
-			wrapped = console_windows_command(tmem, root, command);
-			argv.push("cmd");
-			argv.push("/C");
-		$else
-			wrapped = console_posix_command(tmem, root, command);
-			argv.push("/bin/sh");
-			argv.push("-c");
-		$endif
-		argv.push(wrapped);
-
-		process::SpawnOptions options = process::SpawnOptions.INHERIT_ENV | process::SpawnOptions.ASYNC_OUTPUT;
-		$if env::WIN32:
-			options = options | process::SpawnOptions.NO_WINDOW;
-		$endif
-		spawned = process::spawn(
-			argv.entries[0:argv.len()],
-			options,
-			{ },
-			process::CAPTURE,
-			process::CAPTURE,
-			process::CAPTURE
-		);
-	};
+		if (grouped)
+		{
+			grouped = false;
+			spawned = console_spawn(root, command, false);
+		}
+	}
 	if (catch excuse = spawned)
 	{
 		self.status = ConsoleStatus.FAILED;
@@ -136,6 +201,7 @@ fn bool ConsoleRunner.start(&self, ConsoleBuffer* output, String root, String co
 	}
 	self.process = spawned;
 	self.has_process = true;
+	self.process_group = grouped;
 	self.status = ConsoleStatus.RUNNING;
 	return true;
 }
@@ -232,14 +298,14 @@ fn bool ConsoleRunner.kill(&self)
 	if (!self.has_process || self.status != ConsoleStatus.RUNNING) return false;
 	self.kill_requested = true;
 	self.status = ConsoleStatus.KILLING;
-	(void)self.process.terminate();
+	self.kill_tree();
 	return true;
 }
 
 fn void ConsoleRunner.stop(&self, ConsoleBuffer* output)
 {
 	if (!self.has_process) return;
-	(void)self.process.terminate();
+	self.kill_tree();
 	CInt? code    =  self.process.join();
 	int exit_code = -1;
 	if (try value = code) exit_code = (int)value;
@@ -247,6 +313,7 @@ fn void ConsoleRunner.stop(&self, ConsoleBuffer* output)
 	if (output) output.flush();
 	(void)self.process.destroy();
 	self.has_process = false;
+	self.process_group = false;
 	self.status = ConsoleStatus.IDLE;
 	self.kill_requested = false;
 }
