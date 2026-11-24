@@ -119,6 +119,9 @@ struct Project
 	bool drag_cluster_title;
 	bool cluster_moved;
 	RLVector2 drag_world;
+	RLVector2 drag_origin_world;
+	Rect drag_origin_rect;
+	Rect drag_cluster_origin_bounds;
 	double last_input_time;
 	double last_poll;
 	double poll_seconds;
@@ -133,6 +136,8 @@ struct Project
 	bool resizing;
 	int resize_card;
 	int resize_handle;
+	RLVector2 resize_origin_world;
+	Rect resize_origin_rect;
 	bool selecting;
 	double last_click_time;
 	RLVector2 last_click_pos;
@@ -2221,6 +2226,8 @@ fn void Project.update(
 				self.resize_card = self.focus(card_hit);
 				self.resize_handle = handle;
 				self.drag_world = world;
+				self.resize_origin_world = world;
+				self.resize_origin_rect = self.cards[self.resize_card].rect;
 			}
 			else if (region == editor::CardRegion.MAXIMIZE)
 			{
@@ -2326,6 +2333,8 @@ fn void Project.update(
 				self.drag_index = index;
 				self.drag_card = true;
 				self.drag_world = world;
+				self.drag_origin_world = world;
+				self.drag_origin_rect = card.rect;
 			}
 		}
 		else
@@ -2338,6 +2347,8 @@ fn void Project.update(
 				self.drag_cluster_title = self.cluster_title_hit(cluster_hit, world);
 				self.cluster_moved = false;
 				self.drag_world = world;
+				self.drag_origin_world = world;
+				self.drag_cluster_origin_bounds = self.cluster_bounds(cluster_hit);
 			}
 		}
 	}
@@ -2378,8 +2389,18 @@ fn void Project.update(
 		}
 		else
 		{
-			RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
-			self.cards[self.drag_index].move_by(delta);
+			float step = self.grid_snap_step(canvas);
+			if (step > 0.0f)
+			{
+				RLVector2 total = { world[0] - self.drag_origin_world[0], world[1] - self.drag_origin_world[1] };
+				self.cards[self.drag_index].rect.x = canvas::snap_value(self.drag_origin_rect.x + total[0], step);
+				self.cards[self.drag_index].rect.y = canvas::snap_value(self.drag_origin_rect.y + total[1], step);
+			}
+			else
+			{
+				RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
+				self.cards[self.drag_index].move_by(delta);
+			}
 			self.invalidate_bounds_for_card(self.drag_index);
 			self.drag_world = world;
 		}
@@ -2398,7 +2419,22 @@ fn void Project.update(
 			if (math::abs(delta[0]) > 0.01f || math::abs(delta[1]) > 0.01f) self.cluster_moved = true;
 			if (self.cluster_moved)
 			{
-				self.move_cluster(self.drag_cluster_index, delta);
+				float step = self.grid_snap_step(canvas);
+				if (step > 0.0f)
+				{
+					RLVector2 total = {
+						world[0] - self.drag_origin_world[0],
+						world[1] - self.drag_origin_world[1],
+					};
+					float target_x = canvas::snap_value(self.drag_cluster_origin_bounds.x + total[0], step);
+					float target_y = canvas::snap_value(self.drag_cluster_origin_bounds.y + total[1], step);
+					Rect current   = self.folders[self.drag_cluster_index].bounds;
+					self.move_cluster(self.drag_cluster_index, { target_x - current.x, target_y - current.y });
+				}
+				else
+				{
+					self.move_cluster(self.drag_cluster_index, delta);
+				}
 				self.drag_world = world;
 			}
 		}
@@ -2414,10 +2450,30 @@ fn void Project.update(
 		}
 		else
 		{
-			RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
-			float min_w     = editor::min_card_width(metrics);
-			float min_h     = editor::min_card_height(metrics);
-			self.cards[self.resize_card].resize_from(self.resize_handle, delta, min_w, min_h);
+			float min_w = editor::min_card_width(metrics);
+			float min_h = editor::min_card_height(metrics);
+			float step  = self.grid_snap_step(canvas);
+			if (step > 0.0f)
+			{
+				RLVector2 total = {
+					world[0] - self.resize_origin_world[0],
+					world[1] - self.resize_origin_world[1],
+				};
+				self.cards[self.resize_card].rect = self.resize_origin_rect;
+				self.cards[self.resize_card].resize_from(self.resize_handle, total, min_w, min_h);
+				self.cards[self.resize_card].rect = card::snap_resize_rect(
+					self.cards[self.resize_card].rect,
+					self.resize_handle,
+					step,
+					min_w,
+					min_h
+				);
+			}
+			else
+			{
+				RLVector2 delta = { world[0] - self.drag_world[0], world[1] - self.drag_world[1] };
+				self.cards[self.resize_card].resize_from(self.resize_handle, delta, min_w, min_h);
+			}
 			self.invalidate_bounds_for_card(self.resize_card);
 			self.drag_world = world;
 		}
@@ -2884,6 +2940,38 @@ fn bool Project.completion_accept_cmd(&self, EditorMetrics metrics)
 fn bool ctrl_down()
 {
 	return rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
+}
+
+fn bool alt_down()
+{
+	return rl::is_key_down(rl::RLKeyboardKey.LEFT_ALT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_ALT);
+}
+
+fn float Project.grid_snap_step(&self, canvas::Canvas* canvas)
+{
+	if (!canvas::settings().snap_to_grid || alt_down()) return 0.0f;
+	return canvas::snap_step(canvas.camera.zoom);
+}
+
+fn void Project.snap_card_to_grid(&self, int index, float zoom)
+{
+	if (!canvas::settings().snap_to_grid || alt_down()) return;
+	if (index < 0 || index >= (int)self.cards.len()) return;
+	float step = canvas::snap_step(zoom);
+	self.cards[index].rect.x = canvas::snap_value(self.cards[index].rect.x, step);
+	self.cards[index].rect.y = canvas::snap_value(self.cards[index].rect.y, step);
+	self.invalidate_bounds_for_card(index);
+}
+
+fn void Project.snap_cluster_to_grid(&self, int index, float zoom)
+{
+	if (!canvas::settings().snap_to_grid || alt_down()) return;
+	if (index < 0 || index >= (int)self.folders.len()) return;
+	float step  = canvas::snap_step(zoom);
+	Rect bounds = self.cluster_bounds(index);
+	float x     = canvas::snap_value(bounds.x, step);
+	float y     = canvas::snap_value(bounds.y, step);
+	self.move_cluster(index, { x - bounds.x, y - bounds.y });
 }
 
 fn bool shift_down()

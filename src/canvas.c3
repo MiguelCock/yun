@@ -46,6 +46,8 @@ struct CanvasSettings
 	float grid_cell;
 	float grid_min_px;
 	float grid_max_px;
+	bool snap_to_grid;
+	float snap_step;
 	float jump_zoom_min;
 	float jump_zoom_target;
 }
@@ -66,6 +68,8 @@ CanvasSettings g_canvas_settings = {
 	.grid_cell = BASE_CELL,
 	.grid_min_px = MIN_GRID_PX,
 	.grid_max_px = MAX_GRID_PX,
+	.snap_to_grid = false,
+	.snap_step = 0.0f,
 	.jump_zoom_min = 0.6f,
 	.jump_zoom_target = 1.0f,
 };
@@ -86,6 +90,8 @@ fn void set_settings(CanvasSettings value)
 	if (value.drag_threshold < 0.0f) value.drag_threshold = 0.0f;
 	if (value.max_pan_delta < 1.0f) value.max_pan_delta = 1.0f;
 	if (value.grid_cell < 1.0f) value.grid_cell = 1.0f;
+	if (value.snap_step < 0.0f) value.snap_step = 0.0f;
+	if (value.snap_step > 1024.0f) value.snap_step = 1024.0f;
 
 	if (value.max_zoom < 0.02f) value.max_zoom = 0.02f;
 	if (value.max_zoom > 100.0f) value.max_zoom = 100.0f;
@@ -462,6 +468,18 @@ fn Rect Canvas.visible_world_rect(&self)
 	RLVector2 min = self.screen_to_world({ 0.0f, 0.0f });
 	RLVector2 max = self.screen_to_world({ (float)rl::get_screen_width(), (float)rl::get_screen_height() });
 	return { .x = min[0], .y = min[1], .width = max[0] - min[0], .height = max[1] - min[1] };
+}
+
+fn float snap_step(float zoom)
+{
+	if (g_canvas_settings.snap_step > 0.0f) return g_canvas_settings.snap_step;
+	return grid_step(zoom);
+}
+
+fn float snap_value(float value, float step)
+{
+	if (step <= 0.0f) return value;
+	return math::round(value / step) * step;
 }
 
 fn float grid_step(float zoom)

@@ -82,6 +82,8 @@ enum SettingId : int
 	CANVAS_GRID_CELL,
 	CANVAS_GRID_MIN_PX,
 	CANVAS_GRID_MAX_PX,
+	CANVAS_SNAP_TO_GRID,
+	CANVAS_SNAP_STEP,
 	CANVAS_JUMP_ZOOM_MIN,
 	CANVAS_JUMP_ZOOM_TARGET,
 	CANVAS_FIT_ON_OPEN,
@@ -635,6 +637,25 @@ const SettingSpec[] SETTINGS = {
 	},
 	{
 		.section = "canvas",
+		.key = "snap_to_grid",
+		.label = "Snap to grid",
+		.description = "Snap cards and folders to the canvas grid while dragging or resizing.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
+	},
+	{
+		.section = "canvas",
+		.key = "snap_step",
+		.label = "Snap step",
+		.description = "Grid snap step in world units; 0 uses the visible grid step.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 0 },
+		.min = 0.0,
+		.max = 1024.0,
+		.step = 8.0,
+	},
+	{
+		.section = "canvas",
 		.key = "jump_zoom_min",
 		.label = "Jump zoom min",
 		.description = "Zoom below which navigating to a card zooms in.",
@@ -1093,7 +1114,7 @@ fn String group_for(SettingId id)
 	}
 	if (s.section.compare_to("canvas") == 0)
 	{
-		if (s.key.starts_with("grid")) return "Grid";
+		if (s.key.starts_with("grid") || s.key.starts_with("snap")) return "Grid";
 		return "Navigation";
 	}
 	if (s.section.compare_to("minimap") == 0) return "Minimap";

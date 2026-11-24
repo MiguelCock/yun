@@ -3,6 +3,7 @@ module yun::card;
 import raylib6::rl;
 import std::io::path;
 import std::math;
+import yun::canvas;
 import yun::highlight;
 import yun::icons;
 import yun::markdown;
@@ -252,6 +253,40 @@ fn int FileCard.resize_handle_at(&self, RLVector2 world, RLCamera2D camera)
 		}
 	}
 	return -1;
+}
+
+fn Rect snap_resize_rect(Rect r, int handle, float step, float min_w, float min_h)
+{
+	if (step <= 0.0f) return r;
+	float right  = r.x + r.width;
+	float bottom = r.y + r.height;
+	if (handle == 0 || handle == 6 || handle == 7)
+	{
+		r.x = canvas::snap_value(r.x, step);
+		r.width = right - r.x;
+		if (r.width < min_w) r.x = right - min_w;
+		r.width = right - r.x;
+	}
+	if (handle == 2 || handle == 3 || handle == 4)
+	{
+		right = canvas::snap_value(right, step);
+		r.width = right - r.x;
+		if (r.width < min_w) r.width = min_w;
+	}
+	if (handle == 0 || handle == 1 || handle == 2)
+	{
+		r.y = canvas::snap_value(r.y, step);
+		r.height = bottom - r.y;
+		if (r.height < min_h) r.y = bottom - min_h;
+		r.height = bottom - r.y;
+	}
+	if (handle == 4 || handle == 5 || handle == 6)
+	{
+		bottom = canvas::snap_value(bottom, step);
+		r.height = bottom - r.y;
+		if (r.height < min_h) r.height = min_h;
+	}
+	return r;
 }
 
 fn void FileCard.resize_from(&self, int handle, RLVector2 delta, float min_w, float min_h)
