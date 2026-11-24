@@ -1,5 +1,6 @@
 module yun::console @test;
 
+import raylib6::rl;
 import std::io::file;
 import std::io::path;
 import std::math::geometry;
@@ -578,4 +579,41 @@ fn void test_console_find_matches()
 	panel.find_close();
 	assert(!panel.find_open);
 	assert(panel.find_count == 0);
+}
+fn void test_buffer_ansi_spans()
+{
+	ConsoleBuffer buffer;
+	buffer.init(mem);
+	defer buffer.destroy();
+
+	buffer.append_stdout("\x1b[31mred\x1b[0m plain\n");
+	console_test_helpers::expect_line(&buffer, 0, ConsoleStream.STDOUT, "red plain");
+	ConsoleLine* line = buffer.line_at(0);
+	assert(line.span_count == 1);
+	assert(line.spans[0].start == 0 && line.spans[0].len == 3);
+	assert(((int)line.spans[0].fg[0] & 0xFF) == 205);
+
+	buffer.append_stdout("\x1b[1;4mbold\nstill\x1b[0m\n");
+	ConsoleLine* first = buffer.line_at(1);
+	assert(first.text.compare_to("bold") == 0);
+	assert(first.span_count == 1);
+	assert((first.spans[0].attrs & SPAN_BOLD) != 0);
+	assert((first.spans[0].attrs & SPAN_UNDERLINE) != 0);
+	ConsoleLine* second = buffer.line_at(2);
+	assert(second.text.compare_to("still") == 0);
+	assert(second.span_count == 1);
+	assert((second.spans[0].attrs & SPAN_BOLD) != 0);
+
+	buffer.append_stdout("\x1b[38;5;196mindexed\x1b[0m\n");
+	ConsoleLine* indexed = buffer.line_at(3);
+	assert(indexed.span_count == 1);
+	RLColor expect = ansi_256(196);
+	assert(indexed.spans[0].fg[0] == expect[0] && indexed.spans[0].fg[1] == expect[1]);
+
+	buffer.append_stdout("\x1b[38;2;1;2;3mtrue\x1b[0m\n");
+	ConsoleLine* truecolor = buffer.line_at(4);
+	assert(truecolor.span_count == 1);
+	assert(((int)truecolor.spans[0].fg[0] & 0xFF) == 1);
+	assert(((int)truecolor.spans[0].fg[1] & 0xFF) == 2);
+	assert(((int)truecolor.spans[0].fg[2] & 0xFF) == 3);
 }
