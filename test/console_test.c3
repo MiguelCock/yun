@@ -500,3 +500,56 @@ fn void test_panel_horizontal_clamp()
 	assert(console_clamp_hscroll(400.0f, 500.0f, 200.0f) == 300.0f);
 	assert(console_clamp_hscroll(50.0f, 100.0f, 200.0f) == 0.0f);
 }
+fn void test_console_offset_at_x()
+{
+	assert(console_offset_at_x("abcdef", -5.0f, 10.0f) == 0);
+	assert(console_offset_at_x("abcdef", 0.0f, 10.0f) == 0);
+	assert(console_offset_at_x("abcdef", 4.0f, 10.0f) == 0);
+	assert(console_offset_at_x("abcdef", 6.0f, 10.0f) == 1);
+	assert(console_offset_at_x("abcdef", 25.0f, 10.0f) == 2);
+	assert(console_offset_at_x("abcdef", 500.0f, 10.0f) == 6);
+}
+
+fn void test_console_word_range()
+{
+	usz start = 0;
+	usz end   = 0;
+	console_word_range("foo bar_baz!", 5, &start, &end);
+	assert(start == 4 && end == 11);
+	console_word_range("foo bar_baz!", 0, &start, &end);
+	assert(start == 0 && end == 3);
+	console_word_range("foo bar_baz!", 3, &start, &end);
+	assert(start == 0 && end == 0);
+	console_word_range("", 0, &start, &end);
+	assert(start == 0 && end == 0);
+}
+
+fn void test_console_selection_text()
+{
+	Console console;
+	console.init(mem);
+	defer console.destroy();
+	console.buffer.append_stdout("hello\nworld\n");
+
+	ConsolePanel panel;
+	panel.init();
+	panel.has_selection = true;
+	panel.sel_first_line = console.buffer.first;
+	panel.sel_anchor_line = 0;
+	panel.sel_anchor_offset = 1;
+	panel.sel_cursor_line = 1;
+	panel.sel_cursor_offset = 3;
+
+	String text = panel.selection_text(&console, tmem);
+	assert(text.compare_to("ello\nwor") == 0);
+
+	panel.sel_anchor_line = 1;
+	panel.sel_anchor_offset = 3;
+	panel.sel_cursor_line = 0;
+	panel.sel_cursor_offset = 1;
+	text = panel.selection_text(&console, tmem);
+	assert(text.compare_to("ello\nwor") == 0);
+
+	panel.clear_selection();
+	assert(panel.selection_text(&console, tmem).len == 0);
+}

@@ -46,6 +46,15 @@ struct ConsolePanel
 	float output_scroll_x;
 	float output_max_width;
 	int output_width_revision;
+	bool selecting;
+	bool has_selection;
+	sz sel_anchor_line;
+	usz sel_anchor_offset;
+	sz sel_cursor_line;
+	usz sel_cursor_offset;
+	sz sel_first_line;
+	double last_click_time;
+	RLVector2 last_click_pos;
 }
 
 fn void ConsolePanel.init(&self)
@@ -64,6 +73,15 @@ fn void ConsolePanel.init(&self)
 	self.output_scroll_x = 0.0f;
 	self.output_max_width = 0.0f;
 	self.output_width_revision = -1;
+	self.selecting = false;
+	self.has_selection = false;
+	self.sel_anchor_line = 0;
+	self.sel_anchor_offset = 0;
+	self.sel_cursor_line = 0;
+	self.sel_cursor_offset = 0;
+	self.sel_first_line = 0;
+	self.last_click_time = -1.0;
+	self.last_click_pos = { 0.0f, 0.0f };
 }
 
 fn void ConsolePanel.open(&self)
@@ -80,6 +98,7 @@ fn void ConsolePanel.close(&self)
 	self.visible = false;
 	self.focused = false;
 	self.resizing = false;
+	self.clear_selection();
 }
 
 fn void ConsolePanel.apply_settings(&self, ConsoleSettings settings)
@@ -125,6 +144,63 @@ fn float console_clamp_hscroll(float offset, float content_width, float view_wid
 	if (offset < 0.0f) return 0.0f;
 	if (offset > max) return max;
 	return offset;
+}
+
+fn usz console_offset_at_x(String text, float x, float char_width)
+{
+	if (x <= 0.0f || char_width <= 0.0f) return 0;
+	float col = 0.0f;
+	usz i     = 0;
+	while (i < text.len)
+	{
+		usz next = i + 1;
+		while (next < text.len && (((int)text[next] & 0xC0) == 0x80)) next++;
+		if (col + char_width * 0.5f >= x) return i;
+		col += char_width;
+		i = next;
+	}
+	return text.len;
+}
+
+fn sz console_columns_before(String text, usz offset)
+{
+	if (offset > text.len) offset = text.len;
+	sz columns = 0;
+	usz i      = 0;
+	while (i < offset)
+	{
+		i++;
+		while (i < offset && (((int)text[i] & 0xC0) == 0x80)) i++;
+		columns++;
+	}
+	return columns;
+}
+
+fn bool console_word_byte(int b)
+{
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_';
+}
+
+fn void console_word_range(String text, usz offset, usz* start, usz* end)
+{
+	*start = 0;
+	*end = 0;
+	if (text.len == 0) return;
+	if (offset > text.len) offset = text.len;
+	if (offset == text.len) offset--;
+	int b = (int)text[offset] & 0xFF;
+	if (!console_word_byte(b)) return;
+	usz s = offset;
+	while (s > 0)
+	{
+		int prev = (int)text[s - 1] & 0xFF;
+		if (!console_word_byte(prev)) break;
+		s--;
+	}
+	usz e = offset;
+	while (e < text.len && console_word_byte((int)text[e] & 0xFF)) e++;
+	*start = s;
+	*end = e;
 }
 
 fn String console_status_label(ConsoleStatus status)
@@ -271,6 +347,151 @@ fn void ConsolePanel.scroll_horizontal(&self, Console* console, EditorMetrics me
 	self.output_scroll_x = console_clamp_hscroll(self.output_scroll_x + delta, content, view);
 }
 
+fn void ConsolePanel.clear_selection(&self)
+{
+	self.selecting = false;
+	self.has_selection = false;
+	self.sel_anchor_line = 0;
+	self.sel_anchor_offset = 0;
+	self.sel_cursor_line = 0;
+	self.sel_cursor_offset = 0;
+}
+
+fn bool ConsolePanel.selection_range(
+	&self,
+	Console* console,
+	sz* start_line,
+	usz* start_offset,
+	sz* end_line,
+	usz* end_offset
+)
+{
+	if (!self.has_selection) return false;
+	if (console.buffer.first != self.sel_first_line)
+	{
+		self.clear_selection();
+		return false;
+	}
+	bool forward = self.sel_anchor_line < self.sel_cursor_line
+		|| (self.sel_anchor_line == self.sel_cursor_line && self.sel_anchor_offset <= self.sel_cursor_offset);
+	if (forward)
+	{
+		*start_line = self.sel_anchor_line;
+		*start_offset = self.sel_anchor_offset;
+		*end_line = self.sel_cursor_line;
+		*end_offset = self.sel_cursor_offset;
+	}
+	else
+	{
+		*start_line = self.sel_cursor_line;
+		*start_offset = self.sel_cursor_offset;
+		*end_line = self.sel_anchor_line;
+		*end_offset = self.sel_anchor_offset;
+	}
+	if (*start_line == *end_line && *start_offset == *end_offset) return false;
+	ConsoleLine* line = console.buffer.line_at(*start_line);
+	if (!line) return false;
+	if (*start_offset > line.text.len) *start_offset = line.text.len;
+	line = console.buffer.line_at(*end_line);
+	if (!line) return false;
+	if (*end_offset > line.text.len) *end_offset = line.text.len;
+	return true;
+}
+
+fn int ConsolePanel.line_at_mouse(&self, Console* console, EditorMetrics metrics, RLVector2 mouse, Rect output)
+{
+	int count = (int)console.buffer.line_count();
+	if (count == 0) return -1;
+	int scroll = self.scroll_for(console, metrics);
+	float rel  = (mouse[1] - output.y) / metrics.line_height;
+	int line   = scroll + (int)rel;
+	if (rel < 0.0f) line = scroll;
+	if (line < 0) line = 0;
+	if (line >= count) line = count - 1;
+	return line;
+}
+
+fn void ConsolePanel.begin_selection(&self, Console* console, EditorMetrics metrics, RLVector2 mouse, bool double_click)
+{
+	Rect output = self.output_rect();
+	int line    = self.line_at_mouse(console, metrics, mouse, output);
+	if (line < 0) return;
+	ConsoleLine* text_line = console.buffer.line_at(line);
+	if (!text_line) return;
+	float x    = mouse[0] - (output.x + ui::pxf(PADDING) - self.output_scroll_x);
+	usz offset = console_offset_at_x(text_line.text, x, metrics.char_width);
+	self.sel_first_line = console.buffer.first;
+	self.sel_anchor_line = line;
+	self.sel_anchor_offset = offset;
+	self.sel_cursor_line = line;
+	self.sel_cursor_offset = offset;
+	if (double_click)
+	{
+		usz start = 0;
+		usz end   = 0;
+		console_word_range(text_line.text, offset, &start, &end);
+		self.sel_anchor_offset = start;
+		self.sel_cursor_offset = end;
+		self.has_selection = start != end;
+		self.selecting = false;
+	}
+	else
+	{
+		self.has_selection = false;
+		self.selecting = true;
+	}
+}
+
+fn void ConsolePanel.update_selection(&self, Console* console, EditorMetrics metrics, RLVector2 mouse)
+{
+	Rect output = self.output_rect();
+	int line    = self.line_at_mouse(console, metrics, mouse, output);
+	if (line < 0) return;
+	ConsoleLine* text_line = console.buffer.line_at(line);
+	if (!text_line) return;
+	float x = mouse[0] - (output.x + ui::pxf(PADDING) - self.output_scroll_x);
+	self.sel_cursor_line = line;
+	self.sel_cursor_offset = console_offset_at_x(text_line.text, x, metrics.char_width);
+	self.has_selection = self.sel_anchor_line != self.sel_cursor_line
+		|| self.sel_anchor_offset != self.sel_cursor_offset;
+}
+
+fn String ConsolePanel.selection_text(&self, Console* console, Allocator allocator)
+{
+	sz start_line;
+	usz start_offset;
+	sz end_line;
+	usz end_offset;
+	if (!self.selection_range(console, &start_line, &start_offset, &end_line, &end_offset)) return "";
+	DString out;
+	out.init(allocator);
+	for (sz i = start_line; i <= end_line; i++)
+	{
+		ConsoleLine* line = console.buffer.line_at(i);
+		if (!line) break;
+		usz a = i == start_line ? start_offset : 0;
+		usz b = i == end_line ? end_offset : line.text.len;
+		if (b > a) out.append_string(line.text[a:b - a]);
+		if (i != end_line) out.append_char('\n');
+	}
+	String result = out.str_view().copy(allocator);
+	out.free();
+	return result;
+}
+
+fn void ConsolePanel.copy_selection_or_all(&self, Console* console)
+{
+	String selected = self.selection_text(console, tmem);
+	if (selected.len > 0)
+	{
+		rl::set_clipboard_text(selected.zstr_tcopy());
+	}
+	else
+	{
+		self.copy_output(console);
+	}
+}
+
 fn int ConsolePanel.max_scroll(&self, Console* console, EditorMetrics metrics)
 {
 	return console_max_scroll((int)console.buffer.line_count(), self.visible_rows(metrics));
@@ -353,7 +574,7 @@ fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keyma
 	}
 	if (keymap.pressed((int)commands::CommandId.CONSOLE_COPY, commands::CTX_CONSOLE))
 	{
-		self.copy_output(console);
+		self.copy_selection_or_all(console);
 		drain_chars();
 		return false;
 	}
@@ -369,6 +590,7 @@ fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keyma
 		self.scroll = 0;
 		self.output_scroll_x = 0.0f;
 		self.pinned = self.auto_scroll;
+		self.clear_selection();
 		drain_chars();
 		return false;
 	}
@@ -453,6 +675,7 @@ fn void ConsolePanel.update_mouse(&self, Console* console, EditorMetrics metrics
 {
 	self.focus_requested = false;
 	if (!self.visible) return;
+	if (self.has_selection && console.buffer.first != self.sel_first_line) self.clear_selection();
 	Rect panel  = self.rect();
 	Rect input  = self.input_rect();
 	Rect output = self.output_rect();
@@ -477,25 +700,53 @@ fn void ConsolePanel.update_mouse(&self, Console* console, EditorMetrics metrics
 						break;
 					case ConsoleButton.KILL:
 						console.kill();
+						self.clear_selection();
 						break;
 					case ConsoleButton.CLEAR:
 						console.clear();
 						self.scroll = 0;
+						self.output_scroll_x = 0.0f;
 						self.pinned = true;
+						self.clear_selection();
 						break;
 					case ConsoleButton.COPY:
-						self.copy_output(console);
+						self.copy_selection_or_all(console);
 						break;
 					case ConsoleButton.COUNT:
 						break;
 				}
 				self.focus_requested = true;
 			}
+			else if (mouse[0] >= output.x && mouse[0] <= output.x + output.width && mouse[1] >= output.y
+				&& mouse[1] <= output.y + output.height)
+			{
+				double now        = rl::get_time();
+				bool double_click = now - self.last_click_time < 0.4 && math::abs(
+					mouse[0] - self.last_click_pos[0]
+				) < 5.0f && math::abs(mouse[1] - self.last_click_pos[1]) < 5.0f;
+				self.last_click_time = now;
+				self.last_click_pos = mouse;
+				self.begin_selection(console, metrics, mouse, double_click);
+				self.focus_requested = true;
+			}
 			else if (mouse[0] >= panel.x && mouse[0] <= panel.x + panel.width && mouse[1] >= panel.y
 				&& mouse[1] <= panel.y + panel.height)
 			{
+				self.clear_selection();
 				self.focus_requested = true;
 			}
+		}
+	}
+
+	if (self.selecting)
+	{
+		if (rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
+		{
+			self.update_selection(console, metrics, mouse);
+		}
+		else
+		{
+			self.selecting = false;
 		}
 	}
 
@@ -668,6 +919,33 @@ fn void ConsolePanel.draw(&self, Console* console, RLFont font, RLFont editor_fo
 	self.output_scroll_x = console_clamp_hscroll(self.output_scroll_x, content, output_view);
 	rl::begin_scissor_mode((int)output.x, (int)output.y, (int)output.width, (int)output.height);
 	float text_x = output.x + ui::pxf(PADDING) - self.output_scroll_x;
+
+	sz sel_start_line;
+	usz sel_start_offset;
+	sz sel_end_line;
+	usz sel_end_offset;
+	bool has_sel = self.selection_range(console, &sel_start_line, &sel_start_offset, &sel_end_line, &sel_end_offset);
+	if (has_sel)
+	{
+		for (int i = 0; i < visible; i++)
+		{
+			sz index = (sz)scroll + (sz)i;
+			if (index < sel_start_line || index > sel_end_line) continue;
+			ConsoleLine* line = console.buffer.line_at(index);
+			if (!line) break;
+			usz a = index == sel_start_line ? sel_start_offset : 0;
+			usz b = index == sel_end_line ? sel_end_offset : line.text.len;
+			if (b <= a) continue;
+			float x1 = text_x + (float)console_columns_before(line.text, a) * metrics.char_width;
+			float x2 = text_x + (float)console_columns_before(line.text, b) * metrics.char_width;
+			float y  = output.y + (float)i * metrics.line_height;
+			rl::draw_rectangle_rec(
+				{ .x = x1, .y = y, .width = x2 - x1, .height = metrics.line_height },
+				theme::current()
+				.editor_selection);
+		}
+	}
+
 	for (int i = 0; i < visible; i++)
 	{
 		sz index = (sz)scroll + (sz)i;

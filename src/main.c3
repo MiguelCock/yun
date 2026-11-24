@@ -1232,6 +1232,7 @@ fn void run_command(commands::CommandId id, App* app)
 				app.console_panel.scroll = 0;
 				app.console_panel.output_scroll_x = 0.0f;
 				app.console_panel.pinned = app.console_panel.auto_scroll;
+				app.console_panel.clear_selection();
 				return;
 			}
 		case commands::CommandId.CONSOLE_KILL:
@@ -1244,7 +1245,7 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.CONSOLE_COPY:
 
 			{
-				app.console_panel.copy_output(app.console);
+				app.console_panel.copy_selection_or_all(app.console);
 				return;
 			}
 		case commands::CommandId.CONSOLE_PASTE:
@@ -2258,6 +2259,7 @@ fn int main(String[] args)
 					project_open = true;
 					finish_open(&project, &canvas, &config, &keymap, &notifier);
 					console.set_root((String)project.root);
+					console_panel.clear_selection();
 					search.close();
 					symbols.close();
 					symbols.start_scan(&project);
