@@ -4,6 +4,7 @@ import raylib6::rl;
 import std::io::path;
 import std::math;
 import yun::canvas;
+import yun::git;
 import yun::highlight;
 import yun::icons;
 import yun::markdown;
@@ -135,7 +136,14 @@ fn void draw_title_button(Rect button, icons::IconKind icon, bool active, bool h
 		.card_focus : theme::current().card_text);
 }
 
-fn void FileCard.draw(&self, bool focused, RLCamera2D camera, RLVector2 mouse_world, bool focus_mode)
+fn void FileCard.draw(
+	&self,
+	bool focused,
+	RLCamera2D camera,
+	RLVector2 mouse_world,
+	bool focus_mode,
+	git::GitStatus* git_status
+)
 {
 	float zoom   = camera.zoom;
 	Rect r       = self.effective_rect();
@@ -196,6 +204,36 @@ fn void FileCard.draw(&self, bool focused, RLCamera2D camera, RLVector2 mouse_wo
 		(float)ui::px(3),
 		theme::current()
 		.card_dirty);
+
+	git::GitEntry* git_entry = git::status_entry(git_status, (String)self.path);
+	if (git_entry)
+	{
+		RLColor git_color = git::entry_color(git_entry);
+		rl::draw_rectangle_rec(
+			{
+				.x = r.x,
+				.y = r.y + radius,
+				.width = screen_thickness(3.0f, zoom),
+				.height = r.height - radius * 2.0f,
+			},
+			git_color
+		);
+		char badge = git::entry_badge(git_entry);
+		if (badge != ' ')
+		{
+			char[2] label    = { badge, 0 };
+			float badge_size = (float)ui::tpx(12);
+			float badge_x    = preview_button.x - (self.dirty ? (float)ui::px(20) : (float)ui::px(10));
+			rl::draw_text_ex(
+				ui::font(),
+				(ZString)&label[0],
+				{ badge_x, r.y + (ui::pxf(CARD_TITLE_HEIGHT) - badge_size) * 0.5f },
+				badge_size,
+				0.0f,
+				git_color
+			);
+		}
+	}
 
 	bool maximize_hovered = rect_has_point(maximize_button, mouse_world);
 	draw_title_button(

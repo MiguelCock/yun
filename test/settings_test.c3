@@ -508,3 +508,14 @@ fn void test_console_settings_defaults()
 	assert(spec(SettingId.CONSOLE_PERSIST_HISTORY).fallback.b);
 	assert(spec(SettingId.CONSOLE_RESTORE_SESSIONS).fallback.b);
 }
+fn void test_git_settings_defaults()
+{
+	assert(spec(SettingId.GIT_BINARY).section.compare_to("git") == 0);
+	assert(spec(SettingId.GIT_BINARY).fallback.s.compare_to("git") == 0);
+	assert(spec(SettingId.GIT_AUTO_REFRESH).fallback.b);
+	assert(spec(SettingId.GIT_DEBOUNCE_MS).fallback.i == 250);
+	assert(spec(SettingId.GIT_CONFIRM_DISCARD).fallback.b);
+	assert(spec(SettingId.GIT_DEFAULT_REMOTE).fallback.s.compare_to("origin") == 0);
+	assert(page_for(SettingId.GIT_BINARY) == SettingPage.INTEGRATIONS);
+	assert(group_for(SettingId.GIT_BINARY).compare_to("Git") == 0);
+}

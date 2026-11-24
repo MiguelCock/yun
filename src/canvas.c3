@@ -115,6 +115,7 @@ struct Canvas
 	RLCamera2D target;
 	RLVector2 velocity;
 	float top_inset;
+	float left_inset;
 	bool pointer_over_ui;
 	bool block_zoom;
 	bool block_pan;
@@ -135,11 +136,12 @@ fn void Canvas.init(&self)
 	self.camera = initial;
 	self.target = initial;
 	self.top_inset = 0.0f;
+	self.left_inset = 0.0f;
 }
 
 fn void Canvas.update(&self)
 {
-	self.camera.offset = { (float)rl::get_screen_width() / 2.0f, self.usable_offset_y() };
+	self.camera.offset = { self.usable_offset_x(), self.usable_offset_y() };
 	self.target.offset = self.camera.offset;
 
 	float dt        = math::min(rl::get_frame_time(), MAX_FRAME_DT);
@@ -210,6 +212,25 @@ fn float Canvas.usable_offset_y(&self)
 	float height = (float)rl::get_screen_height() - self.top_inset;
 	if (height < 0.0f) height = 0.0f;
 	return self.top_inset + height / 2.0f;
+}
+
+fn float Canvas.usable_width(&self)
+{
+	float width = (float)rl::get_screen_width() - self.left_inset;
+	if (width < 0.0f) width = 0.0f;
+	return width;
+}
+
+fn float Canvas.usable_height(&self)
+{
+	float height = (float)rl::get_screen_height() - self.top_inset;
+	if (height < 0.0f) height = 0.0f;
+	return height;
+}
+
+fn float Canvas.usable_offset_x(&self)
+{
+	return self.left_inset + self.usable_width() / 2.0f;
 }
 
 fn void Canvas.begin_drag(&self, RLMouseButton button, RLVector2 mouse)
@@ -424,9 +445,13 @@ fn void Canvas.fit_zoom(&self, Rect content, int screen_w, int screen_h)
 {
 	if (content.width <= 0.0f || content.height <= 0.0f) return;
 	float margin = 40.0f;
-	float fit_x  = ((float)screen_w - margin * 2.0f) / content.width;
-	float fit_y  = ((float)screen_h - margin * 2.0f) / content.height;
-	float top    = math::min(g_canvas_settings.max_zoom, FIT_MAX_ZOOM);
+	float width  = (float)screen_w - self.left_inset;
+	float height = (float)screen_h - self.top_inset;
+	if (width < 1.0f) width = 1.0f;
+	if (height < 1.0f) height = 1.0f;
+	float fit_x = (width - margin * 2.0f) / content.width;
+	float fit_y = (height - margin * 2.0f) / content.height;
+	float top   = math::min(g_canvas_settings.max_zoom, FIT_MAX_ZOOM);
 	self.target.zoom = math::clamp(math::min(fit_x, fit_y), g_canvas_settings.min_zoom, top);
 	self.target.target = {
 		content.x + content.width / 2.0f,
@@ -439,9 +464,13 @@ fn void Canvas.fit_zoom_floor(&self, Rect content, int screen_w, int screen_h, f
 	self.fit_zoom(content, screen_w, screen_h);
 	if (floor <= 0.0f || self.target.zoom >= floor) return;
 	self.target.zoom = floor;
+	float width  = (float)screen_w - self.left_inset;
+	float height = (float)screen_h - self.top_inset;
+	if (width < 1.0f) width = 1.0f;
+	if (height < 1.0f) height = 1.0f;
 	self.target.target = {
-		content.x + (float)screen_w / (2.0f * floor),
-		content.y + (float)screen_h / (2.0f * floor),
+		content.x + width / (2.0f * floor),
+		content.y + height / (2.0f * floor),
 	};
 }
 

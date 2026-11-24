@@ -14,6 +14,7 @@ import yun::commands;
 import yun::completion;
 import yun::editor;
 import yun::findbar;
+import yun::git;
 import yun::gitignore;
 import yun::highlight;
 import yun::icons;
@@ -2003,8 +2004,8 @@ fn void Project.apply_focus_rect(&self, Canvas* canvas)
 {
 	int index = self.focus_card;
 	if (index < 0 || index >= (int)self.cards.len()) return;
-	float width  = (float)rl::get_screen_width();
-	float height = (float)rl::get_screen_height() - canvas.top_inset;
+	float width  = canvas.usable_width();
+	float height = canvas.usable_height();
 	if (width < 1.0f) width = 1.0f;
 	if (height < 1.0f) height = 1.0f;
 	RLVector2 center = canvas.target.target;
@@ -2028,8 +2029,8 @@ fn bool Project.begin_focus(&self, int index, Canvas* canvas)
 	self.focus_saved_rect = self.cards[at].rect;
 	self.focus_saved_camera = canvas.camera;
 	self.focus_saved_target = canvas.target;
-	self.focus_screen_w = (float)rl::get_screen_width();
-	self.focus_screen_h = (float)rl::get_screen_height();
+	self.focus_screen_w = canvas.usable_width();
+	self.focus_screen_h = canvas.usable_height();
 	self.focus_card = at;
 
 	RLVector2 center = self.cards[at].center();
@@ -2045,8 +2046,8 @@ fn bool Project.begin_focus(&self, int index, Canvas* canvas)
 fn void Project.update_focus_rect(&self, Canvas* canvas)
 {
 	if (self.focus_card < 0) return;
-	float width  = (float)rl::get_screen_width();
-	float height = (float)rl::get_screen_height();
+	float width  = canvas.usable_width();
+	float height = canvas.usable_height();
 	if (width == self.focus_screen_w && height == self.focus_screen_h) return;
 	self.focus_screen_w = width;
 	self.focus_screen_h = height;
@@ -3382,7 +3383,8 @@ fn void Project.draw_cards(
 	RLFont editor_font,
 	EditorMetrics metrics,
 	findbar::FindBar* find_bar,
-	int only_card
+	int only_card,
+	git::GitStatus* git_status
 )
 {
 	double elapsed = rl::get_time() - self.last_input_time;
@@ -3424,7 +3426,7 @@ fn void Project.draw_cards(
 				card.draw_lod(camera.zoom);
 				continue;
 			}
-			card.draw(is_focused, camera, mouse_world, self.focus_card >= 0);
+			card.draw(is_focused, camera, mouse_world, self.focus_card >= 0, git_status);
 			if (!is_focused && (int)i == self.selected)
 			{
 				ui::rounded_rect_lines(

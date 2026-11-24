@@ -20,6 +20,7 @@ import yun::editor;
 import yun::find;
 import yun::findbar;
 import yun::fonts;
+import yun::git;
 import yun::hover;
 import yun::icons;
 import yun::input;
@@ -49,6 +50,8 @@ enum UiMode : int
 	EDIT,
 	TOP_BAR,
 	CONSOLE,
+	SCM,
+	DIFF,
 }
 
 fn void set_project_title(project::Project* project)
@@ -87,6 +90,18 @@ fn void notify_console_finishes(console::ConsoleManager* manager, notify::Notifi
 			notifier.push(string::format(tmem, "Console %s: %s", session.title, detail));
 		};
 	}
+}
+
+fn void set_git_settings(config::Config* config)
+{
+	git::GitSettings gs = {
+		.binary = config.settings.get_string(settings::SettingId.GIT_BINARY),
+		.auto_refresh = config.settings.get_bool(settings::SettingId.GIT_AUTO_REFRESH),
+		.debounce_ms = (int)config.settings.get_int(settings::SettingId.GIT_DEBOUNCE_MS),
+		.confirm_discard = config.settings.get_bool(settings::SettingId.GIT_CONFIRM_DISCARD),
+		.default_remote = config.settings.get_string(settings::SettingId.GIT_DEFAULT_REMOTE),
+	};
+	git::set_settings(gs);
 }
 
 fn void set_console_settings(config::Config* config)
@@ -131,6 +146,7 @@ fn void finish_open(
 {
 	config.load((String)project.root);
 	set_console_settings(config);
+	set_git_settings(config);
 	ui::set_ui_scale((float)config.settings.get_float(settings::SettingId.APP_UI_SCALE));
 	bool restored = workspace::load(project, canvas, console_manager);
 	if (restored)
@@ -338,6 +354,7 @@ fn void apply_settings(
 
 	set_console_settings(config);
 	console_manager.apply_settings(console::settings());
+	set_git_settings(config);
 
 	bool font_changed    = false;
 	bool metrics_changed = false;
@@ -423,7 +440,7 @@ fn void apply_settings(
 	if (ui_scale_changed)
 	{
 		canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
-		canvas.camera.offset = { (float)rl::get_screen_width() / 2.0f, canvas.usable_offset_y() };
+		canvas.camera.offset = { canvas.usable_offset_x(), canvas.usable_offset_y() };
 	}
 
 	if (reload_editor || metrics_changed)
@@ -556,6 +573,9 @@ struct App
 	console::ConsoleManager* console_manager;
 	console::Console* console;
 	console::ConsolePanel* console_panel;
+	git::State* git;
+	git::Panel* git_panel;
+	git::DiffView* diff_view;
 	editor::EditorMetrics metrics;
 	bool* project_open;
 	bool* content_changed;
@@ -563,6 +583,8 @@ struct App
 	UiMode* ui_mode;
 	UiMode* focus_saved_mode;
 	UiMode* console_saved_mode;
+	UiMode* scm_saved_mode;
+	UiMode* diff_saved_mode;
 	int* edit_grace_frames;
 	topbar::TopBar* bar;
 	keymap::Keymap* keymap;
@@ -857,6 +879,7 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				if (editor::save_buffer(&project.cards[index], project.allocator))
 				{
+					app.git.mark_dirty(rl::get_time());
 					app.notifier.push("Saved");
 				}
 				else
@@ -1325,6 +1348,22 @@ fn void run_command(commands::CommandId id, App* app)
 				else
 				{
 					focus_console(app);
+				}
+				return;
+			}
+		case commands::CommandId.TOGGLE_SCM:
+
+			{
+				if (app.git_panel.visible && *app.ui_mode == UiMode.SCM)
+				{
+					app.git_panel.close();
+					*app.ui_mode = *app.scm_saved_mode;
+				}
+				else
+				{
+					if (*app.ui_mode != UiMode.SCM) *app.scm_saved_mode = *app.ui_mode;
+					app.git_panel.open();
+					*app.ui_mode = UiMode.SCM;
 				}
 				return;
 			}
@@ -2052,7 +2091,7 @@ fn void update_dpi(
 	);
 
 	canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
-	canvas.camera.offset = { (float)rl::get_screen_width() / 2.0f, canvas.usable_offset_y() };
+	canvas.camera.offset = { canvas.usable_offset_x(), canvas.usable_offset_y() };
 }
 
 fn int parse_int(String s)
@@ -2162,6 +2201,18 @@ fn int main(String[] args)
 	console::ConsoleManager console_manager;
 	console_manager.init(mem);
 	defer console_manager.destroy();
+
+	git::State git_state;
+	git_state.init(mem);
+	defer git_state.destroy();
+
+	git::Panel git_panel;
+	git_panel.init(mem);
+	defer git_panel.destroy();
+
+	git::DiffView diff_view;
+	diff_view.init(mem);
+	defer diff_view.destroy();
 	console::Console* console            = console_manager.active_console();
 	console::ConsolePanel* console_panel = console_manager.active_panel();
 
@@ -2228,6 +2279,8 @@ fn int main(String[] args)
 	UiMode ui_mode              = UiMode.MOVE;
 	UiMode focus_saved_mode     = UiMode.MOVE;
 	UiMode console_saved_mode   = UiMode.MOVE;
+	UiMode scm_saved_mode       = UiMode.MOVE;
+	UiMode diff_saved_mode      = UiMode.MOVE;
 	int edit_grace_frames       = 0;
 	bool selftest               = false;
 	bool benchmark_on           = false;
@@ -2360,6 +2413,9 @@ fn int main(String[] args)
 		.console_manager = &console_manager,
 		.console = console,
 		.console_panel = console_panel,
+		.git = &git_state,
+		.git_panel = &git_panel,
+		.diff_view = &diff_view,
 		.metrics = metrics,
 		.project_open = &project_open,
 		.content_changed = &content_changed,
@@ -2367,6 +2423,8 @@ fn int main(String[] args)
 		.ui_mode = &ui_mode,
 		.focus_saved_mode = &focus_saved_mode,
 		.console_saved_mode = &console_saved_mode,
+		.scm_saved_mode = &scm_saved_mode,
+		.diff_saved_mode = &diff_saved_mode,
 		.edit_grace_frames = &edit_grace_frames,
 		.bar = &bar,
 		.keymap = &keymap,
@@ -2389,6 +2447,7 @@ fn int main(String[] args)
 	bool arrow_hovered_cache       =  false;
 	bool diagnostics_logged        =  false;
 	input::RepeatState move_repeat =  { };
+	ulong last_git_error_revision  =  0;
 
 	int frame_count    = 0;
 	double prof_update = 0.0;
@@ -2405,6 +2464,7 @@ fn int main(String[] args)
 	{
 		frame_count++;
 		ui::reset_cursor();
+		canvas.left_inset = git_panel.visible ? git_panel.width(&canvas) : 0.0f;
 		console = console_manager.active_console();
 		console_panel = console_manager.active_panel();
 		app.console = console;
@@ -2414,6 +2474,8 @@ fn int main(String[] args)
 			ui_mode = console_saved_mode;
 			console_panel.focused = false;
 		}
+		if (ui_mode == UiMode.SCM && !git_panel.visible) ui_mode = scm_saved_mode;
+		if (ui_mode == UiMode.DIFF && !diff_view.open) ui_mode = diff_saved_mode;
 		if (ui_mode != UiMode.MOVE || project.grabbing) move_repeat.reset();
 		if (selftest && frame_count > 3) break;
 		bool bench_ready = benchmark_on && (benchmark_synthetic || project_open);
@@ -2456,6 +2518,23 @@ fn int main(String[] args)
 		double scan_t0     = rl::get_time();
 		search.pump(&project, rl::get_time());
 		symbols.pump(&project, rl::get_time());
+		if (project_open)
+		{
+			git_state.update((String)project.root, project.cards_revision, rl::get_time(), rl::is_window_focused());
+		}
+		if (diff_view.sync(&git_state))
+		{
+			if (ui_mode != UiMode.DIFF) diff_saved_mode = ui_mode;
+			ui_mode = UiMode.DIFF;
+		}
+		if (git_state.error_revision != last_git_error_revision)
+		{
+			last_git_error_revision = git_state.error_revision;
+			if (git_state.error.kind != git::GitErrorKind.NONE && !git_state.error_quiet)
+			{
+				notifier.push(git_state.error.message);
+			}
+		}
 		console_manager.pump();
 		notify_console_finishes(&console_manager, &notifier, ui_mode == UiMode.CONSOLE && console_manager.visible);
 		scan_ms += (rl::get_time() - scan_t0) * 1000.0;
@@ -2495,6 +2574,7 @@ fn int main(String[] args)
 					project_open = true;
 					console_manager.reset((String)project.root);
 					finish_open(&project, &canvas, &config, &keymap, &notifier, &console_manager);
+					git_state.set_project((String)project.root);
 					console = console_manager.active_console();
 					console_panel = console_manager.active_panel();
 					search.close();
@@ -3001,15 +3081,54 @@ fn int main(String[] args)
 			RLVector2 mouse       = rl::get_mouse_position();
 			RLVector2 world       = canvas.screen_to_world(mouse);
 			bool over_connections = connections.contains_screen(mouse);
-			console_panel.update_mouse(&console_manager, console, metrics, mouse);
+			if (diff_view.open)
+			{
+				diff_view.update(&canvas, rl::get_time());
+				if (diff_view.close_requested)
+				{
+					diff_view.close_requested = false;
+					ui_mode = diff_saved_mode;
+				}
+			}
+			if (!diff_view.open) console_panel.update_mouse(&console_manager, console, metrics, mouse);
 			console_manager.sync_height();
 			console = console_manager.active_console();
 			console_panel = console_manager.active_panel();
 			app.console = console;
 			app.console_panel = console_panel;
+			git_panel.bottom_inset = console_manager.visible ? ui::pxf(console_panel.height) : 0.0f;
 			bool over_console = console_panel.contains_screen(mouse);
-			bool over_top     = topbar::contains_screen(mouse) || over_connections || over_console;
-			bool has_buffer   = has_focused_buffer(&project);
+			bool over_git     = git_panel.contains_screen(&canvas, mouse);
+			if (!diff_view.open) git_panel.update(&git_state, &canvas, rl::get_time(), ui_mode == UiMode.SCM);
+			if (git_panel.focus_requested)
+			{
+				if (ui_mode != UiMode.SCM) scm_saved_mode = ui_mode;
+				ui_mode = UiMode.SCM;
+				git_panel.focused = true;
+				git_panel.focus_requested = false;
+			}
+			if (ui_mode == UiMode.SCM && git_panel.leave_requested)
+			{
+				ui_mode = scm_saved_mode;
+				git_panel.focused = false;
+			}
+			if (ui_mode == UiMode.SCM && rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && !over_git)
+			{
+				ui_mode = scm_saved_mode;
+				git_panel.focused = false;
+			}
+			String git_open_path = "";
+			if (git_panel.take_open(&git_open_path))
+			{
+				navigate_to_location(&project, &canvas, metrics, git_open_path, 0, 0);
+				git_open_path.free(mem);
+				ui_mode = UiMode.EDIT;
+				edit_grace_frames = 2;
+			}
+			bool over_top   = diff_view.open || topbar::contains_screen(
+				mouse
+			) || over_connections || over_console || over_git;
+			bool has_buffer = has_focused_buffer(&project);
 
 			if (ui_mode == UiMode.CONSOLE && rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && !over_console)
 			{
@@ -3058,10 +3177,12 @@ fn int main(String[] args)
 				}
 			}
 
-			int key_cmd = keymap.poll(commands::CTX_GLOBAL);
+			int key_cmd = -1;
+			if (!diff_view.open) key_cmd = keymap.poll(commands::CTX_GLOBAL);
 			if (key_cmd >= 0) run_command((commands::CommandId)key_cmd, &app);
 
-			int bar_cmd = bar.update(mouse, project_open, has_buffer);
+			int bar_cmd = -1;
+			if (!diff_view.open) bar_cmd = bar.update(mouse, project_open, has_buffer);
 			if (bar_cmd >= 0) run_command((commands::CommandId)bar_cmd, &app);
 
 			if (ui_mode == UiMode.CONSOLE)
@@ -3084,6 +3205,18 @@ fn int main(String[] args)
 					bar_key_cmd = (int)commands::CommandId.FOCUS_CANVAS;
 				}
 				if (bar_key_cmd >= 0) run_command((commands::CommandId)bar_key_cmd, &app);
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+			}
+			else if (ui_mode == UiMode.DIFF)
+			{
+				while (rl::get_char_pressed() != 0)
+				{
+				}
+			}
+			else if (ui_mode == UiMode.SCM)
+			{
 				while (rl::get_char_pressed() != 0)
 				{
 				}
@@ -3373,7 +3506,10 @@ fn int main(String[] args)
 				{
 					if (project.cards[i].dirty && project.cards[i].buffer)
 					{
-						(void)editor::save_buffer(&project.cards[i], project.allocator);
+						if (editor::save_buffer(&project.cards[i], project.allocator))
+						{
+							git_state.mark_dirty(rl::get_time());
+						}
 					}
 				}
 			}
@@ -3695,7 +3831,8 @@ fn int main(String[] args)
 
 		rl::@drawing()
 		{
-			bool focus_active = project.focus_card >= 0;
+			bool focus_active          = project.focus_card >= 0;
+			git::GitStatus* git_status = git_state.has_status ? &git_state.status : null;
 			if (focus_active)
 			{
 				rl::clear_background(theme::current().window_bg);
@@ -3709,13 +3846,21 @@ fn int main(String[] args)
 			{
 				if (focus_active)
 				{
-					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, project.focus_card);
+					project.draw_cards(
+						canvas.camera,
+						font,
+						editor_font,
+						metrics,
+						&find_bar,
+						project.focus_card,
+						git_status
+					);
 				}
 				else
 				{
 					project.draw_folders(canvas.camera);
 					import_index.draw(&project, canvas.camera, font);
-					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, -1);
+					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, -1, git_status);
 				}
 			};
 			if (focus_active)
@@ -3804,6 +3949,14 @@ fn int main(String[] args)
 				{
 					mode_label = "-- CONSOLE --";
 				}
+				else if (ui_mode == UiMode.SCM)
+				{
+					mode_label = "-- SOURCE CONTROL --";
+				}
+				else if (ui_mode == UiMode.DIFF)
+				{
+					mode_label = "-- DIFF --";
+				}
 				else if (project.grabbing)
 				{
 					mode_label = "-- GRAB --";
@@ -3839,8 +3992,9 @@ fn int main(String[] args)
 			app.console = console;
 			app.console_panel = console_panel;
 			console_panel.focused = ui_mode == UiMode.CONSOLE;
+			git_panel.draw(&git_state, &canvas, (float)ui::tpx(13));
 			console_panel.draw(&console_manager, console, font, editor_font, metrics);
-			browser.draw();
+			browser.draw(git_status);
 			close_menu.draw();
 			delete_menu.draw();
 			reload_menu.draw();
@@ -3854,6 +4008,7 @@ fn int main(String[] args)
 			search.draw(font);
 			symbols.draw(font);
 			definition_menu.draw();
+			diff_view.draw(&canvas);
 			notifier.draw();
 			if (opening) draw_loading(open_job, font);
 			if (rl::is_key_down(rl::RLKeyboardKey.F3))
