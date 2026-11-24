@@ -782,3 +782,42 @@ fn void test_console_profile_run()
 	}
 	assert(found);
 }
+fn void test_console_input_word_nav()
+{
+	ConsoleInput input;
+	input.init(mem);
+	defer input.destroy();
+
+	input.set("foo bar_baz!");
+	input.end();
+	input.move_word_left();
+	assert(input.cursor == 11);
+	input.move_word_left();
+	assert(input.cursor == 4);
+	input.move_word_left();
+	assert(input.cursor == 0);
+	input.move_word_right();
+	assert(input.cursor == 3);
+	input.move_word_right();
+	assert(input.cursor == 4);
+	input.move_word_right();
+	assert(input.cursor == 11);
+
+	input.set("foo bar");
+	input.home();
+	input.delete_word_forward();
+	assert(input.text_view().compare_to(" bar") == 0);
+	input.home();
+	input.delete_word_forward();
+	assert(input.text_view().compare_to("bar") == 0);
+	input.end();
+	input.delete_word_back();
+	assert(input.len() == 0);
+
+	input.set("café x");
+	input.end();
+	input.move_word_left();
+	assert(input.cursor == 6);
+	input.move_word_left();
+	assert(input.cursor == 0);
+}

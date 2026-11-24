@@ -983,6 +983,23 @@ fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keyma
 		(void)console.history.next(&console.input);
 		self.input_scroll = 0.0f;
 	}
+	if (keymap.pressed_repeat((int)commands::CommandId.CONSOLE_WORD_LEFT, commands::CTX_CONSOLE))
+	{
+		console.input.move_word_left();
+		self.input_scroll = 0.0f;
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.CONSOLE_WORD_RIGHT, commands::CTX_CONSOLE))
+	{
+		console.input.move_word_right();
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.CONSOLE_DELETE_WORD_BACK, commands::CTX_CONSOLE))
+	{
+		console.input.delete_word_back();
+	}
+	if (keymap.pressed_repeat((int)commands::CommandId.CONSOLE_DELETE_WORD_FORWARD, commands::CTX_CONSOLE))
+	{
+		console.input.delete_word_forward();
+	}
 	if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT))
 	{
 		console.input.move_left();
