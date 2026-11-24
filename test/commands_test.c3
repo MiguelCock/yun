@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 106);
+	assert(command_count() == 107);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -249,5 +249,9 @@ fn void test_console_commands()
 	CommandDef copy = command_def(CommandId.CONSOLE_COPY);
 	assert(copy.shortcut.compare_to("Ctrl+Shift+C") == 0);
 	assert(command_name(CommandId.CONSOLE_COPY).compare_to("console_copy") == 0);
+
+	CommandDef find = command_def(CommandId.CONSOLE_FIND);
+	assert(find.shortcut.compare_to("Ctrl+F") == 0);
+	assert(command_name(CommandId.CONSOLE_FIND).compare_to("console_find") == 0);
 	assert(command_enabled(CommandId.CONSOLE_RUN, true, true));
 }

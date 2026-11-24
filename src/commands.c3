@@ -129,6 +129,7 @@ enum CommandId
 	CONSOLE_CLEAR,
 	CONSOLE_KILL,
 	CONSOLE_COPY,
+	CONSOLE_FIND,
 	CONSOLE_PASTE,
 	CONSOLE_SCROLL_UP,
 	CONSOLE_SCROLL_DOWN,
@@ -159,8 +160,8 @@ const CommandDef[] COMMAND_DEFS = {
 		.in_top_bar = false,
 		.contexts = CTX_GLOBAL
 	},
-	{ .id = CommandId.FIND, .label = "Find", .shortcut = "Ctrl+F", .in_top_bar = false, .contexts = CTX_GLOBAL },
-	{ .id = CommandId.REPLACE, .label = "Replace", .shortcut = "Ctrl+H", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.FIND, .label = "Find", .shortcut = "Ctrl+F", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.REPLACE, .label = "Replace", .shortcut = "Ctrl+H", .in_top_bar = false, .contexts = CTX_EDIT },
 	{ .id = CommandId.COPY, .label = "Copy", .shortcut = "Ctrl+C", .in_top_bar = false, .contexts = CTX_EDIT },
 	{ .id = CommandId.CUT, .label = "Cut", .shortcut = "Ctrl+X", .in_top_bar = false, .contexts = CTX_EDIT },
 	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false, .contexts = CTX_EDIT },
@@ -735,6 +736,13 @@ const CommandDef[] COMMAND_DEFS = {
 		.contexts = CTX_CONSOLE,
 	},
 	{
+		.id = CommandId.CONSOLE_FIND,
+		.label = "Find in Console",
+		.shortcut = "Ctrl+F",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
 		.id = CommandId.CONSOLE_PASTE,
 		.label = "Paste Into Console",
 		.shortcut = "Ctrl+V",
@@ -986,6 +994,8 @@ fn String command_name(CommandId id)
 			return "console_kill";
 		case CommandId.CONSOLE_COPY:
 			return "console_copy";
+		case CommandId.CONSOLE_FIND:
+			return "console_find";
 		case CommandId.CONSOLE_PASTE:
 			return "console_paste";
 		case CommandId.CONSOLE_SCROLL_UP:
@@ -1068,6 +1078,7 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.CONSOLE_CLEAR:
 		case CommandId.CONSOLE_KILL:
 		case CommandId.CONSOLE_COPY:
+		case CommandId.CONSOLE_FIND:
 		case CommandId.CONSOLE_PASTE:
 		case CommandId.CONSOLE_SCROLL_UP:
 		case CommandId.CONSOLE_SCROLL_DOWN:
