@@ -507,7 +507,8 @@ fn void test_console_settings_defaults()
 	assert(spec(SettingId.CONSOLE_NOTIFY).fallback.s.compare_to("failure") == 0);
 	assert(spec(SettingId.CONSOLE_PERSIST_HISTORY).fallback.b);
 	assert(spec(SettingId.CONSOLE_RESTORE_SESSIONS).fallback.b);
-}fn void test_git_settings_defaults()
+}
+fn void test_git_settings_defaults()
 {
 	assert(spec(SettingId.GIT_BINARY).section.compare_to("git") == 0);
 	assert(spec(SettingId.GIT_BINARY).fallback.s.compare_to("git") == 0);
