@@ -354,6 +354,7 @@ fn bool DiffView.sync(&self, State* git)
 		if (self.orig_path.len > 0) self.orig_path.free(self.allocator);
 		self.path = git.diff.path.len > 0 ? git.diff.path.copy(self.allocator) : "";
 		self.orig_path = "";
+		if (self.rev.len > 0) self.rev.free(self.allocator);
 		self.rev = git.diff.rev.len > 0 ? git.diff.rev.copy(self.allocator) : "";
 		self.staged = git.diff.staged;
 		return true;
@@ -366,6 +367,7 @@ fn bool DiffView.sync(&self, State* git)
 	self.error = "";
 	if (self.path.len > 0) self.path.free(self.allocator);
 	if (self.orig_path.len > 0) self.orig_path.free(self.allocator);
+	if (self.rev.len > 0) self.rev.free(self.allocator);
 	self.path = git.diff.path.len > 0 ? git.diff.path.copy(self.allocator) : "";
 	self.orig_path = git.diff.orig_path.len > 0 ? git.diff.orig_path.copy(self.allocator) : "";
 	self.rev = git.diff.rev.len > 0 ? git.diff.rev.copy(self.allocator) : "";
