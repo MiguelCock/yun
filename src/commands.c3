@@ -14,6 +14,7 @@ const ulong CTX_BROWSER    = 1 << 10;
 const ulong CTX_SETTINGS   = 1 << 11;
 const ulong CTX_MENU       = 1 << 12;
 const ulong CTX_COMPLETION = 1 << 13;
+const ulong CTX_CONSOLE    = 1 << 14;
 
 const ulong CTX_OVERLAY_CLOSE  = CTX_PALETTE | CTX_FIND | CTX_SEARCH | CTX_SYMBOLS | CTX_PROBLEMS | CTX_PROMPT
 	| CTX_BROWSER
@@ -122,6 +123,16 @@ enum CommandId
 	MINIMIZE_CARD,
 	TOGGLE_FOCUS_MODE,
 	TOGGLE_CONSOLE,
+	CONSOLE_RUN,
+	CONSOLE_HISTORY_PREV,
+	CONSOLE_HISTORY_NEXT,
+	CONSOLE_CLEAR,
+	CONSOLE_KILL,
+	CONSOLE_COPY,
+	CONSOLE_PASTE,
+	CONSOLE_SCROLL_UP,
+	CONSOLE_SCROLL_DOWN,
+	CONSOLE_LEAVE_FOCUS,
 	TOGGLE_CONNECTIONS,
 	QUIT,
 }
@@ -150,9 +161,9 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{ .id = CommandId.FIND, .label = "Find", .shortcut = "Ctrl+F", .in_top_bar = false, .contexts = CTX_GLOBAL },
 	{ .id = CommandId.REPLACE, .label = "Replace", .shortcut = "Ctrl+H", .in_top_bar = false, .contexts = CTX_GLOBAL },
-	{ .id = CommandId.COPY, .label = "Copy", .shortcut = "Ctrl+C", .in_top_bar = false, .contexts = CTX_GLOBAL },
-	{ .id = CommandId.CUT, .label = "Cut", .shortcut = "Ctrl+X", .in_top_bar = false, .contexts = CTX_GLOBAL },
-	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{ .id = CommandId.COPY, .label = "Copy", .shortcut = "Ctrl+C", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.CUT, .label = "Cut", .shortcut = "Ctrl+X", .in_top_bar = false, .contexts = CTX_EDIT },
+	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false, .contexts = CTX_EDIT },
 	{
 		.id = CommandId.SELECT_ALL,
 		.label = "Select All",
@@ -680,6 +691,78 @@ const CommandDef[] COMMAND_DEFS = {
 		.contexts = CTX_GLOBAL,
 	},
 	{
+		.id = CommandId.CONSOLE_RUN,
+		.label = "Run Command",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_HISTORY_PREV,
+		.label = "Console History Previous",
+		.shortcut = "Up",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CONSOLE_HISTORY_NEXT,
+		.label = "Console History Next",
+		.shortcut = "Down",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.CONSOLE_CLEAR,
+		.label = "Clear Console",
+		.shortcut = "Ctrl+L",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_KILL,
+		.label = "Kill Command",
+		.shortcut = "Ctrl+C",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_COPY,
+		.label = "Copy Console Output",
+		.shortcut = "Ctrl+Shift+C",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_PASTE,
+		.label = "Paste Into Console",
+		.shortcut = "Ctrl+V",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_SCROLL_UP,
+		.label = "Console Scroll Up",
+		.shortcut = "PageUp",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_SCROLL_DOWN,
+		.label = "Console Scroll Down",
+		.shortcut = "PageDown",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
+		.id = CommandId.CONSOLE_LEAVE_FOCUS,
+		.label = "Leave Console",
+		.shortcut = "Esc",
+		.in_top_bar = false,
+		.contexts = CTX_CONSOLE,
+	},
+	{
 		.id = CommandId.TOGGLE_CONNECTIONS,
 		.label = "Connections",
 		.shortcut = "Ctrl+Shift+I",
@@ -891,6 +974,26 @@ fn String command_name(CommandId id)
 			return "toggle_focus_mode";
 		case CommandId.TOGGLE_CONSOLE:
 			return "toggle_console";
+		case CommandId.CONSOLE_RUN:
+			return "console_run";
+		case CommandId.CONSOLE_HISTORY_PREV:
+			return "console_history_prev";
+		case CommandId.CONSOLE_HISTORY_NEXT:
+			return "console_history_next";
+		case CommandId.CONSOLE_CLEAR:
+			return "console_clear";
+		case CommandId.CONSOLE_KILL:
+			return "console_kill";
+		case CommandId.CONSOLE_COPY:
+			return "console_copy";
+		case CommandId.CONSOLE_PASTE:
+			return "console_paste";
+		case CommandId.CONSOLE_SCROLL_UP:
+			return "console_scroll_up";
+		case CommandId.CONSOLE_SCROLL_DOWN:
+			return "console_scroll_down";
+		case CommandId.CONSOLE_LEAVE_FOCUS:
+			return "console_leave_focus";
 		case CommandId.TOGGLE_CONNECTIONS:
 			return "toggle_connections";
 		case CommandId.QUIT:
@@ -959,6 +1062,16 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 			return has_buffer;
 		case CommandId.PROBLEMS:
 		case CommandId.TOGGLE_CONSOLE:
+		case CommandId.CONSOLE_RUN:
+		case CommandId.CONSOLE_HISTORY_PREV:
+		case CommandId.CONSOLE_HISTORY_NEXT:
+		case CommandId.CONSOLE_CLEAR:
+		case CommandId.CONSOLE_KILL:
+		case CommandId.CONSOLE_COPY:
+		case CommandId.CONSOLE_PASTE:
+		case CommandId.CONSOLE_SCROLL_UP:
+		case CommandId.CONSOLE_SCROLL_DOWN:
+		case CommandId.CONSOLE_LEAVE_FOCUS:
 		case CommandId.QUIT:
 			return true;
 		case CommandId.GO_TO_DEFINITION:

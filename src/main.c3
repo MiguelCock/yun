@@ -610,6 +610,25 @@ fn int focus_mode_target(project::Project* project, UiMode mode)
 	return index;
 }
 
+fn void focus_console(App* app)
+{
+	if (!app.console_panel.visible) app.console_panel.open();
+	if (*app.ui_mode != UiMode.CONSOLE)
+	{
+		*app.console_saved_mode = *app.ui_mode;
+		*app.ui_mode = UiMode.CONSOLE;
+	}
+	app.console_panel.focused = true;
+	app.console_panel.focus_requested = false;
+}
+
+fn void leave_console(App* app)
+{
+	if (*app.ui_mode != UiMode.CONSOLE) return;
+	*app.ui_mode = *app.console_saved_mode;
+	app.console_panel.focused = false;
+}
+
 fn void open_context_menu(App* app, context::ContextTarget target, int card, int folder, RLVector2 world, int offset)
 {
 	project::Project* project = app.project;
@@ -1175,19 +1194,83 @@ fn void run_command(commands::CommandId id, App* app)
 					app.console_panel.close();
 					*app.ui_mode = *app.console_saved_mode;
 				}
-				else if (app.console_panel.visible)
-				{
-					*app.console_saved_mode = *app.ui_mode;
-					*app.ui_mode = UiMode.CONSOLE;
-					app.console_panel.focused = true;
-					app.console_panel.focus_requested = false;
-				}
 				else
 				{
-					*app.console_saved_mode = *app.ui_mode;
-					app.console_panel.open();
-					*app.ui_mode = UiMode.CONSOLE;
+					focus_console(app);
 				}
+				return;
+			}
+		case commands::CommandId.CONSOLE_RUN:
+
+			{
+				focus_console(app);
+				(void)app.console.submit();
+				app.console_panel.pinned = app.console_panel.auto_scroll;
+				return;
+			}
+		case commands::CommandId.CONSOLE_HISTORY_PREV:
+
+			{
+				focus_console(app);
+				(void)app.console.history.previous(&app.console.input);
+				app.console_panel.input_scroll = 0.0f;
+				return;
+			}
+		case commands::CommandId.CONSOLE_HISTORY_NEXT:
+
+			{
+				focus_console(app);
+				(void)app.console.history.next(&app.console.input);
+				app.console_panel.input_scroll = 0.0f;
+				return;
+			}
+		case commands::CommandId.CONSOLE_CLEAR:
+
+			{
+				focus_console(app);
+				app.console.clear();
+				app.console_panel.scroll = 0;
+				app.console_panel.pinned = app.console_panel.auto_scroll;
+				return;
+			}
+		case commands::CommandId.CONSOLE_KILL:
+
+			{
+				focus_console(app);
+				app.console.kill();
+				return;
+			}
+		case commands::CommandId.CONSOLE_COPY:
+
+			{
+				app.console_panel.copy_output(app.console);
+				return;
+			}
+		case commands::CommandId.CONSOLE_PASTE:
+
+			{
+				focus_console(app);
+				app.console_panel.paste(app.console);
+				return;
+			}
+		case commands::CommandId.CONSOLE_SCROLL_UP:
+
+			{
+				focus_console(app);
+				app.console_panel.scroll_by(app.console, app.metrics, -app.console_panel.visible_rows(app.metrics));
+				return;
+			}
+		case commands::CommandId.CONSOLE_SCROLL_DOWN:
+
+			{
+				focus_console(app);
+				app.console_panel.scroll_by(app.console, app.metrics, app.console_panel.visible_rows(app.metrics));
+				return;
+			}
+		case commands::CommandId.CONSOLE_LEAVE_FOCUS:
+
+			{
+				leave_console(app);
 				return;
 			}
 		case commands::CommandId.TOGGLE_CONNECTIONS:
@@ -2708,7 +2791,7 @@ fn int main(String[] args)
 
 			if (ui_mode == UiMode.CONSOLE)
 			{
-				if (console_panel.update_input(&console, metrics))
+				if (console_panel.update_input(&console, &keymap, metrics))
 				{
 					ui_mode = console_saved_mode;
 					console_panel.focused = false;
