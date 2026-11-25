@@ -83,6 +83,17 @@ fn Path? absolute_path(Allocator allocator, String root, String rel)
 fn bool save(project::Project* project, canvas::Canvas* canvas, console::ConsoleManager* console_manager = null)
 {
 	if (project.root.len == 0) return false;
+	@pool()
+	{
+		Path? dir = ((Path)(String)project.root).append(tmem, WORKSPACE_DIR);
+		if (catch excuse = dir) return false;
+		return save_at(project, canvas, console_manager, dir);
+	};
+}
+
+fn bool save_at(project::Project* project, canvas::Canvas* canvas, console::ConsoleManager* console_manager, Path dir)
+{
+	if (project.root.len == 0) return false;
 
 	@pool()
 	{
@@ -168,8 +179,6 @@ fn bool save(project::Project* project, canvas::Canvas* canvas, console::Console
 
 		String json = json::marshal(tmem, state, JsonIndent.SPACE_2);
 
-		Path? dir = ((Path)(String)project.root).append(tmem, WORKSPACE_DIR);
-		if (catch excuse = dir) return false;
 		if (catch excuse = path::mkdir(dir, recursive: true)) return false;
 
 		Path? tmp = dir.append(tmem, WORKSPACE_TMP);
@@ -186,11 +195,19 @@ fn bool save(project::Project* project, canvas::Canvas* canvas, console::Console
 fn bool load(project::Project* project, canvas::Canvas* canvas, console::ConsoleManager* console_manager = null)
 {
 	if (project.root.len == 0) return false;
-
 	@pool()
 	{
 		Path? dir = ((Path)(String)project.root).append(tmem, WORKSPACE_DIR);
 		if (catch excuse = dir) return false;
+		return load_at(project, canvas, console_manager, dir);
+	};
+}
+
+fn bool load_at(project::Project* project, canvas::Canvas* canvas, console::ConsoleManager* console_manager, Path dir)
+{
+	if (project.root.len == 0) return false;
+	@pool()
+	{
 		Path? file_path = dir.append(tmem, WORKSPACE_FILE);
 		if (catch excuse = file_path) return false;
 		if (!path::exists(file_path)) return false;

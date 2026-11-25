@@ -627,6 +627,30 @@ fn void ensure_buffer(FileCard* card, Allocator allocator)
 	stamp_file(card);
 }
 
+fn void restore_buffer(FileCard* card, String text, Allocator allocator)
+{
+	destroy_buffer(card, allocator);
+	PieceTable* buffer = alloc::new(allocator, PieceTable);
+	buffer.init_from_buffer(allocator, text);
+	card.buffer = buffer;
+
+	History* history = alloc::new(allocator, History);
+	history.init(allocator);
+	history.budget = g_editor_settings.history_budget;
+	card.history = history;
+
+	card.highlight = highlight::create(allocator, card.buffer, (String)card.path);
+	if (markdown::is_markdown_path((String)card.path)) card.view = markdown::view_create(allocator);
+	lsp::lsp_did_open((String)card.path, card.buffer);
+	stamp_file(card);
+	card.dirty = true;
+	card.cursor = 0;
+	card.selection_anchor = 0;
+	card.preferred_column = 0;
+	card.scroll = 0.0f;
+	card.scroll_x = 0.0f;
+}
+
 fn void stamp_file(FileCard* card)
 {
 	Time_t? mtime = os::native_get_modified_time((String)card.path);

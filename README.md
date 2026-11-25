@@ -22,11 +22,11 @@ The project is early and evolving quickly. The roadmap is the flat GitHub issue 
 - **LSP** — hover, go-to-definition, completion, and a problems panel, driven by per-language servers configured in the config.
 - **Markdown preview** — toggle a rendered view of a Markdown card (headings, lists, tables, fenced code, blockquotes, links, inline emphasis) with `Ctrl+Shift+V`, the command palette, or the card-title preview icon; click the preview to jump back to the source. Card titles have maximize (focus mode) and minimize (collapse) controls; close cards from the context menu, `C`, or the command palette.
 - **Themes** — nine built-in palettes with a picker.
-- **App** — a top bar that can dock to any screen edge (`app.topbar_position`), consistent interaction states, delayed tooltips with shortcut hints, shared scrollbars, empty/loading states, reduced-motion panel transitions, top bar actions, Vim-like keyboard modes (see [Keyboard and modes](#keyboard-and-modes)), command palette, customizable keybindings, notifications, layered config (global + project), and `.yun/workspace.json` persistence. A freshly opened project starts with every folder collapsed: each level packs its files and folder chips tightly (wrapping at `sqrt` of their area into a roughly square footprint). Opening a folder reveals its contents overlapping its siblings on that level instead of pushing them aside, so arranging the canvas is left to you. The camera fits the visible content, never zooming past 100% (`canvas.fit_on_open` / `canvas.fit_min_zoom`); sub-3px cards are culled at low zoom and import arrows drop dashes/labels as they shrink. Folder positions and the camera are restored unchanged on reopen.
+- **App** — a top bar that can dock to any screen edge (`app.topbar_position`), consistent interaction states, delayed tooltips with shortcut hints, shared scrollbars, empty/loading states, reduced-motion panel transitions, crash recovery for unsaved work, top bar actions, Vim-like keyboard modes (see [Keyboard and modes](#keyboard-and-modes)), command palette, customizable keybindings, notifications, layered config (global + project), and `.yun/workspace.json` persistence. A freshly opened project starts with every folder collapsed: each level packs its files and folder chips tightly (wrapping at `sqrt` of their area into a roughly square footprint). Opening a folder reveals its contents overlapping its siblings on that level instead of pushing them aside, so arranging the canvas is left to you. The camera fits the visible content, never zooming past 100% (`canvas.fit_on_open` / `canvas.fit_min_zoom`); sub-3px cards are culled at low zoom and import arrows drop dashes/labels as they shrink. Folder positions and the camera are restored unchanged on reopen.
 
 ## Not yet
 
-Lua mods (#33–#36), large-file support (#14), very-large-project perf (#45), crash recovery (#47), and release packaging (#48–#49).
+Lua mods (#33–#36), full large-file indexing, very-large-project perf (#45), and release packaging (#48–#49).
 
 ## Keyboard and modes
 
@@ -136,7 +136,7 @@ Settings are JSON, layered as `defaults < global < project`, so a project can ov
 - Global: `<OS config dir>/yun/config.json` (e.g. `~/.config/yun/config.json` on Linux).
 - Project: `.yun/config.json` at the project root (wins over global).
 
-Yun also keeps a binary import cache at `.yun/cache/imports.bin` and a symbol cache at `.yun/cache/symbols.bin`. They are disposable, validated by file mtime/size and a CRC, and rebuilt automatically when needed.
+Yun also keeps a binary import cache at `.yun/cache/imports.bin`, a symbol cache at `.yun/cache/symbols.bin`, and a recovery journal under `.yun/recovery/` while dirty buffers exist. They are disposable, validated by file mtime/size and a CRC, and rebuilt automatically when needed.
 
 Values are grouped into sections, for example:
 
