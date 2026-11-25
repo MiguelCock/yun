@@ -1115,7 +1115,7 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				close_overlays(app);
 				(void)lsp::lsp_request_workspace_symbols("");
-				app.symbols.show();
+				app.symbols.show(project);
 				while (rl::get_char_pressed() != 0)
 				{
 				}
@@ -2662,7 +2662,7 @@ fn int main(String[] args)
 					console_panel = console_manager.active_panel();
 					search.close();
 					symbols.close();
-					symbols.start_scan(&project);
+					symbols.defer_project(&project);
 					ui_mode = UiMode.MOVE;
 					project.selected = -1;
 					apply_settings(
@@ -4261,6 +4261,11 @@ fn int main(String[] args)
 	}
 
 	if (project.focus_card >= 0) project.end_focus(&canvas);
-	if (project_open) workspace::save(&project, &canvas, &console_manager);
+	if (project_open)
+	{
+		if (import_index.cache_dirty) import_index.save_cache(&project);
+		if (symbols.cache_dirty) symbols.save_cache(&project);
+		workspace::save(&project, &canvas, &console_manager);
+	}
 	return 0;
 }

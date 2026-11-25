@@ -8,6 +8,7 @@ import std::math;
 import raylib6::rl;
 import tree_sitter;
 import yun::language;
+import yun::project;
 
 fn void test_extract_c3_module_and_imports()
 {
@@ -41,6 +42,65 @@ fn void test_extract_c3_module_and_imports()
 	}
 	refs.free();
 	module_name.free(mem);
+}
+
+fn void test_import_cache_roundtrip()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_import_cache");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? a = dir.append(tmem, "a.c3");
+		if (catch excuse = a) return;
+		Path? b = dir.append(tmem, "b.c3");
+		if (catch excuse = b) return;
+		if (catch excuse = file::save(a, "module a;\nimport b;\n")) return;
+		if (catch excuse = file::save(b, "module b;\n")) return;
+
+		project::Project p;
+		p.init(mem);
+		if (p.root.len) p.root.free(mem);
+		p.root = (Path)((String)dir).copy(mem);
+		(void)p.append_card((String)a, { 0.0f, 0.0f });
+		(void)p.append_card((String)b, { 0.0f, 0.0f });
+
+		ImportIndex first;
+		first.init(mem);
+		first.refresh_card_paths(&p);
+		List{ImportRef} refs;
+		refs.init(mem);
+		refs.push(
+			{
+				.specifier = "b".copy(mem),
+				.target_path = ((String)b).copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.angled = false,
+				.line = 1,
+				.column = 0,
+			}
+		);
+		first.store((String)a, &refs, "a".copy(mem), false);
+		first.save_cache(&p);
+		first.destroy();
+
+		ImportIndex second;
+		second.init(mem);
+		second.refresh_card_paths(&p);
+		assert(second.load_cache(&p));
+		assert(second.files.len() == 1);
+		assert(second.files[0].module_name.compare_to("a") == 0);
+		assert(second.files[0].imports.len() == 1);
+		assert(second.files[0].imports[0].specifier.compare_to("b") == 0);
+		second.destroy();
+		p.destroy();
+		(void)path::rmtree(dir);
+	};
 }
 
 fn void test_extract_c3_test_module()
