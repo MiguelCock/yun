@@ -327,6 +327,7 @@ fn void apply_settings(
 	es.auto_indent = config.settings.get_bool(settings::SettingId.EDITOR_AUTO_INDENT);
 	es.history_budget = (usz)config.settings.get_int(settings::SettingId.EDITOR_UNDO_MB) * 1024u * 1024u;
 	es.diagnostic_segments = (int)config.settings.get_int(settings::SettingId.EDITOR_DIAGNOSTIC_SEGMENTS);
+	es.highlight_max_mb = (int)config.settings.get_int(settings::SettingId.EDITOR_HIGHLIGHT_MAX_MB);
 
 	canvas::CanvasSettings cs = canvas::settings();
 	cs.min_zoom = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_MIN);

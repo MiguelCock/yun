@@ -337,6 +337,7 @@ fn void test_editor_defaults()
 	assert(SETTINGS[(int)SettingId.EDITOR_SCROLL_MARGIN_LINES].fallback.i == 1);
 	assert(SETTINGS[(int)SettingId.EDITOR_WHEEL_SCROLL_LINES].fallback.i == 3);
 	assert(SETTINGS[(int)SettingId.EDITOR_SHOW_LINE_NUMBERS].fallback.b);
+	assert(SETTINGS[(int)SettingId.EDITOR_HIGHLIGHT_MAX_MB].fallback.i == 4);
 }
 
 fn void test_font_options_hook()

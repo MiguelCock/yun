@@ -35,6 +35,7 @@ struct EditorSettings
 	bool auto_indent;
 	usz history_budget;
 	int diagnostic_segments;
+	int highlight_max_mb;
 }
 
 EditorSettings g_editor_settings = {
@@ -50,6 +51,7 @@ EditorSettings g_editor_settings = {
 	.auto_indent = true,
 	.history_budget = text::HISTORY_BUDGET,
 	.diagnostic_segments = MAX_DIAGNOSTIC_SEGMENTS,
+	.highlight_max_mb = 4,
 };
 
 fn EditorSettings settings()
@@ -59,7 +61,20 @@ fn EditorSettings settings()
 
 fn void set_settings(EditorSettings value)
 {
+	if (value.highlight_max_mb < 0) value.highlight_max_mb = 0;
 	g_editor_settings = value;
+}
+
+fn usz highlight_max_bytes()
+{
+	if (g_editor_settings.highlight_max_mb <= 0) return 0;
+	return (usz)g_editor_settings.highlight_max_mb * 1024u * 1024u;
+}
+
+fn bool highlight_allowed(PieceTable* table)
+{
+	usz limit = highlight_max_bytes();
+	return limit == 0 || table.length() <= limit;
 }
 
 fn float min_card_width(EditorMetrics metrics)
@@ -825,7 +840,7 @@ fn void draw_text_highlighted(
 	RLColor base
 )
 {
-	if (!highlighter || table.length() == 0 || metrics.line_height <= 0.0f)
+	if (!highlighter || table.length() == 0 || metrics.line_height <= 0.0f || !highlight_allowed(table))
 	{
 		draw_text(table, area, scroll_y, scroll_x, metrics, camera, font, font_size, base);
 		return;
