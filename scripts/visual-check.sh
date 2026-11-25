@@ -7,16 +7,36 @@ project="$(mktemp -d)"
 trap 'rm -rf "$project"' EXIT
 
 mkdir -p "$project/src"
+cat > "$project/src/util.c3" <<'C3'
+module util;
+
+fn int add(int a, int b)
+{
+	return a + b;
+}
+C3
 cat > "$project/src/demo.c3" <<'C3'
 module demo;
 
 import std::io;
+import util;
 
 fn void hello()
 {
 	io::printn("hello");
+	io::printn("sum %d", util::add(1, 2));
 }
 C3
+cat > "$project/src/web.ts" <<'TS'
+import { useEffect, useState as state } from "react";
+
+export function useCounter()
+{
+	const [count] = state(0);
+	useEffect(() => {}, []);
+	return count;
+}
+TS
 cat > "$project/README.md" <<'MD'
 # Visual fixture
 
@@ -38,6 +58,7 @@ expected=(
 	problems
 	search
 	symbols
+	connections-details
 	palette
 	browser
 	topbar-bottom

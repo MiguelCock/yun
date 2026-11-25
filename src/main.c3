@@ -717,6 +717,7 @@ const String[] VISUAL_STATE_NAMES = {
 	"problems",
 	"search",
 	"symbols",
+	"connections-details",
 	"palette",
 	"browser",
 	"topbar-bottom",
@@ -770,6 +771,16 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 		case 1:
 			app.settings_panel.show();
 		case 2:
+			for (sz i = 0; i < project.cards.len(); i++)
+			{
+				if (project.cards[i].name.compare_to("web.ts") == 0)
+				{
+					int index = project.focus((int)i);
+					project.selected = index;
+					editor::ensure_buffer(&project.cards[index], project.allocator);
+					break;
+				}
+			}
 			app.connections.show();
 		case 3:
 			app.git_panel.open();
@@ -783,31 +794,43 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 		case 7:
 			app.symbols.show(project);
 		case 8:
-			app.palette.show();
+			for (sz i = 0; i < project.cards.len(); i++)
+			{
+				if (project.cards[i].name.compare_to("demo.c3") == 0)
+				{
+					int index = project.focus((int)i);
+					project.selected = index;
+					editor::ensure_buffer(&project.cards[index], project.allocator);
+					break;
+				}
+			}
+			app.connections.show();
 		case 9:
-			app.browser.open_at((String)project.root);
+			app.palette.show();
 		case 10:
+			app.browser.open_at((String)project.root);
+		case 11:
 			app.config.settings.set_string(
 				settings::SettingId.APP_TOPBAR_POSITION,
 				"bottom",
 				settings::SettingLayer.GLOBAL
 			);
 			topbar::set_position(topbar::TopBarPosition.BOTTOM);
-		case 11:
+		case 12:
 			app.config.settings.set_string(
 				settings::SettingId.APP_TOPBAR_POSITION,
 				"left",
 				settings::SettingLayer.GLOBAL
 			);
 			topbar::set_position(topbar::TopBarPosition.LEFT);
-		case 12:
+		case 13:
 			app.config.settings.set_string(
 				settings::SettingId.APP_TOPBAR_POSITION,
 				"right",
 				settings::SettingLayer.GLOBAL
 			);
 			topbar::set_position(topbar::TopBarPosition.RIGHT);
-		case 13:
+		case 14:
 			app.notifier.push("Visual regression check");
 	}
 }
@@ -3824,7 +3847,7 @@ fn int main(String[] args)
 				}
 			}
 			arrow_hovered_cache = arrow_hovered;
-			connections::ConnectionTarget connection = connections.update_input(&project, &import_index);
+			connections::ConnectionTarget connection = connections.update_input(&project, &import_index, &symbols);
 			if (connection.valid)
 			{
 				navigate_to_location(
@@ -4424,7 +4447,7 @@ fn int main(String[] args)
 				font,
 				ui_mode == UiMode.TOP_BAR
 			);
-			connections.draw(font, &project, &import_index);
+			connections.draw(font, &project, &import_index, &symbols);
 			console = console_manager.active_console();
 			console_panel = console_manager.active_panel();
 			app.console = console;

@@ -5,18 +5,23 @@ import std::collections::list;
 import std::core::mem::alloc;
 import std::math;
 import yun::card;
+import yun::connection_details;
 import yun::editor;
 import yun::imports;
 import yun::project;
+import yun::symbols;
 import yun::icons;
 import yun::theme;
 import yun::topbar;
 import yun::ui;
 
-const float PANEL_WIDTH   = 360.0f;
+const float PANEL_WIDTH   = 680.0f;
+const float LIST_WIDTH    = 300.0f;
 const float PANEL_MARGIN  = 12.0f;
 const float HEADER_HEIGHT = 34.0f;
 const float ROW_HEIGHT    = 44.0f;
+const float DETAIL_ROW    = 22.0f;
+const float USAGE_ROW     = 18.0f;
 
 struct ConnectionRow
 {
@@ -38,6 +43,14 @@ struct ConnectionTarget
 	usz column;
 }
 
+struct ConnectionHit
+{
+	Rect rect;
+	String path;
+	usz line;
+	usz column;
+}
+
 struct Connections
 {
 	Allocator allocator;
@@ -53,6 +66,14 @@ struct Connections
 	usz last_hover_ref;
 	usz last_files;
 	usz last_received;
+	connection_details::Details details;
+	int detail_row;
+	int detail_scroll;
+	List{ConnectionHit} hits;
+	bool detail_dirty;
+	usz detail_received;
+	usz detail_length;
+	bool select_resolved;
 }
 
 fn void Connections.init(&self, Allocator allocator)
@@ -63,6 +84,14 @@ fn void Connections.init(&self, Allocator allocator)
 	self.selected = 0;
 	self.hover = -1;
 	self.rows.init(allocator);
+	self.details.init(allocator);
+	self.hits.init(allocator);
+	self.detail_row = -1;
+	self.detail_scroll = 0;
+	self.detail_dirty = true;
+	self.detail_received = 0;
+	self.detail_length = 0;
+	self.select_resolved = false;
 	self.last_focus = -2;
 	self.last_hover = false;
 	self.last_hover_source = -1;
@@ -73,12 +102,15 @@ fn void Connections.init(&self, Allocator allocator)
 
 fn void Connections.destroy(&self)
 {
+	self.details.destroy(self.allocator);
+	self.hits.free();
 	self.rows.free();
 }
 
 fn void Connections.show(&self)
 {
 	self.open = true;
+	self.select_resolved = true;
 	self.refresh_pending();
 }
 
@@ -174,6 +206,48 @@ fn void Connections.add_row(&self, bool incoming, String path, String other, Imp
 	);
 }
 
+fn void Connections.ensure_details(&self, project::Project* project, symbols::Symbols* symbols)
+{
+	if (!self.open || self.selected < 0 || self.selected >= (int)self.rows.len())
+	{
+		if (self.detail_row != -1)
+		{
+			self.details.clear(self.allocator);
+			self.hits.clear();
+			self.detail_row = -1;
+		}
+		return;
+	}
+	if (!self.detail_dirty && self.detail_row == self.selected)
+	{
+		ConnectionRow current = self.rows[self.selected];
+		usz length            = 0;
+		int card              = project.find_card(current.path);
+		if (card >= 0 && project.cards[card].buffer) length = project.cards[card].buffer.length();
+		bool indexed_now     = current.resolved && self.details.indexed;
+		bool symbols_arrived = !indexed_now && symbols.received != self.detail_received;
+		if (length == self.detail_length && !symbols_arrived) return;
+	}
+	symbols.ensure_index(project);
+	ConnectionRow row       = self.rows[self.selected];
+	symbols::Symbols* index = symbols;
+	usz card_length         = 0;
+	int card_index          = project.find_card(row.path);
+	if (card_index >= 0 && project.cards[card_index].buffer)
+	{
+		card_length = project.cards[card_index].buffer.length();
+	}
+	self.details.clear(self.allocator);
+	self.hits.clear();
+	self.detail_row = self.selected;
+	self.detail_scroll = 0;
+	self.detail_dirty = false;
+	self.detail_received = index.received;
+	self.detail_length = card_length;
+	String target = row.resolved ? row.other : "";
+	self.details.build(self.allocator, project, index, row.path, target, row.line);
+}
+
 fn void Connections.refresh(&self, project::Project* project, imports::ImportIndex* index)
 {
 	if (!self.open) return;
@@ -192,6 +266,13 @@ fn void Connections.refresh(&self, project::Project* project, imports::ImportInd
 	self.last_files = (usz)index.files.len();
 	self.last_received = index.received;
 	self.rows.clear();
+	self.details.clear(self.allocator);
+	self.hits.clear();
+	self.detail_row = -1;
+	self.detail_scroll = 0;
+	self.detail_dirty = true;
+	self.detail_received = 0;
+	self.detail_length = 0;
 
 	if (hover && index.hover.source >= 0 && index.hover.source < (int)index.files.len())
 	{
@@ -229,6 +310,18 @@ fn void Connections.refresh(&self, project::Project* project, imports::ImportInd
 		};
 	}
 
+	if (self.select_resolved)
+	{
+		for (sz i = 0; i < self.rows.len(); i++)
+		{
+			if (self.rows.get(i).resolved)
+			{
+				self.selected = (int)i;
+				break;
+			}
+		}
+		self.select_resolved = false;
+	}
 	self.clamp();
 }
 
@@ -267,18 +360,25 @@ fn int Connections.row_at(&self, RLVector2 mouse)
 	float scale  = ui::scale();
 	float list_y = panel.y + HEADER_HEIGHT * scale;
 	float row_h  = ROW_HEIGHT * scale;
+	if (mouse[0] > panel.x + LIST_WIDTH * scale) return -1;
 	if (mouse[1] < list_y) return -1;
 	int slot = (int)((mouse[1] - list_y) / row_h);
 	int row  = self.scroll + slot;
 	return row >= 0 && row < (int)self.rows.len() ? row : -1;
 }
 
-fn ConnectionTarget Connections.update_input(&self, project::Project* project, imports::ImportIndex* index)
+fn ConnectionTarget Connections.update_input(
+	&self,
+	project::Project* project,
+	imports::ImportIndex* index,
+	symbols::Symbols* symbols
+)
 {
 	ConnectionTarget target = { .valid = false };
 	if (!self.open) return target;
 
 	self.refresh(project, index);
+	self.ensure_details(project, symbols);
 	RLVector2 mouse = rl::get_mouse_position();
 	if (!self.contains_screen(mouse))
 	{
@@ -287,11 +387,38 @@ fn ConnectionTarget Connections.update_input(&self, project::Project* project, i
 	}
 
 	float wheel = rl::get_mouse_wheel_move();
-	if (wheel != 0.0f) self.scroll -= (int)wheel;
+	if (wheel != 0.0f)
+	{
+		if (mouse[0] > self.panel_rect().x + LIST_WIDTH * ui::scale())
+		{
+			self.detail_scroll -= (int)wheel;
+		}
+		else
+		{
+			self.scroll -= (int)wheel;
+		}
+	}
+	for (sz i = 0; i < self.hits.len(); i++)
+	{
+		ConnectionHit hit = self.hits[i];
+		if (!rect_contains(hit.rect, mouse)) continue;
+		if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
+		{
+			target.valid = true;
+			target.path = hit.path;
+			target.line = hit.line;
+			target.column = hit.column;
+			return target;
+		}
+		ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
+		break;
+	}
+
 	int row = self.row_at(mouse);
 	self.hover = row;
 	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT) && row >= 0)
 	{
+		if (self.selected != row) self.detail_dirty = true;
 		self.selected = row;
 		ConnectionRow hit = self.rows[row];
 		target.valid = true;
@@ -309,7 +436,13 @@ fn void draw_text(RLFont font, String text, float x, float y, float size, RLColo
 	rl::draw_text_ex(font, text.zstr_tcopy(), { x, y }, size, 0.0f, color);
 }
 
-fn void Connections.draw(&self, RLFont font, project::Project* project, imports::ImportIndex* index)
+fn void Connections.draw(
+	&self,
+	RLFont font,
+	project::Project* project,
+	imports::ImportIndex* index,
+	symbols::Symbols* symbols
+)
 {
 	if (!self.open)
 	{
@@ -318,13 +451,16 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 	}
 	self.motion.update(true);
 	self.refresh(project, index);
+	self.ensure_details(project, symbols);
 
 	float scale = ui::scale();
 	float text  = ui::text_scale();
 	Rect panel  = self.panel_rect();
 	panel.x += self.motion.offset(ui::pxf(12.0f));
 	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
+	self.hits.clear();
 
+	float list_w  = LIST_WIDTH * scale;
 	float icon_px = icons::icon_size(18);
 	icons::draw(
 		icons::IconKind.CONNECTIONS,
@@ -346,6 +482,7 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 
 	float list_y = panel.y + HEADER_HEIGHT * scale;
 	ui::separator_h({ .x = panel.x + 2.0f, .y = list_y - 1.0f, .width = panel.width - 4.0f, .height = 1.0f });
+	ui::separator_v({ .x = panel.x + list_w, .y = list_y, .width = 1.0f, .height = panel.y + panel.height - list_y });
 	if (self.rows.len() == 0)
 	{
 		ui::empty_state(
@@ -353,7 +490,7 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 			{
 				.x = panel.x + 2.0f,
 				.y = list_y,
-				.width = panel.width - 4.0f,
+				.width = list_w - 4.0f,
 				.height = panel.height - HEADER_HEIGHT * scale
 			},
 			"No connections",
@@ -366,7 +503,7 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 	int visible = self.visible_rows();
 	int shown   = (int)self.rows.len() - self.scroll;
 	if (shown > visible) shown = visible;
-	rl::begin_scissor_mode((int)panel.x + 2, (int)list_y, (int)panel.width - 4, (int)((float)shown * row_h));
+	rl::begin_scissor_mode((int)panel.x + 2, (int)list_y, (int)list_w - 4, (int)((float)shown * row_h));
 	for (int slot = 0; slot < visible; slot++)
 	{
 		int row_index = self.scroll + slot;
@@ -375,31 +512,19 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 		float y           = list_y + (float)slot * row_h;
 		if (row_index == self.selected)
 		{
-			ui::row(
-				{
-					.x = panel.x + 2.0f,
-					.y = y,
-					.width = panel.width - 4.0f,
-					.height = row_h,
-				},
-				theme::current()
+			ui::row({ .x = panel.x + 2.0f, .y = y, .width = list_w - 4.0f, .height = row_h }, theme::current()
 				.panel_selected);
 		}
 		else if (row_index == self.hover)
 		{
 			ui::row(
-				{
-					.x = panel.x + 2.0f,
-					.y = y,
-					.width = panel.width - 4.0f,
-					.height = row_h,
-				},
+				{ .x = panel.x + 2.0f, .y = y, .width = list_w - 4.0f, .height = row_h },
 				rl::is_mouse_button_down(rl::RLMouseButton.LEFT) ? theme::current()
 				.panel_selected : theme::current().panel_bg_alt);
 		}
 
 		float x     = panel.x + (float)ui::px(12);
-		float max_x = panel.x + panel.width - (float)ui::px(12);
+		float max_x = panel.x + list_w - (float)ui::px(10);
 		@pool()
 		{
 			String arrow = row.incoming ? "<" : ">";
@@ -419,7 +544,6 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 				16.0f * text,
 				theme::current()
 				.panel_text);
-
 			String kind = row.kind.len > 0 ? row.kind : "import";
 			String meta = string::format(
 				tmem,
@@ -440,20 +564,220 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 		};
 	}
 	rl::end_scissor_mode();
-	int scroll_visible = self.visible_rows();
-	if ((int)self.rows.len() > scroll_visible)
+	if ((int)self.rows.len() > visible)
 	{
 		Rect track = {
-			.x = panel.x + panel.width - (float)ui::px(5),
+			.x = panel.x + list_w - (float)ui::px(5),
 			.y = list_y + 2.0f,
 			.width = (float)ui::px(3),
 			.height = panel.y + panel.height - list_y - 4.0f,
 		};
+		ui::draw_scrollbar(track, (float)self.rows.len(), (float)visible, (float)self.scroll, false, theme::current()
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
+	}
+
+	float detail_x    = panel.x + list_w + (float)ui::px(8);
+	float detail_w    = panel.width - list_w - (float)ui::px(16);
+	float detail_y    = list_y + (float)ui::px(8);
+	ConnectionRow row = self.rows[self.selected];
+	@pool()
+	{
+		String specifier = row.specifier.len > 0 ? row.specifier : "(module)";
+		String header    = string::format(tmem, "%s  %s:%d", specifier, file_name_view(row.path), (long)(row.line + 1));
+		draw_text(font, elide(font, header, 15.0f * text, detail_w), detail_x, detail_y, 15.0f * text, theme::current()
+			.panel_text);
+		String path_line = row.resolved ? string::format(tmem, "-> %s", file_name_view(row.other))
+			: "external / unresolved";
+		draw_text(
+			font,
+			elide(font, path_line, 13.0f * text, detail_w),
+			detail_x,
+			detail_y + (float)ui::px(20),
+			13.0f * text,
+			theme::current()
+			.panel_dim);
+	};
+
+	@pool()
+	{
+		String scope        = self.details.named ? "named imports" : "module import";
+		String symbols_word = self.details.symbols.len() == 1 ? "symbol" : "symbols";
+		String usages_word  = self.details.total_usages == 1 ? "usage" : "usages";
+		String summary = string::format(
+			tmem,
+			"%s  -  %d %s, %d %s",
+			scope,
+			(long)self.details.symbols.len(),
+			symbols_word,
+			(long)self.details.total_usages,
+			usages_word
+		);
+		draw_text(
+			font,
+			elide(font, summary, 12.0f * text, detail_w),
+			detail_x,
+			detail_y + (float)ui::px(38),
+			12.0f * text,
+			theme::current()
+			.panel_dim);
+	};
+
+	float symbols_y   = detail_y + (float)ui::px(58);
+	float available_h = panel.y + panel.height - symbols_y - (float)ui::px(8);
+	if (self.details.symbols.len() == 0)
+	{
+		if (row.resolved && symbols.scanning)
+		{
+			ui::empty_state(
+				font,
+				{ .x = detail_x, .y = symbols_y, .width = detail_w, .height = available_h },
+				"Scanning symbols",
+				"The target file is being indexed"
+			);
+		}
+		else if (!row.resolved)
+		{
+			ui::empty_state(
+				font,
+				{ .x = detail_x, .y = symbols_y, .width = detail_w, .height = available_h },
+				"External import",
+				"No named symbols and no target file in the project"
+			);
+		}
+		else if (self.details.indexed)
+		{
+			ui::empty_state(
+				font,
+				{ .x = detail_x, .y = symbols_y, .width = detail_w, .height = available_h },
+				"No used symbols",
+				"None of the target symbols are referenced here"
+			);
+		}
+		else
+		{
+			ui::empty_state(
+				font,
+				{ .x = detail_x, .y = symbols_y, .width = detail_w, .height = available_h },
+				"No symbols indexed",
+				"The target file has no indexed symbols"
+			);
+		}
+		return;
+	}
+
+	float content_h = 0.0f;
+	for (sz i = 0; i < self.details.symbols.len(); i++)
+	{
+		content_h += DETAIL_ROW * scale;
+		content_h += (float)self.details.symbols[i].usages.len() * USAGE_ROW * scale;
+	}
+	int max_detail_scroll = (int)((content_h - available_h) / (USAGE_ROW * scale));
+	if (max_detail_scroll < 0) max_detail_scroll = 0;
+	if (self.detail_scroll < 0) self.detail_scroll = 0;
+	if (self.detail_scroll > max_detail_scroll) self.detail_scroll = max_detail_scroll;
+
+	rl::begin_scissor_mode((int)detail_x, (int)symbols_y, (int)detail_w, (int)available_h);
+	float y = symbols_y - (float)self.detail_scroll * USAGE_ROW * scale;
+	for (sz i = 0; i < self.details.symbols.len(); i++)
+	{
+		connection_details::DetailSymbol symbol = self.details.symbols[i];
+		Rect def_rect;
+		def_rect.x = detail_x;
+		def_rect.y = y;
+		def_rect.width = detail_w - (float)ui::px(4);
+		def_rect.height = DETAIL_ROW * scale;
+		if (y + DETAIL_ROW * scale >= symbols_y && y <= symbols_y + available_h)
+		{
+			@pool()
+			{
+				String name  = symbol.alias_name.len > 0 ? string::format(
+					tmem,
+					"%s as %s",
+					symbol.name,
+					symbol.alias_name
+				)
+					: symbol.name;
+				String uses  = symbol.usages.len() == 1 ? "use" : "uses";
+				String label = symbol.has_target ? string::format(
+					tmem,
+					"%s  %s  %d:%d  (%d %s)",
+					symbol.kind,
+					name,
+					(long)(symbol.line + 1),
+					(long)(symbol.column + 1),
+					(long)symbol.usages.len(),
+					uses
+				)
+					: string::format(tmem, "%s  %s  (%d %s)", symbol.kind, name, (long)symbol.usages.len(), uses);
+				draw_text(
+					font,
+					elide(font, label, 13.0f * text, detail_w - (float)ui::px(8)),
+					detail_x,
+					y + 3.0f,
+					13.0f * text,
+					theme::current()
+					.panel_text);
+			};
+			if (symbol.has_target && row.other.len > 0)
+			{
+				self.hits.push({ .rect = def_rect, .path = row.other, .line = symbol.line, .column = symbol.column });
+			}
+			y += DETAIL_ROW * scale;
+			for (sz u = 0; u < symbol.usages.len(); u++)
+			{
+				connection_details::DetailUsage usage = symbol.usages[u];
+				Rect usage_rect;
+				usage_rect.x = detail_x + (float)ui::px(14);
+				usage_rect.y = y;
+				usage_rect.width = detail_w - (float)ui::px(18);
+				usage_rect.height = USAGE_ROW * scale;
+				if (y + USAGE_ROW * scale >= symbols_y && y <= symbols_y + available_h)
+				{
+					@pool()
+					{
+						String label = string::format(
+							tmem,
+							"%d:%d  %s",
+							(long)(usage.line + 1),
+							(long)(usage.column + 1),
+							usage.preview
+						);
+						draw_text(
+							font,
+							elide(font, label, 12.0f * text, detail_w - (float)ui::px(20)),
+							detail_x + (float)ui::px(14),
+							y + 2.0f,
+							12.0f * text,
+							theme::current()
+							.panel_dim);
+					};
+					self.hits.push(
+						{ .rect = usage_rect, .path = row.path, .line = usage.line, .column = usage.column }
+					);
+				}
+				y += USAGE_ROW * scale;
+			}
+		}
+		else
+		{
+			y += DETAIL_ROW * scale;
+			y += (float)symbol.usages.len() * USAGE_ROW * scale;
+		}
+	}
+	rl::end_scissor_mode();
+	if (content_h > available_h)
+	{
+		Rect track = {
+			.x = panel.x + panel.width - (float)ui::px(5),
+			.y = symbols_y,
+			.width = (float)ui::px(3),
+			.height = available_h,
+		};
 		ui::draw_scrollbar(
 			track,
-			(float)self.rows.len(),
-			(float)scroll_visible,
-			(float)self.scroll,
+			content_h / (USAGE_ROW * scale),
+			available_h / (USAGE_ROW * scale),
+			(float)self.detail_scroll,
 			false,
 			theme::current()
 			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);

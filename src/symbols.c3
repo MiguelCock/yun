@@ -285,6 +285,13 @@ fn void symbol_worker(void* arg)
 	alloc::free(symbols.allocator, work);
 }
 
+fn CardSymbols* Symbols.file_for_path(&self, String path)
+{
+	int*? entry = self.file_index.get_ref(path);
+	if (catch excuse = entry) return null;
+	return &self.files[*entry];
+}
+
 fn void Symbols.clear_files(&self)
 {
 	for (sz i = 0; i < self.files.len(); i++)
@@ -954,6 +961,19 @@ fn SymbolTarget Symbols.activate(&self)
 	target.line = self.files[(sz)ref.file].symbols[(sz)ref.index].line;
 	target.column = self.files[(sz)ref.file].symbols[(sz)ref.index].column;
 	return target;
+}
+
+fn void Symbols.ensure_index(&self, project::Project* project)
+{
+	if (!self.auto_scan)
+	{
+		self.auto_scan = true;
+		self.start_scan(project);
+	}
+	else if (!self.scanning && self.known_cards != (usz)project.cards.len())
+	{
+		self.start_scan(project);
+	}
 }
 
 fn void Symbols.show(&self, project::Project* project)
