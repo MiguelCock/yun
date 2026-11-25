@@ -23,6 +23,7 @@ enum ContextAction
 	GO_TO_DEFINITION,
 	REFERENCES,
 	CODE_ACTIONS,
+	MOD_ITEM,
 }
 
 struct ContextItem
@@ -30,9 +31,10 @@ struct ContextItem
 	String label;
 	ContextAction action;
 	bool enabled;
+	int index;
 }
 
-const int CONTEXT_MAX_ITEMS = 10;
+const int CONTEXT_MAX_ITEMS = 32;
 
 fn usz build(
 	ContextTarget target,
@@ -128,6 +130,8 @@ fn int command_for(ContextAction action)
 			return (int)commands::CommandId.DELETE_CARD;
 		case ContextAction.MINIMIZE_CARD:
 			return (int)commands::CommandId.MINIMIZE_CARD;
+		case ContextAction.MOD_ITEM:
+			return -1;
 		default:
 			return -1;
 	}

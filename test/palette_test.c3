@@ -56,12 +56,12 @@ fn void test_recent_ordering()
 		p.show();
 		p.record(commands::CommandId.SAVE);
 		p.filter();
-		assert(p.results[0] == commands::CommandId.SAVE);
+		assert(p.results[0] == (int)commands::CommandId.SAVE);
 
 		p.record(commands::CommandId.OPEN);
 		p.filter();
-		assert(p.results[0] == commands::CommandId.OPEN);
-		assert(p.results[1] == commands::CommandId.SAVE);
+		assert(p.results[0] == (int)commands::CommandId.OPEN);
+		assert(p.results[1] == (int)commands::CommandId.SAVE);
 	};
 }
 
