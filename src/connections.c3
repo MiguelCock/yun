@@ -383,8 +383,8 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 					.width = panel.width - 4.0f,
 					.height = row_h,
 				},
-				theme::current()
-				.panel_bg_alt);
+				rl::is_mouse_button_down(rl::RLMouseButton.LEFT) ? theme::current()
+				.panel_selected : theme::current().panel_bg_alt);
 		}
 
 		float x     = panel.x + (float)ui::px(12);

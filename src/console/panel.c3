@@ -1358,13 +1358,14 @@ fn void draw_console_line(RLFont font, EditorMetrics metrics, ConsoleLine* line,
 	}
 }
 
-fn void draw_button(RLFont font, Rect r, String label, bool enabled, bool hovered)
+fn void draw_button(RLFont font, Rect r, String label, bool enabled)
 {
-	RLColor bg = hovered && enabled ? theme::current().topbar_hover : theme::current().panel_field;
-	ui::row(r, bg);
+	ui::ControlState state = ui::control_state(r, enabled, false);
+	ui::row(r, ui::control_fill(state, theme::current()
+		.panel_field, theme::current().topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
 	float size     = (float)ui::tpx(13);
 	RLVector2 text = rl::measure_text_ex(font, (ZString)label.ptr, size, 0.0f);
-	RLColor color  = enabled ? theme::current().panel_text : theme::current().panel_disabled;
+	RLColor color  = ui::control_text(state, theme::current().panel_text, theme::current().panel_disabled);
 	rl::draw_text_ex(
 		font,
 		(ZString)label.ptr,
@@ -1451,8 +1452,12 @@ fn void ConsolePanel.draw(
 		{
 			Rect tab = console_tab_rect(header, i);
 			if (tab.x + tab.width > header.x + header.width - ui::pxf(130.0f)) break;
-			bool active = i == manager.active;
-			ui::row(tab, active ? theme::current().panel_selected : theme::current().panel_field);
+			bool active            = i == manager.active;
+			ui::ControlState state = ui::control_state(tab, true, active);
+			ui::row(tab, ui::control_fill(state, active ? theme::current()
+				.panel_selected : theme::current()
+					.panel_field, theme::current()
+						.topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
 			String title = manager.sessions[i].title;
 			rl::draw_text_ex(
 				font,
@@ -1474,7 +1479,10 @@ fn void ConsolePanel.draw(
 		Rect new_tab = console_new_tab_rect(manager, header);
 		if (new_tab.x + new_tab.width <= header.x + header.width - ui::pxf(130.0f))
 		{
-			ui::row(new_tab, theme::current().panel_field);
+			ui::ControlState state = ui::control_state(new_tab, true, false);
+			ui::row(new_tab, ui::control_fill(state, theme::current()
+				.panel_field, theme::current()
+					.topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
 			rl::draw_text_ex(
 				font,
 				"+",
@@ -1772,8 +1780,6 @@ fn void ConsolePanel.draw(
 	{
 		ConsoleButton button = (ConsoleButton)i;
 		Rect r               = self.button_rect(button);
-		bool hovered         = mouse[0] >= r.x && mouse[0] <= r.x + r.width && mouse[1] >= r.y
-			&& mouse[1] <= r.y + r.height;
-		draw_button(font, r, button_label(button), self.button_enabled(button, console), hovered);
+		draw_button(font, r, button_label(button), self.button_enabled(button, console));
 	}
 }

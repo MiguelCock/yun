@@ -377,7 +377,10 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 		theme::current()
 		.panel_caret);
 
-	float list_y = self.list_y();
+	float list_y    = self.list_y();
+	RLVector2 mouse = rl::get_mouse_position();
+	int hover_row   = self.row_at(mouse);
+	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 	if (self.results.len() == 0)
 	{
 		draw_run(
@@ -409,6 +412,18 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 				},
 				theme::current()
 				.panel_selected);
+		}
+		else if (index == hover_row)
+		{
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = row_y,
+					.width = panel.width - 4.0f,
+					.height = (float)ui::px(ROW_HEIGHT),
+				},
+				pressed ? theme::current()
+				.panel_selected : theme::current().panel_bg_alt);
 		}
 		draw_label(
 			font,

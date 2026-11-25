@@ -372,6 +372,9 @@ fn void Problems.draw(&self, RLFont font)
 	int shown = (int)self.rows.len() - self.scroll;
 	if (shown > max_rows) shown = max_rows;
 	rl::begin_scissor_mode((int)panel.x + 2, (int)list_y, (int)panel.width - 4, (int)((float)shown * row_h));
+	RLVector2 mouse = rl::get_mouse_position();
+	int hover_row   = self.row_at(mouse);
+	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 	for (int slot = 0; slot < max_rows; slot++)
 	{
 		int index = self.scroll + slot;
@@ -397,6 +400,18 @@ fn void Problems.draw(&self, RLFont font)
 				},
 				theme::current()
 				.panel_selected);
+		}
+		else if (index == hover_row)
+		{
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = row_y,
+					.width = panel.width - 4.0f,
+					.height = row_h,
+				},
+				pressed ? theme::current()
+				.panel_selected : theme::current().panel_bg_alt);
 		}
 		ProblemEntry* entry = self.entry_at(row.entry);
 		if (!entry) continue;

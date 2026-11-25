@@ -922,8 +922,11 @@ fn void Search.draw(&self, RLFont font)
 	float list_y = self.list_y();
 	float list_h = panel.y + panel.height - list_y - pad;
 	if (list_h < 0.0f) list_h = 0.0f;
-	float row_h    = 20.0f * s;
-	float header_h = 22.0f * s;
+	float row_h     = 20.0f * s;
+	float header_h  = 22.0f * s;
+	RLVector2 mouse = rl::get_mouse_position();
+	int hover_row   = self.row_at_mouse(mouse);
+	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 
 	int ordinal = 0;
 	int flat    = 0;
@@ -962,6 +965,18 @@ fn void Search.draw(&self, RLFont font)
 						},
 						theme::current()
 						.panel_selected);
+				}
+				else if (flat == hover_row)
+				{
+					ui::row(
+						{
+							.x = panel.x + 2.0f,
+							.y = y,
+							.width = panel.width - 4.0f,
+							.height = row_h,
+						},
+						pressed ? theme::current()
+						.panel_selected : theme::current().panel_bg_alt);
 				}
 				@pool()
 				{

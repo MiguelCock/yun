@@ -888,9 +888,12 @@ fn void Symbols.draw(&self, RLFont font)
 		draw_text(font, status, panel.x + pad, field.y + field_h + 6.0f * s, 13.0f * ts, theme::current().panel_dim);
 	};
 
-	float list_y = panel.y + 62.0f * s;
-	float list_h = panel.y + panel.height - list_y - 10.0f * s;
-	float row_h  = 22.0f * s;
+	float list_y    = panel.y + 62.0f * s;
+	float list_h    = panel.y + panel.height - list_y - 10.0f * s;
+	float row_h     = 22.0f * s;
+	RLVector2 mouse = rl::get_mouse_position();
+	int hover_row   = self.row_at_mouse(mouse);
+	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 	rl::begin_scissor_mode((int)panel.x + 2, (int)list_y, (int)panel.width - 4, (int)list_h);
 	int shown = self.scroll + MAX_VISIBLE_ROWS;
 	if (shown > (int)self.matches.len()) shown = (int)self.matches.len();
@@ -912,6 +915,18 @@ fn void Symbols.draw(&self, RLFont font)
 				},
 				theme::current()
 				.panel_selected);
+		}
+		else if (i == hover_row)
+		{
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = y,
+					.width = panel.width - 4.0f,
+					.height = row_h,
+				},
+				pressed ? theme::current()
+				.panel_selected : theme::current().panel_bg_alt);
 		}
 
 		float x = panel.x + pad;

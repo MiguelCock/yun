@@ -1405,8 +1405,10 @@ fn void draw_section(Rect row, String label, int count, float text_size)
 
 fn void draw_button(Rect rect, String label, bool enabled, float text_size)
 {
-	RLColor fill = enabled ? theme::current().panel_field : theme::current().panel_bg_alt;
-	RLColor text = enabled ? theme::current().panel_text : theme::current().panel_disabled;
+	ui::ControlState state = ui::control_state(rect, enabled, false);
+	RLColor fill = ui::control_fill(state, theme::current()
+		.panel_field, theme::current().topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt);
+	RLColor text = ui::control_text(state, theme::current().panel_text, theme::current().panel_disabled);
 	ui::rounded_rect(rect, ui::row_radius(), fill);
 	float width = rl::measure_text_ex(ui::font(), label.zstr_tcopy(), text_size, 0.0f)[0];
 	rl::draw_text_ex(
