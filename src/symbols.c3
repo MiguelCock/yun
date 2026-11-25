@@ -957,4 +957,22 @@ fn void Symbols.draw(&self, RLFont font)
 		};
 	}
 	rl::end_scissor_mode();
+	int visible_rows = self.visible_rows();
+	if ((int)self.matches.len() > visible_rows)
+	{
+		Rect track = {
+			.x = panel.x + panel.width - (float)ui::px(5),
+			.y = list_y,
+			.width = (float)ui::px(3),
+			.height = list_h,
+		};
+		ui::draw_scrollbar(
+			track,
+			(float)self.matches.len(),
+			(float)visible_rows,
+			(float)self.scroll,
+			false,
+			theme::current()
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
+	}
 }

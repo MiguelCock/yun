@@ -140,6 +140,27 @@ fn void test_tooltip_ready_and_clamp()
 	assert(top_left.x == 4.0f && top_left.y == 4.0f);
 }
 
+fn void test_scrollbar_geometry()
+{
+	set_ui_scale(1.0f);
+	set_dpi(1.0f, 1.0f);
+	Rect vertical = { .x = 10.0f, .y = 20.0f, .width = 4.0f, .height = 100.0f };
+	Rect full     = scrollbar_thumb(vertical, 50.0f, 100.0f, 0.0f, false);
+	assert(full.height == 100.0f && full.y == 20.0f);
+	Rect top = scrollbar_thumb(vertical, 400.0f, 100.0f, 0.0f, false);
+	assert(top.height == 25.0f && top.y == 20.0f);
+	Rect bottom = scrollbar_thumb(vertical, 400.0f, 100.0f, 300.0f, false);
+	assert(bottom.y == 95.0f);
+	Rect small = scrollbar_thumb(vertical, 1000.0f, 100.0f, 0.0f, false);
+	assert(small.height == 24.0f);
+
+	Rect horizontal = { .x = 0.0f, .y = 10.0f, .width = 200.0f, .height = 4.0f };
+	Rect left       = scrollbar_thumb(horizontal, 400.0f, 200.0f, 0.0f, true);
+	assert(left.width == 100.0f && left.x == 0.0f);
+	Rect right = scrollbar_thumb(horizontal, 400.0f, 200.0f, 200.0f, true);
+	assert(right.x == 100.0f);
+}
+
 fn void test_cursor_priority()
 {
 	reset_cursor();

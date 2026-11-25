@@ -1424,22 +1424,8 @@ fn Rect current_line_rect(PieceTable* table, Rect area, float scroll_y, EditorMe
 
 fn Rect scrollbar_thumb(Rect area, float content_height, float scroll_y)
 {
-	float width = 4.0f;
-	if (content_height <= area.height || content_height <= 0.0f)
-	{
-		return { .x = area.x + area.width - width, .y = area.y, .width = width, .height = area.height };
-	}
-
-	float thumb_height = area.height * (area.height / content_height);
-	if (thumb_height < 20.0f) thumb_height = 20.0f;
-
-	float max_scroll = content_height - area.height;
-	float t          = max_scroll > 0.0f ? scroll_y / max_scroll : 0.0f;
-	if (t < 0.0f) t = 0.0f;
-	if (t > 1.0f) t = 1.0f;
-
-	float y = area.y + t * (area.height - thumb_height);
-	return { .x = area.x + area.width - width, .y = y, .width = width, .height = thumb_height };
+	Rect track = { .x = area.x + area.width - 4.0f, .y = area.y, .width = 4.0f, .height = area.height };
+	return ui::scrollbar_thumb(track, content_height, area.height, scroll_y, false);
 }
 
 fn void draw_current_line(

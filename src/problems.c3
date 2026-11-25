@@ -436,6 +436,17 @@ fn void Problems.draw(&self, RLFont font)
 		};
 	}
 	rl::end_scissor_mode();
+	if ((int)self.rows.len() > max_rows)
+	{
+		Rect track = {
+			.x = panel.x + panel.width - (float)ui::px(5),
+			.y = list_y,
+			.width = (float)ui::px(3),
+			.height = (float)max_rows * row_h,
+		};
+		ui::draw_scrollbar(track, (float)self.rows.len(), (float)max_rows, (float)self.scroll, false, theme::current()
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
+	}
 }
 
 fn float text_width(RLFont font, String text)
