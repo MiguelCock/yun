@@ -438,6 +438,7 @@ fn void apply_settings(
 	{
 		*metrics = editor::metrics_for_font(*editor_font, draw_size);
 	}
+	project.set_editor_metrics(*metrics);
 
 	if (ui_scale_changed)
 	{
@@ -2142,6 +2143,7 @@ fn int main(String[] args)
 
 	project::Project project;
 	project.init(mem);
+	project.set_editor_metrics(metrics);
 
 	notify::Notifier notifier;
 	notifier.init(mem);
@@ -2380,8 +2382,9 @@ fn int main(String[] args)
 			benchmark_synthetic = true;
 			int cols = 1;
 			while (cols * cols < benchmark_cards) cols++;
-			float cw = ui::pxf(card::CARD_WIDTH) + ui::pxf(32.0f);
-			float ch = ui::pxf(card::CARD_HEIGHT) + ui::pxf(32.0f);
+			RLVector2 card_size = project.default_card_size();
+			float cw            = card_size[0] + ui::pxf(32.0f);
+			float ch            = card_size[1] + ui::pxf(32.0f);
 			for (int k = 0; k < benchmark_cards; k++)
 			{
 				String path = string::format(project.allocator, "%s/bench_%d.c3", (String)project.root, k);
@@ -2389,8 +2392,8 @@ fn int main(String[] args)
 				project.cards[index].rect = {
 					.x = (float)(k % cols) * cw,
 					.y = (float)(k / cols) * ch,
-					.width = ui::pxf(card::CARD_WIDTH),
-					.height = ui::pxf(card::CARD_HEIGHT),
+					.width = card_size[0],
+					.height = card_size[1],
 				};
 			}
 			project.invalidate_bounds();

@@ -12,8 +12,6 @@ import yun::text;
 import yun::theme;
 import yun::ui;
 
-const float CARD_WIDTH            = 240.0f;
-const float CARD_HEIGHT           = 160.0f;
 const float CARD_TITLE_HEIGHT     = 28.0f;
 const float CARD_TITLE_BUTTON     = 24.0f;
 const float CARD_TITLE_BUTTON_GAP = 2.0f;

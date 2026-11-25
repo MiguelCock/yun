@@ -4,7 +4,6 @@ import raylib6::rl;
 import std::collections::list;
 import std::core::dstring;
 import std::math::geometry;
-import yun::card;
 import yun::highlight;
 import yun::project;
 import yun::text;
@@ -26,9 +25,10 @@ macro void ensure_bench_project()
 	if (!g_bench_project_ready)
 	{
 		g_bench_project.init(mem);
-		int cols = 15;
-		float cw = ui::pxf(card::CARD_WIDTH) + ui::pxf(32.0f);
-		float ch = ui::pxf(card::CARD_HEIGHT) + ui::pxf(32.0f);
+		int cols            = 15;
+		RLVector2 card_size = g_bench_project.default_card_size();
+		float cw            = card_size[0] + ui::pxf(32.0f);
+		float ch            = card_size[1] + ui::pxf(32.0f);
 		for (int k = 0; k < BENCH_CARDS; k++)
 		{
 			String path = string::format(mem, "/bench/bench_%d.c3", k);
@@ -36,8 +36,8 @@ macro void ensure_bench_project()
 			g_bench_project.cards[index].rect = {
 				.x = (float)(k % cols) * cw,
 				.y = (float)(k / cols) * ch,
-				.width = ui::pxf(card::CARD_WIDTH),
-				.height = ui::pxf(card::CARD_HEIGHT),
+				.width = card_size[0],
+				.height = card_size[1],
 			};
 		}
 		g_bench_project.invalidate_bounds();

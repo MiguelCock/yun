@@ -162,6 +162,7 @@ struct Project
 	bool content_bounds_valid;
 	Rect content_bounds_cache;
 	int hover_cluster;
+	EditorMetrics card_metrics;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -209,6 +210,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.grid_dirty = true;
 	self.content_bounds_valid = false;
 	self.hover_cluster = -1;
+	self.card_metrics = editor::default_metrics();
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
 	{
@@ -810,8 +812,19 @@ fn String? Project.external_copy(&self, String abs)
 	return (String)dest;
 }
 
+fn void Project.set_editor_metrics(&self, EditorMetrics metrics)
+{
+	self.card_metrics = metrics;
+}
+
+fn RLVector2 Project.default_card_size(&self)
+{
+	return editor::default_card_size(self.card_metrics);
+}
+
 fn int Project.append_card(&self, String abs, RLVector2 world_pos)
 {
+	RLVector2 size = editor::default_card_size(self.card_metrics);
 	FileCard card = {
 		.path = (Path)abs.copy(self.allocator),
 		.name = rl::get_file_name((ZString)abs.ptr)
@@ -819,10 +832,10 @@ fn int Project.append_card(&self, String abs, RLVector2 world_pos)
 		.copy(
 			self.allocator
 		), .rect = {
-			.x = world_pos[0] - ui::pxf(card::CARD_WIDTH) / 2.0f,
-			.y = world_pos[1] - ui::pxf(card::CARD_HEIGHT) / 2.0f,
-			.width = ui::pxf(card::CARD_WIDTH),
-			.height = ui::pxf(card::CARD_HEIGHT),
+			.x = world_pos[0] - size[0] / 2.0f,
+			.y = world_pos[1] - size[1] / 2.0f,
+			.width = size[0],
+			.height = size[1],
 		}, .open = true, .dirty = false, .folder = self.folder_for(abs), };
 	self.cards.push(card);
 	int index = (int)(self.cards.len() - 1);
@@ -872,19 +885,20 @@ fn int Project.add_folder_from_disk(&self, String dir, RLVector2 world_pos)
 	PathList? entries = path::ls(self.allocator, (Path)dir, no_dirs: true, recursive: false, relative: false);
 	if (catch excuse = entries) return index;
 
-	float x = world_pos[0] + ui::pxf(CLUSTER_PADDING);
-	float y = world_pos[1] + ui::pxf(CLUSTER_TITLE_HEIGHT) + ui::pxf(CLUSTER_PADDING);
-	int col = 0;
+	float x             = world_pos[0] + ui::pxf(CLUSTER_PADDING);
+	float y             = world_pos[1] + ui::pxf(CLUSTER_TITLE_HEIGHT) + ui::pxf(CLUSTER_PADDING);
+	RLVector2 card_size = editor::default_card_size(self.card_metrics);
+	int col             = 0;
 	foreach (Path entry : entries)
 	{
-		self.add_card((String)entry, { x + ui::pxf(card::CARD_WIDTH) / 2.0f, y + ui::pxf(card::CARD_HEIGHT) / 2.0f });
-		x += ui::pxf(card::CARD_WIDTH) + ui::pxf((float)CARD_GAP);
+		self.add_card((String)entry, { x + card_size[0] / 2.0f, y + card_size[1] / 2.0f });
+		x += card_size[0] + ui::pxf((float)CARD_GAP);
 		col++;
 		if (col >= CLUSTER_COLUMNS)
 		{
 			col = 0;
 			x = world_pos[0] + ui::pxf(CLUSTER_PADDING);
-			y += ui::pxf(card::CARD_HEIGHT) + ui::pxf((float)CARD_GAP);
+			y += card_size[1] + ui::pxf((float)CARD_GAP);
 		}
 	}
 	return index;
@@ -943,13 +957,14 @@ fn RLVector2 Project.chip_size(&self)
 
 fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* cards_by, List{int}[]* children_by)
 {
-	float pad      = ui::pxf(CLUSTER_PADDING);
-	float title    = ui::pxf(CLUSTER_TITLE_HEIGHT);
-	float cw       = ui::pxf(card::CARD_WIDTH);
-	float ch       = ui::pxf(card::CARD_HEIGHT);
-	float cg       = ui::pxf((float)CARD_GAP);
-	float gap      = ui::pxf(CLUSTER_GAP);
-	RLVector2 chip = self.chip_size();
+	float pad           = ui::pxf(CLUSTER_PADDING);
+	float title         = ui::pxf(CLUSTER_TITLE_HEIGHT);
+	RLVector2 card_size = editor::default_card_size(self.card_metrics);
+	float cw            = card_size[0];
+	float ch            = card_size[1];
+	float cg            = ui::pxf((float)CARD_GAP);
+	float gap           = ui::pxf(CLUSTER_GAP);
+	RLVector2 chip      = self.chip_size();
 
 	float content_x = origin[0] + pad;
 	float content_y = origin[1] + title + pad;
@@ -992,12 +1007,13 @@ fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* car
 
 fn void Project.layout(&self)
 {
-	int nf         = (int)self.folders.len();
-	float cw       = ui::pxf(card::CARD_WIDTH);
-	float ch       = ui::pxf(card::CARD_HEIGHT);
-	float cg       = ui::pxf((float)CARD_GAP);
-	float gap      = ui::pxf(CLUSTER_GAP);
-	RLVector2 chip = self.chip_size();
+	int nf              = (int)self.folders.len();
+	RLVector2 card_size = editor::default_card_size(self.card_metrics);
+	float cw            = card_size[0];
+	float ch            = card_size[1];
+	float cg            = ui::pxf((float)CARD_GAP);
+	float gap           = ui::pxf(CLUSTER_GAP);
+	RLVector2 chip      = self.chip_size();
 
 	@pool()
 	{
@@ -1053,6 +1069,7 @@ fn void Project.layout(&self)
 
 fn void Project.place_unrestored(&self)
 {
+	RLVector2 card_size = editor::default_card_size(self.card_metrics);
 	@pool()
 	{
 		HashMap{int, int} counts;
@@ -1070,14 +1087,12 @@ fn void Project.place_unrestored(&self)
 			int col = slot % CLUSTER_COLUMNS;
 			int row = slot / CLUSTER_COLUMNS;
 			card.rect = {
-				.x = anchor.x + ui::pxf(
-					CLUSTER_PADDING
-				) + (float)col * (ui::pxf(card::CARD_WIDTH) + ui::pxf((float)CARD_GAP)),
+				.x = anchor.x + ui::pxf(CLUSTER_PADDING) + (float)col * (card_size[0] + ui::pxf((float)CARD_GAP)),
 				.y = anchor.y + anchor.height + ui::pxf(
 					(float)CARD_GAP
-				) + (float)row * (ui::pxf(card::CARD_HEIGHT) + ui::pxf((float)CARD_GAP)),
-				.width = ui::pxf(card::CARD_WIDTH),
-				.height = ui::pxf(card::CARD_HEIGHT),
+				) + (float)row * (card_size[1] + ui::pxf((float)CARD_GAP)),
+				.width = card_size[0],
+				.height = card_size[1],
 			};
 			card.restored = true;
 		}
