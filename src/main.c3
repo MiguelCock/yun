@@ -35,6 +35,7 @@ import yun::palette;
 import yun::problems;
 import yun::project;
 import yun::prompt;
+import yun::recovery;
 import yun::search;
 import yun::settings;
 import yun::settings_panel;
@@ -593,6 +594,7 @@ struct App
 	menu::Menu* close_menu;
 	menu::Menu* delete_menu;
 	menu::Menu* reload_menu;
+	menu::Menu* recovery_menu;
 	menu::Menu* definition_menu;
 	search::Search* search;
 	symbols::Symbols* symbols;
@@ -693,6 +695,7 @@ fn void close_overlays(App* app)
 	app.close_menu.close();
 	app.delete_menu.close();
 	app.reload_menu.close();
+	app.recovery_menu.close();
 	app.definition_menu.close();
 	app.search.close();
 	app.symbols.close();
@@ -2350,6 +2353,9 @@ fn int main(String[] args)
 	menu::Menu reload_menu;
 	reload_menu.init(mem);
 
+	menu::Menu recovery_menu;
+	recovery_menu.init(mem);
+
 	menu::Menu theme_menu;
 	theme_menu.init(mem);
 
@@ -2456,6 +2462,7 @@ fn int main(String[] args)
 	defer notifier.destroy();
 	defer context_menu.destroy();
 	defer reload_menu.destroy();
+	defer recovery_menu.destroy();
 	defer theme_menu.destroy();
 	defer profile_menu.destroy();
 	defer close_menu.destroy();
@@ -2614,6 +2621,7 @@ fn int main(String[] args)
 		.close_menu = &close_menu,
 		.delete_menu = &delete_menu,
 		.reload_menu = &reload_menu,
+		.recovery_menu = &recovery_menu,
 		.definition_menu = &definition_menu,
 		.search = &search,
 		.symbols = &symbols,
@@ -2660,6 +2668,7 @@ fn int main(String[] args)
 	input::RepeatState move_repeat =  { };
 	ulong last_git_error_revision  =  0;
 	ulong last_git_action_revision =  0;
+	double last_recovery_journal   =  0.0;
 
 	int frame_count    = 0;
 	double prof_update = 0.0;
@@ -2804,6 +2813,20 @@ fn int main(String[] args)
 			diagnostics_logged = true;
 			log_ui_diagnostics(&project);
 		}
+		if (project_open && rl::get_time() - last_recovery_journal >= 2.0)
+		{
+			last_recovery_journal = rl::get_time();
+			bool dirty = false;
+			for (sz i = 0; i < project.cards.len(); i++)
+			{
+				if (project.cards[i].buffer && project.cards[i].dirty)
+				{
+					dirty = true;
+					break;
+				}
+			}
+			if (dirty) (void)recovery::journal(&project, &canvas, &console_manager);
+		}
 
 		if (opening)
 		{
@@ -2845,6 +2868,17 @@ fn int main(String[] args)
 					lsp.set_root((String)project.root);
 					completion::completion_close();
 					import_index.start_scan(&project);
+					if (recovery::available(&project))
+					{
+						recovery_menu.open_at(
+							{ (float)rl::get_screen_width() / 2.0f, (float)rl::get_screen_height() / 2.0f },
+							{ "Restore unsaved work", "Discard" }
+						);
+					}
+					else
+					{
+						(void)recovery::begin(&project);
+					}
 					if (visual_dir.len > 0) visual_suite_begin(&app, &project, visual_dir);
 				}
 				else if (!open_job.cancelled)
@@ -3015,6 +3049,42 @@ fn int main(String[] args)
 				project.pending_close = -1;
 			}
 			if (!close_menu.consumed) poll_global(&keymap, &app);
+		}
+		else if (recovery_menu.open)
+		{
+			int chosen = recovery_menu.update(&keymap);
+			if (chosen == 0)
+			{
+				recovery::RecoveryResult result;
+				if (recovery::restore(&project, &canvas, &console_manager, &result))
+				{
+					if (result.restored > 0)
+					{
+						@pool()
+						{
+							String message = string::format(
+								tmem,
+								"Recovered %d buffer%s%s",
+								(long)result.restored,
+								result.restored == 1 ? "" : "s",
+								result.conflicts > 0 ? " (some files changed on disk)" : ""
+							);
+							notifier.push(message);
+						};
+					}
+				}
+				else
+				{
+					notifier.push("Could not read recovery journal");
+				}
+				recovery_menu.close();
+			}
+			else if (chosen == 1)
+			{
+				recovery::clear(&project);
+				recovery_menu.close();
+			}
+			if (!recovery_menu.consumed) poll_global(&keymap, &app);
 		}
 		else if (delete_menu.open)
 		{
@@ -4366,6 +4436,7 @@ fn int main(String[] args)
 			close_menu.draw();
 			delete_menu.draw();
 			reload_menu.draw();
+			recovery_menu.draw();
 			theme_menu.draw();
 			profile_menu.draw();
 			context_menu.draw();
@@ -4466,6 +4537,7 @@ fn int main(String[] args)
 	if (project.focus_card >= 0) project.end_focus(&canvas);
 	if (project_open)
 	{
+		recovery::clear(&project);
 		if (import_index.cache_dirty) import_index.save_cache(&project);
 		if (symbols.cache_dirty) symbols.save_cache(&project);
 		workspace::save(&project, &canvas, &console_manager);
