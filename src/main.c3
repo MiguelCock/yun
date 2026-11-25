@@ -360,6 +360,9 @@ fn void apply_settings(
 
 	imports::ImportSettings is = imports::settings();
 	is.enabled = config.settings.get_bool(settings::SettingId.ARROWS_ENABLED);
+	is.aggregation = imports::parse_aggregation_mode(
+		config.settings.get_string(settings::SettingId.ARROWS_AGGREGATION)
+	);
 	is.show_internal = config.settings.get_bool(settings::SettingId.ARROWS_SHOW_INTERNAL);
 	is.show_external = config.settings.get_bool(settings::SettingId.ARROWS_SHOW_EXTERNAL);
 	is.labels = config.settings.get_bool(settings::SettingId.ARROWS_LABELS);

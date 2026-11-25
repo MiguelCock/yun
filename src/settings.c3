@@ -94,6 +94,7 @@ enum SettingId : int
 	MINIMAP_SIZE,
 	MINIMAP_ZOOM_THRESHOLD,
 	ARROWS_ENABLED,
+	ARROWS_AGGREGATION,
 	ARROWS_SHOW_INTERNAL,
 	ARROWS_SHOW_EXTERNAL,
 	ARROWS_LABELS,
@@ -767,6 +768,15 @@ const SettingSpec[] SETTINGS = {
 		.description = "Draw import connections between cards.",
 		.kind = SettingKind.BOOL,
 		.fallback = { .b = true },
+	},
+	{
+		.section = "arrows",
+		.key = "aggregation",
+		.label = "Arrow aggregation",
+		.description = "Group arrows by source/target folder (folder) and external package (package).",
+		.kind = SettingKind.ENUM,
+		.fallback = { .s = "folder" },
+		.options = { "off", "folder", "package" },
 	},
 	{
 		.section = "arrows",

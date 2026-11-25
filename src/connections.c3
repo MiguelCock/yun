@@ -274,13 +274,41 @@ fn void Connections.refresh(&self, project::Project* project, imports::ImportInd
 	self.detail_received = 0;
 	self.detail_length = 0;
 
-	if (hover && index.hover.source >= 0 && index.hover.source < (int)index.files.len())
+	if (hover && index.hover.source >= 0 && index.hover.source < (int)project.cards.len())
 	{
-		CardImports file = index.files[index.hover.source];
-		if (index.hover.ref_index < (usz)file.imports.len())
+		if (index.hover.grouped)
 		{
-			ImportRef ref = file.imports[(sz)index.hover.ref_index];
-			self.add_row(false, file.path, ref.target_path, ref);
+			@pool()
+			{
+				List{ImporterRef} group;
+				group.init(tmem);
+				index.collect_group(project, index.hover, &group);
+				foreach (ImporterRef importer : group)
+				{
+					if (importer.file < 0 || importer.file >= (int)index.files.len()) continue;
+					CardImports file = index.files[importer.file];
+					if (importer.ref >= (usz)file.imports.len()) continue;
+					ImportRef ref = file.imports[(sz)importer.ref];
+					self.add_row(false, file.path, ref.target_path, ref);
+				}
+			};
+		}
+		else
+		{
+			String path = (String)project.cards[index.hover.source].path;
+			int*? found = index.file_index.get_ref(path);
+			if (catch excuse = found)
+			{
+			}
+			else
+			{
+				CardImports file = index.files[*found];
+				if (index.hover.ref_index < (usz)file.imports.len())
+				{
+					ImportRef ref = file.imports[(sz)index.hover.ref_index];
+					self.add_row(false, file.path, ref.target_path, ref);
+				}
+			}
 		}
 	}
 	else if (focus >= 0 && focus < (int)project.cards.len())
