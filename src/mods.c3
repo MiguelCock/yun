@@ -1671,7 +1671,11 @@ fn bool Mods.load_mod(&self, String path, String name, ModSource source)
 			{
 				usz len;
 				ZString text = lua::tolstring(mod.state, -1, &len);
-				if (text && len > 0 && len <= 256) mod.version = ((String)text[0:len]).copy(self.allocator);
+				if (text && len > 0 && len <= 256)
+				{
+					if (mod.version.len) mod.version.free(self.allocator);
+					mod.version = ((String)text[0:len]).copy(self.allocator);
+				}
 			}
 			lua::pop(mod.state, 1);
 		}
