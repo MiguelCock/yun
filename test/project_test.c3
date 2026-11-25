@@ -1537,3 +1537,23 @@ fn void test_keyboard_grab_snapping()
 		assert(p.cards[0].rect.x == 51.0f && p.cards[0].rect.y == 51.0f);
 	};
 }
+fn void test_discard_ephemeral_keeps_bounds_when_empty()
+{
+	@pool()
+	{
+		project::Project p;
+		p.init(mem);
+		if (p.root.len) p.root.free(mem);
+		p.root = (Path)"/root".copy(mem);
+		int folder = p.add_folder("/root/src", project::ROOT_FOLDER);
+		(void)p.append_card("/root/src/a.c3", { 0.0f, 0.0f });
+		p.grid_dirty = false;
+		p.folders[folder].bounds_valid = true;
+
+		p.discard_ephemeral(-1);
+		assert(!p.grid_dirty);
+		assert(p.folders[folder].bounds_valid);
+
+		p.destroy();
+	};
+}
