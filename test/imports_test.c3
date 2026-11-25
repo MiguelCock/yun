@@ -1106,3 +1106,40 @@ fn void test_parse_aggregation_mode()
 	value.aggregation = AggregationMode.FOLDER;
 	set_settings(value);
 }
+fn void test_edge_geometry_is_straight()
+{
+	@pool()
+	{
+		project::Project p;
+		p.init(mem);
+		if (p.root.len) p.root.free(mem);
+		p.root = (Path)"/root".copy(mem);
+		int a = p.append_card("/root/a.ts", { 0.0f, 0.0f });
+		int b = p.append_card("/root/b.ts", { 300.0f, 100.0f });
+		p.cards[a].rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		p.cards[b].rect = { .x = 300.0f, .y = 100.0f, .width = 100.0f, .height = 80.0f };
+		ImportEdge edge = {
+			.source_card = a,
+			.target_card = b,
+			.source_folder = project::ROOT_FOLDER,
+			.target_folder = project::ROOT_FOLDER,
+			.count = 1,
+		};
+		RLVector2 p1;
+		RLVector2 c2;
+		RLVector2 c3;
+		RLVector2 p2;
+		assert(edge_geometry(&p, &edge, &p1, &c2, &c3, &p2));
+		assert(c2[0] == p1[0] && c2[1] == p1[1]);
+		assert(c3[0] == p2[0] && c3[1] == p2[1]);
+		assert(p1[0] < p2[0] && p1[1] < p2[1]);
+		p.destroy();
+	};
+}
+fn void test_draw_on_top_toggle()
+{
+	set_draw_on_top(true);
+	assert(draw_on_top());
+	set_draw_on_top(false);
+	assert(!draw_on_top());
+}

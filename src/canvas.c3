@@ -50,6 +50,7 @@ struct CanvasSettings
 	float snap_step;
 	float jump_zoom_min;
 	float jump_zoom_target;
+	bool follow_selection;
 }
 
 CanvasSettings g_canvas_settings = {
@@ -72,6 +73,7 @@ CanvasSettings g_canvas_settings = {
 	.snap_step = 0.0f,
 	.jump_zoom_min = 0.6f,
 	.jump_zoom_target = 1.0f,
+	.follow_selection = true,
 };
 
 fn CanvasSettings settings()
@@ -125,6 +127,8 @@ struct Canvas
 	bool dragging;
 	RLMouseButton drag_button;
 	RLVector2 drag_start;
+	bool following;
+	RLVector2 follow_center;
 }
 
 fn void Canvas.init(&self)
@@ -141,6 +145,20 @@ fn void Canvas.init(&self)
 	self.bottom_inset = 0.0f;
 	self.left_inset = 0.0f;
 	self.right_inset = 0.0f;
+	self.following = false;
+	self.follow_center = { 0.0f, 0.0f };
+}
+
+fn void Canvas.follow(&self, RLVector2 center)
+{
+	self.following = true;
+	self.follow_center = center;
+	self.target.target = center;
+}
+
+fn void Canvas.unfollow(&self)
+{
+	self.following = false;
 }
 
 fn void Canvas.update(&self)
@@ -263,6 +281,7 @@ fn Rect Canvas.usable_rect(&self)
 
 fn void Canvas.begin_drag(&self, RLMouseButton button, RLVector2 mouse)
 {
+	self.following = false;
 	self.drag_pending = true;
 	self.drag_button = button;
 	self.drag_start = mouse;
@@ -405,6 +424,7 @@ fn void Canvas.ease_camera(&self, float dt)
 
 	float pan_t  = ease_factor(g_canvas_settings.pan_responsiveness, dt);
 	float zoom_t = ease_factor(g_canvas_settings.zoom_responsiveness, dt);
+	if (self.following && !self.dragging) self.target.target = self.follow_center;
 
 	if (self.dragging)
 	{
@@ -432,7 +452,8 @@ fn void Canvas.ease_camera(&self, float dt)
 fn void Canvas.zoom_at(&self, float wheel, RLVector2 screen_anchor)
 {
 	if (wheel == 0.0f || self.target.zoom <= 0.0f) return;
-	RLVector2 world_under_cursor = screen_to_world_camera(self.camera, screen_anchor);
+	self.following = false;
+	RLVector2 world_under_cursor = screen_to_world_camera(self.target, screen_anchor);
 	float new_zoom = math::clamp(
 		self.target.zoom * math::pow(g_canvas_settings.zoom_step, wheel),
 		g_canvas_settings.min_zoom,
@@ -452,6 +473,7 @@ fn void Canvas.pan_by(&self, RLVector2 screen_delta)
 
 fn void Canvas.key_pan(&self, RLVector2 screen_delta)
 {
+	self.following = false;
 	float zoom = self.target.zoom > 0.0f ? self.target.zoom : 1.0f;
 	self.target.target[0] += screen_delta[0] / zoom;
 	self.target.target[1] += screen_delta[1] / zoom;

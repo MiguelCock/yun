@@ -49,6 +49,7 @@ enum CommandId
 	CODE_ACTIONS,
 	SELECT_THEME,
 	SEARCH_PROJECT,
+	SEARCH_REPLACE_PROJECT,
 	SYMBOLS_PROJECT,
 	TOGGLE_SETTINGS,
 	UNDO,
@@ -108,6 +109,8 @@ enum CommandId
 	FIND_CYCLE_FIELD,
 	SEARCH_TOGGLE_CASE,
 	SEARCH_TOGGLE_WORD,
+	SEARCH_REPLACE,
+	SEARCH_REPLACE_ALL,
 	SETTINGS_SCOPE_TOGGLE,
 	SETTINGS_RESET,
 	SETTINGS_VALUE_DEC,
@@ -151,6 +154,7 @@ enum CommandId
 	CONSOLE_DELETE_WORD_BACK,
 	CONSOLE_DELETE_WORD_FORWARD,
 	TOGGLE_CONNECTIONS,
+	TOGGLE_ARROWS_OVERLAY,
 	QUIT,
 }
 
@@ -326,6 +330,15 @@ const CommandDef[] COMMAND_DEFS = {
 		.label = "Search in Project",
 		.shortcut = "Ctrl+Shift+F",
 		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.SEARCH_REPLACE_PROJECT,
+		.description = "Search and replace text across the project.",
+		.label = "Search and Replace in Project",
+		.bar_label = "Search",
+		.shortcut = "Ctrl+Shift+H",
+		.in_top_bar = true,
 		.contexts = CTX_GLOBAL
 	},
 	{
@@ -816,6 +829,22 @@ const CommandDef[] COMMAND_DEFS = {
 		.contexts = CTX_SEARCH,
 	},
 	{
+		.id = CommandId.SEARCH_REPLACE,
+		.description = "Replace the selected project search match.",
+		.label = "Replace Match",
+		.shortcut = "Ctrl+Enter",
+		.in_top_bar = false,
+		.contexts = CTX_SEARCH,
+	},
+	{
+		.id = CommandId.SEARCH_REPLACE_ALL,
+		.description = "Replace every project search match.",
+		.label = "Replace All in Project",
+		.shortcut = "Ctrl+Shift+Enter",
+		.in_top_bar = false,
+		.contexts = CTX_SEARCH,
+	},
+	{
 		.id = CommandId.SETTINGS_SCOPE_TOGGLE,
 		.description = "Switch between global and project settings.",
 		.label = "Toggle Scope",
@@ -1169,6 +1198,15 @@ const CommandDef[] COMMAND_DEFS = {
 		.contexts = CTX_GLOBAL,
 	},
 	{
+		.id = CommandId.TOGGLE_ARROWS_OVERLAY,
+		.description = "Draw import arrows on top of cards and files.",
+		.label = "Arrows on Top",
+		.bar_label = "Arrows",
+		.shortcut = "Ctrl+Shift+A",
+		.in_top_bar = true,
+		.contexts = CTX_GLOBAL,
+	},
+	{
 		.id = CommandId.QUIT,
 		.description = "Quit Yun.",
 		.label = "Quit Yun",
@@ -1229,8 +1267,10 @@ const CommandId[] TOP_BAR_COMMANDS = {
 	CommandId.NEW_FILE,
 	CommandId.OPEN,
 	CommandId.SAVE,
+	CommandId.SEARCH_REPLACE_PROJECT,
 	CommandId.TOGGLE_SCM,
 	CommandId.TOGGLE_CONSOLE,
+	CommandId.TOGGLE_ARROWS_OVERLAY,
 	CommandId.TOGGLE_SETTINGS,
 };
 
@@ -1283,6 +1323,8 @@ fn String command_name(CommandId id)
 			return "select_theme";
 		case CommandId.SEARCH_PROJECT:
 			return "search_project";
+		case CommandId.SEARCH_REPLACE_PROJECT:
+			return "search_replace_project";
 		case CommandId.SYMBOLS_PROJECT:
 			return "symbols_project";
 		case CommandId.TOGGLE_SETTINGS:
@@ -1401,6 +1443,10 @@ fn String command_name(CommandId id)
 			return "search_toggle_case";
 		case CommandId.SEARCH_TOGGLE_WORD:
 			return "search_toggle_word";
+		case CommandId.SEARCH_REPLACE:
+			return "search_replace";
+		case CommandId.SEARCH_REPLACE_ALL:
+			return "search_replace_all";
 		case CommandId.SETTINGS_SCOPE_TOGGLE:
 			return "settings_scope_toggle";
 		case CommandId.SETTINGS_RESET:
@@ -1487,6 +1533,8 @@ fn String command_name(CommandId id)
 			return "console_delete_word_forward";
 		case CommandId.TOGGLE_CONNECTIONS:
 			return "toggle_connections";
+		case CommandId.TOGGLE_ARROWS_OVERLAY:
+			return "toggle_arrows_overlay";
 		case CommandId.QUIT:
 			return "quit";
 	}
@@ -1576,6 +1624,9 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.SELECT_THEME:
 			return true;
 		case CommandId.SEARCH_PROJECT:
+		case CommandId.SEARCH_REPLACE_PROJECT:
+		case CommandId.SEARCH_REPLACE:
+		case CommandId.SEARCH_REPLACE_ALL:
 			return has_project;
 		case CommandId.SYMBOLS_PROJECT:
 			return has_project;
@@ -1645,6 +1696,7 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.FIND_CYCLE_FIELD:
 		case CommandId.SEARCH_TOGGLE_CASE:
 		case CommandId.SEARCH_TOGGLE_WORD:
+		case CommandId.TOGGLE_ARROWS_OVERLAY:
 		case CommandId.SETTINGS_SCOPE_TOGGLE:
 		case CommandId.SETTINGS_RESET:
 		case CommandId.SETTINGS_VALUE_DEC:
