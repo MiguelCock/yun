@@ -21,13 +21,56 @@ int g_frame_count          =  0;
 double g_tooltip_since     =  0.0;
 RLMouseCursor g_cursor     =  RLMouseCursor.DEFAULT;
 int g_cursor_priority      = -1;
+bool g_animations          =  true;
 
 const double TOOLTIP_DELAY_SECONDS = 0.35;
+const float MOTION_SECONDS         = 0.14f;
 
 fn void set_font(RLFont font, int size)
 {
 	g_font = font;
 	g_size = size > 0 ? size : BASE_SIZE;
+}
+
+fn void set_animations(bool enabled)
+{
+	g_animations = enabled;
+}
+
+fn bool animations()
+{
+	return g_animations;
+}
+
+struct Motion
+{
+	float value;
+}
+
+fn void Motion.update(&self, bool visible)
+{
+	float target = visible ? 1.0f : 0.0f;
+	if (!g_animations)
+	{
+		self.value = target;
+		return;
+	}
+	float step = rl::get_frame_time() / MOTION_SECONDS;
+	if (self.value < target)
+	{
+		self.value += step;
+		if (self.value > target) self.value = target;
+	}
+	else if (self.value > target)
+	{
+		self.value -= step;
+		if (self.value < target) self.value = target;
+	}
+}
+
+fn float Motion.offset(&self, float distance)
+{
+	return (1.0f - self.value) * distance;
 }
 
 fn RLFont font()

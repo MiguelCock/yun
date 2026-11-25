@@ -48,6 +48,7 @@ struct Connections
 	List{ConnectionRow} rows;
 	int last_focus;
 	bool last_hover;
+	ui::Motion motion;
 	int last_hover_source;
 	usz last_hover_ref;
 	usz last_files;
@@ -310,12 +311,18 @@ fn void draw_text(RLFont font, String text, float x, float y, float size, RLColo
 
 fn void Connections.draw(&self, RLFont font, project::Project* project, imports::ImportIndex* index)
 {
-	if (!self.open) return;
+	if (!self.open)
+	{
+		self.motion.update(false);
+		return;
+	}
+	self.motion.update(true);
 	self.refresh(project, index);
 
 	float scale = ui::scale();
 	float text  = ui::text_scale();
 	Rect panel  = self.panel_rect();
+	panel.x += self.motion.offset(ui::pxf(12.0f));
 	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	float icon_px = icons::icon_size(18);

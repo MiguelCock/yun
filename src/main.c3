@@ -222,6 +222,7 @@ fn void apply_settings(
 	topbar::set_position(
 		topbar::position_from_name(config.settings.get_string(settings::SettingId.APP_TOPBAR_POSITION))
 	);
+	ui::set_animations(config.settings.get_bool(settings::SettingId.APP_ANIMATIONS));
 
 	bool ui_scale_changed = false;
 	if (config.settings.consume_change(settings::SettingId.APP_UI_SCALE))

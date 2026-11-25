@@ -27,6 +27,7 @@ struct Palette
 	int selected;
 	int scroll;
 	bool consumed;
+	ui::Motion motion;
 }
 
 fn void Palette.init(&self, Allocator allocator)
@@ -359,12 +360,19 @@ fn float draw_label(RLFont font, String label, String query, float x, float y, R
 
 fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* keymap, RLFont font)
 {
-	if (!self.open) return;
+	if (!self.open)
+	{
+		self.motion.update(false);
+		return;
+	}
+	self.motion.update(true);
 
 	Rect panel = self.panel_rect();
+	panel.y -= self.motion.offset(ui::pxf(6.0f));
 	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	Rect field = self.field_rect();
+	field.y -= self.motion.offset(ui::pxf(6.0f));
 	ui::rounded_rect(field, ui::row_radius(), theme::current().panel_field);
 	String query = self.query_view();
 	draw_run(font, query, field.x + (float)ui::px(8), field.y + (float)ui::px(5), theme::current().panel_text);
@@ -377,7 +385,7 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 		theme::current()
 		.panel_caret);
 
-	float list_y    = self.list_y();
+	float list_y    = panel.y + (float)ui::px(PADDING + ROW_HEIGHT + 6);
 	RLVector2 mouse = rl::get_mouse_position();
 	int hover_row   = self.row_at(mouse);
 	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);

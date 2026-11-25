@@ -46,6 +46,7 @@ struct Problems
 	int selected;
 	int scroll;
 	bool consumed;
+	ui::Motion motion;
 }
 
 fn void Problems.init(&self, Allocator allocator)
@@ -332,11 +333,17 @@ fn void draw_text(RLFont font, String text, float x, float y, float size, RLColo
 
 fn void Problems.draw(&self, RLFont font)
 {
-	if (!self.open) return;
+	if (!self.open)
+	{
+		self.motion.update(false);
+		return;
+	}
+	self.motion.update(true);
 
 	float s    = ui::scale();
 	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
+	panel.y -= self.motion.offset(ui::pxf(8.0f));
 	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	float icon_px = icons::icon_size(18);
@@ -358,7 +365,7 @@ fn void Problems.draw(&self, RLFont font)
 			.panel_text);
 	};
 
-	float list_y = self.list_y();
+	float list_y = panel.y + (float)PADDING * s + TITLE_HEIGHT * s;
 	ui::separator_h({ .x = panel.x + 2.0f, .y = list_y - 1.0f, .width = panel.width - 4.0f, .height = 1.0f });
 	if (self.rows.len() == 0)
 	{
