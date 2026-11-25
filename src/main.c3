@@ -2492,8 +2492,13 @@ fn void update_dpi(
 	int rw             = rl::get_render_width();
 	float render_scale = (sw > 0 && rw > sw) ? (float)rw / (float)sw : 1.0f;
 
-	float layout_scale = render_scale > 1.0f ? 1.0f : math::max(os_scale, ppi);
-	float font_scale   = layout_scale * math::max(1.0f, render_scale);
+	float layout_scale = render_scale > 1.0f ? 1.0f : os_scale;
+	$if env::WIN32:
+		// Prefer the OS DPI scale; physical monitor size often reports bogus EDID values.
+	$else
+		if (layout_scale <= 1.01f && ppi > 1.0f) layout_scale = math::min(ppi, 2.0f);
+	$endif
+	float font_scale = layout_scale * math::max(1.0f, render_scale);
 
 	if (*ready && layout_scale == *last_layout_scale && font_scale == *last_font_scale) return;
 	*ready = true;
