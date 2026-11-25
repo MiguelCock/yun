@@ -391,6 +391,7 @@ fn void test_settings_clamps()
 	s.arrowhead_size = -3.0f;
 	s.hit_tolerance = -4.0f;
 	s.rescan_debounce = -1.0f;
+	s.min_zoom = -1.0f;
 	s.scan_workers = 99;
 	set_settings(s);
 	ImportSettings got = settings();
@@ -399,6 +400,7 @@ fn void test_settings_clamps()
 	assert(got.arrowhead_size >= 0.0f);
 	assert(got.hit_tolerance >= 0.0f);
 	assert(got.rescan_debounce >= 0.0f);
+	assert(got.min_zoom >= 0.001f);
 	assert(got.scan_workers <= MAX_SCAN_WORKERS);
 	set_settings(saved);
 }

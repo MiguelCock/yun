@@ -87,6 +87,7 @@ expected=(
 	vim
 	notifications
 	imports
+	imports-far
 )
 
 for name in "${expected[@]}"; do
