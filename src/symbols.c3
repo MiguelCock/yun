@@ -18,6 +18,7 @@ import yun::lsp;
 import yun::keymap;
 import yun::project;
 import yun::theme;
+import yun::topbar;
 import yun::ui;
 
 enum SymbolKind : int
@@ -705,16 +706,20 @@ fn void Symbols.ensure_visible(&self, int visible_rows)
 fn Rect Symbols.panel_rect(&self)
 {
 	float s      = ui::scale();
-	int screen_w = rl::get_screen_width();
-	int screen_h = rl::get_screen_height();
+	Rect content = topbar::content_rect();
 	float width  = 640.0f * s;
-	if (width > (float)screen_w - 24.0f) width = (float)screen_w - 24.0f;
+	if (width > content.width - 24.0f) width = content.width - 24.0f;
 	int rows = (int)self.matches.len();
 	if (rows > MAX_VISIBLE_ROWS) rows = MAX_VISIBLE_ROWS;
 	if (rows < 1) rows = 1;
 	float height = 90.0f * s + (float)rows * 22.0f * s;
-	if (height > (float)screen_h - TOP_MARGIN - 24.0f) height = (float)screen_h - TOP_MARGIN - 24.0f;
-	return { .x = ((float)screen_w - width) / 2.0f, .y = TOP_MARGIN, .width = width, .height = height };
+	if (height > content.height - TOP_MARGIN - 24.0f) height = content.height - TOP_MARGIN - 24.0f;
+	return {
+		.x = content.x + (content.width - width) / 2.0f,
+		.y = content.y + TOP_MARGIN,
+		.width = width,
+		.height = height
+	};
 }
 
 fn int Symbols.visible_rows(&self)

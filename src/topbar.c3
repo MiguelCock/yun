@@ -8,12 +8,41 @@ import yun::theme;
 import yun::ui;
 
 const float TOP_BAR_HEIGHT    = 34.0f;
+const float VERTICAL_WIDTH    = 140.0f;
 const float BUTTON_WIDTH      = 104.0f;
 const float ICON_BUTTON_WIDTH = 34.0f;
 const float BUTTON_HEIGHT     = 24.0f;
 const float BUTTON_GAP        = 8.0f;
 const float PADDING_X         = 8.0f;
 const float PADDING_Y         = 5.0f;
+
+enum TopBarPosition : int
+{
+	TOP,
+	BOTTOM,
+	LEFT,
+	RIGHT,
+}
+
+TopBarPosition g_position = TopBarPosition.TOP;
+
+fn void set_position(TopBarPosition position)
+{
+	g_position = position;
+}
+
+fn TopBarPosition position()
+{
+	return g_position;
+}
+
+fn TopBarPosition position_from_name(String name)
+{
+	if (name.compare_to("bottom") == 0) return TopBarPosition.BOTTOM;
+	if (name.compare_to("left") == 0) return TopBarPosition.LEFT;
+	if (name.compare_to("right") == 0) return TopBarPosition.RIGHT;
+	return TopBarPosition.TOP;
+}
 
 struct TopBar
 {
@@ -22,14 +51,67 @@ struct TopBar
 	Rect counter_hit;
 }
 
-fn Rect topbar_rect()
+fn bool horizontal_position(TopBarPosition position)
 {
-	return { .x = 0.0f, .y = 0.0f, .width = (float)rl::get_screen_width(), .height = ui::pxf(TOP_BAR_HEIGHT) };
+	return position == TopBarPosition.TOP || position == TopBarPosition.BOTTOM;
+}
+
+fn float thickness_for(TopBarPosition position)
+{
+	return ui::pxf(horizontal_position(position) ? TOP_BAR_HEIGHT : VERTICAL_WIDTH);
+}
+
+fn Rect bar_rect_for(TopBarPosition position, float screen_w, float screen_h)
+{
+	float thickness = thickness_for(position);
+	if (position == TopBarPosition.TOP) return { .x = 0.0f, .y = 0.0f, .width = screen_w, .height = thickness };
+	if (position == TopBarPosition.BOTTOM)
+	{
+		return { .x = 0.0f, .y = screen_h - thickness, .width = screen_w, .height = thickness };
+	}
+	if (position == TopBarPosition.LEFT) return { .x = 0.0f, .y = 0.0f, .width = thickness, .height = screen_h };
+	return { .x = screen_w - thickness, .y = 0.0f, .width = thickness, .height = screen_h };
+}
+
+fn Rect bar_rect()
+{
+	return bar_rect_for(g_position, (float)rl::get_screen_width(), (float)rl::get_screen_height());
+}
+
+fn Rect content_rect_for(TopBarPosition position, float screen_w, float screen_h)
+{
+	Rect bar = bar_rect_for(position, screen_w, screen_h);
+	if (position == TopBarPosition.TOP) return {
+		.x = 0.0f,
+		.y = bar.height,
+		.width = screen_w,
+		.height = screen_h - bar.height
+	};
+	if (position == TopBarPosition.BOTTOM) return {
+		.x = 0.0f,
+		.y = 0.0f,
+		.width = screen_w,
+		.height = screen_h - bar.height
+	};
+	if (position == TopBarPosition.LEFT) return {
+		.x = bar.width,
+		.y = 0.0f,
+		.width = screen_w - bar.width,
+		.height = screen_h
+	};
+	return { .x = 0.0f, .y = 0.0f, .width = screen_w - bar.width, .height = screen_h };
+}
+
+fn Rect content_rect()
+{
+	return content_rect_for(g_position, (float)rl::get_screen_width(), (float)rl::get_screen_height());
 }
 
 fn bool contains_screen(RLVector2 screen)
 {
-	return screen[0] >= 0.0f && screen[1] >= 0.0f && screen[1] <= ui::pxf(TOP_BAR_HEIGHT);
+	Rect bar = bar_rect();
+	return screen[0] >= bar.x && screen[0] <= bar.x + bar.width && screen[1] >= bar.y
+		&& screen[1] <= bar.y + bar.height;
 }
 
 fn float button_width(usz index)
@@ -48,14 +130,29 @@ fn float button_x(usz index)
 	return x;
 }
 
-fn Rect button_rect(usz index)
+fn Rect button_rect_for(TopBarPosition position, usz index, float screen_w, float screen_h)
 {
+	Rect bar = bar_rect_for(position, screen_w, screen_h);
+	if (!horizontal_position(position))
+	{
+		return {
+			.x = bar.x + ui::pxf(PADDING_X),
+			.y = bar.y + ui::pxf(PADDING_Y) + (float)index * (ui::pxf(BUTTON_HEIGHT) + ui::pxf(BUTTON_GAP)),
+			.width = bar.width - ui::pxf(PADDING_X) * 2.0f,
+			.height = ui::pxf(BUTTON_HEIGHT),
+		};
+	}
 	return {
 		.x = button_x(index),
-		.y = ui::pxf(PADDING_Y),
+		.y = bar.y + ui::pxf(PADDING_Y),
 		.width = button_width(index),
 		.height = ui::pxf(BUTTON_HEIGHT),
 	};
+}
+
+fn Rect button_rect(usz index)
+{
+	return button_rect_for(g_position, index, (float)rl::get_screen_width(), (float)rl::get_screen_height());
 }
 
 fn int hit_button(RLVector2 screen, bool has_project, bool has_buffer)
@@ -189,9 +286,9 @@ fn icons::IconKind icon_for_command(commands::CommandId id)
 	}
 }
 
-fn float bar_text_y(float text_height)
+fn float bar_text_y(Rect bar, float text_height)
 {
-	return (ui::pxf(TOP_BAR_HEIGHT) - text_height) / 2.0f;
+	return bar.y + (bar.height - text_height) / 2.0f;
 }
 
 fn usz next_utf8(String text, usz i)
@@ -223,6 +320,227 @@ fn String elide_text(RLFont font, String text, float size, float max_width)
 	return string::format(tmem, "%s...", text[0:last_good]);
 }
 
+fn void draw_elided_row(
+	RLFont font,
+	String text,
+	float x,
+	float* y,
+	float max_width,
+	float row_height,
+	float bottom,
+	float text_size,
+	RLColor color
+)
+{
+	if (text.len == 0) return;
+	if (*y + row_height > bottom) return;
+	String shown = elide_text(font, text, text_size, max_width);
+	if (shown.len == 0) return;
+	rl::draw_text_ex(font, (ZString)shown.ptr, { x, *y }, text_size, 0.0f, color);
+	*y += row_height;
+}
+
+fn void TopBar.draw_horizontal_status(
+	&self,
+	bool has_project,
+	String project_name,
+	String mode,
+	String folder,
+	float zoom,
+	String lsp_status,
+	int errors,
+	int warnings,
+	RLFont font,
+	Rect bar
+)
+{
+	float text_size = (float)ui::tpx(16);
+	float name_x    = button_x((usz)commands::bar_command_count());
+	if (commands::bar_command_count() > 0) name_x += ui::pxf(BUTTON_GAP);
+	name_x += (float)ui::px(12);
+	@pool()
+	{
+		String zoom_label = string::format(tmem, "%d%%", (int)(zoom * 100.0f));
+		float zoom_width  = rl::measure_text_ex(font, (ZString)zoom_label.ptr, text_size, 0.0f)[0];
+		float zoom_x      = bar.x + bar.width - (float)ui::px(12) - zoom_width;
+		float right_start = zoom_x;
+
+		float lsp_width = 0.0f;
+		if (lsp_status.len > 0)
+		{
+			lsp_width = rl::measure_text_ex(font, (ZString)lsp_status.ptr, text_size, 0.0f)[0];
+			right_start -= (float)ui::px(24) + lsp_width;
+		}
+
+		String counts     = "";
+		float counts_size = 0.0f;
+		if (errors > 0 || warnings > 0)
+		{
+			counts = string::format(tmem, "E%d W%d", errors, warnings);
+			counts_size = rl::measure_text_ex(font, (ZString)counts.ptr, text_size, 0.0f)[0];
+			right_start -= (float)ui::px(24) + counts_size;
+		}
+
+		if (has_project && project_name.len > 0)
+		{
+			String name      = project_name;
+			float name_width = rl::measure_text_ex(font, (ZString)name.ptr, text_size, 0.0f)[0];
+			float name_max   = right_start - name_x - (float)ui::px(12);
+			if (name_max > 0.0f && name_width > name_max) name = elide_text(font, name, text_size, name_max);
+			if (name.len > 0)
+			{
+				name_width = rl::measure_text_ex(font, (ZString)name.ptr, text_size, 0.0f)[0];
+				rl::draw_text_ex(
+					font,
+					(ZString)name.ptr,
+					{ name_x, bar_text_y(bar, text_size) },
+					text_size,
+					0.0f,
+					theme::current()
+					.topbar_name);
+				if (mode.len > 0)
+				{
+					float status_x   = name_x + name_width + (float)ui::px(16);
+					float status_max = right_start - status_x - (float)ui::px(12);
+					if (status_max > 0.0f)
+					{
+						String shown_mode = elide_text(font, mode, text_size, status_max);
+						if (shown_mode.len > 0)
+						{
+							rl::draw_text_ex(
+								font,
+								(ZString)shown_mode.ptr,
+								{ status_x, bar_text_y(bar, text_size) },
+								text_size,
+								0.0f,
+								theme::current()
+								.topbar_name);
+							float mode_width = rl::measure_text_ex(font, (ZString)shown_mode.ptr, text_size, 0.0f)[0];
+							float folder_x   = status_x + mode_width + (float)ui::px(12);
+							float folder_max = right_start - folder_x - (float)ui::px(12);
+							if (folder.len > 0 && folder_max > 0.0f)
+							{
+								String shown_folder = elide_text(font, folder, text_size, folder_max);
+								if (shown_folder.len > 0)
+								{
+									rl::draw_text_ex(
+										font,
+										(ZString)shown_folder.ptr,
+										{ folder_x, bar_text_y(bar, text_size) },
+										text_size,
+										0.0f,
+										theme::current()
+										.topbar_disabled);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		rl::draw_text_ex(
+			font,
+			(ZString)zoom_label.ptr,
+			{ zoom_x, bar_text_y(bar, text_size) },
+			text_size,
+			0.0f,
+			theme::current()
+			.topbar_name);
+
+		float cursor_x = zoom_x;
+		self.counter_hit = { };
+		if (lsp_status.len > 0)
+		{
+			cursor_x -= (float)ui::px(24) + lsp_width;
+			rl::draw_text_ex(
+				font,
+				(ZString)lsp_status.ptr,
+				{ cursor_x, bar_text_y(bar, text_size) },
+				text_size,
+				0.0f,
+				theme::current()
+				.topbar_disabled);
+		}
+		if (counts.len > 0)
+		{
+			cursor_x -= (float)ui::px(24) + counts_size;
+			rl::draw_text_ex(
+				font,
+				(ZString)counts.ptr,
+				{ cursor_x, bar_text_y(bar, text_size) },
+				text_size,
+				0.0f,
+				errors > 0 ? theme::current()
+				.topbar_error : theme::current().topbar_warning);
+			self.counter_hit = {
+				.x = cursor_x,
+				.y = bar_text_y(bar, text_size),
+				.width = counts_size,
+				.height = text_size,
+			};
+		}
+	};
+}
+
+fn void TopBar.draw_vertical_status(
+	&self,
+	bool has_project,
+	String project_name,
+	String mode,
+	String folder,
+	float zoom,
+	String lsp_status,
+	int errors,
+	int warnings,
+	RLFont font,
+	Rect bar
+)
+{
+	float text_size  = (float)ui::tpx(14);
+	float row_height = text_size + (float)ui::px(6);
+	float x          = bar.x + ui::pxf(PADDING_X);
+	float max_width  = bar.width - ui::pxf(PADDING_X) * 2.0f;
+	float bottom     = bar.y + bar.height - ui::pxf(PADDING_Y);
+	float y          = bar.y + ui::pxf(
+		PADDING_Y
+	) + (float)commands::bar_command_count() * (ui::pxf(BUTTON_HEIGHT) + ui::pxf(BUTTON_GAP)) + (float)ui::px(4);
+	self.counter_hit = { };
+	@pool()
+	{
+		if (has_project) draw_elided_row(
+			font,
+			project_name,
+			x,
+			&y,
+			max_width,
+			row_height,
+			bottom,
+			text_size,
+			theme::current()
+			.topbar_name);
+		draw_elided_row(font, mode, x, &y, max_width, row_height, bottom, text_size, theme::current().topbar_name);
+		draw_elided_row(font, folder, x, &y, max_width, row_height, bottom, text_size, theme::current()
+			.topbar_disabled);
+		String zoom_label = string::format(tmem, "%d%%", (int)(zoom * 100.0f));
+		draw_elided_row(font, zoom_label, x, &y, max_width, row_height, bottom, text_size, theme::current()
+			.topbar_name);
+		draw_elided_row(font, lsp_status, x, &y, max_width, row_height, bottom, text_size, theme::current()
+			.topbar_disabled);
+		if (errors > 0 || warnings > 0)
+		{
+			String counts = string::format(tmem, "E%d W%d", errors, warnings);
+			if (y + row_height <= bottom)
+			{
+				rl::draw_text_ex(font, (ZString)counts.ptr, { x, y }, text_size, 0.0f, errors > 0 ? theme::current()
+					.topbar_error : theme::current().topbar_warning);
+				self.counter_hit = { .x = x, .y = y, .width = max_width, .height = row_height };
+				y += row_height;
+			}
+		}
+	};
+}
+
 fn void TopBar.draw(
 	&self,
 	bool has_project,
@@ -238,23 +556,36 @@ fn void TopBar.draw(
 	bool focused
 )
 {
-	Rect bar        = topbar_rect();
-	float text_size = (float)ui::tpx(16);
+	Rect bar        = bar_rect();
+	float screen_w  = (float)rl::get_screen_width();
+	float screen_h  = (float)rl::get_screen_height();
+	bool horizontal = horizontal_position(g_position);
 	rl::draw_rectangle_rec(bar, theme::current().topbar_bg);
-	rl::draw_line(
-		0,
-		(int)ui::pxf(TOP_BAR_HEIGHT),
-		rl::get_screen_width(),
-		(int)ui::pxf(TOP_BAR_HEIGHT),
-		theme::current()
-		.topbar_border);
+	if (g_position == TopBarPosition.TOP)
+	{
+		rl::draw_line(0, (int)(bar.y + bar.height), (int)screen_w, (int)(bar.y + bar.height), theme::current()
+			.topbar_border);
+	}
+	else if (g_position == TopBarPosition.BOTTOM)
+	{
+		rl::draw_line(0, (int)bar.y, (int)screen_w, (int)bar.y, theme::current().topbar_border);
+	}
+	else if (g_position == TopBarPosition.LEFT)
+	{
+		rl::draw_line((int)(bar.x + bar.width), 0, (int)(bar.x + bar.width), (int)screen_h, theme::current()
+			.topbar_border);
+	}
+	else
+	{
+		rl::draw_line((int)bar.x, 0, (int)bar.x, (int)screen_h, theme::current().topbar_border);
+	}
 
 	RLVector2 mouse = rl::get_mouse_position();
 	for (usz i = 0; i < commands::bar_command_count(); i++)
 	{
 		CommandDef def = commands::bar_command(i);
 		bool enabled   = commands::command_enabled(def.id, has_project, has_buffer);
-		Rect r         = button_rect(i);
+		Rect r         = button_rect_for(g_position, i, screen_w, screen_h);
 		bool hovered   = mouse[0] >= r.x && mouse[0] <= r.x + r.width && mouse[1] >= r.y && mouse[1] <= r.y + r.height;
 		ui::rounded_rect(r, ui::row_radius(), hovered && enabled ? theme::current()
 			.topbar_hover : theme::current().topbar_button);
@@ -291,134 +622,44 @@ fn void TopBar.draw(
 		}
 	}
 
-	float name_x = button_x((usz)commands::bar_command_count());
-	if (commands::bar_command_count() > 0) name_x += ui::pxf(BUTTON_GAP);
-	name_x += (float)ui::px(12);
 	if (focused && self.selected >= 0 && self.selected < (int)commands::bar_command_count() && button_enabled(
 		(usz)self.selected,
 		has_project,
 		has_buffer
 	))
 	{
-		ui::rounded_rect_lines(button_rect((usz)self.selected), ui::row_radius(), 2.0f, theme::current().card_focus);
+		Rect selected_rect = button_rect_for(g_position, (usz)self.selected, screen_w, screen_h);
+		ui::rounded_rect_lines(selected_rect, ui::row_radius(), 2.0f, theme::current().card_focus);
 	}
-	@pool()
+
+	if (horizontal)
 	{
-		String zoom_label = string::format(tmem, "%d%%", (int)(zoom * 100.0f));
-		float zoom_width  = rl::measure_text_ex(font, (ZString)zoom_label.ptr, text_size, 0.0f)[0];
-		float zoom_x      = (float)rl::get_screen_width() - (float)ui::px(12) - zoom_width;
-		float right_start = zoom_x;
-
-		float lsp_width = 0.0f;
-		if (lsp_status.len > 0)
-		{
-			lsp_width = rl::measure_text_ex(font, (ZString)lsp_status.ptr, text_size, 0.0f)[0];
-			right_start -= (float)ui::px(24) + lsp_width;
-		}
-
-		String counts     = "";
-		float counts_size = 0.0f;
-		if (errors > 0 || warnings > 0)
-		{
-			counts = string::format(tmem, "E%d W%d", errors, warnings);
-			counts_size = rl::measure_text_ex(font, (ZString)counts.ptr, text_size, 0.0f)[0];
-			right_start -= (float)ui::px(24) + counts_size;
-		}
-
-		if (has_project && project_name.len > 0)
-		{
-			String name      = project_name;
-			float name_width = rl::measure_text_ex(font, (ZString)name.ptr, text_size, 0.0f)[0];
-			float name_max   = right_start - name_x - (float)ui::px(12);
-			if (name_max > 0.0f && name_width > name_max) name = elide_text(font, name, text_size, name_max);
-			if (name.len > 0)
-			{
-				name_width = rl::measure_text_ex(font, (ZString)name.ptr, text_size, 0.0f)[0];
-				rl::draw_text_ex(
-					font,
-					(ZString)name.ptr,
-					{ name_x, bar_text_y(text_size) },
-					text_size,
-					0.0f,
-					theme::current()
-					.topbar_name);
-				if (mode.len > 0)
-				{
-					float status_x   = name_x + name_width + (float)ui::px(16);
-					float status_max = right_start - status_x - (float)ui::px(12);
-					if (status_max > 0.0f)
-					{
-						rl::draw_text_ex(
-							font,
-							(ZString)mode.ptr,
-							{ status_x, bar_text_y(text_size) },
-							text_size,
-							0.0f,
-							theme::current()
-							.topbar_name);
-						float mode_width = rl::measure_text_ex(font, (ZString)mode.ptr, text_size, 0.0f)[0];
-						float folder_x   = status_x + mode_width + (float)ui::px(12);
-						float folder_max = right_start - folder_x - (float)ui::px(12);
-						if (folder.len > 0 && folder_max > 0.0f)
-						{
-							String shown = elide_text(font, folder, text_size, folder_max);
-							if (shown.len > 0)
-							{
-								rl::draw_text_ex(
-									font,
-									(ZString)shown.ptr,
-									{ folder_x, bar_text_y(text_size) },
-									text_size,
-									0.0f,
-									theme::current()
-									.topbar_disabled);
-							}
-						}
-					}
-				}
-			}
-		}
-
-		rl::draw_text_ex(
+		self.draw_horizontal_status(
+			has_project,
+			project_name,
+			mode,
+			folder,
+			zoom,
+			lsp_status,
+			errors,
+			warnings,
 			font,
-			(ZString)zoom_label.ptr,
-			{ zoom_x, bar_text_y(text_size) },
-			text_size,
-			0.0f,
-			theme::current()
-			.topbar_name);
-
-		float cursor_x = zoom_x;
-		self.counter_hit = { };
-		if (lsp_status.len > 0)
-		{
-			cursor_x -= (float)ui::px(24) + lsp_width;
-			rl::draw_text_ex(
-				font,
-				(ZString)lsp_status.ptr,
-				{ cursor_x, bar_text_y(text_size) },
-				text_size,
-				0.0f,
-				theme::current()
-				.topbar_disabled);
-		}
-		if (counts.len > 0)
-		{
-			cursor_x -= (float)ui::px(24) + counts_size;
-			rl::draw_text_ex(
-				font,
-				(ZString)counts.ptr,
-				{ cursor_x, bar_text_y(text_size) },
-				text_size,
-				0.0f,
-				errors > 0 ? theme::current()
-				.topbar_error : theme::current().topbar_warning);
-			self.counter_hit = {
-				.x = cursor_x,
-				.y = bar_text_y(text_size),
-				.width = counts_size,
-				.height = text_size,
-			};
-		}
-	};
+			bar
+		);
+	}
+	else
+	{
+		self.draw_vertical_status(
+			has_project,
+			project_name,
+			mode,
+			folder,
+			zoom,
+			lsp_status,
+			errors,
+			warnings,
+			font,
+			bar
+		);
+	}
 }

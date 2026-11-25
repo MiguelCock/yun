@@ -18,6 +18,7 @@ import yun::find;
 import yun::keymap;
 import yun::project;
 import yun::theme;
+import yun::topbar;
 import yun::ui;
 
 const int MAX_MATCHES_PER_FILE = 200;
@@ -685,14 +686,18 @@ fn SearchTarget Search.activate(&self)
 fn Rect Search.panel_rect(&self)
 {
 	float s      = ui::scale();
-	int screen_w = rl::get_screen_width();
-	int screen_h = rl::get_screen_height();
+	Rect content = topbar::content_rect();
 	float width  = 780.0f * s;
-	if (width > (float)screen_w - 24.0f) width = (float)screen_w - 24.0f;
+	if (width > content.width - 24.0f) width = content.width - 24.0f;
 	float height = 460.0f * s;
-	if (height > (float)screen_h - TOP_MARGIN - 24.0f) height = (float)screen_h - TOP_MARGIN - 24.0f;
+	if (height > content.height - TOP_MARGIN - 24.0f) height = content.height - TOP_MARGIN - 24.0f;
 	if (height < 120.0f) height = 120.0f;
-	return { .x = ((float)screen_w - width) / 2.0f, .y = TOP_MARGIN, .width = width, .height = height };
+	return {
+		.x = content.x + (content.width - width) / 2.0f,
+		.y = content.y + TOP_MARGIN,
+		.width = width,
+		.height = height
+	};
 }
 
 fn void Search.chip_rects(&self, Rect* case_rect, Rect* word_rect)

@@ -91,6 +91,8 @@ enum CommandId
 	FOCUS_EDITOR,
 	TOPBAR_LEFT,
 	TOPBAR_RIGHT,
+	TOPBAR_UP,
+	TOPBAR_DOWN,
 	TOPBAR_ACTIVATE,
 	FOCUS_CANVAS,
 	OVERLAY_CLOSE,
@@ -498,6 +500,22 @@ const CommandDef[] COMMAND_DEFS = {
 		.id = CommandId.TOPBAR_RIGHT,
 		.label = "Top Bar Right",
 		.shortcut = "Right",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.TOPBAR_UP,
+		.label = "Top Bar Up",
+		.shortcut = "Up",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.TOPBAR_DOWN,
+		.label = "Top Bar Down",
+		.shortcut = "Down",
 		.in_top_bar = false,
 		.contexts = CTX_TOP_BAR,
 		.repeat = true,
@@ -1051,6 +1069,10 @@ fn String command_name(CommandId id)
 			return "topbar_left";
 		case CommandId.TOPBAR_RIGHT:
 			return "topbar_right";
+		case CommandId.TOPBAR_UP:
+			return "topbar_up";
+		case CommandId.TOPBAR_DOWN:
+			return "topbar_down";
 		case CommandId.TOPBAR_ACTIVATE:
 			return "topbar_activate";
 		case CommandId.FOCUS_CANVAS:
@@ -1308,6 +1330,8 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.FOCUS_TOP_BAR:
 		case CommandId.TOPBAR_LEFT:
 		case CommandId.TOPBAR_RIGHT:
+		case CommandId.TOPBAR_UP:
+		case CommandId.TOPBAR_DOWN:
 		case CommandId.TOPBAR_ACTIVATE:
 		case CommandId.FOCUS_CANVAS:
 		case CommandId.OVERLAY_CLOSE:

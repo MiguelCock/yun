@@ -311,6 +311,18 @@ fn void test_theme_options_match_theme_module()
 	}
 }
 
+fn void test_topbar_position_options()
+{
+	assert(SETTINGS[(int)SettingId.APP_TOPBAR_POSITION].kind == SettingKind.ENUM);
+	assert(SETTINGS[(int)SettingId.APP_TOPBAR_POSITION].fallback.s.compare_to("top") == 0);
+	String[] options = SETTINGS[(int)SettingId.APP_TOPBAR_POSITION].options;
+	assert(options.len == 4);
+	assert(options[0].compare_to("top") == 0);
+	assert(options[1].compare_to("bottom") == 0);
+	assert(options[2].compare_to("left") == 0);
+	assert(options[3].compare_to("right") == 0);
+}
+
 fn void test_editor_defaults()
 {
 	assert(SETTINGS[(int)SettingId.EDITOR_FONT_SIZE].fallback.i == 16);

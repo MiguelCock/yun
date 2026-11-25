@@ -179,6 +179,24 @@ fn void finish_open(
 	push_keymap_warnings(keymap, notifier);
 }
 
+fn void apply_chrome_insets(canvas::Canvas* canvas, git::Panel* git_panel, bool console_visible, float console_height)
+{
+	topbar::TopBarPosition bar_position = topbar::position();
+	float thickness                     = topbar::thickness_for(bar_position);
+	canvas.top_inset = bar_position == topbar::TopBarPosition.TOP ? thickness : 0.0f;
+	canvas.bottom_inset = bar_position == topbar::TopBarPosition.BOTTOM ? thickness : 0.0f;
+	float bar_left = bar_position == topbar::TopBarPosition.LEFT ? thickness : 0.0f;
+	canvas.right_inset = bar_position == topbar::TopBarPosition.RIGHT ? thickness : 0.0f;
+
+	bool git_visible = git_panel != null && git_panel.visible;
+	canvas.left_inset = bar_left + (git_visible ? git_panel.width(canvas) : 0.0f);
+	if (git_panel != null)
+	{
+		git_panel.bottom_inset = (console_visible ? ui::pxf(console_height)
+			: 0.0f) + (bar_position == topbar::TopBarPosition.BOTTOM ? thickness : 0.0f);
+	}
+}
+
 fn void apply_settings(
 	config::Config* config,
 	fonts::Fonts* fonts,
@@ -200,6 +218,10 @@ fn void apply_settings(
 			notifier.push("Unknown theme in config; using default");
 		}
 	}
+
+	topbar::set_position(
+		topbar::position_from_name(config.settings.get_string(settings::SettingId.APP_TOPBAR_POSITION))
+	);
 
 	bool ui_scale_changed = false;
 	if (config.settings.consume_change(settings::SettingId.APP_UI_SCALE))
@@ -442,7 +464,6 @@ fn void apply_settings(
 
 	if (ui_scale_changed)
 	{
-		canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
 		canvas.camera.offset = { canvas.usable_offset_x(), canvas.usable_offset_y() };
 	}
 
@@ -1262,9 +1283,11 @@ fn void run_command(commands::CommandId id, App* app)
 			enter_edit_mode(project, app.canvas, app.metrics, app.ui_mode, app.edit_grace_frames);
 			return;
 		case commands::CommandId.TOPBAR_LEFT:
+		case commands::CommandId.TOPBAR_UP:
 			app.bar.move_selection(-1, *app.project_open, has_focused_buffer(project));
 			return;
 		case commands::CommandId.TOPBAR_RIGHT:
+		case commands::CommandId.TOPBAR_DOWN:
 			app.bar.move_selection(1, *app.project_open, has_focused_buffer(project));
 			return;
 		case commands::CommandId.TOPBAR_ACTIVATE:
@@ -2097,7 +2120,7 @@ fn void update_dpi(
 		metrics
 	);
 
-	canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
+	apply_chrome_insets(canvas, null, false, 0.0f);
 	canvas.camera.offset = { canvas.usable_offset_x(), canvas.usable_offset_y() };
 }
 
@@ -2139,7 +2162,7 @@ fn int main(String[] args)
 
 	canvas::Canvas canvas;
 	canvas.init();
-	canvas.top_inset = ui::pxf(topbar::TOP_BAR_HEIGHT);
+	apply_chrome_insets(&canvas, null, false, 0.0f);
 
 	project::Project project;
 	project.init(mem);
@@ -2488,11 +2511,11 @@ fn int main(String[] args)
 	{
 		frame_count++;
 		ui::reset_cursor();
-		canvas.left_inset = git_panel.visible ? git_panel.width(&canvas) : 0.0f;
 		console = console_manager.active_console();
 		console_panel = console_manager.active_panel();
 		app.console = console;
 		app.console_panel = console_panel;
+		apply_chrome_insets(&canvas, &git_panel, console_manager.visible, console_panel.height);
 		if (ui_mode == UiMode.CONSOLE && !console_manager.visible)
 		{
 			ui_mode = console_saved_mode;
@@ -3176,7 +3199,11 @@ fn int main(String[] args)
 			console_panel = console_manager.active_panel();
 			app.console = console;
 			app.console_panel = console_panel;
-			git_panel.bottom_inset = console_manager.visible ? ui::pxf(console_panel.height) : 0.0f;
+			git_panel.bottom_inset = (console_manager.visible ? ui::pxf(console_panel.height)
+				: 0.0f) + (topbar::position() == topbar::TopBarPosition.BOTTOM ? topbar::thickness_for(
+					topbar::TopBarPosition.BOTTOM
+				)
+					: 0.0f);
 			bool over_console  = console_panel.contains_screen(mouse);
 			bool over_git      = git_panel.contains_screen(&canvas, mouse);
 			bool editors_dirty = false;
@@ -3405,19 +3432,20 @@ fn int main(String[] args)
 							};
 							float screen_w = (float)rl::get_screen_width();
 							float screen_h = (float)rl::get_screen_height();
-							float usable_h = screen_h - canvas.top_inset;
+							float usable_w = screen_w - canvas.left_inset - canvas.right_inset;
+							float usable_h = screen_h - canvas.top_inset - canvas.bottom_inset;
 							float margin_x = math::max(
 								canvas::GRAB_FOLLOW_MIN_X,
-								screen_w * canvas::GRAB_FOLLOW_MARGIN_X
+								usable_w * canvas::GRAB_FOLLOW_MARGIN_X
 							);
 							float margin_y = math::max(
 								canvas::GRAB_FOLLOW_MIN_Y,
 								usable_h * canvas::GRAB_FOLLOW_MARGIN_Y
 							);
 							Rect safe = {
-								.x = margin_x,
+								.x = canvas.left_inset + margin_x,
 								.y = canvas.top_inset + margin_y,
-								.width = screen_w - margin_x * 2.0f,
+								.width = usable_w - margin_x * 2.0f,
 								.height = usable_h - margin_y * 2.0f,
 							};
 							RLVector2 follow = canvas::keep_item_in_view_delta(screen_item, safe, canvas.camera.zoom);
@@ -4006,9 +4034,10 @@ fn int main(String[] args)
 				{
 					String label = string::format(tmem, "Font %d", (long)font_size);
 					float width  = rl::measure_text_ex(font, label.zstr_tcopy(), (float)ui::tpx(16), 0.0f)[0];
+					Rect content = topbar::content_rect();
 					Rect panel = {
-						.x = (float)rl::get_screen_width() / 2.0f - (width + (float)ui::px(24)) / 2.0f,
-						.y = ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(16),
+						.x = content.x + content.width / 2.0f - (width + (float)ui::px(24)) / 2.0f,
+						.y = content.y + (float)ui::px(16),
 						.width = width + (float)ui::px(24),
 						.height = (float)ui::px(30),
 					};
@@ -4151,7 +4180,8 @@ fn int main(String[] args)
 			if (opening) draw_loading(open_job, font);
 			if (rl::is_key_down(rl::RLKeyboardKey.F3))
 			{
-				rl::draw_fps(10, (int)ui::pxf(topbar::TOP_BAR_HEIGHT) + 10);
+				Rect content = topbar::content_rect();
+				rl::draw_fps((int)content.x + 10, (int)content.y + 10);
 				if (project_open)
 				{
 					@pool()
@@ -4165,7 +4195,7 @@ fn int main(String[] args)
 						rl::draw_text_ex(
 							font,
 							counter.zstr_tcopy(),
-							{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(54) },
+							{ content.x + (float)ui::px(10), content.y + (float)ui::px(54) },
 							(float)ui::tpx(14),
 							0.0f,
 							theme::current()
@@ -4181,7 +4211,7 @@ fn int main(String[] args)
 						rl::draw_text_ex(
 							font,
 							perf.zstr_tcopy(),
-							{ (float)ui::px(10), ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(74) },
+							{ content.x + (float)ui::px(10), content.y + (float)ui::px(74) },
 							(float)ui::tpx(14),
 							0.0f,
 							theme::current()

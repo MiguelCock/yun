@@ -2201,7 +2201,10 @@ fn void Project.edge_pan_during_drag(&self, Canvas* canvas)
 		canvas::EDGE_PAN_MARGIN,
 		canvas::EDGE_PAN_SPEED,
 		canvas.camera.zoom,
-		dt
+		dt,
+		canvas.bottom_inset,
+		canvas.left_inset,
+		canvas.right_inset
 	);
 	canvas.target.target[0] += delta[0];
 	canvas.target.target[1] += delta[1];

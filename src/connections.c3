@@ -136,15 +136,14 @@ fn String elide(RLFont font, String text, float size, float max_width)
 
 fn Rect Connections.panel_rect(&self)
 {
+	Rect content = topbar::content_rect();
 	float margin = ui::pxf(PANEL_MARGIN);
 	float width  = ui::pxf(PANEL_WIDTH);
-	float x      = (float)rl::get_screen_width() - width - margin;
-	float y      = ui::pxf(topbar::TOP_BAR_HEIGHT) + margin;
 	return {
-		.x = x,
-		.y = y,
+		.x = content.x + content.width - width - margin,
+		.y = content.y + margin,
 		.width = width,
-		.height = (float)rl::get_screen_height() - y - margin,
+		.height = content.height - margin * 2.0f,
 	};
 }
 
@@ -235,9 +234,7 @@ fn void Connections.refresh(&self, project::Project* project, imports::ImportInd
 fn int Connections.visible_rows(&self)
 {
 	float scale = ui::scale();
-	float list  = (float)rl::get_screen_height() - ui::pxf(
-		topbar::TOP_BAR_HEIGHT
-	) - ui::pxf(PANEL_MARGIN) * 2.0f - HEADER_HEIGHT * scale;
+	float list  = self.panel_rect().height - HEADER_HEIGHT * scale;
 	int rows    = (int)(list / (ROW_HEIGHT * scale));
 	return rows > 0 ? rows : 1;
 }

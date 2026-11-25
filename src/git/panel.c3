@@ -7,6 +7,7 @@ import std::io::file;
 import std::math;
 import yun::canvas;
 import yun::theme;
+import yun::topbar;
 import yun::ui;
 
 const float PANEL_WIDTH   = 286.0f;
@@ -164,7 +165,9 @@ fn Rect Panel.rect(&self, Canvas* canvas)
 	float width  = self.width(canvas);
 	float height = (float)rl::get_screen_height() - canvas.top_inset - self.bottom_inset;
 	if (height < 0.0f) height = 0.0f;
-	return { .x = 0.0f, .y = canvas.top_inset, .width = width, .height = height };
+	float x = topbar::position() == topbar::TopBarPosition.LEFT ? topbar::thickness_for(topbar::TopBarPosition.LEFT)
+		: 0.0f;
+	return { .x = x, .y = canvas.top_inset, .width = width, .height = height };
 }
 
 fn bool Panel.contains_screen(&self, Canvas* canvas, RLVector2 point)
