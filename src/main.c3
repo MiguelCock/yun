@@ -43,6 +43,8 @@ import yun::symbols;
 import yun::theme;
 import yun::topbar;
 import yun::ui;
+import yun::vim;
+import yun::vim_command;
 import yun::workspace;
 
 enum UiMode : int
@@ -323,6 +325,7 @@ fn void apply_settings(
 	es.scroll_margin_lines = (int)config.settings.get_int(settings::SettingId.EDITOR_SCROLL_MARGIN_LINES);
 	es.wheel_scroll_lines = (int)config.settings.get_int(settings::SettingId.EDITOR_WHEEL_SCROLL_LINES);
 	es.show_line_numbers = config.settings.get_bool(settings::SettingId.EDITOR_SHOW_LINE_NUMBERS);
+	es.vim_mode = config.settings.get_bool(settings::SettingId.EDITOR_VIM_MODE);
 	es.indent_width = (int)config.settings.get_int(settings::SettingId.EDITOR_INDENT_WIDTH);
 	es.indent_spaces = config.settings.get_string(settings::SettingId.EDITOR_INDENT_STYLE).compare_to("spaces") == 0;
 	es.auto_indent = config.settings.get_bool(settings::SettingId.EDITOR_AUTO_INDENT);
@@ -586,6 +589,7 @@ struct App
 	browser::Browser* browser;
 	notify::Notifier* notifier;
 	prompt::Prompt* name_prompt;
+	vim_command::CommandLine* vim_command;
 	palette::Palette* palette;
 	settings_panel::Panel* settings_panel;
 	findbar::FindBar* find_bar;
@@ -679,11 +683,136 @@ fn void enter_edit_mode(
 	}
 	if (enter && project.focused >= 0)
 	{
+		project.vim_state.reset();
 		*ui_mode = UiMode.EDIT;
 		*edit_grace_frames = 2;
 		FileCard* card = project.focused_card();
 		if (card) canvas.target.target = card.center();
 	}
+}
+
+fn bool vim_save_current(App* app)
+{
+	int index = app.project.focused;
+	if (index < 0 || index >= (int)app.project.cards.len())
+	{
+		app.notifier.push("No file to save");
+		return false;
+	}
+	FileCard* card = &app.project.cards[index];
+	if (!card.buffer)
+	{
+		app.notifier.push("No file to save");
+		return false;
+	}
+	if (!editor::save_buffer(card, app.project.allocator))
+	{
+		@pool()
+		{
+			String message = string::format(tmem, "Could not save %s", card.name);
+			app.notifier.push(message);
+		};
+		return false;
+	}
+	app.git.mark_dirty(rl::get_time());
+	return true;
+}
+
+fn void run_vim_command(App* app, vim_command::CommandLine* line)
+{
+	String submitted = line.text_view();
+	line.add_history(submitted);
+	line.close();
+	@pool()
+	{
+		vim_command::Command cmd = vim_command::parse_command(submitted, tmem);
+		switch (cmd.kind)
+		{
+			case vim_command::Kind.NONE:
+				return;
+			case vim_command::Kind.WRITE:
+				(void)vim_save_current(app);
+			case vim_command::Kind.QUIT:
+				run_command(commands::CommandId.CLOSE_CARD, app);
+			case vim_command::Kind.WRITE_QUIT:
+				if (vim_save_current(app)) run_command(commands::CommandId.CLOSE_CARD, app);
+			case vim_command::Kind.EDIT:
+
+				{
+					if (cmd.arg.len == 0)
+					{
+						app.notifier.push("Missing path");
+						return;
+					}
+					String? resolved = project::resolve_path(tmem, cmd.arg);
+					if (catch excuse = resolved)
+					{
+						app.notifier.push("Could not resolve path");
+						return;
+					}
+					navigate_to_location(app.project, app.canvas, app.metrics, resolved, 0, 0);
+					if (app.project.focused < 0)
+					{
+						app.notifier.push("Could not open file");
+						return;
+					}
+					*app.ui_mode = UiMode.EDIT;
+					return;
+				}
+			case vim_command::Kind.UNKNOWN:
+
+				{
+					String message = string::format(tmem, "Unknown command: %s", cmd.arg.len > 0 ? cmd.arg : submitted);
+					app.notifier.push(message);
+					return;
+				}
+		}
+	};
+}
+
+fn void vim_open_search(App* app, bool backward)
+{
+	int index = app.project.focused;
+	if (index < 0 || index >= (int)app.project.cards.len() || !app.project.cards[index].buffer)
+	{
+		app.notifier.push("No file to search");
+		return;
+	}
+	app.find_bar.open_for_direction(find::FindField.QUERY, backward);
+	while (rl::get_char_pressed() != 0)
+	{
+	}
+}
+
+fn void vim_repeat_search(App* app, bool opposite)
+{
+	int index = app.project.focused;
+	if (index < 0 || index >= (int)app.project.cards.len() || !app.project.cards[index].buffer)
+	{
+		return;
+	}
+	FileCard* card = &app.project.cards[index];
+	usz start      = 0;
+	if (!app.find_bar.repeat(card.buffer, card.cursor, opposite, &start))
+	{
+		app.notifier.push("No previous search");
+		return;
+	}
+	card.cursor = start;
+	card.selection_anchor = start;
+	usz line = card.buffer.line_of(start);
+	card.preferred_column = editor::column_for_offset(card.buffer, line, start);
+	Rect text = editor::text_rect(card.rect, app.metrics, card.buffer.line_count());
+	card.scroll = editor::scroll_to_reveal(card.buffer, app.metrics, text.height, start, card.scroll);
+	card.scroll_x = editor::scroll_x_to_reveal(
+		card.buffer,
+		app.metrics,
+		text.width,
+		start,
+		card.scroll_x,
+		lsp::lsp_inlay_hints_for((String)card.path)
+	);
+	focus_camera_on_line(app.project, app.canvas, app.metrics, card, line);
 }
 
 fn void close_overlays(App* app)
@@ -692,6 +821,7 @@ fn void close_overlays(App* app)
 	app.settings_panel.close();
 	app.problems.close();
 	app.name_prompt.close();
+	app.vim_command.close();
 	app.theme_menu.close();
 	app.profile_menu.close();
 	app.context_menu.close();
@@ -726,6 +856,7 @@ const String[] VISUAL_STATE_NAMES = {
 	"topbar-bottom",
 	"topbar-left",
 	"topbar-right",
+	"vim",
 	"notifications",
 };
 
@@ -834,6 +965,20 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 			);
 			topbar::set_position(topbar::TopBarPosition.RIGHT);
 		case 14:
+			app.config.settings.set_bool(settings::SettingId.EDITOR_VIM_MODE, true, settings::SettingLayer.GLOBAL);
+			for (sz i = 0; i < project.cards.len(); i++)
+			{
+				if (project.cards[i].name.compare_to("demo.c3") == 0)
+				{
+					int index = project.focus((int)i);
+					project.selected = index;
+					editor::ensure_buffer(&project.cards[index], project.allocator);
+					break;
+				}
+			}
+			*app.ui_mode = UiMode.EDIT;
+			app.vim_command.show();
+		case 15:
 			app.notifier.push("Visual regression check");
 	}
 }
@@ -2396,6 +2541,8 @@ fn int main(String[] args)
 
 	prompt::Prompt name_prompt;
 	name_prompt.init();
+	vim_command::CommandLine vim_cmd;
+	vim_cmd.init(mem);
 
 	topbar::TopBar bar;
 	bar.init();
@@ -2497,6 +2644,7 @@ fn int main(String[] args)
 	defer browser.destroy();
 	defer palette.destroy();
 	defer find_bar.destroy();
+	defer vim_cmd.destroy();
 	defer problems.destroy();
 	defer connections.destroy();
 	defer completion::completion_destroy();
@@ -2636,6 +2784,7 @@ fn int main(String[] args)
 		.browser = &browser,
 		.notifier = &notifier,
 		.name_prompt = &name_prompt,
+		.vim_command = &vim_cmd,
 		.palette = &palette,
 		.settings_panel = &settings_panel,
 		.find_bar = &find_bar,
@@ -2989,6 +3138,15 @@ fn int main(String[] args)
 				definition_menu_kind = 0;
 			}
 			if (!definition_menu.consumed) poll_global(&keymap, &app);
+		}
+		else if (vim_cmd.open)
+		{
+			bool submitted = false;
+			(void)vim_cmd.update(&submitted);
+			if (submitted)
+			{
+				run_vim_command(&app, &vim_cmd);
+			}
 		}
 		else if (name_prompt.open)
 		{
@@ -3946,13 +4104,29 @@ fn int main(String[] args)
 			if (project.focus_card >= 0) project.update_focus_rect(&canvas);
 
 			content_changed = false;
-			bool suppress_edit_input = (ui_mode == UiMode.EDIT && edit_grace_frames > 0) || ui_mode == UiMode.CONSOLE;
+			bool suppress_edit_input = (ui_mode == UiMode.EDIT && edit_grace_frames > 0) || ui_mode == UiMode.CONSOLE
+				|| vim_cmd.open;
 			double update_t0         = rl::get_time();
 			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
 			if (project.focus_toggle_requested)
 			{
 				project.focus_toggle_requested = false;
 				run_command(commands::CommandId.TOGGLE_FOCUS_MODE, &app);
+			}
+			switch (project.vim_state.take_request())
+			{
+				case vim::Request.NONE:
+					break;
+				case vim::Request.COMMAND:
+					if (project.vim_state.mode != vim::Mode.INSERT) vim_cmd.show();
+				case vim::Request.SEARCH_FORWARD:
+					vim_open_search(&app, false);
+				case vim::Request.SEARCH_BACKWARD:
+					vim_open_search(&app, true);
+				case vim::Request.SEARCH_NEXT:
+					vim_repeat_search(&app, false);
+				case vim::Request.SEARCH_PREV:
+					vim_repeat_search(&app, true);
 			}
 			if (project.autosave_enabled && rl::get_time() - project.last_autosave >= project.autosave_interval)
 			{
@@ -4395,7 +4569,22 @@ fn int main(String[] args)
 				mode_label = "-- MOVE --";
 				if (ui_mode == UiMode.EDIT)
 				{
-					mode_label = "-- EDIT --";
+					if (editor::settings().vim_mode)
+					{
+						switch (project.vim_state.mode)
+						{
+							case vim::Mode.NORMAL:
+								mode_label = "-- NORMAL --";
+							case vim::Mode.INSERT:
+								mode_label = "-- INSERT --";
+							case vim::Mode.VISUAL:
+								mode_label = "-- VISUAL --";
+						}
+					}
+					else
+					{
+						mode_label = "-- EDIT --";
+					}
 				}
 				else if (ui_mode == UiMode.TOP_BAR)
 				{
@@ -4467,6 +4656,7 @@ fn int main(String[] args)
 			profile_menu.draw();
 			context_menu.draw();
 			name_prompt.draw(font);
+			vim_cmd.draw(font, ":");
 			palette.draw(project_open, has_focused_buffer(&project), &keymap, font);
 			settings_panel.draw(font, project_open, &keymap, &config);
 			problems.draw(font);

@@ -30,6 +30,7 @@ struct EditorSettings
 	int scroll_margin_lines;
 	int wheel_scroll_lines;
 	bool show_line_numbers;
+	bool vim_mode;
 	int indent_width;
 	bool indent_spaces;
 	bool auto_indent;
@@ -46,6 +47,7 @@ EditorSettings g_editor_settings = {
 	.scroll_margin_lines = 1,
 	.wheel_scroll_lines = 3,
 	.show_line_numbers = true,
+	.vim_mode = false,
 	.indent_width = 4,
 	.indent_spaces = false,
 	.auto_indent = true,

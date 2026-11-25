@@ -64,6 +64,7 @@ enum SettingId : int
 	EDITOR_SCROLL_MARGIN_LINES,
 	EDITOR_WHEEL_SCROLL_LINES,
 	EDITOR_SHOW_LINE_NUMBERS,
+	EDITOR_VIM_MODE,
 	EDITOR_AUTOSAVE,
 	EDITOR_AUTOSAVE_INTERVAL,
 	EDITOR_UNDO_MB,
@@ -459,6 +460,14 @@ const SettingSpec[] SETTINGS = {
 		.description = "Show the line-number gutter.",
 		.kind = SettingKind.BOOL,
 		.fallback = { .b = true },
+	},
+	{
+		.section = "editor",
+		.key = "vim_mode",
+		.label = "Vim mode",
+		.description = "Enable optional Vim modal editing (Normal, Insert, Visual).",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
 	},
 	{
 		.section = "editor",
