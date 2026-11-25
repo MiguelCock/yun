@@ -96,9 +96,7 @@ enum SettingId : int
 	MINIMAP_SIZE,
 	MINIMAP_ZOOM_THRESHOLD,
 	ARROWS_ENABLED,
-	ARROWS_AGGREGATION,
-	ARROWS_SHOW_INTERNAL,
-	ARROWS_SHOW_EXTERNAL,
+	ARROWS_RELATED_ONLY,
 	ARROWS_LABELS,
 	ARROWS_LINE_THICKNESS,
 	ARROWS_HOVER_THICKNESS,
@@ -107,7 +105,6 @@ enum SettingId : int
 	ARROWS_RESCAN_DEBOUNCE,
 	ARROWS_SCAN_WORKERS,
 	ARROWS_INTERNAL_STYLE,
-	ARROWS_EXTERNAL_STYLE,
 	ARROWS_DASH_LENGTH,
 	ARROWS_DASH_GAP,
 	SEARCH_MAX_FILE_MB,
@@ -793,26 +790,9 @@ const SettingSpec[] SETTINGS = {
 	},
 	{
 		.section = "arrows",
-		.key = "aggregation",
-		.label = "Arrow aggregation",
-		.description = "Group arrows by source/target folder (folder) and external package (package).",
-		.kind = SettingKind.ENUM,
-		.fallback = { .s = "folder" },
-		.options = { "off", "folder", "package" },
-	},
-	{
-		.section = "arrows",
-		.key = "show_internal",
-		.label = "Internal arrows",
-		.description = "Show arrows to imports resolved inside the project.",
-		.kind = SettingKind.BOOL,
-		.fallback = { .b = true },
-	},
-	{
-		.section = "arrows",
-		.key = "show_external",
-		.label = "External arrows",
-		.description = "Show arrows to imports that resolve outside the project.",
+		.key = "related_only",
+		.label = "Related arrows only",
+		.description = "Draw arrows only for the selected, focused, or hovered card.",
 		.kind = SettingKind.BOOL,
 		.fallback = { .b = true },
 	},
@@ -820,7 +800,7 @@ const SettingSpec[] SETTINGS = {
 		.section = "arrows",
 		.key = "labels",
 		.label = "Arrow labels",
-		.description = "Show the import specifier label next to external arrows.",
+		.description = "Show the import specifier label next to related arrows.",
 		.kind = SettingKind.BOOL,
 		.fallback = { .b = true },
 	},
@@ -897,15 +877,6 @@ const SettingSpec[] SETTINGS = {
 		.description = "Line style for arrows to imports resolved inside the project.",
 		.kind = SettingKind.ENUM,
 		.fallback = { .s = "solid" },
-		.options = { "solid", "dashed", "dotted", "long-dash", "dash-dot" },
-	},
-	{
-		.section = "arrows",
-		.key = "external_style",
-		.label = "External style",
-		.description = "Line style for arrows to imports resolved outside the project.",
-		.kind = SettingKind.ENUM,
-		.fallback = { .s = "dashed" },
 		.options = { "solid", "dashed", "dotted", "long-dash", "dash-dot" },
 	},
 	{
@@ -1675,7 +1646,14 @@ fn void Settings.apply_section(&self, String name, Object* obj, SettingLayer lay
 
 	obj.@each_entry(; String key, Object* value)
 	{
-		if (!section_has_key(name, key))
+		bool legacy_arrow = name.compare_to(
+			"arrows"
+		) == 0 && (key.compare_to(
+			"aggregation"
+		) == 0 || key.compare_to(
+			"show_internal"
+		) == 0 || key.compare_to("show_external") == 0 || key.compare_to("external_style") == 0);
+		if (!legacy_arrow && !section_has_key(name, key))
 		{
 			self.push_warning(warnings, string::format(self.allocator, "Unknown config key: %s.%s", name, key));
 		}

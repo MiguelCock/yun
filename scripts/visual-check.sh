@@ -27,6 +27,24 @@ fn void hello()
 	io::printn("sum %d", util::add(1, 2));
 }
 C3
+cat > "$project/arrow_util.c3" <<'C3'
+module arrow_util;
+
+fn int answer()
+{
+	return 42;
+}
+C3
+cat > "$project/arrow_main.c3" <<'C3'
+module arrow_main;
+
+import arrow_util;
+
+fn int use_answer()
+{
+	return arrow_util::answer();
+}
+C3
 cat > "$project/src/web.ts" <<'TS'
 import { useEffect, useState as state } from "react";
 
@@ -68,6 +86,7 @@ expected=(
 	terminal
 	vim
 	notifications
+	imports
 )
 
 for name in "${expected[@]}"; do

@@ -39,6 +39,7 @@ const String[] IGNORED_NAMES        =  { ".git", ".gitmodules", ".yun", "build",
 const float DRAW_CULL_MARGIN        =  64.0f;
 const float CARD_MIN_DRAW_PX        =  3.0f;
 const float CARD_LOD_MIN_PX         =  48.0f;
+const float CARD_DETAIL_MIN_PX      =  180.0f;
 const float CLUSTER_TEXT_MIN_ZOOM   =  0.45f;
 const double DOUBLE_CLICK_SECONDS   =  0.35;
 const float DOUBLE_CLICK_DIST       =  6.0f;
@@ -152,6 +153,7 @@ struct Project
 	int awake_count;
 	int asleep_count;
 	int cards_revision;
+	int order_revision;
 	bool skip_nested_repos;
 	int focus_card;
 	Rect focus_saved_rect;
@@ -206,6 +208,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.awake_count = 0;
 	self.asleep_count = 0;
 	self.cards_revision = 0;
+	self.order_revision = 0;
 	self.skip_nested_repos = true;
 	self.focus_card = -1;
 	self.focus_screen_w = 0.0f;
@@ -270,6 +273,7 @@ fn void Project.reset(&self)
 	self.destroy_cards();
 	self.destroy_folders();
 	self.cards_revision++;
+	self.order_revision = 0;
 	self.focused = -1;
 	self.selected = -1;
 	self.selected_cluster = -1;
@@ -317,6 +321,7 @@ fn void Project.clear_jump(&self)
 
 fn void Project.discard_ephemeral(&self, int keep)
 {
+	bool removed = false;
 	for (sz i = self.cards.len(); i > 0; i--)
 	{
 		sz index = i - 1;
@@ -329,6 +334,7 @@ fn void Project.discard_ephemeral(&self, int keep)
 			(void)libc::remove(((String)card.path).zstr_tcopy());
 		};
 		self.cards.remove_at(index);
+		removed = true;
 		if (((String)card.path).len) ((String)card.path).free(self.allocator);
 		if (card.name.len) card.name.free(self.allocator);
 		if (self.focused > (int)index)
@@ -349,7 +355,12 @@ fn void Project.discard_ephemeral(&self, int keep)
 			self.selected = -1;
 		}
 	}
-	self.invalidate_bounds();
+	if (removed)
+	{
+		self.cards_revision++;
+		self.order_revision++;
+		self.invalidate_bounds();
+	}
 }
 
 fn bool path_is_inside(String root, String abs)
@@ -1564,6 +1575,8 @@ fn int Project.focus(&self, int index)
 	FileCard card = self.cards[index];
 	self.cards.remove_at(index);
 	self.cards.push(card);
+	self.order_revision++;
+	self.grid_dirty = true;
 	self.focused = (int)(self.cards.len() - 1);
 	self.selected = self.focused;
 	self.selected_cluster = -1;
@@ -3561,12 +3574,21 @@ fn void Project.draw_cards(
 			if (!rect_intersects(card.rect, visible)) continue;
 			float on_screen_w = card.rect.width * camera.zoom;
 			if (!is_focused && on_screen_w < CARD_MIN_DRAW_PX) continue;
-			if (!is_focused && on_screen_w < CARD_LOD_MIN_PX)
+			bool simple_lod = !is_focused && on_screen_w < CARD_LOD_MIN_PX;
+			bool title_lod  = !is_focused && !simple_lod && on_screen_w < CARD_DETAIL_MIN_PX && (int)i != self.selected
+				&& (int)i != self.hover_card;
+			if (simple_lod)
 			{
 				card.draw_lod(camera.zoom);
-				continue;
 			}
-			card.draw(is_focused, camera, mouse_world, self.focus_card >= 0, git_status);
+			else if (title_lod)
+			{
+				card.draw_lod_title(font, camera.zoom);
+			}
+			else
+			{
+				card.draw(is_focused, camera, mouse_world, self.focus_card >= 0, git_status);
+			}
 			if (!is_focused && (int)i == self.selected)
 			{
 				ui::rounded_rect_lines(
@@ -3587,7 +3609,7 @@ fn void Project.draw_cards(
 					hover
 				);
 			}
-			if (!card.open) continue;
+			if (!card.open || simple_lod || title_lod) continue;
 
 			if (card.preview && markdown::is_markdown_path((String)card.path))
 			{

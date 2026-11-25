@@ -375,11 +375,7 @@ fn void apply_settings(
 
 	imports::ImportSettings is = imports::settings();
 	is.enabled = config.settings.get_bool(settings::SettingId.ARROWS_ENABLED);
-	is.aggregation = imports::parse_aggregation_mode(
-		config.settings.get_string(settings::SettingId.ARROWS_AGGREGATION)
-	);
-	is.show_internal = config.settings.get_bool(settings::SettingId.ARROWS_SHOW_INTERNAL);
-	is.show_external = config.settings.get_bool(settings::SettingId.ARROWS_SHOW_EXTERNAL);
+	is.related_only = config.settings.get_bool(settings::SettingId.ARROWS_RELATED_ONLY);
 	is.labels = config.settings.get_bool(settings::SettingId.ARROWS_LABELS);
 	is.line_thickness = (float)config.settings.get_float(settings::SettingId.ARROWS_LINE_THICKNESS);
 	is.hover_thickness = (float)config.settings.get_float(settings::SettingId.ARROWS_HOVER_THICKNESS);
@@ -389,9 +385,6 @@ fn void apply_settings(
 	is.scan_workers = (int)config.settings.get_int(settings::SettingId.ARROWS_SCAN_WORKERS);
 	is.internal_style = imports::parse_arrow_style(
 		config.settings.get_string(settings::SettingId.ARROWS_INTERNAL_STYLE)
-	);
-	is.external_style = imports::parse_arrow_style(
-		config.settings.get_string(settings::SettingId.ARROWS_EXTERNAL_STYLE)
 	);
 	is.dash_length = (float)config.settings.get_float(settings::SettingId.ARROWS_DASH_LENGTH);
 	is.dash_gap = (float)config.settings.get_float(settings::SettingId.ARROWS_DASH_GAP);
@@ -873,6 +866,7 @@ const String[] VISUAL_STATE_NAMES = {
 	"terminal",
 	"vim",
 	"notifications",
+	"imports",
 };
 
 const int VISUAL_STATE_COUNT = (int)VISUAL_STATE_NAMES.len;
@@ -1013,6 +1007,17 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 			app.vim_command.show();
 		case 17:
 			app.notifier.push("Visual regression check");
+		case 18:
+			for (sz i = 0; i < project.cards.len(); i++)
+			{
+				if (project.cards[i].name.compare_to("arrow_main.c3") == 0)
+				{
+					int index = project.focus((int)i);
+					project.selected = index;
+					editor::ensure_buffer(&project.cards[index], project.allocator);
+					break;
+				}
+			}
 	}
 }
 
@@ -2947,6 +2952,7 @@ fn int main(String[] args)
 	RLVector2 last_arrow_mouse     =  { -1.0f, -1.0f };
 	RLVector2 last_arrow_target    =  { 0.0f, 0.0f };
 	float last_arrow_zoom          = -1.0f;
+	int last_arrow_active          = -2;
 	bool arrow_hovered_cache       =  false;
 	bool diagnostics_logged        =  false;
 	input::RepeatState move_repeat =  { };
@@ -4216,12 +4222,15 @@ fn int main(String[] args)
 				bool camera_changed = canvas.camera.zoom != last_arrow_zoom
 					|| canvas.camera.target[0] != last_arrow_target[0]
 					|| canvas.camera.target[1] != last_arrow_target[1];
-				if (moved || camera_changed)
+				int arrow_active    = imports::edge_active_card(&project);
+				bool active_changed = arrow_active != last_arrow_active;
+				if (moved || camera_changed || active_changed)
 				{
 					arrow_hovered = import_index.hit_test(&project, canvas.camera, world);
 					last_arrow_mouse = mouse;
 					last_arrow_zoom = canvas.camera.zoom;
 					last_arrow_target = canvas.camera.target;
+					last_arrow_active = arrow_active;
 				}
 				else
 				{
@@ -4425,6 +4434,7 @@ fn int main(String[] args)
 			}
 			import_index.flush_edits(&project, rl::get_time());
 			import_index.sync(&project);
+			import_index.refresh_card_paths(&project);
 			double imports_t0 = rl::get_time();
 			imports::ImportIndex.pump(&import_index, &project);
 			scan_ms += (rl::get_time() - imports_t0) * 1000.0;

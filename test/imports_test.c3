@@ -364,18 +364,6 @@ fn void test_point_segment_distance()
 	assert(math::is_approx(point_segment_distance({ 3.0f, 4.0f }, a, a), 5.0f, 0.001f));
 }
 
-fn void test_bezier_min_distance()
-{
-	RLVector2 p1 = { 0.0f, 0.0f };
-	RLVector2 p2 = { 100.0f, 0.0f };
-	RLVector2 c2;
-	RLVector2 c3;
-	bezier_controls(p1, p2, &c2, &c3);
-
-	RLVector2 mid = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, 0.5f);
-	assert(bezier_min_distance(mid, p1, c2, c3, p2, 20) < 1.0f);
-	assert(bezier_min_distance({ 50.0f, 500.0f }, p1, c2, c3, p2, 20) > 100.0f);
-}
 
 fn void test_edit_debounce_elapsed()
 {
@@ -818,14 +806,6 @@ fn void test_fixture_resolution()
 		};
 	}
 }
-fn void test_dash_steps_scales_with_length()
-{
-	RLVector2 a = { 0.0f, 0.0f };
-	assert(dash_steps(a, { 10.0f, 0.0f }, 1.0f) == 16);
-	assert(dash_steps(a, { 10000.0f, 0.0f }, 1.0f) == 64);
-	assert(dash_steps(a, { 300.0f, 0.0f }, 1.0f) == 60);
-	assert(dash_steps(a, { 300.0f, 0.0f }, 0.1f) == 16);
-}
 fn void test_importers_of()
 {
 	@pool()
@@ -896,23 +876,7 @@ fn void test_importers_of()
 		out.free();
 	};
 }
-fn void test_package_key_normalization()
-{
-	@pool()
-	{
-		assert(package_key(tmem, "react/jsx-runtime").compare_to("react") == 0);
-		assert(package_key(tmem, "react").compare_to("react") == 0);
-		assert(package_key(tmem, "@scope/pkg/sub").compare_to("@scope/pkg") == 0);
-		assert(package_key(tmem, "@scope/pkg").compare_to("@scope/pkg") == 0);
-		assert(package_key(tmem, "node:fs").compare_to("node:fs") == 0);
-		assert(package_key(tmem, "node:fs/promises").compare_to("node:fs") == 0);
-		assert(package_key(tmem, "foo.bar").compare_to("foo") == 0);
-		assert(package_key(tmem, "github.com/user/pkg").compare_to("github.com/user/pkg") == 0);
-		assert(package_key(tmem, "./local").compare_to("./local") == 0);
-	};
-}
-
-fn void test_aggregate_folder_and_package_edges()
+fn void test_internal_edges_are_file_to_file()
 {
 	@pool()
 	{
@@ -920,17 +884,16 @@ fn void test_aggregate_folder_and_package_edges()
 		p.init(mem);
 		if (p.root.len) p.root.free(mem);
 		p.root = (Path)"/root".copy(mem);
-		int src  = p.add_folder("/root/src", project::ROOT_FOLDER);
-		int deep = p.add_folder("/root/src/deep", src);
-		int lib  = p.add_folder("/root/lib", project::ROOT_FOLDER);
-		(void)deep;
+		int src = p.add_folder("/root/src", project::ROOT_FOLDER);
+		(void)p.add_folder("/root/src/deep", src);
+		(void)p.add_folder("/root/lib", project::ROOT_FOLDER);
 
-		int a = p.append_card("/root/src/a.ts", { 0.0f, 0.0f });
-		int b = p.append_card("/root/src/b.ts", { 0.0f, 0.0f });
-		int c = p.append_card("/root/src/deep/c.ts", { 0.0f, 0.0f });
-		(void)p.append_card("/root/lib/x.ts", { 0.0f, 0.0f });
-		(void)p.append_card("/root/lib/y.ts", { 0.0f, 0.0f });
-		(void)p.append_card("/root/lib/index.ts", { 0.0f, 0.0f });
+		int a          = p.append_card("/root/src/a.ts", { 0.0f, 0.0f });
+		int b          = p.append_card("/root/src/b.ts", { 0.0f, 0.0f });
+		int c          = p.append_card("/root/src/deep/c.ts", { 0.0f, 0.0f });
+		int x          = p.append_card("/root/lib/x.ts", { 0.0f, 0.0f });
+		int y          = p.append_card("/root/lib/y.ts", { 0.0f, 0.0f });
+		int index_card = p.append_card("/root/lib/index.ts", { 0.0f, 0.0f });
 
 		ImportIndex index;
 		index.init(mem);
@@ -949,11 +912,20 @@ fn void test_aggregate_folder_and_package_edges()
 		);
 		refs_a.push(
 			{
+				.specifier = "./x".copy(mem),
+				.target_path = "/root/lib/x.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.line = 1,
+			}
+		);
+		refs_a.push(
+			{
 				.specifier = "./y".copy(mem),
 				.target_path = "/root/lib/y.ts".copy(mem),
 				.kind = "import".copy(mem),
 				.resolved = true,
-				.line = 1,
+				.line = 2,
 			}
 		);
 		index.store("/root/src/a.ts", &refs_a, "", false);
@@ -969,14 +941,7 @@ fn void test_aggregate_folder_and_package_edges()
 				.line = 0,
 			}
 		);
-		refs_b.push(
-			{
-				.specifier = "react/jsx-runtime".copy(mem),
-				.kind = "import".copy(mem),
-				.line = 1,
-			}
-		);
-		refs_b.push({ .specifier = "react".copy(mem), .kind = "import".copy(mem), .line = 2 });
+		refs_b.push({ .specifier = "react".copy(mem), .kind = "import".copy(mem), .line = 1 });
 		index.store("/root/src/b.ts", &refs_b, "", false);
 
 		List{ImportRef} refs_c;
@@ -992,121 +957,79 @@ fn void test_aggregate_folder_and_package_edges()
 		);
 		index.store("/root/src/deep/c.ts", &refs_c, "", false);
 
-		ImportSettings old = settings();
-		defer set_settings(old);
-
-		ImportSettings folder = old;
-		folder.aggregation = AggregationMode.FOLDER;
-		set_settings(folder);
 		List{ImportEdge} edges;
 		edges.init(tmem);
 		index.build_edges(&p, &edges);
-		int internal      = 0;
-		int external      = 0;
-		int internal_refs = 0;
-		int external_refs = 0;
+		assert(edges.len() == 4);
+		int total = 0;
 		for (sz i = 0; i < edges.len(); i++)
 		{
 			ImportEdge edge = edges[i];
-			if (edge.external)
+			assert(edge.target_card >= 0);
+			assert(edge.target_card != edge.source_card);
+			total += edge.count;
+			if (edge.source_card == a && edge.target_card == x)
 			{
-				external++;
-				external_refs += edge.count;
+				assert(edge.count == 2);
+				assert(edge.label.compare_to("./x") == 0);
 			}
-			else
-			{
-				internal++;
-				internal_refs += edge.count;
-				assert(edge.target_folder == lib);
-			}
+			if (edge.source_card == b) assert(edge.target_card == y);
 		}
-		assert(internal == 2);
-		assert(internal_refs == 4);
-		assert(external == 2);
-		assert(external_refs == 2);
+		assert(total == 5);
 
 		ImportHit hit = { .valid = true, .source = a, .ref_index = 0 };
 		List{ImporterRef} group;
 		group.init(tmem);
 		index.collect_group(&p, hit, &group);
-		assert(group.len() == 3);
-
-		ImportSettings package = old;
-		package.aggregation = AggregationMode.PACKAGE;
-		set_settings(package);
-		edges.clear();
-		index.build_edges(&p, &edges);
-		internal = 0;
-		external = 0;
-		for (sz i = 0; i < edges.len(); i++)
+		assert(group.len() == 2);
+		for (sz i = 0; i < group.len(); i++)
 		{
-			ImportEdge edge = edges[i];
-			if (edge.external)
-			{
-				external++;
-				assert(edge.count == 2);
-				assert(edge.label.compare_to("react") == 0);
-			}
-			else
-			{
-				internal++;
-				assert(edge.count >= 1);
-			}
+			assert(group[i].file == 0);
+			assert(group[i].ref < 3);
 		}
-		assert(internal == 2);
-		assert(external == 1);
 
-		ImportSettings off = old;
-		off.aggregation = AggregationMode.OFF;
-		set_settings(off);
-		edges.clear();
-		index.build_edges(&p, &edges);
-		assert(edges.len() == 6);
-		for (sz i = 0; i < edges.len(); i++) assert(edges[i].count == 1);
-
+		ImportEdge a_x = { .source_card = a, .target_card = x, .count = 1 };
+		ImportEdge b_y = { .source_card = b, .target_card = y, .count = 1 };
+		p.cards[a].rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		p.cards[x].rect = { .x = 200.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		Rect src_visible = { .x = -10.0f, .y = -10.0f, .width = 320.0f, .height = 100.0f };
+		assert(edge_visible(&p, &a_x, src_visible));
 		p.folders[src].collapsed = true;
-		ImportSettings folded = old;
-		folded.aggregation = AggregationMode.FOLDER;
-		set_settings(folded);
-		edges.clear();
-		index.build_edges(&p, &edges);
-		int folded_edges    = 0;
-		int folded_internal = 0;
-		for (sz i = 0; i < edges.len(); i++)
-		{
-			if (!edges[i].external)
-			{
-				folded_edges++;
-				folded_internal += edges[i].count;
-			}
-		}
-		assert(folded_edges == 1);
-		assert(folded_internal == 4);
+		assert(!edge_visible(&p, &a_x, src_visible));
+		p.folders[src].collapsed = false;
 
-		ImportHit folded_hit = { .valid = true, .source = c, .ref_index = 0 };
-		group.clear();
-		index.collect_group(&p, folded_hit, &group);
-		assert(group.len() == 4);
+		assert(edge_related(&a_x, a));
+		assert(!edge_related(&a_x, b));
+		p.cards[a].rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		p.cards[b].rect = { .x = 500.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		p.cards[x].rect = { .x = 200.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		p.cards[y].rect = { .x = 700.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		Rect visible = { .x = -10.0f, .y = -10.0f, .width = 320.0f, .height = 100.0f };
+		assert(edge_visible(&p, &a_x, visible));
+		assert(!edge_visible(&p, &b_y, visible));
+		(void)c;
+		(void)index_card;
 
 		edges.free();
 		index.destroy();
 		p.destroy();
 	};
 }
-fn void test_parse_aggregation_mode()
+
+macro void assert_orthogonal(route)
 {
-	assert(parse_aggregation_mode("off") == AggregationMode.OFF);
-	assert(parse_aggregation_mode("folder") == AggregationMode.FOLDER);
-	assert(parse_aggregation_mode("package") == AggregationMode.PACKAGE);
-	assert(parse_aggregation_mode("unknown") == AggregationMode.FOLDER);
-	ImportSettings value = settings();
-	value.aggregation = AggregationMode.PACKAGE;
-	set_settings(value);
-	assert(settings().aggregation == AggregationMode.PACKAGE);
-	value.aggregation = AggregationMode.FOLDER;
-	set_settings(value);
+	assert(route.count >= 2);
+	for (int i = 1; i < route.count; i++)
+	{
+		RLVector2 a = route.points[(usz)i - 1];
+		RLVector2 b = route.points[(usz)i];
+		float dx    = math::abs(b[0] - a[0]);
+		float dy    = math::abs(b[1] - a[1]);
+		assert(dx < 0.01f || dy < 0.01f);
+	}
 }
-fn void test_edge_geometry_is_straight()
+
+fn void test_focus_reorders_cached_edges()
 {
 	@pool()
 	{
@@ -1115,24 +1038,84 @@ fn void test_edge_geometry_is_straight()
 		if (p.root.len) p.root.free(mem);
 		p.root = (Path)"/root".copy(mem);
 		int a = p.append_card("/root/a.ts", { 0.0f, 0.0f });
-		int b = p.append_card("/root/b.ts", { 300.0f, 100.0f });
+		int b = p.append_card("/root/b.ts", { 100.0f, 0.0f });
+
+		ImportIndex index;
+		index.init(mem);
+		index.refresh_card_paths(&p);
+		List{ImportRef} refs;
+		refs.init(mem);
+		refs.push(
+			{
+				.specifier = "./b".copy(mem),
+				.target_path = "/root/b.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+			}
+		);
+		index.store("/root/a.ts", &refs, "", false);
+		index.ensure_edges(&p);
+		assert(index.edges.len() == 1);
+		assert(index.edges[0].source_card == a);
+		assert(index.edges[0].target_card == b);
+
+		int focused = p.focus(a);
+		assert(focused == 1);
+		index.ensure_edges(&p);
+		assert(index.edges.len() == 1);
+		assert(index.edges[0].source_card == focused);
+		assert(index.edges[0].target_card == p.find_card("/root/b.ts"));
+
+		index.destroy();
+		p.destroy();
+	};
+}
+
+fn void test_orthogonal_routes_make_right_angles()
+{
+	@pool()
+	{
+		project::Project p;
+		p.init(mem);
+		if (p.root.len) p.root.free(mem);
+		p.root = (Path)"/root".copy(mem);
+		int a = p.append_card("/root/a.ts", { 0.0f, 0.0f });
+		int b = p.append_card("/root/b.ts", { 0.0f, 0.0f });
 		p.cards[a].rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
 		p.cards[b].rect = { .x = 300.0f, .y = 100.0f, .width = 100.0f, .height = 80.0f };
-		ImportEdge edge = {
-			.source_card = a,
-			.target_card = b,
-			.source_folder = project::ROOT_FOLDER,
-			.target_folder = project::ROOT_FOLDER,
-			.count = 1,
-		};
-		RLVector2 p1;
-		RLVector2 c2;
-		RLVector2 c3;
-		RLVector2 p2;
-		assert(edge_geometry(&p, &edge, &p1, &c2, &c3, &p2));
-		assert(c2[0] == p1[0] && c2[1] == p1[1]);
-		assert(c3[0] == p2[0] && c3[1] == p2[1]);
-		assert(p1[0] < p2[0] && p1[1] < p2[1]);
+
+		ImportEdge edge = { .source_card = a, .target_card = b, .count = 1 };
+		EdgeRoute route;
+		assert(edge_route(&p, &edge, 1.0f, &route));
+		assert_orthogonal(&route);
+		assert(route.points[0][0] == 100.0f);
+		assert(route.points[0][1] == 40.0f);
+		assert(route.points[(usz)route.count - 1][0] == 300.0f);
+		assert(route.points[(usz)route.count - 1][1] == 140.0f);
+		assert(route_length(&route) > 290.0f);
+		RLVector2 mid = route_midpoint(&route);
+		assert(route_distance(&route, mid) < 0.01f);
+
+		p.cards[b].rect = { .x = 50.0f, .y = 300.0f, .width = 100.0f, .height = 80.0f };
+		assert(edge_route(&p, &edge, 1.0f, &route));
+		assert_orthogonal(&route);
+		assert(route.points[0][0] == 50.0f);
+		assert(route.points[0][1] == 80.0f);
+		assert(route.points[(usz)route.count - 1][0] == 100.0f);
+		assert(route.points[(usz)route.count - 1][1] == 300.0f);
+
+		p.cards[b].rect = { .x = 300.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		assert(edge_route(&p, &edge, 1.0f, &route));
+		assert_orthogonal(&route);
+
+		p.cards[b].rect = { .x = 103.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		assert(edge_route(&p, &edge, 1.0f, &route));
+		assert_orthogonal(&route);
+		assert(route.points[0][1] == 0.0f);
+		assert(route.points[(usz)route.count - 1][1] == 0.0f);
+
+		p.cards[b].rect = { .x = 20.0f, .y = 20.0f, .width = 100.0f, .height = 80.0f };
+		assert(!edge_route(&p, &edge, 1.0f, &route));
 		p.destroy();
 	};
 }
