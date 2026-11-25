@@ -30,6 +30,7 @@ import yun::lsp;
 import yun::markdown;
 import yun::menu;
 import yun::minimap;
+import yun::mods;
 import yun::notify;
 import yun::palette;
 import yun::problems;
@@ -212,9 +213,18 @@ fn void apply_settings(
 	editor::EditorMetrics* metrics,
 	int* ui_size,
 	RLFont* ui_font,
-	console::ConsoleManager* console_manager
+	console::ConsoleManager* console_manager,
+	mods::Mods* mods
 )
 {
+	if (mods)
+	{
+		mods.apply_settings(
+			config.settings.get_bool(settings::SettingId.MODS_ENABLED),
+			config.settings.get_bool(settings::SettingId.MODS_ALLOW_RENDER),
+			config.settings.get_bool(settings::SettingId.MODS_ALLOW_INPUT)
+		);
+	}
 	if (config.settings.consume_change(settings::SettingId.APP_THEME))
 	{
 		if (!theme::set_by_name(config.settings.get_string(settings::SettingId.APP_THEME)))
@@ -640,6 +650,7 @@ struct App
 	int* pending_kind;
 	int* pending_parent;
 	RLVector2* pending_world;
+	mods::Mods* mods;
 }
 
 fn bool has_focused_buffer(project::Project* project)
@@ -1173,6 +1184,20 @@ fn void open_context_menu(App* app, context::ContextTarget target, int card, int
 		offset >= 0,
 		app.context_items[0:context::CONTEXT_MAX_ITEMS]
 	);
+	if (app.mods && target == context::ContextTarget.CANVAS)
+	{
+		for (int i = 0; i < app.mods.menu_count() && app.context_item_count < context::CONTEXT_MAX_ITEMS; i++)
+		{
+			if (!app.mods.menu_available(i)) continue;
+			app.context_items[app.context_item_count] = {
+				.label = app.mods.menu_label(i),
+				.action = context::ContextAction.MOD_ITEM,
+				.enabled = true,
+				.index = i,
+			};
+			app.context_item_count++;
+		}
+	}
 
 	@pool()
 	{
@@ -1194,6 +1219,11 @@ fn void open_context_menu(App* app, context::ContextTarget target, int card, int
 fn void run_command(commands::CommandId id, App* app)
 {
 	project::Project* project = app.project;
+	if (app.mods)
+	{
+		app.mods.dispatch_command((int)id, commands::command_name(id), commands::command_def(id)
+			.label, project.focused);
+	}
 	switch (id)
 	{
 		case commands::CommandId.NEW_FILE:
@@ -1258,6 +1288,7 @@ fn void run_command(commands::CommandId id, App* app)
 				if (editor::save_buffer(&project.cards[index], project.allocator))
 				{
 					app.git.mark_dirty(rl::get_time());
+					if (app.mods) app.mods.dispatch_file_save(index);
 					app.notifier.push("Saved");
 				}
 				else
@@ -1956,7 +1987,10 @@ fn void run_command(commands::CommandId id, App* app)
 					}
 					else
 					{
-						(void)editor::unload_buffer(card, project.allocator);
+						if (editor::unload_buffer(card, project.allocator) && app.mods)
+						{
+							app.mods.dispatch_file_close(index);
+						}
 					}
 				}
 				return;
@@ -1967,6 +2001,17 @@ fn void run_command(commands::CommandId id, App* app)
 				int index = target_card_index(project);
 				if (index < 0) return;
 				project.cards[index].open = !project.cards[index].open;
+				if (app.mods)
+				{
+					if (project.cards[index].open)
+					{
+						app.mods.dispatch_file_open(index);
+					}
+					else
+					{
+						app.mods.dispatch_file_close(index);
+					}
+				}
 				return;
 			}
 		case commands::CommandId.TOGGLE_PREVIEW:
@@ -2524,6 +2569,17 @@ fn int main(String[] args)
 	config::Config config;
 	config.init(mem);
 
+	mods::Mods mods;
+	mods.init(
+		mem,
+		{
+			.project = &project,
+			.notifier = &notifier,
+			.config = &config,
+			.project_open = null,
+		}
+	);
+
 	lsp::Lsp lsp;
 	lsp.init(mem, &config);
 	lsp::lsp_set_active(&lsp);
@@ -2665,8 +2721,10 @@ fn int main(String[] args)
 	defer connections.destroy();
 	defer completion::completion_destroy();
 	defer project.destroy();
+	defer mods.destroy();
 
-	bool project_open           = false;
+	bool project_open = false;
+	mods.host.project_open = &project_open;
 	bool quit_requested         = false;
 	project::OpenJob* open_job  = null;
 	bool opening                = false;
@@ -2740,7 +2798,8 @@ fn int main(String[] args)
 				&metrics,
 				&ui_size,
 				&font,
-				&console_manager
+				&console_manager,
+				&mods
 			);
 			open_job = project::open_job_create(project.allocator, &project, resolved);
 			opening = true;
@@ -2760,7 +2819,8 @@ fn int main(String[] args)
 			&metrics,
 			&ui_size,
 			&font,
-			&console_manager
+			&console_manager,
+			&mods
 		);
 		if (benchmark_cards > 0)
 		{
@@ -2792,6 +2852,8 @@ fn int main(String[] args)
 	keymap.build(&config);
 	push_config_warnings(&config, &notifier);
 	push_keymap_warnings(&keymap, &notifier);
+	mods.ensure_loaded(&project, false);
+	mods.dispatch_startup();
 
 	App app = {
 		.project = &project,
@@ -2849,7 +2911,9 @@ fn int main(String[] args)
 		.pending_kind = &pending_kind,
 		.pending_parent = &pending_parent,
 		.pending_world = &pending_world,
+		.mods = &mods,
 	};
+	palette.mods = &mods;
 
 	RLVector2 last_arrow_mouse     =  { -1.0f, -1.0f };
 	RLVector2 last_arrow_target    =  { 0.0f, 0.0f };
@@ -2860,6 +2924,9 @@ fn int main(String[] args)
 	ulong last_git_error_revision  =  0;
 	ulong last_git_action_revision =  0;
 	double last_recovery_journal   =  0.0;
+	int last_mod_focus             = -1;
+	usz last_mod_anchor            =  0;
+	usz last_mod_cursor            =  0;
 
 	int frame_count    = 0;
 	double prof_update = 0.0;
@@ -2997,8 +3064,11 @@ fn int main(String[] args)
 			&metrics,
 			&ui_size,
 			&font,
-			&console_manager
+			&console_manager,
+			&mods
 		);
+		mods.ensure_loaded(&project, project_open);
+		mods.dispatch_startup();
 		if (!diagnostics_logged)
 		{
 			diagnostics_logged = true;
@@ -3035,6 +3105,8 @@ fn int main(String[] args)
 					project_open = true;
 					console_manager.reset((String)project.root);
 					finish_open(&project, &canvas, &config, &keymap, &notifier, &console_manager);
+					mods.ensure_loaded(&project, true);
+					mods.dispatch_startup();
 					git_state.set_project((String)project.root);
 					console = console_manager.active_console();
 					console_panel = console_manager.active_panel();
@@ -3054,7 +3126,8 @@ fn int main(String[] args)
 						&metrics,
 						&ui_size,
 						&font,
-						&console_manager
+						&console_manager,
+						&mods
 					);
 					lsp.set_root((String)project.root);
 					completion::completion_close();
@@ -3100,6 +3173,10 @@ fn int main(String[] args)
 			{
 				palette.record((commands::CommandId)chosen);
 				run_command((commands::CommandId)chosen, &app);
+			}
+			else if (chosen < 0)
+			{
+				(void)mods.run_palette(chosen);
 			}
 			if (!palette.consumed) poll_global(&keymap, &app);
 		}
@@ -3244,7 +3321,10 @@ fn int main(String[] args)
 				int index = project.pending_close;
 				if (chosen == 0 && index >= 0 && index < (int)project.cards.len())
 				{
-					(void)editor::unload_buffer(&project.cards[index], project.allocator);
+					if (editor::unload_buffer(&project.cards[index], project.allocator))
+					{
+						mods.dispatch_file_close(index);
+					}
 				}
 				project.pending_close = -1;
 			}
@@ -3293,6 +3373,7 @@ fn int main(String[] args)
 			{
 				if (chosen == 0 && app.pending_delete_card >= 0 && app.pending_delete_card < (int)project.cards.len())
 				{
+					mods.dispatch_file_close(app.pending_delete_card);
 					if (project.delete_card_file(app.pending_delete_card))
 					{
 						notifier.push("Deleted");
@@ -3382,6 +3463,14 @@ fn int main(String[] args)
 							if (app.context_card >= 0 && app.context_card < (int)project.cards.len())
 							{
 								project.cards[app.context_card].open = !project.cards[app.context_card].open;
+								if (project.cards[app.context_card].open)
+								{
+									mods.dispatch_file_open(app.context_card);
+								}
+								else
+								{
+									mods.dispatch_file_close(app.context_card);
+								}
 							}
 							break;
 						}
@@ -3514,6 +3603,12 @@ fn int main(String[] args)
 									)) notifier.push("No code action provider");
 								}
 							}
+							break;
+						}
+					case context::ContextAction.MOD_ITEM:
+
+						{
+							(void)app.mods.run_menu_item(app.context_items[chosen].index);
 							break;
 						}
 				}
@@ -4154,11 +4249,37 @@ fn int main(String[] args)
 						if (editor::save_buffer(&project.cards[i], project.allocator))
 						{
 							git_state.mark_dirty(rl::get_time());
+							mods.dispatch_file_save((int)i);
 						}
 					}
 				}
 			}
 			update_ms += (rl::get_time() - update_t0) * 1000.0;
+			if (project.focused != last_mod_focus)
+			{
+				last_mod_focus = project.focused;
+				if (project.focused >= 0 && project.focused < (int)project.cards.len())
+				{
+					FileCard* focused_card = &project.cards[project.focused];
+					last_mod_anchor = focused_card.selection_anchor;
+					last_mod_cursor = focused_card.cursor;
+					if (focused_card.open && focused_card.buffer)
+					{
+						mods.dispatch_file_open(project.focused);
+					}
+				}
+			}
+			else if (project.focused >= 0 && project.focused < (int)project.cards.len())
+			{
+				FileCard* focused_card = &project.cards[project.focused];
+				if (focused_card.buffer
+					&& (focused_card.selection_anchor != last_mod_anchor || focused_card.cursor != last_mod_cursor))
+				{
+					last_mod_anchor = focused_card.selection_anchor;
+					last_mod_cursor = focused_card.cursor;
+					mods.dispatch_selection(project.focused, last_mod_anchor, last_mod_cursor);
+				}
+			}
 			if (ui_mode == UiMode.EDIT && project.focused < 0)
 			{
 				ui_mode = UiMode.MOVE;
@@ -4473,6 +4594,7 @@ fn int main(String[] args)
 		}
 
 		notifier.update(dt);
+		mods.frame(dt);
 
 		rl::@drawing()
 		{
@@ -4516,6 +4638,7 @@ fn int main(String[] args)
 			{
 				minimap::draw(&project, &canvas);
 			}
+			mods.draw(mods::ModOverlay.BELOW);
 			draw_ms += (rl::get_time() - draw_t0) * 1000.0;
 			if (rl::get_time() < font_indicator_until)
 			{
@@ -4683,6 +4806,7 @@ fn int main(String[] args)
 			diff_view.draw(&canvas);
 			conflict_view.draw(&canvas);
 			notifier.draw();
+			mods.draw(mods::ModOverlay.ABOVE);
 			if (opening) draw_loading(open_job, font);
 			if (rl::is_key_down(rl::RLKeyboardKey.F3))
 			{

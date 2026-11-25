@@ -136,6 +136,9 @@ enum SettingId : int
 	GIT_CONFIRM_DISCARD,
 	GIT_DEFAULT_REMOTE,
 	LSP_ENABLED,
+	MODS_ENABLED,
+	MODS_ALLOW_RENDER,
+	MODS_ALLOW_INPUT,
 	COUNT,
 }
 
@@ -1171,6 +1174,30 @@ const SettingSpec[] SETTINGS = {
 		.kind = SettingKind.BOOL,
 		.fallback = { .b = true },
 	},
+	{
+		.section = "mods",
+		.key = "enabled",
+		.label = "Enable mods",
+		.description = "Load Lua mods from the global mods folder and the project .yun/mods folder.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
+		.section = "mods",
+		.key = "allow_render",
+		.label = "Allow rendering",
+		.description = "Let mods draw overlays with the yun.draw API. Community mods should stay off.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
+	},
+	{
+		.section = "mods",
+		.key = "allow_input",
+		.label = "Allow input",
+		.description = "Let mods read keyboard and mouse input for on_update and on_input hooks.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
+	},
 };
 
 struct Override
@@ -1225,6 +1252,7 @@ fn SettingPage page_for(SettingId id)
 	if (s.section.compare_to("console") == 0) return SettingPage.CONSOLE;
 	if (s.section.compare_to("git") == 0) return SettingPage.INTEGRATIONS;
 	if (s.section.compare_to("lsp") == 0) return SettingPage.INTEGRATIONS;
+	if (s.section.compare_to("mods") == 0) return SettingPage.ADVANCED;
 	if (s.section.compare_to("app") == 0)
 	{
 		if (s.key.compare_to("skip_submodules") == 0) return SettingPage.GENERAL;
@@ -1311,6 +1339,7 @@ fn String group_for(SettingId id)
 	}
 	if (s.section.compare_to("git") == 0) return "Git";
 	if (s.section.compare_to("lsp") == 0) return "Language servers";
+	if (s.section.compare_to("mods") == 0) return "Mods";
 	return "General";
 }
 
