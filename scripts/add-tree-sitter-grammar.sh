@@ -82,7 +82,7 @@ if [ -e "$LIB" ]; then
 fi
 
 echo "adding submodule $URL -> $UPSTREAM"
-git -C "$ROOT" submodule add "$URL" "lib/tree_sitter_$NAME.c3l/upstream"
+git -C "$ROOT" submodule add -f "$URL" "lib/tree_sitter_$NAME.c3l/upstream"
 if [ -n "$REV" ]; then
 	git -C "$UPSTREAM" checkout "$REV"
 	git -C "$ROOT" add "lib/tree_sitter_$NAME.c3l/upstream"
