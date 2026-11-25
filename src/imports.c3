@@ -107,6 +107,18 @@ fn ImportSettings settings()
 	return g_import_settings;
 }
 
+bool g_draw_on_top = false;
+
+fn bool draw_on_top()
+{
+	return g_draw_on_top;
+}
+
+fn void set_draw_on_top(bool enabled)
+{
+	g_draw_on_top = enabled;
+}
+
 fn void set_settings(ImportSettings value)
 {
 	if (value.line_thickness < 0.0f) value.line_thickness = 0.0f;
@@ -2792,10 +2804,11 @@ fn void ImportIndex.collect_group(&self, project::Project* project, ImportHit hi
 
 fn void draw_arrowhead(RLVector2 p1, RLVector2 c2, RLVector2 c3, RLVector2 p2, float zoom, RLColor color)
 {
-	RLVector2 before = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, 0.9f);
-	float dx         = p2[0] - before[0];
-	float dy         = p2[1] - before[1];
-	float len        = math::sqrt(dx * dx + dy * dy);
+	(void)c2;
+	(void)c3;
+	float dx  = p2[0] - p1[0];
+	float dy  = p2[1] - p1[1];
+	float len = math::sqrt(dx * dx + dy * dy);
 	if (len <= 0.0001f) return;
 	float ux        = dx / len;
 	float uy        = dy / len;
@@ -2823,6 +2836,66 @@ fn int dash_steps(RLVector2 p1, RLVector2 p2, float zoom)
 	float screen_len = math::sqrt(dx * dx + dy * dy) * zoom;
 	int steps        = (int)(screen_len / 5.0f);
 	return (int)math::clamp((float)steps, 16.0f, 64.0f);
+}
+
+fn void draw_styled_line(RLVector2 p1, RLVector2 p2, float thick, float zoom, ArrowStyle style, RLColor color)
+{
+	if (style == ArrowStyle.SOLID)
+	{
+		rl::draw_line_ex(p1, p2, thick, color);
+		return;
+	}
+	float dx  = p2[0] - p1[0];
+	float dy  = p2[1] - p1[1];
+	float len = math::sqrt(dx * dx + dy * dy);
+	if (len <= 0.0001f) return;
+	float dash = g_import_settings.dash_length / zoom;
+	float gap  = g_import_settings.dash_gap / zoom;
+	if (style == ArrowStyle.DOTTED)
+	{
+		dash = 1.0f / zoom;
+	}
+	else if (style == ArrowStyle.LONG_DASH)
+	{
+		dash = (g_import_settings.dash_length * 2.0f) / zoom;
+	}
+	float small     = 1.0f / zoom;
+	float pos       = 0.0f;
+	bool on         = true;
+	bool short_dash = false;
+	float segment   = dash;
+	while (pos < len)
+	{
+		float end = pos + segment;
+		if (end > len) end = len;
+		if (on)
+		{
+			rl::draw_line_ex(
+				{ p1[0] + dx * pos / len, p1[1] + dy * pos / len },
+				{ p1[0] + dx * end / len, p1[1] + dy * end / len },
+				thick,
+				color
+			);
+		}
+		pos = end;
+		if (on)
+		{
+			on = false;
+			segment = gap;
+		}
+		else if (style == ArrowStyle.DASH_DOT && !short_dash)
+		{
+			on = true;
+			short_dash = true;
+			segment = small;
+		}
+		else
+		{
+			on = true;
+			short_dash = false;
+			segment = dash;
+		}
+	}
 }
 
 fn void draw_styled_bezier(RLVector2 p1, RLVector2 p2, float thick, float zoom, ArrowStyle style, RLColor color)
@@ -2932,7 +3005,8 @@ fn bool edge_geometry(
 			source_rect.y - (18.0f + (float)edge.slot * 16.0f) * label_scale,
 		};
 		*out_p1 = rect_edge_point(source_rect, *out_p2);
-		bezier_controls(*out_p1, *out_p2, out_c2, out_c3);
+		*out_c2 = *out_p1;
+		*out_c3 = *out_p2;
 		return true;
 	}
 	if (edge.target_card < 0 || edge.target_card >= (int)project.cards.len()) return false;
@@ -2941,7 +3015,8 @@ fn bool edge_geometry(
 	RLVector2 target_pt = rect_center(target_rect);
 	*out_p1 = rect_edge_point(source_rect, target_pt);
 	*out_p2 = rect_edge_point(target_rect, source_pt);
-	bezier_controls(*out_p1, *out_p2, out_c2, out_c3);
+	*out_c2 = *out_p1;
+	*out_c3 = *out_p2;
 	return true;
 }
 
@@ -3012,7 +3087,7 @@ fn void draw_edge_count(
 	if (edge.count <= 1) return;
 	@pool()
 	{
-		RLVector2 mid = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, 0.5f);
+		RLVector2 mid = { (p1[0] + p2[0]) * 0.5f, (p1[1] + p2[1]) * 0.5f };
 		String label  = string::format(tmem, "x%d", (long)edge.count);
 		draw_label(
 			font,
@@ -3047,7 +3122,7 @@ fn void draw_edge(project::Project* project, ImportEdge* edge, RLCamera2D camera
 	{
 		RLColor color = hovered ? theme::current()
 			.import_solid_hover : (related ? theme::current().import_solid : theme::current().import_solid_dim);
-		draw_styled_bezier(p1, p2, thick, zoom, g_import_settings.internal_style, color);
+		draw_styled_line(p1, p2, thick, zoom, g_import_settings.internal_style, color);
 		draw_arrowhead(p1, c2, c3, p2, zoom, color);
 		draw_edge_count(font, edge, p1, c2, c3, p2, related ? theme::current()
 			.import_label : theme::current().import_label_dim);
@@ -3058,7 +3133,7 @@ fn void draw_edge(project::Project* project, ImportEdge* edge, RLCamera2D camera
 		.import_external_hover : (related ? theme::current().import_external : theme::current().import_external_dim);
 	RLColor label_color = hovered ? theme::current()
 		.import_external_hover : (related ? theme::current().import_label : theme::current().import_label_dim);
-	draw_styled_bezier(p1, p2, thick, zoom, g_import_settings.external_style, line_color);
+	draw_styled_line(p1, p2, thick, zoom, g_import_settings.external_style, line_color);
 	draw_arrowhead(p1, c2, c3, p2, zoom, line_color);
 	draw_edge_count(font, edge, p1, c2, c3, p2, label_color);
 	float s  = ui::scale();
@@ -3102,7 +3177,9 @@ fn bool ImportIndex.hit_test(&self, project::Project* project, RLCamera2D camera
 			RLVector2 c3;
 			RLVector2 p2;
 			if (!edge_geometry(project, edge, &p1, &c2, &c3, &p2)) continue;
-			float d = bezier_min_distance(world, p1, c2, c3, p2, BEZIER_HIT_STEPS);
+			(void)c2;
+			(void)c3;
+			float d = point_segment_distance(world, p1, p2);
 			if (d > best) continue;
 			best = d;
 			self.hover.valid = true;

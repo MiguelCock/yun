@@ -113,6 +113,7 @@ struct Project
 	int current_folder;
 	bool grabbing;
 	bool grab_accum_valid;
+	bool grab_moved;
 	RLVector2 grab_accum;
 	bool focus_toggle_requested;
 	int hover_card;
@@ -179,6 +180,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
 	self.grab_accum_valid = false;
+	self.grab_moved = false;
 	self.grab_accum = { 0.0f, 0.0f };
 	self.focus_toggle_requested = false;
 	self.drag_card = false;
@@ -274,6 +276,7 @@ fn void Project.reset(&self)
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
 	self.grab_accum_valid = false;
+	self.grab_moved = false;
 	self.grab_accum = { 0.0f, 0.0f };
 	self.focus_toggle_requested = false;
 	self.drag_card = false;
@@ -1851,6 +1854,7 @@ fn bool Project.leave_folder(&self)
 
 fn void Project.begin_grab(&self)
 {
+	self.grab_moved = false;
 	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
 	{
 		Rect bounds = self.cluster_bounds(self.selected_cluster);
@@ -1872,6 +1876,29 @@ fn void Project.apply_grab_delta(&self, RLVector2 delta, float step)
 {
 	if (!self.grab_accum_valid) self.begin_grab();
 	if (!self.grab_accum_valid) return;
+	if (!self.grab_moved && step > 0.0f)
+	{
+		if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+		{
+			Rect current = self.cluster_bounds(self.selected_cluster);
+			float sx     = canvas::snap_value(current.x, step);
+			float sy     = canvas::snap_value(current.y, step);
+			self.grab_accum = { sx, sy };
+			if (sx != current.x || sy != current.y) self.move_cluster(
+				self.selected_cluster,
+				{ sx - current.x, sy - current.y }
+			);
+		}
+		else if (self.selected >= 0 && self.selected < (int)self.cards.len())
+		{
+			FileCard* card = &self.cards[self.selected];
+			card.rect.x = canvas::snap_value(card.rect.x, step);
+			card.rect.y = canvas::snap_value(card.rect.y, step);
+			self.grab_accum = { card.rect.x, card.rect.y };
+			self.invalidate_bounds_for_card(self.selected);
+		}
+	}
+	if (delta[0] != 0.0f || delta[1] != 0.0f) self.grab_moved = true;
 	self.grab_accum[0] += delta[0];
 	self.grab_accum[1] += delta[1];
 	float target_x = step > 0.0f ? canvas::snap_value(self.grab_accum[0], step) : self.grab_accum[0];
@@ -1880,10 +1907,16 @@ fn void Project.apply_grab_delta(&self, RLVector2 delta, float step)
 	{
 		Rect current   = self.cluster_bounds(self.selected_cluster);
 		RLVector2 move = { target_x - current.x, target_y - current.y };
-		if (move[0] != 0.0f || move[1] != 0.0f) self.move_cluster(self.selected_cluster, move);
+		if (move[0] != 0.0f || move[1] != 0.0f)
+		{
+			self.move_cluster(self.selected_cluster, move);
+			self.grab_moved = true;
+		}
 	}
 	else if (self.selected >= 0 && self.selected < (int)self.cards.len())
 	{
+		if (target_x != self.cards[self.selected].rect.x
+			|| target_y != self.cards[self.selected].rect.y) self.grab_moved = true;
 		self.cards[self.selected].rect.x = target_x;
 		self.cards[self.selected].rect.y = target_y;
 		self.invalidate_bounds_for_card(self.selected);
@@ -2054,6 +2087,7 @@ fn bool Project.begin_focus(&self, int index, Canvas* canvas)
 	self.focus_card = at;
 
 	RLVector2 center = self.cards[at].center();
+	canvas.unfollow();
 	canvas.target.target = center;
 	canvas.target.zoom = 1.0f;
 	canvas.camera.target = center;

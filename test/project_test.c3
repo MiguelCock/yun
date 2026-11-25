@@ -1521,16 +1521,19 @@ fn void test_keyboard_grab_snapping()
 		p.selected = 0;
 		p.begin_grab();
 		assert(p.grab_accum[0] == 10.0f && p.grab_accum[1] == 20.0f);
+		assert(!p.grab_moved);
+		assert(p.cards[0].rect.x == 10.0f && p.cards[0].rect.y == 20.0f);
 
 		p.apply_grab_delta({ 10.0f, 10.0f }, 64.0f);
 		assert(p.cards[0].rect.x == 0.0f && p.cards[0].rect.y == 0.0f);
-		assert(p.grab_accum[0] == 20.0f && p.grab_accum[1] == 30.0f);
+		assert(p.grab_accum[0] == 10.0f && p.grab_accum[1] == 10.0f);
+		assert(p.grab_moved);
 
 		p.apply_grab_delta({ 40.0f, 40.0f }, 64.0f);
 		assert(p.cards[0].rect.x == 64.0f && p.cards[0].rect.y == 64.0f);
-		assert(p.grab_accum[0] == 60.0f && p.grab_accum[1] == 70.0f);
+		assert(p.grab_accum[0] == 50.0f && p.grab_accum[1] == 50.0f);
 
 		p.apply_grab_delta({ 1.0f, 1.0f }, 0.0f);
-		assert(p.cards[0].rect.x == 61.0f && p.cards[0].rect.y == 71.0f);
+		assert(p.cards[0].rect.x == 51.0f && p.cards[0].rect.y == 51.0f);
 	};
 }

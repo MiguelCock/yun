@@ -417,3 +417,32 @@ fn void test_fit_zoom_uses_all_insets()
 	if (expected_zoom > FIT_MAX_ZOOM) expected_zoom = FIT_MAX_ZOOM;
 	assert(math::is_approx(c.target.zoom, expected_zoom, 0.001f));
 }
+fn void test_zoom_at_uses_target_camera_anchor()
+{
+	Canvas c = { };
+	c.camera = {
+		.offset = { 500.0f, 400.0f },
+		.target = { 0.0f, 0.0f },
+		.rotation = 0.0f,
+		.zoom = 1.0f,
+	};
+	c.target = c.camera;
+	RLVector2 anchor = { 600.0f, 400.0f };
+	RLVector2 before = screen_to_world_camera(c.target, anchor);
+	c.zoom_at(1.0f, anchor);
+	RLVector2 after = screen_to_world_camera(c.target, anchor);
+	assert(math::is_approx(before[0], after[0], 0.001f));
+	assert(math::is_approx(before[1], after[1], 0.001f));
+	assert(!c.following);
+}
+
+fn void test_follow_center_and_unfollow()
+{
+	Canvas c = { };
+	c.target.target = { 0.0f, 0.0f };
+	c.follow({ 120.0f, 80.0f });
+	assert(c.following);
+	assert(c.target.target[0] == 120.0f && c.target.target[1] == 80.0f);
+	c.key_pan({ 10.0f, 0.0f });
+	assert(!c.following);
+}

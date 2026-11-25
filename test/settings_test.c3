@@ -400,6 +400,7 @@ fn void test_canvas_defaults()
 	assert(SETTINGS[(int)SettingId.CANVAS_PAN_SMOOTHING].fallback.f == 20.0);
 	assert(SETTINGS[(int)SettingId.CANVAS_ZOOM_SMOOTHING].fallback.f == 16.0);
 	assert(SETTINGS[(int)SettingId.CANVAS_SMOOTHING].fallback.b);
+	assert(SETTINGS[(int)SettingId.CANVAS_FOLLOW_SELECTION].fallback.b);
 	assert(SETTINGS[(int)SettingId.CANVAS_INERTIA_FRICTION].fallback.f == 0.9);
 	assert(SETTINGS[(int)SettingId.CANVAS_INERTIA_MIN_SPEED].fallback.f == 5.0);
 	assert(SETTINGS[(int)SettingId.CANVAS_DRAG_THRESHOLD].fallback.f == 4.0);

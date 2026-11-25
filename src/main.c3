@@ -352,6 +352,7 @@ fn void apply_settings(
 	cs.pan_responsiveness = (float)config.settings.get_float(settings::SettingId.CANVAS_PAN_SMOOTHING);
 	cs.zoom_responsiveness = (float)config.settings.get_float(settings::SettingId.CANVAS_ZOOM_SMOOTHING);
 	cs.smoothing = config.settings.get_bool(settings::SettingId.CANVAS_SMOOTHING);
+	cs.follow_selection = config.settings.get_bool(settings::SettingId.CANVAS_FOLLOW_SELECTION);
 	cs.inertia_friction = (float)config.settings.get_float(settings::SettingId.CANVAS_INERTIA_FRICTION);
 	cs.inertia_min_speed = (float)config.settings.get_float(settings::SettingId.CANVAS_INERTIA_MIN_SPEED);
 	cs.drag_threshold = (float)config.settings.get_float(settings::SettingId.CANVAS_DRAG_THRESHOLD);
@@ -868,6 +869,7 @@ const String[] VISUAL_STATE_NAMES = {
 	"topbar-bottom",
 	"topbar-left",
 	"topbar-right",
+	"topbar-labels",
 	"terminal",
 	"vim",
 	"notifications",
@@ -937,7 +939,7 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 		case 5:
 			app.problems.show();
 		case 6:
-			app.search.show();
+			app.search.show_replace();
 		case 7:
 			app.symbols.show(project);
 		case 8:
@@ -978,6 +980,10 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 			);
 			topbar::set_position(topbar::TopBarPosition.RIGHT);
 		case 14:
+			*app.ui_mode = UiMode.TOP_BAR;
+			app.bar.selected = 1;
+			app.bar.expand[1] = 1.0f;
+		case 15:
 			app.config.settings.set_bool(settings::SettingId.CONSOLE_PTY, true, settings::SettingLayer.GLOBAL);
 			set_console_settings(app.config);
 			app.console_manager.apply_settings(console::settings());
@@ -991,7 +997,7 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 					terminal_console.pty.write("printf 'Yun terminal ready\\n'\n");
 				}
 			}
-		case 15:
+		case 16:
 			app.config.settings.set_bool(settings::SettingId.EDITOR_VIM_MODE, true, settings::SettingLayer.GLOBAL);
 			for (sz i = 0; i < project.cards.len(); i++)
 			{
@@ -1005,7 +1011,7 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 			}
 			*app.ui_mode = UiMode.EDIT;
 			app.vim_command.show();
-		case 16:
+		case 17:
 			app.notifier.push("Visual regression check");
 	}
 }
@@ -1471,6 +1477,7 @@ fn void run_command(commands::CommandId id, App* app)
 				return;
 			}
 		case commands::CommandId.SEARCH_PROJECT:
+		case commands::CommandId.SEARCH_REPLACE_PROJECT:
 
 			{
 				if (!*app.project_open)
@@ -1479,7 +1486,14 @@ fn void run_command(commands::CommandId id, App* app)
 					return;
 				}
 				close_overlays(app);
-				app.search.show();
+				if (id == commands::CommandId.SEARCH_REPLACE_PROJECT)
+				{
+					app.search.show_replace();
+				}
+				else
+				{
+					app.search.show();
+				}
 				while (rl::get_char_pressed() != 0)
 				{
 				}
@@ -1703,8 +1717,15 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				else if (project.grabbing)
 				{
-					project.snap_selected_to_grid(app.canvas.camera.zoom);
+					if (project.grab_moved) project.snap_selected_to_grid(app.canvas.camera.zoom);
 					project.grabbing = false;
+					if (canvas::settings().follow_selection)
+					{
+						Rect item = project.selected_item_rect();
+						if (item.width > 0.0f) app.canvas.follow(
+							{ item.x + item.width / 2.0f, item.y + item.height / 2.0f }
+						);
+					}
 					*app.ui_mode = UiMode.TOP_BAR;
 					app.bar.clamp_selection(*app.project_open, has_focused_buffer(project));
 				}
@@ -1963,6 +1984,9 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.TOGGLE_ARROWS_OVERLAY:
+			imports::set_draw_on_top(!imports::draw_on_top());
+			return;
 		case commands::CommandId.QUIT:
 
 			{
@@ -2932,6 +2956,8 @@ fn int main(String[] args)
 	int last_mod_focus             = -1;
 	usz last_mod_anchor            =  0;
 	usz last_mod_cursor            =  0;
+	int last_follow_selection      = -2;
+	int last_follow_cluster        = -2;
 
 	int frame_count    = 0;
 	double prof_update = 0.0;
@@ -3622,11 +3648,62 @@ fn int main(String[] args)
 		}
 		else if (search.open)
 		{
-			search::SearchTarget target = search.update(&keymap, &project, rl::get_time());
+			double search_now           = rl::get_time();
+			search::SearchTarget target = search.update(&keymap, &project, search_now);
 			if (target.valid)
 			{
 				search.close();
 				navigate_to_location(&project, &canvas, metrics, target.path, (uint)target.line, (uint)target.column);
+			}
+			if (search.pending_replace || search.pending_replace_all)
+			{
+				bool replace_all = search.pending_replace_all;
+				search.pending_replace = false;
+				search.pending_replace_all = false;
+				String error = "";
+				int replaced = 0;
+				if (replace_all)
+				{
+					int files = 0;
+					replaced = search.replace_all_matches(&project, search_now, &error, &files);
+					if (replaced > 0)
+					{
+						@pool()
+						{
+							String message = string::format(
+								tmem,
+								"Replaced %d occurrence%s in %d file%s",
+								(long)replaced,
+								replaced == 1 ? "" : "s",
+								(long)files,
+								files == 1 ? "" : "s"
+							);
+							notifier.push(message);
+						};
+					}
+					else if (error.len == 0)
+					{
+						notifier.push("No matches replaced");
+					}
+				}
+				else
+				{
+					if (search.replace_current(&project, search_now, &error))
+					{
+						notifier.push("Replaced match");
+						replaced = 1;
+					}
+					else if (error.len == 0)
+					{
+						notifier.push("No match replaced");
+					}
+				}
+				if (error.len > 0) notifier.push(error);
+				if (replaced > 0)
+				{
+					import_index.start_scan(&project);
+					symbols.start_scan(&project);
+				}
 			}
 			if (!search.consumed) poll_global(&keymap, &app);
 		}
@@ -3926,8 +4003,15 @@ fn int main(String[] args)
 						rl::RLKeyboardKey.ESCAPE
 					) || rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
 					{
-						project.snap_selected_to_grid(canvas.camera.zoom);
+						if (project.grab_moved) project.snap_selected_to_grid(canvas.camera.zoom);
 						project.grabbing = false;
+						if (canvas::settings().follow_selection)
+						{
+							Rect item = project.selected_item_rect();
+							if (item.width > 0.0f) canvas.follow(
+								{ item.x + item.width / 2.0f, item.y + item.height / 2.0f }
+							);
+						}
 					}
 					else
 					{
@@ -3992,38 +4076,49 @@ fn int main(String[] args)
 						Rect item = project.selected_item_rect();
 						if (item.width > 0.0f && item.height > 0.0f)
 						{
-							RLVector2 a = rl::get_world_to_screen2d({ item.x, item.y }, canvas.camera);
-							RLVector2 b = rl::get_world_to_screen2d(
-								{ item.x + item.width, item.y + item.height },
-								canvas.camera
-							);
-							Rect screen_item = {
-								.x = math::min(a[0], b[0]),
-								.y = math::min(a[1], b[1]),
-								.width = math::abs(b[0] - a[0]),
-								.height = math::abs(b[1] - a[1]),
-							};
-							float screen_w = (float)rl::get_screen_width();
-							float screen_h = (float)rl::get_screen_height();
-							float usable_w = screen_w - canvas.left_inset - canvas.right_inset;
-							float usable_h = screen_h - canvas.top_inset - canvas.bottom_inset;
-							float margin_x = math::max(
-								canvas::GRAB_FOLLOW_MIN_X,
-								usable_w * canvas::GRAB_FOLLOW_MARGIN_X
-							);
-							float margin_y = math::max(
-								canvas::GRAB_FOLLOW_MIN_Y,
-								usable_h * canvas::GRAB_FOLLOW_MARGIN_Y
-							);
-							Rect safe = {
-								.x = canvas.left_inset + margin_x,
-								.y = canvas.top_inset + margin_y,
-								.width = usable_w - margin_x * 2.0f,
-								.height = usable_h - margin_y * 2.0f,
-							};
-							RLVector2 follow = canvas::keep_item_in_view_delta(screen_item, safe, canvas.camera.zoom);
-							canvas.target.target[0] += follow[0];
-							canvas.target.target[1] += follow[1];
+							if (canvas::settings().follow_selection)
+							{
+								canvas.follow({ item.x + item.width / 2.0f, item.y + item.height / 2.0f });
+							}
+							else
+							{
+								RLVector2 a = rl::get_world_to_screen2d({ item.x, item.y }, canvas.camera);
+								RLVector2 b = rl::get_world_to_screen2d(
+									{ item.x + item.width, item.y + item.height },
+									canvas.camera
+								);
+								Rect screen_item = {
+									.x = math::min(a[0], b[0]),
+									.y = math::min(a[1], b[1]),
+									.width = math::abs(b[0] - a[0]),
+									.height = math::abs(b[1] - a[1]),
+								};
+								float screen_w = (float)rl::get_screen_width();
+								float screen_h = (float)rl::get_screen_height();
+								float usable_w = screen_w - canvas.left_inset - canvas.right_inset;
+								float usable_h = screen_h - canvas.top_inset - canvas.bottom_inset;
+								float margin_x = math::max(
+									canvas::GRAB_FOLLOW_MIN_X,
+									usable_w * canvas::GRAB_FOLLOW_MARGIN_X
+								);
+								float margin_y = math::max(
+									canvas::GRAB_FOLLOW_MIN_Y,
+									usable_h * canvas::GRAB_FOLLOW_MARGIN_Y
+								);
+								Rect safe = {
+									.x = canvas.left_inset + margin_x,
+									.y = canvas.top_inset + margin_y,
+									.width = usable_w - margin_x * 2.0f,
+									.height = usable_h - margin_y * 2.0f,
+								};
+								RLVector2 follow = canvas::keep_item_in_view_delta(
+									screen_item,
+									safe,
+									canvas.camera.zoom
+								);
+								canvas.target.target[0] += follow[0];
+								canvas.target.target[1] += follow[1];
+							}
 						}
 					}
 					while (rl::get_char_pressed() != 0)
@@ -4083,11 +4178,21 @@ fn int main(String[] args)
 					bool selection_changed = project.selected != before || project.selected_cluster != before_cluster;
 					if (selection_changed)
 					{
-						Rect r    = project.selected_item_rect();
-						Rect view = project::visible_world_rect(canvas.camera);
-						if (r.width > 0.0f && !project::rect_intersects(r, view))
+						Rect r = project.selected_item_rect();
+						if (r.width > 0.0f)
 						{
-							canvas.target.target = { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+							if (canvas::settings().follow_selection)
+							{
+								canvas.follow({ r.x + r.width / 2.0f, r.y + r.height / 2.0f });
+							}
+							else
+							{
+								Rect view = project::visible_world_rect(canvas.camera);
+								if (!project::rect_intersects(
+									r,
+									view
+								)) canvas.target.target = { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+							}
 						}
 					}
 
@@ -4224,6 +4329,20 @@ fn int main(String[] args)
 				|| vim_cmd.open;
 			double update_t0         = rl::get_time();
 			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
+			if (canvas::settings()
+				.follow_selection && ui_mode
+					== UiMode.MOVE && project.focus_card < 0 && !project.grabbing && (project.selected
+						!= last_follow_selection
+						|| project.selected_cluster != last_follow_cluster))
+			{
+				Rect item = project.selected_item_rect();
+				if (item.width > 0.0f && item.height > 0.0f)
+				{
+					canvas.follow({ item.x + item.width / 2.0f, item.y + item.height / 2.0f });
+				}
+			}
+			last_follow_selection = project.selected;
+			last_follow_cluster = project.selected_cluster;
 			if (project.focus_toggle_requested)
 			{
 				project.focus_toggle_requested = false;
@@ -4631,8 +4750,9 @@ fn int main(String[] args)
 				else
 				{
 					project.draw_folders(canvas.camera);
-					import_index.draw(&project, canvas.camera, font);
+					if (!imports::draw_on_top()) import_index.draw(&project, canvas.camera, font);
 					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, -1, git_status);
+					if (imports::draw_on_top()) import_index.draw(&project, canvas.camera, font);
 				}
 			};
 			if (focus_active)
