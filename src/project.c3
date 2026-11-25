@@ -25,6 +25,7 @@ import yun::spatial;
 import yun::text;
 import yun::theme;
 import yun::ui;
+import yun::vim;
 
 const int ROOT_FOLDER               = -1;
 const double POLL_SECONDS           =  1.0;
@@ -163,6 +164,7 @@ struct Project
 	Rect content_bounds_cache;
 	int hover_cluster;
 	EditorMetrics card_metrics;
+	vim::State vim_state;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -211,6 +213,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.content_bounds_valid = false;
 	self.hover_cluster = -1;
 	self.card_metrics = editor::default_metrics();
+	self.vim_state.init(allocator);
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
 	{
@@ -248,6 +251,7 @@ fn void Project.destroy_folders(&self)
 
 fn void Project.destroy(&self)
 {
+	self.vim_state.destroy();
 	self.destroy_cards();
 	self.destroy_folders();
 	self.cards.free();
@@ -277,6 +281,7 @@ fn void Project.reset(&self)
 	self.drag_cluster_title = false;
 	self.cluster_moved = false;
 	self.selecting = false;
+	self.vim_state.reset();
 	self.grid_dirty = true;
 	self.content_bounds_valid = false;
 	self.clear_jump();
@@ -2996,6 +3001,7 @@ fn void Project.editor_move_select(&self, EditorMove move, EditorMetrics metrics
 fn void Project.editor_exit(&self)
 {
 	self.focused = -1;
+	self.vim_state.reset();
 }
 
 fn bool Project.completion_accept_cmd(&self, EditorMetrics metrics)
@@ -3071,6 +3077,61 @@ fn bool shift_down()
 	return rl::is_key_down(rl::RLKeyboardKey.LEFT_SHIFT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_SHIFT);
 }
 
+fn void Project.handle_vim_keyboard(&self, FileCard* card, EditorMetrics metrics, bool* out_changed)
+{
+	bool changed = false;
+	bool handled = false;
+	double now   = rl::get_time();
+	if (completion::completion_is_open()) completion::completion_close();
+	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	{
+		(void)self.vim_state.handle(card.buffer, card.history, &card.cursor, &card.selection_anchor, 27, now);
+		handled = true;
+	}
+	else if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.R))
+	{
+		if (self.vim_state.handle(card.buffer, card.history, &card.cursor, &card.selection_anchor, 18, now))
+		{
+			changed = true;
+		}
+		handled = true;
+	}
+	else
+	{
+		int codepoint = rl::get_char_pressed();
+		while (codepoint != 0)
+		{
+			if (codepoint >= 32 && codepoint <= 126)
+			{
+				handled = true;
+				if (self.vim_state.handle(
+					card.buffer,
+					card.history,
+					&card.cursor,
+					&card.selection_anchor,
+					codepoint,
+					now
+				))
+				{
+					changed = true;
+				}
+				if (self.vim_state.mode == vim::Mode.INSERT) break;
+			}
+			codepoint = rl::get_char_pressed();
+		}
+	}
+
+	if (changed)
+	{
+		self.finish_edit(metrics);
+		if (out_changed) *out_changed = true;
+	}
+	else if (handled)
+	{
+		self.reveal_focused(metrics);
+	}
+}
+
 fn void Project.handle_keyboard(
 	&self,
 	keymap::Keymap* keymap,
@@ -3118,6 +3179,24 @@ fn void Project.handle_keyboard(
 		) || rl::is_key_pressed(rl::RLKeyboardKey.TAB) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.TAB))
 		{
 			if (self.completion_accept_cmd(metrics) && out_changed) *out_changed = true;
+			return;
+		}
+	}
+
+	if (editor::settings().vim_mode)
+	{
+		if (self.vim_state.mode == vim::Mode.INSERT)
+		{
+			if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+			{
+				(void)self.vim_state.handle(card.buffer, card.history, &card.cursor, &card.selection_anchor, 27, now);
+				self.reveal_focused(metrics);
+				return;
+			}
+		}
+		else
+		{
+			self.handle_vim_keyboard(card, metrics, out_changed);
 			return;
 		}
 	}

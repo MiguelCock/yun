@@ -64,6 +64,7 @@ expected=(
 	topbar-bottom
 	topbar-left
 	topbar-right
+	vim
 	notifications
 )
 
