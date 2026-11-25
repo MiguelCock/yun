@@ -129,6 +129,7 @@ enum SettingId : int
 	CONSOLE_NOTIFY,
 	CONSOLE_PERSIST_HISTORY,
 	CONSOLE_RESTORE_SESSIONS,
+	CONSOLE_PTY,
 	GIT_BINARY,
 	GIT_AUTO_REFRESH,
 	GIT_DEBOUNCE_MS,
@@ -1110,6 +1111,14 @@ const SettingSpec[] SETTINGS = {
 		.description = "Restore console session tabs on project open.",
 		.kind = SettingKind.BOOL,
 		.fallback = { .b = true },
+	},
+	{
+		.section = "console",
+		.key = "pty",
+		.label = "Interactive terminal",
+		.description = "Use a persistent PTY shell instead of one-shot command runs.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
 	},
 	{
 		.section = "git",

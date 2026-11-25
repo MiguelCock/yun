@@ -867,10 +867,271 @@ fn void ConsolePanel.find_next(&self, Console* console, EditorMetrics metrics, i
 	self.pinned = false;
 }
 
+fn Rect ConsolePanel.terminal_rect(&self)
+{
+	Rect panel   = self.rect();
+	float header = ui::pxf(HEADER_HEIGHT);
+	return {
+		.x = panel.x + 1.0f,
+		.y = panel.y + header,
+		.width = panel.width - 2.0f,
+		.height = panel.height - header - 1.0f,
+	};
+}
+
+fn int terminal_cols(Rect area, EditorMetrics metrics)
+{
+	if (metrics.char_width <= 0.0f) return 80;
+	int cols = (int)(area.width / metrics.char_width);
+	return cols > 0 ? cols : 1;
+}
+
+fn int terminal_rows(Rect area, EditorMetrics metrics)
+{
+	if (metrics.line_height <= 0.0f) return 24;
+	int rows = (int)(area.height / metrics.line_height);
+	return rows > 0 ? rows : 1;
+}
+
+fn int terminal_encode(int codepoint, char[] buffer)
+{
+	if (codepoint < 0x80)
+	{
+		buffer[0] = (char)codepoint;
+		return 1;
+	}
+	if (codepoint < 0x800)
+	{
+		buffer[0] = (char)(0xC0 | (codepoint >> 6));
+		buffer[1] = (char)(0x80 | (codepoint & 0x3F));
+		return 2;
+	}
+	if (codepoint < 0x10000)
+	{
+		buffer[0] = (char)(0xE0 | (codepoint >> 12));
+		buffer[1] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+		buffer[2] = (char)(0x80 | (codepoint & 0x3F));
+		return 3;
+	}
+	buffer[0] = (char)(0xF0 | (codepoint >> 18));
+	buffer[1] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
+	buffer[2] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+	buffer[3] = (char)(0x80 | (codepoint & 0x3F));
+	return 4;
+}
+
+fn bool ConsolePanel.update_terminal_input(&self, Console* console, keymap::Keymap* keymap, EditorMetrics metrics)
+{
+	Rect area = self.terminal_rect();
+	int cols  = terminal_cols(area, metrics);
+	int rows  = terminal_rows(area, metrics);
+	if (!console.pty.running)
+	{
+		if (!console.start_terminal(cols, rows))
+		{
+			console.buffer.append_stderr(console.pty.error);
+			console.buffer.append_stderr("\n");
+			console.buffer.flush();
+			return false;
+		}
+	}
+	console.resize_terminal(cols, rows);
+
+	bool ctrl  = ctrl_down();
+	bool super = super_down();
+	if (ctrl && rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	{
+		self.exit_requested = true;
+		drain_chars();
+		return true;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	{
+		console.pty.write("\x1b");
+		drain_chars();
+		return false;
+	}
+	if (ctrl && shift_down() && keymap.pressed((int)commands::CommandId.CONSOLE_COPY, commands::CTX_CONSOLE))
+	{
+		@pool()
+		{
+			String text = console.terminal.copy_text(tmem);
+			rl::set_clipboard_text(text.zstr_tcopy());
+		};
+		drain_chars();
+		return false;
+	}
+	if (ctrl && rl::is_key_pressed(rl::RLKeyboardKey.C))
+	{
+		console.pty.write("\x03");
+		drain_chars();
+		return false;
+	}
+	if (keymap.pressed((int)commands::CommandId.CONSOLE_PASTE, commands::CTX_CONSOLE))
+	{
+		String clip = rl::get_clipboard_text().str_view();
+		if (clip.len > 0) console.pty.write(clip);
+		drain_chars();
+		return false;
+	}
+	if (ctrl)
+	{
+		for (int i = 0; i < 26; i++)
+		{
+			if (i == 2 || i == 21) continue;
+			if (!rl::is_key_pressed((rl::RLKeyboardKey)(65 + i))) continue;
+			char[1] code = { (char)(i + 1) };
+			console.pty.write((String)code[0:1]);
+		}
+	}
+
+	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
+	{
+		console.pty.write("\r");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))
+	{
+		console.pty.write("\x7f");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.TAB) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.TAB))
+	{
+		console.pty.write(shift_down() ? "\x1b[Z" : "\t");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.DELETE))
+	{
+		console.pty.write("\x1b[3~");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP))
+	{
+		console.pty.write("\x1b[A");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN))
+	{
+		console.pty.write("\x1b[B");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT))
+	{
+		console.pty.write("\x1b[C");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT))
+	{
+		console.pty.write("\x1b[D");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.HOME))
+	{
+		console.pty.write("\x1b[H");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.END))
+	{
+		console.pty.write("\x1b[F");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP))
+	{
+		console.pty.write("\x1b[5~");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN))
+	{
+		console.pty.write("\x1b[6~");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.INSERT))
+	{
+		console.pty.write("\x1b[2~");
+	}
+
+	if (!ctrl && !super)
+	{
+		char[256] text;
+		int len       = 0;
+		int codepoint = rl::get_char_pressed();
+		while (codepoint != 0)
+		{
+			char[4] encoded;
+			int count = terminal_encode(codepoint, encoded[0:4]);
+			if (len + count <= (int)text.len)
+			{
+				for (int i = 0; i < count; i++) text[len + i] = encoded[i];
+				len += count;
+			}
+			codepoint = rl::get_char_pressed();
+		}
+		if (len > 0) console.pty.write((String)text[0:(usz)len]);
+	}
+	else
+	{
+		drain_chars();
+	}
+	return false;
+}
+
+fn bool same_color(RLColor a, RLColor b)
+{
+	return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+fn void ConsolePanel.draw_terminal(&self, Console* console, RLFont font, RLFont editor_font, EditorMetrics metrics)
+{
+	(void)font;
+	Rect area = self.terminal_rect();
+	int cols  = terminal_cols(area, metrics);
+	int rows  = terminal_rows(area, metrics);
+	console.resize_terminal(cols, rows);
+	console.terminal.resize(cols, rows);
+	float char_w = metrics.char_width > 0.0f ? metrics.char_width : 8.0f;
+	float line_h = metrics.line_height > 0.0f ? metrics.line_height : 16.0f;
+	float text_y = (line_h - metrics.font_size) * 0.5f;
+	rl::draw_rectangle_rec(area, console.terminal.default_bg);
+	rl::begin_scissor_mode((int)area.x, (int)area.y, (int)area.width, (int)area.height);
+	for (int y = 0; y < console.terminal.rows; y++)
+	{
+		for (int x = 0; x < console.terminal.cols; x++)
+		{
+			TermCell* cell = console.terminal.cell_at(x, y);
+			if (!cell) continue;
+			float px   = area.x + (float)x * char_w;
+			float py   = area.y + (float)y * line_h;
+			RLColor fg = cell.fg;
+			RLColor bg = cell.bg;
+			if ((cell.attrs & TERM_INVERSE) != 0)
+			{
+				RLColor tmp = fg;
+				fg = bg;
+				bg = tmp;
+			}
+			if (!same_color(bg, console.terminal.default_bg))
+			{
+				rl::draw_rectangle_rec({ .x = px, .y = py, .width = char_w, .height = line_h }, bg);
+			}
+			if (cell.len > 0)
+			{
+				rl::draw_text_ex(editor_font, (ZString)&cell.text[0], { px, py + text_y }, metrics.font_size, 0.0f, fg);
+			}
+		}
+	}
+	if (console.terminal.cursor_visible && self.focused)
+	{
+		RLColor caret = theme::current().editor_caret;
+		caret.a = 110;
+		rl::draw_rectangle_rec(
+			{
+				.x = area.x + (float)console.terminal.cursor_x * char_w,
+				.y = area.y + (float)console.terminal.cursor_y * line_h,
+				.width = char_w,
+				.height = line_h,
+			},
+			caret
+		);
+	}
+	rl::end_scissor_mode();
+}
+
 fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keymap, EditorMetrics metrics)
 {
 	if (!self.visible) return false;
 	self.exit_requested = false;
+	if (console.pty_enabled && console.terminal_active)
+	{
+		return self.update_terminal_input(console, keymap, metrics);
+	}
 	bool ctrl  = ctrl_down();
 	bool super = super_down();
 
@@ -1615,6 +1876,11 @@ fn void ConsolePanel.draw(
 		};
 	}
 
+	if (console.pty_enabled && console.terminal_active)
+	{
+		self.draw_terminal(console, font, editor_font, metrics);
+		return;
+	}
 	if (self.find_open) self.find_refresh(console);
 	int scroll        = self.scroll_for(console, metrics);
 	int visible       = self.visible_rows(metrics);
