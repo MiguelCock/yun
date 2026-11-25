@@ -13,9 +13,16 @@ float g_font_scale         =  1.0f;
 float g_ui_scale           =  1.0f;
 float g_corner_radius      =  6.0f;
 String g_tooltip           =  "";
+String g_tooltip_shortcut  =  "";
 RLVector2 g_tooltip_anchor =  { 0.0f, 0.0f };
+bool g_tooltip_active      =  false;
+int g_tooltip_last_frame   = -10;
+int g_frame_count          =  0;
+double g_tooltip_since     =  0.0;
 RLMouseCursor g_cursor     =  RLMouseCursor.DEFAULT;
 int g_cursor_priority      = -1;
+
+const double TOOLTIP_DELAY_SECONDS = 0.35;
 
 fn void set_font(RLFont font, int size)
 {
@@ -219,7 +226,8 @@ fn void reset_cursor()
 {
 	g_cursor = RLMouseCursor.DEFAULT;
 	g_cursor_priority = -1;
-	g_tooltip = "";
+	g_tooltip_active = false;
+	g_frame_count++;
 }
 
 fn void request_cursor(RLMouseCursor cursor, int priority)
@@ -241,39 +249,84 @@ fn RLMouseCursor cursor_requested()
 	return g_cursor;
 }
 
-fn void tooltip(String text)
+fn void tooltip_shortcut(String text, String shortcut)
 {
 	if (text.len == 0) return;
+	bool changed = !g_tooltip_active || g_tooltip.compare_to(text) != 0 || g_tooltip_shortcut.compare_to(shortcut) != 0;
+	if (changed) g_tooltip_since = rl::get_time();
 	g_tooltip = text;
+	g_tooltip_shortcut = shortcut;
 	g_tooltip_anchor = rl::get_mouse_position();
+	g_tooltip_active = true;
+}
+
+fn void tooltip(String text)
+{
+	tooltip_shortcut(text, "");
+}
+
+fn bool tooltip_ready(double since, double now)
+{
+	return now - since >= TOOLTIP_DELAY_SECONDS;
+}
+
+fn Rect clamp_tooltip(Rect tip, RLVector2 anchor, float screen_w, float screen_h)
+{
+	float margin = pxf(4.0f);
+	if (tip.x + tip.width > screen_w - margin) tip.x = screen_w - tip.width - margin;
+	if (tip.y + tip.height > screen_h - margin) tip.y = anchor[1] - tip.height - pxf(8.0f);
+	if (tip.x < margin) tip.x = margin;
+	if (tip.y < margin) tip.y = margin;
+	return tip;
 }
 
 fn void draw_tooltip(RLFont font)
 {
-	if (g_tooltip.len == 0) return;
-	float size   = (float)tpx(13);
-	float pad    = pxf(8.0f);
-	float width  = rl::measure_text_ex(font, (ZString)g_tooltip.ptr, size, 0.0f)[0] + pad * 2.0f;
-	float height = size + pxf(8.0f);
+	if (!g_tooltip_active) return;
+	if (!tooltip_ready(g_tooltip_since, rl::get_time())) return;
+	float size       = (float)tpx(13);
+	float pad        = pxf(8.0f);
+	float gap        = pxf(8.0f);
+	float chip_size  = (float)tpx(11);
+	float chip_pad   = pxf(5.0f);
+	float text_width = rl::measure_text_ex(font, (ZString)g_tooltip.ptr, size, 0.0f)[0];
+	float chip_width = g_tooltip_shortcut.len > 0 ? rl::measure_text_ex(
+		font,
+		(ZString)g_tooltip_shortcut.ptr,
+		chip_size,
+		0.0f
+	)[0] + chip_pad * 2.0f
+		: 0.0f;
+	float width      = pad * 2.0f + text_width + (chip_width > 0.0f ? gap + chip_width : 0.0f);
+	float height     = size + pxf(8.0f);
 	Rect tip = {
 		.x = g_tooltip_anchor[0] + pxf(14.0f),
 		.y = g_tooltip_anchor[1] + pxf(20.0f),
 		.width = width,
 		.height = height,
 	};
-	if (tip.x + tip.width > (float)rl::get_screen_width() - pxf(4.0f))
-	{
-		tip.x = (float)rl::get_screen_width() - tip.width - pxf(4.0f);
-	}
-	if (tip.y + tip.height > (float)rl::get_screen_height() - pxf(4.0f))
-	{
-		tip.y = g_tooltip_anchor[1] - tip.height - pxf(8.0f);
-	}
-	if (tip.x < pxf(4.0f)) tip.x = pxf(4.0f);
-	if (tip.y < pxf(4.0f)) tip.y = pxf(4.0f);
+	tip = clamp_tooltip(tip, g_tooltip_anchor, (float)rl::get_screen_width(), (float)rl::get_screen_height());
 	panel(tip, theme::current().panel_bg_alt, theme::current().panel_border);
 	rl::draw_text_ex(font, (ZString)g_tooltip.ptr, { tip.x + pad, tip.y + pxf(4.0f) }, size, 0.0f, theme::current()
 		.panel_text);
+	if (chip_width > 0.0f)
+	{
+		Rect chip = {
+			.x = tip.x + pad + text_width + gap,
+			.y = tip.y + pxf(4.0f),
+			.width = chip_width,
+			.height = height - pxf(8.0f),
+		};
+		rounded_rect(chip, row_radius(), theme::current().panel_selected);
+		rl::draw_text_ex(
+			font,
+			(ZString)g_tooltip_shortcut.ptr,
+			{ chip.x + chip_pad, chip.y + (chip.height - chip_size) / 2.0f },
+			chip_size,
+			0.0f,
+			theme::current()
+			.panel_text);
+	}
 }
 
 fn void rounded_top(Rect r, float radius, RLColor color)

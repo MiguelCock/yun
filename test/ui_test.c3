@@ -123,6 +123,23 @@ fn void test_control_colors()
 	assert(control_text(ControlState.DISABLED, normal, disabled)[0] == 13);
 }
 
+fn void test_tooltip_ready_and_clamp()
+{
+	set_ui_scale(1.0f);
+	set_dpi(1.0f, 1.0f);
+	assert(!tooltip_ready(0.0, 0.34));
+	assert(tooltip_ready(0.0, 0.35));
+
+	Rect tip     = { .x = 900.0f, .y = 790.0f, .width = 150.0f, .height = 30.0f };
+	Rect clamped = clamp_tooltip(tip, { 950.0f, 720.0f }, 1000.0f, 800.0f);
+	assert(clamped.x == 846.0f);
+	assert(clamped.y == 682.0f);
+
+	Rect small    = { .x = -20.0f, .y = -10.0f, .width = 40.0f, .height = 20.0f };
+	Rect top_left = clamp_tooltip(small, { 0.0f, 0.0f }, 1000.0f, 800.0f);
+	assert(top_left.x == 4.0f && top_left.y == 4.0f);
+}
+
 fn void test_cursor_priority()
 {
 	reset_cursor();

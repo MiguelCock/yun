@@ -2559,17 +2559,26 @@ fn void Project.update(
 			if (card.maximize_marker_hit(world))
 			{
 				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
-				ui::tooltip(self.focus_card >= 0 ? "Exit focus mode" : "Focus card");
+				ui::tooltip_shortcut(
+					self.focus_card >= 0 ? "Exit focus mode" : "Focus card",
+					commands::command_def(commands::CommandId.TOGGLE_FOCUS_MODE)
+					.shortcut);
 			}
 			else if (card.preview_marker_hit(world) && markdown::is_markdown_path((String)card.path))
 			{
 				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
-				ui::tooltip("Toggle Markdown preview");
+				ui::tooltip_shortcut(
+					"Toggle Markdown preview",
+					commands::command_def(commands::CommandId.TOGGLE_PREVIEW)
+					.shortcut);
 			}
 			else if (self.focus_card < 0 && card.minimize_marker_hit(world))
 			{
 				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
-				ui::tooltip(card.open ? "Collapse card" : "Expand card");
+				ui::tooltip_shortcut(
+					card.open ? "Collapse card" : "Expand card",
+					commands::command_def(commands::CommandId.MINIMIZE_CARD)
+					.shortcut);
 			}
 		}
 	}
