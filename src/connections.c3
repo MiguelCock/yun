@@ -316,7 +316,7 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 	float scale = ui::scale();
 	float text  = ui::text_scale();
 	Rect panel  = self.panel_rect();
-	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
+	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	float icon_px = icons::icon_size(18);
 	icons::draw(
@@ -338,16 +338,20 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 	};
 
 	float list_y = panel.y + HEADER_HEIGHT * scale;
+	ui::separator_h({ .x = panel.x + 2.0f, .y = list_y - 1.0f, .width = panel.width - 4.0f, .height = 1.0f });
 	if (self.rows.len() == 0)
 	{
-		draw_text(
+		ui::empty_state(
 			font,
+			{
+				.x = panel.x + 2.0f,
+				.y = list_y,
+				.width = panel.width - 4.0f,
+				.height = panel.height - HEADER_HEIGHT * scale
+			},
 			"No connections",
-			panel.x + (float)ui::px(12),
-			list_y + (float)ui::px(6),
-			16.0f * text,
-			theme::current()
-			.panel_dim);
+			"Open imports from a card or hover an arrow"
+		);
 		return;
 	}
 

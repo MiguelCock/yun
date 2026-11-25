@@ -727,6 +727,7 @@ fn int Symbols.visible_rows(&self)
 	float s      = ui::scale();
 	Rect panel   = self.panel_rect();
 	float list_y = panel.y + 62.0f * s;
+	ui::separator_h({ .x = panel.x + 2.0f, .y = list_y - 1.0f, .width = panel.width - 4.0f, .height = 1.0f });
 	float list_h = panel.y + panel.height - list_y - 10.0f * s;
 	int visible  = (int)(list_h / (22.0f * s));
 	if (visible < 1) visible = 1;
@@ -855,7 +856,7 @@ fn void Symbols.draw(&self, RLFont font)
 	float s    = ui::scale();
 	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
-	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
+	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	float pad     = 10.0f * s;
 	float field_h = 30.0f * s;
@@ -957,6 +958,15 @@ fn void Symbols.draw(&self, RLFont font)
 		};
 	}
 	rl::end_scissor_mode();
+	if (query.len > 0 && self.matches.len() == 0)
+	{
+		ui::empty_state(
+			font,
+			{ .x = panel.x + 2.0f, .y = list_y, .width = panel.width - 4.0f, .height = list_h },
+			"No symbols",
+			"Try a different name"
+		);
+	}
 	int visible_rows = self.visible_rows();
 	if ((int)self.matches.len() > visible_rows)
 	{

@@ -862,7 +862,7 @@ fn void Search.draw(&self, RLFont font)
 	float s    = ui::scale();
 	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
-	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
+	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	float pad     = 10.0f * s;
 	float field_h = 30.0f * s;
@@ -920,6 +920,7 @@ fn void Search.draw(&self, RLFont font)
 	};
 
 	float list_y = self.list_y();
+	ui::separator_h({ .x = panel.x + 2.0f, .y = list_y - 1.0f, .width = panel.width - 4.0f, .height = 1.0f });
 	float list_h = panel.y + panel.height - list_y - pad;
 	if (list_h < 0.0f) list_h = 0.0f;
 	float row_h     = 20.0f * s;
@@ -1002,6 +1003,15 @@ fn void Search.draw(&self, RLFont font)
 		}
 	}
 	rl::end_scissor_mode();
+	if (query.len > 0 && self.total_matches == 0 && !self.scanning)
+	{
+		ui::empty_state(
+			font,
+			{ .x = panel.x + 2.0f, .y = list_y, .width = panel.width - 4.0f, .height = list_h },
+			"No matches",
+			"Try a different query or toggle Case/Word"
+		);
+	}
 	int visible_rows = self.visible_rows();
 	if ((int)self.total_matches > visible_rows)
 	{

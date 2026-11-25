@@ -1063,7 +1063,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 	Rect outer   = self.outer_rect();
 	Rect panel   = self.panel_rect();
 	Rect sidebar = self.sidebar_rect();
-	ui::panel(outer, theme::current().panel_bg, theme::current().panel_border);
+	ui::floating_panel(outer, theme::current().panel_bg, theme::current().panel_border);
 	ui::rounded_rect(sidebar, ui::corner_radius(), theme::current().panel_bg_alt);
 	rl::draw_line(
 		(int)(sidebar.x + sidebar.width),

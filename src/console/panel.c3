@@ -1433,6 +1433,7 @@ fn void ConsolePanel.draw(
 		},
 		theme::current()
 		.panel_dim);
+	ui::separator_h({ .x = header.x, .y = header.y + header.height - 1.0f, .width = header.width, .height = 1.0f });
 
 	float title_size = (float)ui::tpx(14);
 	if (manager.sessions.len() <= 1)
@@ -1622,6 +1623,10 @@ fn void ConsolePanel.draw(
 	self.output_scroll_x = console_clamp_hscroll(self.output_scroll_x, content, output_view);
 	rl::begin_scissor_mode((int)output.x, (int)output.y, (int)output.width, (int)output.height);
 	float text_x = output.x + ui::pxf(PADDING) - self.output_scroll_x;
+	if (console.buffer.line_count() == 0)
+	{
+		ui::empty_state(font, output, "Console is empty", "Type a command below and press Enter");
+	}
 
 	if (self.find_open && self.find_count > 0)
 	{
