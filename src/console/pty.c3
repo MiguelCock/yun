@@ -271,15 +271,16 @@ fn bool ConsolePty.start(&self, String root, int cols, int rows)
 			startup.attribute_list = attrs;
 			ConsoleWinProcess process;
 			Char16[]? command = "cmd.exe /Q".to_temp_utf16();
-			Char16[]? cwd     = root.len > 0 ? root.to_temp_utf16() : null;
 			if (catch excuse = command)
 			{
 				(void)deleteProcThreadAttributeList(attrs);
 				(void)closePseudoConsole(console);
 				return false;
 			}
+			Char16[]? cwd_opt = null;
+			if (root.len > 0) cwd_opt = root.to_temp_utf16();
 			Char16* cwd_ptr = null;
-			if (try cwd_value = cwd) cwd_ptr = &cwd_value[0];
+			if (try cwd_value = cwd_opt) cwd_ptr = &cwd_value[0];
 			int created = createProcessW(
 				null,
 				&command[0],
