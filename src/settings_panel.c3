@@ -14,15 +14,22 @@ import yun::theme;
 import yun::topbar;
 import yun::ui;
 
-const int PANEL_WIDTH   = 1000;
-const int ROW_HEIGHT    = 46;
-const int HEADER_HEIGHT = 32;
-const int PADDING       = 12;
-const int FIELD_HEIGHT  = 36;
-const int FOOTER_HEIGHT = 64;
-const int QUERY_MAX     = 64;
-const int EDIT_MAX      = 128;
-const int SIDEBAR_WIDTH = 190;
+const int PANEL_WIDTH       = 1000;
+const int ROW_HEIGHT        = 46;
+const int HEADER_HEIGHT     = 32;
+const int PADDING           = 12;
+const int FIELD_HEIGHT      = 36;
+const int FOOTER_HEIGHT     = 64;
+const int QUERY_MAX         = 64;
+const int EDIT_MAX          = 128;
+const int SIDEBAR_WIDTH     = 190;
+const int CARD_HEIGHT       = 76;
+const int CARD_GAP          = 8;
+const int CARD_MIN_WIDTH    = 280;
+const int KEY_FILTER_HEIGHT = 30;
+const int KEY_FILTER_GAP    = 6;
+const int KEY_ACTION_HEIGHT = 38;
+const int KEY_CHIP_HEIGHT   = 22;
 
 enum RowKind : int
 {
@@ -33,6 +40,22 @@ enum RowKind : int
 	PAGE_RESET,
 }
 
+enum KeyFilter : int
+{
+	ALL,
+	CONFLICTS,
+	MODIFIED,
+	UNBOUND,
+	COUNT,
+}
+
+const String[] KEY_FILTER_LABELS = {
+	"All",
+	"Conflicts",
+	"Modified",
+	"Unbound",
+};
+
 struct Row
 {
 	RowKind kind;
@@ -40,6 +63,8 @@ struct Row
 	commands::CommandId command;
 	String section;
 	settings::SettingPage page;
+	int grid_col;
+	float grid_y;
 }
 
 struct Panel
@@ -60,6 +85,12 @@ struct Panel
 	commands::CommandId capture_id;
 	bool consumed;
 	settings::SettingPage page;
+	KeyFilter key_filter;
+	int key_scroll;
+	int key_columns;
+	float key_content_height;
+	keymap::Keymap* keymap;
+	config::Config* config;
 }
 
 fn bool matches(String section, String label, String key, String description, String query)
@@ -154,6 +185,12 @@ fn void Panel.init(&self, Allocator allocator)
 	self.capture_id = (commands::CommandId)0;
 	self.consumed = false;
 	self.page = settings::SettingPage.GENERAL;
+	self.key_filter = KeyFilter.ALL;
+	self.key_scroll = 0;
+	self.key_columns = 1;
+	self.key_content_height = 0.0f;
+	self.keymap = null;
+	self.config = null;
 }
 
 fn void Panel.destroy(&self)
@@ -171,8 +208,17 @@ fn void Panel.show(&self)
 	self.scroll = 0;
 	self.editing = false;
 	self.capturing = false;
+	self.key_filter = KeyFilter.ALL;
+	self.key_scroll = 0;
+	self.key_columns = 1;
 	self.rebuild();
 	if (self.selected_row() < 0) self.move_selection(1);
+}
+
+fn void Panel.set_sources(&self, keymap::Keymap* keymap, config::Config* config)
+{
+	self.keymap = keymap;
+	self.config = config;
 }
 
 fn void Panel.close(&self)
@@ -227,52 +273,177 @@ fn bool command_matches(commands::CommandId id, String query)
 	usz[QUERY_MAX] positions;
 	if (commands::fuzzy_match(commands::command_def(id).label, query, positions[0:QUERY_MAX]) >= 0) return true;
 	if (commands::fuzzy_match(commands::command_name(id), query, positions[0:QUERY_MAX]) >= 0) return true;
+	if (commands::fuzzy_match(commands::command_description(id), query, positions[0:QUERY_MAX]) >= 0) return true;
+	if (commands::fuzzy_match(commands::command_group(id), query, positions[0:QUERY_MAX]) >= 0) return true;
 	return false;
+}
+
+fn bool Panel.command_conflict(&self, commands::CommandId id)
+{
+	if (self.keymap == null) return false;
+	return self.keymap.conflicts((int)id);
+}
+
+fn bool Panel.command_modified(&self, commands::CommandId id)
+{
+	if (self.config == null) return false;
+	String chord;
+	settings::SettingLayer layer;
+	return self.config.keymap_override(commands::command_name(id), &chord, &layer);
+}
+
+fn bool Panel.command_unbound(&self, commands::CommandId id)
+{
+	if (self.keymap != null) return self.keymap.shortcut(id).len == 0;
+	return commands::command_def(id).shortcut.len == 0;
+}
+
+fn bool Panel.key_filter_accepts(&self, commands::CommandId id)
+{
+	switch (self.key_filter)
+	{
+		case KeyFilter.ALL:
+			return true;
+		case KeyFilter.CONFLICTS:
+			return self.command_conflict(id);
+		case KeyFilter.MODIFIED:
+			return self.command_modified(id);
+		case KeyFilter.UNBOUND:
+			return self.command_unbound(id);
+		case KeyFilter.COUNT:
+			return true;
+	}
+}
+
+fn String key_filter_label(KeyFilter filter)
+{
+	if ((int)filter < 0 || (int)filter >= (int)KEY_FILTER_LABELS.len) return "All";
+	return KEY_FILTER_LABELS[(int)filter];
+}
+
+fn void Panel.set_key_filter(&self, KeyFilter filter)
+{
+	if (filter == KeyFilter.COUNT) return;
+	if (filter == self.key_filter) return;
+	self.key_filter = filter;
+	self.selected = 0;
+	self.key_scroll = 0;
+	self.rebuild();
+}
+
+fn float row_grid_height(RowKind kind)
+{
+	if (kind == RowKind.HEADER) return (float)ui::px(HEADER_HEIGHT);
+	if (kind == RowKind.ACTION) return (float)ui::px(KEY_ACTION_HEIGHT);
+	return (float)ui::px(CARD_HEIGHT);
+}
+
+fn void Panel.layout_keys(&self, int columns)
+{
+	if (columns < 1) columns = 1;
+	self.key_columns = columns;
+	float gap = (float)ui::px(CARD_GAP);
+	float y   = 0.0f;
+	int col   = 0;
+	for (sz i = 0; i < self.rows.len(); i++)
+	{
+		Row* row = self.rows.get_ref(i);
+		if (row.kind == RowKind.HEADER || row.kind == RowKind.ACTION)
+		{
+			if (col > 0)
+			{
+				y += (float)ui::px(CARD_HEIGHT) + gap;
+				col = 0;
+			}
+			row.grid_col = 0;
+			row.grid_y = y;
+			y += row_grid_height(row.kind) + gap;
+			continue;
+		}
+		row.grid_col = col;
+		row.grid_y = y;
+		col++;
+		if (col >= columns)
+		{
+			col = 0;
+			y += (float)ui::px(CARD_HEIGHT) + gap;
+		}
+	}
+	if (col > 0) y += (float)ui::px(CARD_HEIGHT) + gap;
+	self.key_content_height = y > gap ? y - gap : 0.0f;
+}
+
+fn int Panel.grid_columns(&self)
+{
+	Rect panel      = self.panel_rect();
+	float available = panel.width - (float)ui::px(PADDING * 2);
+	float min_width = (float)ui::px(CARD_MIN_WIDTH);
+	float gap       = (float)ui::px(CARD_GAP);
+	if (available >= min_width * 2.0f + gap) return 2;
+	return 1;
+}
+
+fn void Panel.build_key_rows(&self, String query)
+{
+	bool has_any = false;
+	for (usz g = 0; g < commands::COMMAND_GROUPS.len; g++)
+	{
+		String group      = commands::COMMAND_GROUPS[g];
+		bool wrote_header = false;
+		for (usz i = 0; i < commands::command_count(); i++)
+		{
+			commands::CommandId id = (commands::CommandId)i;
+			if (commands::command_group(id).compare_to(group) != 0) continue;
+			if (!self.key_filter_accepts(id)) continue;
+			if (!command_matches(id, query)) continue;
+			if (!wrote_header)
+			{
+				self.rows.push({ .kind = RowKind.HEADER, .section = group, .page = settings::SettingPage.KEYS });
+				wrote_header = true;
+			}
+			self.rows.push(
+				{
+					.kind = RowKind.COMMAND,
+					.section = group,
+					.command = id,
+					.page = settings::SettingPage.KEYS,
+				}
+			);
+			has_any = true;
+		}
+	}
+	if (has_any) self.rows.push({ .kind = RowKind.ACTION, .section = "keys", .page = settings::SettingPage.KEYS });
 }
 
 fn void Panel.rebuild(&self)
 {
 	self.rows.clear();
 	String query = self.query_view();
-	if (query.len == 0)
+	if (self.page == settings::SettingPage.KEYS)
 	{
-		if (self.page == settings::SettingPage.KEYS)
+		self.build_key_rows(query);
+		self.layout_keys(self.grid_columns());
+	}
+	else if (query.len == 0)
+	{
+		String last_group = "";
+		bool has_settings = false;
+		for (usz i = 0; i < settings::SETTINGS.len; i++)
 		{
-			self.rows.push({ .kind = RowKind.HEADER, .section = "Keybindings", .page = settings::SettingPage.KEYS });
-			self.rows.push({ .kind = RowKind.ACTION, .section = "keys", .page = settings::SettingPage.KEYS });
-			for (usz i = 0; i < commands::command_count(); i++)
+			settings::SettingId id = (settings::SettingId)i;
+			if (settings::page_for(id) != self.page) continue;
+			String group = settings::group_for(id);
+			if (group.compare_to(last_group) != 0)
 			{
-				self.rows.push(
-					{
-						.kind = RowKind.COMMAND,
-						.section = "keys",
-						.command = (commands::CommandId)i,
-						.page = settings::SettingPage.KEYS,
-					}
-				);
+				self.rows.push({ .kind = RowKind.HEADER, .section = group, .page = self.page });
+				last_group = group;
 			}
+			self.rows.push({ .kind = RowKind.SETTING, .section = group, .setting = id, .page = self.page });
+			has_settings = true;
 		}
-		else
+		if (has_settings)
 		{
-			String last_group = "";
-			bool has_settings = false;
-			for (usz i = 0; i < settings::SETTINGS.len; i++)
-			{
-				settings::SettingId id = (settings::SettingId)i;
-				if (settings::page_for(id) != self.page) continue;
-				String group = settings::group_for(id);
-				if (group.compare_to(last_group) != 0)
-				{
-					self.rows.push({ .kind = RowKind.HEADER, .section = group, .page = self.page });
-					last_group = group;
-				}
-				self.rows.push({ .kind = RowKind.SETTING, .section = group, .setting = id, .page = self.page });
-				has_settings = true;
-			}
-			if (has_settings)
-			{
-				self.rows.push({ .kind = RowKind.PAGE_RESET, .section = settings::page_label(self.page) });
-			}
+			self.rows.push({ .kind = RowKind.PAGE_RESET, .section = settings::page_label(self.page) });
 		}
 	}
 	else
@@ -313,7 +484,7 @@ fn void Panel.rebuild(&self)
 				self.rows.push(
 					{
 						.kind = RowKind.COMMAND,
-						.section = "keys",
+						.section = commands::command_group((commands::CommandId)i),
 						.command = (commands::CommandId)i,
 						.page = settings::SettingPage.KEYS,
 					}
@@ -366,8 +537,40 @@ fn void Panel.clamp_selection(&self)
 	self.clamp_scroll();
 }
 
+fn void Panel.clamp_key_scroll_bounds(&self)
+{
+	float view       = self.keys_view_height();
+	float max_scroll = self.key_content_height - view;
+	if (max_scroll < 0.0f) max_scroll = 0.0f;
+	if ((float)self.key_scroll > max_scroll) self.key_scroll = (int)max_scroll;
+	if (self.key_scroll < 0) self.key_scroll = 0;
+}
+
+fn void Panel.reveal_selected(&self)
+{
+	int index = self.selected_row();
+	if (index < 0) return;
+	float top    = self.rows[index].grid_y;
+	float bottom = top + row_grid_height(self.rows[index].kind);
+	float view   = self.keys_view_height();
+	if (top < (float)self.key_scroll)
+	{
+		self.key_scroll = (int)top;
+	}
+	else if (bottom > (float)self.key_scroll + view)
+	{
+		self.key_scroll = (int)(bottom - view);
+	}
+}
+
 fn void Panel.clamp_scroll(&self)
 {
+	if (self.page == settings::SettingPage.KEYS)
+	{
+		self.clamp_key_scroll_bounds();
+		self.reveal_selected();
+		return;
+	}
 	int rows = (int)self.rows.len();
 	if (self.selected < self.scroll) self.scroll = self.selected;
 	int visible = self.visible_rows();
@@ -400,6 +603,94 @@ fn void Panel.move_selection(&self, int delta)
 	}
 	self.selected = current;
 	self.clamp_scroll();
+}
+
+fn void Panel.move_keys_horizontal(&self, int dir)
+{
+	int rows = (int)self.rows.len();
+	if (rows == 0 || dir == 0) return;
+	int step    = dir > 0 ? 1 : -1;
+	int current = self.selected;
+	if (current < 0 || current >= rows) current = dir > 0 ? -1 : rows;
+	for (int guard = 0; guard < rows; guard++)
+	{
+		current += step;
+		if (current < 0) current = rows - 1;
+		if (current >= rows) current = 0;
+		if (self.rows[current].kind == RowKind.COMMAND)
+		{
+			self.selected = current;
+			self.clamp_scroll();
+			return;
+		}
+	}
+}
+
+fn int Panel.key_vertical_target(&self, int dir)
+{
+	int current = self.selected_row();
+	if (current < 0) return -1;
+	float y       =  self.rows[current].grid_y;
+	int col       =  self.rows[current].grid_col;
+	int best      = -1;
+	float best_dy =  0.0f;
+	int best_dx   =  0;
+	for (int i = 0; i < (int)self.rows.len(); i++)
+	{
+		if (i == current) continue;
+		if (self.rows[i].kind == RowKind.HEADER) continue;
+		float dy = self.rows[i].grid_y - y;
+		if (dir > 0 && dy <= 0.5f) continue;
+		if (dir < 0 && dy >= -0.5f) continue;
+		float ady = dy < 0.0f ? -dy : dy;
+		int dx    = self.rows[i].grid_col - col;
+		if (dx < 0) dx = -dx;
+		if (best < 0 || ady < best_dy - 0.5f || ((ady - best_dy <= 0.5f && best_dy - ady <= 0.5f) && dx < best_dx))
+		{
+			best = i;
+			best_dy = ady;
+			best_dx = dx;
+		}
+	}
+	return best;
+}
+
+fn void Panel.move_keys_vertical(&self, int dir)
+{
+	int target = self.key_vertical_target(dir);
+	if (target < 0) return;
+	self.selected = target;
+	self.clamp_scroll();
+}
+
+fn void Panel.move_keys_page(&self, int dir)
+{
+	float page = self.keys_view_height();
+	int steps  = (int)(page / ((float)ui::px(CARD_HEIGHT + CARD_GAP)));
+	if (steps < 1) steps = 1;
+	for (int i = 0; i < steps; i++) self.move_keys_vertical(dir);
+}
+
+fn void Panel.move_keys_edge(&self, bool end)
+{
+	if (end)
+	{
+		for (int i = (int)self.rows.len() - 1; i >= 0; i--)
+		{
+			if (self.rows[i].kind != RowKind.COMMAND) continue;
+			self.selected = i;
+			self.clamp_scroll();
+			return;
+		}
+		return;
+	}
+	for (int i = 0; i < (int)self.rows.len(); i++)
+	{
+		if (self.rows[i].kind != RowKind.COMMAND) continue;
+		self.selected = i;
+		self.clamp_scroll();
+		return;
+	}
 }
 
 fn void Panel.persist(&self, config::Config* config, bool project_open, String project_root)
@@ -523,6 +814,7 @@ fn void Panel.apply_capture(
 	};
 	keymap.build(config);
 	self.persist(config, project_open, project_root);
+	self.rebuild();
 	if (keymap.conflicts((int)self.capture_id))
 	{
 		notifier.push("Shortcut conflict");
@@ -547,6 +839,7 @@ fn void Panel.command_unbind(
 	config.set_key_binding(commands::command_name((commands::CommandId)index), "", self.scope);
 	keymap.build(config);
 	self.persist(config, project_open, project_root);
+	self.rebuild();
 	notifier.push("Shortcut cleared");
 }
 
@@ -564,6 +857,7 @@ fn void Panel.command_reset(
 	config.remove_key_binding(commands::command_name((commands::CommandId)index), self.scope);
 	keymap.build(config);
 	self.persist(config, project_open, project_root);
+	self.rebuild();
 	notifier.push("Reset to default");
 }
 
@@ -579,6 +873,7 @@ fn void Panel.reset_all(
 	config.clear_keymap(self.scope);
 	keymap.build(config);
 	self.persist(config, project_open, project_root);
+	self.rebuild();
 	notifier.push("Keybindings reset");
 }
 
@@ -639,6 +934,118 @@ fn int Panel.visible_rows(&self)
 	return rows > 0 ? rows : 1;
 }
 
+fn float Panel.keys_list_top(&self)
+{
+	return self.list_y() + (float)ui::px(KEY_FILTER_HEIGHT + KEY_FILTER_GAP);
+}
+
+fn float Panel.keys_view_height(&self)
+{
+	Rect panel   = self.panel_rect();
+	float footer = panel.y + panel.height - (float)ui::px(FOOTER_HEIGHT);
+	float height = footer - self.keys_list_top();
+	return height > 1.0f ? height : 1.0f;
+}
+
+fn float measure_text(RLFont font, String text, float size)
+{
+	if (text.len == 0) return 0.0f;
+	float width = 0.0f;
+	@pool()
+	{
+		width = rl::measure_text_ex(font, text.zstr_tcopy(), size, 0.0f)[0];
+	};
+	return width;
+}
+
+fn Rect Panel.filter_rect(&self, int filter)
+{
+	Rect panel = self.panel_rect();
+	float x    = panel.x + (float)ui::px(PADDING);
+	float y    = self.list_y();
+	float gap  = (float)ui::px(6);
+	float size = (float)ui::tpx(14);
+	for (int i = 0; i < filter; i++)
+	{
+		float width = measure_text(ui::font(), KEY_FILTER_LABELS[i], size) + (float)ui::px(20);
+		x += width + gap;
+	}
+	float width = measure_text(ui::font(), KEY_FILTER_LABELS[filter], size) + (float)ui::px(20);
+	return { .x = x, .y = y, .width = width, .height = (float)ui::px(KEY_FILTER_HEIGHT) };
+}
+
+fn int Panel.filter_at(&self, RLVector2 mouse)
+{
+	for (int i = 0; i < (int)KEY_FILTER_LABELS.len; i++)
+	{
+		if (ui::pointer_in(self.filter_rect(i), mouse)) return i;
+	}
+	return -1;
+}
+
+fn Rect Panel.key_rect(&self, int index)
+{
+	Rect panel = self.panel_rect();
+	if (index < 0 || index >= (int)self.rows.len()) return { .x = panel.x, .y = panel.y };
+	Row row     = self.rows[index];
+	float top   = self.keys_list_top() + row.grid_y - (float)self.key_scroll;
+	float width = panel.width - (float)ui::px(PADDING * 2);
+	if (row.kind == RowKind.HEADER)
+	{
+		return {
+			.x = panel.x + (float)ui::px(PADDING),
+			.y = top,
+			.width = width,
+			.height = (float)ui::px(HEADER_HEIGHT),
+		};
+	}
+	if (row.kind == RowKind.ACTION)
+	{
+		return {
+			.x = panel.x + (float)ui::px(PADDING),
+			.y = top,
+			.width = width,
+			.height = (float)ui::px(KEY_ACTION_HEIGHT),
+		};
+	}
+	int columns = self.key_columns > 0 ? self.key_columns : 1;
+	float gap   = (float)ui::px(CARD_GAP);
+	float card  = (width - gap * (float)(columns - 1)) / (float)columns;
+	return {
+		.x = panel.x + (float)ui::px(PADDING) + (card + gap) * (float)row.grid_col,
+		.y = top,
+		.width = card,
+		.height = (float)ui::px(CARD_HEIGHT),
+	};
+}
+
+fn String Panel.key_chip_text(&self, commands::CommandId id, keymap::Keymap* keymap)
+{
+	if (self.capturing && (int)id == (int)self.capture_id) return "Press a chord...";
+	String text = keymap != null ? keymap.shortcut(id) : commands::command_def(id).shortcut;
+	if (text.len == 0) return "(unbound)";
+	return text;
+}
+
+fn Rect Panel.key_chip_rect(&self, int index, keymap::Keymap* keymap)
+{
+	Rect card = self.key_rect(index);
+	if (index < 0 || index >= (int)self.rows.len()) return card;
+	if (self.rows[index].kind != RowKind.COMMAND) return card;
+	String text = self.key_chip_text(self.rows[index].command, keymap);
+	float size  = (float)ui::tpx(15);
+	float width = measure_text(ui::font(), text, size) + (float)ui::px(16);
+	if (width < (float)ui::px(54)) width = (float)ui::px(54);
+	float max_width = card.width - (float)ui::px(20);
+	if (width > max_width) width = max_width;
+	return {
+		.x = card.x + (float)ui::px(10),
+		.y = card.y + (float)ui::px(44),
+		.width = width,
+		.height = (float)ui::px(KEY_CHIP_HEIGHT),
+	};
+}
+
 fn Rect Panel.scope_rect(&self, bool project)
 {
 	Rect panel = self.panel_rect();
@@ -687,14 +1094,30 @@ fn void Panel.set_page(&self, settings::SettingPage page)
 	self.query[0] = 0;
 	self.selected = 0;
 	self.scroll = 0;
+	self.key_filter = KeyFilter.ALL;
+	self.key_scroll = 0;
 	self.rebuild();
 }
 
+fn int Panel.key_row_at(&self, RLVector2 mouse)
+{
+	Rect panel  = self.panel_rect();
+	float top   = self.keys_list_top();
+	float limit = panel.y + panel.height - (float)ui::px(FOOTER_HEIGHT);
+	if (mouse[1] < top || mouse[1] > limit) return -1;
+	for (int i = 0; i < (int)self.rows.len(); i++)
+	{
+		if (self.rows[i].kind == RowKind.HEADER) continue;
+		if (ui::pointer_in(self.key_rect(i), mouse)) return i;
+	}
+	return -1;
+}
 
 fn int Panel.row_at(&self, RLVector2 mouse)
 {
 	Rect panel = self.panel_rect();
 	if (mouse[0] < panel.x || mouse[0] > panel.x + panel.width) return -1;
+	if (self.page == settings::SettingPage.KEYS) return self.key_row_at(mouse);
 	float y     = self.list_y();
 	float limit = panel.y + panel.height - (float)ui::px(FOOTER_HEIGHT);
 	int index   = self.scroll;
@@ -715,6 +1138,7 @@ fn void Panel.clear_query(&self)
 	self.query[0] = 0;
 	self.selected = 0;
 	self.scroll = 0;
+	self.key_scroll = 0;
 	self.rebuild();
 }
 
@@ -756,6 +1180,16 @@ fn void Panel.update(
 {
 	if (!self.open) return;
 	self.consumed = false;
+	self.set_sources(keymap, config);
+	if (self.page == settings::SettingPage.KEYS)
+	{
+		int columns = self.grid_columns();
+		if (columns != self.key_columns)
+		{
+			self.layout_keys(columns);
+			self.clamp_scroll();
+		}
+	}
 
 	if (!project_open && self.scope == settings::SettingLayer.PROJECT) self.scope = settings::SettingLayer.GLOBAL;
 
@@ -865,16 +1299,64 @@ fn void Panel.update(
 	}
 	if (typed) self.rebuild();
 
-	if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_SETTINGS))
+	bool keys_page = self.page == settings::SettingPage.KEYS;
+	if (keys_page)
 	{
-		self.consumed = true;
-		self.move_selection(1);
+		if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_SETTINGS))
+		{
+			self.consumed = true;
+			self.move_keys_vertical(1);
+		}
+		if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_SETTINGS))
+		{
+			self.consumed = true;
+			self.move_keys_vertical(-1);
+		}
+		if (keymap.pressed_repeat((int)commands::CommandId.SETTINGS_VALUE_DEC, commands::CTX_SETTINGS))
+		{
+			self.consumed = true;
+			self.move_keys_horizontal(-1);
+		}
+		if (keymap.pressed_repeat((int)commands::CommandId.SETTINGS_VALUE_INC, commands::CTX_SETTINGS))
+		{
+			self.consumed = true;
+			self.move_keys_horizontal(1);
+		}
+		if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP))
+		{
+			self.consumed = true;
+			self.move_keys_page(-1);
+		}
+		if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN))
+		{
+			self.consumed = true;
+			self.move_keys_page(1);
+		}
+		if (rl::is_key_pressed(rl::RLKeyboardKey.HOME))
+		{
+			self.consumed = true;
+			self.move_keys_edge(false);
+		}
+		if (rl::is_key_pressed(rl::RLKeyboardKey.END))
+		{
+			self.consumed = true;
+			self.move_keys_edge(true);
+		}
 	}
-	if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_SETTINGS))
+	else
 	{
-		self.consumed = true;
-		self.move_selection(-1);
+		if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_SETTINGS))
+		{
+			self.consumed = true;
+			self.move_selection(1);
+		}
+		if (keymap.pressed_repeat((int)commands::CommandId.LIST_UP, commands::CTX_SETTINGS))
+		{
+			self.consumed = true;
+			self.move_selection(-1);
+		}
 	}
+
 	if (keymap.pressed((int)commands::CommandId.SETTINGS_SCOPE_TOGGLE, commands::CTX_SETTINGS))
 	{
 		self.consumed = true;
@@ -923,13 +1405,16 @@ fn void Panel.update(
 		}
 	}
 
-	int dir = 0;
-	if (keymap.pressed_repeat((int)commands::CommandId.SETTINGS_VALUE_DEC, commands::CTX_SETTINGS)) dir = -1;
-	if (keymap.pressed_repeat((int)commands::CommandId.SETTINGS_VALUE_INC, commands::CTX_SETTINGS)) dir = 1;
-	if (dir != 0)
+	if (!keys_page)
 	{
-		self.consumed = true;
-		self.change_selected(config, dir, project_open, project_root);
+		int dir = 0;
+		if (keymap.pressed_repeat((int)commands::CommandId.SETTINGS_VALUE_DEC, commands::CTX_SETTINGS)) dir = -1;
+		if (keymap.pressed_repeat((int)commands::CommandId.SETTINGS_VALUE_INC, commands::CTX_SETTINGS)) dir = 1;
+		if (dir != 0)
+		{
+			self.consumed = true;
+			self.change_selected(config, dir, project_open, project_root);
+		}
 	}
 
 	Rect panel      = self.panel_rect();
@@ -967,6 +1452,16 @@ fn void Panel.update(
 			self.scope = settings::SettingLayer.PROJECT;
 			return;
 		}
+		if (keys_page)
+		{
+			int filter = self.filter_at(mouse);
+			if (filter >= 0)
+			{
+				self.consumed = true;
+				self.set_key_filter((KeyFilter)filter);
+				return;
+			}
+		}
 	}
 
 	if (mouse[0] < panel.x)
@@ -974,35 +1469,69 @@ fn void Panel.update(
 		return;
 	}
 
-	if (rl::get_mouse_wheel_move() > 0.0f) self.move_selection(-1);
-	if (rl::get_mouse_wheel_move() < 0.0f) self.move_selection(1);
+	float wheel = rl::get_mouse_wheel_move();
+	if (keys_page)
+	{
+		if (wheel > 0.0f || wheel < 0.0f)
+		{
+			self.key_scroll -= (int)(wheel * (float)ui::px(CARD_HEIGHT));
+			self.clamp_key_scroll_bounds();
+		}
+	}
+	else
+	{
+		if (wheel > 0.0f) self.move_selection(-1);
+		if (wheel < 0.0f) self.move_selection(1);
+	}
 
 	int row = self.row_at(mouse);
 	if (row >= 0 && self.rows[row].kind != RowKind.HEADER)
 	{
-		if (row != self.selected) self.selected = row;
+		if (row != self.selected)
+		{
+			self.selected = row;
+			self.clamp_scroll();
+		}
 		if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
 		{
-			float value_x = panel.x + panel.width - 200.0f;
-			if (mouse[0] >= value_x)
+			if (keys_page)
 			{
 				switch (self.rows[row].kind)
 				{
-					case RowKind.SETTING:
-						self.change_selected(config, 1, project_open, project_root);
 					case RowKind.COMMAND:
-						self.start_capture(self.rows[row].command);
+						if (ui::pointer_in(self.key_chip_rect(row, keymap), mouse))
+						{
+							self.start_capture(self.rows[row].command);
+						}
 					case RowKind.ACTION:
 						self.reset_all(keymap, config, project_open, project_root, notifier);
-					case RowKind.PAGE_RESET:
-						self.reset_page(keymap, config, project_open, project_root, notifier);
 					default:
 						break;
 				}
 			}
 			else
 			{
-				self.selected = row;
+				float value_x = panel.x + panel.width - 200.0f;
+				if (mouse[0] >= value_x)
+				{
+					switch (self.rows[row].kind)
+					{
+						case RowKind.SETTING:
+							self.change_selected(config, 1, project_open, project_root);
+						case RowKind.COMMAND:
+							self.start_capture(self.rows[row].command);
+						case RowKind.ACTION:
+							self.reset_all(keymap, config, project_open, project_root, notifier);
+						case RowKind.PAGE_RESET:
+							self.reset_page(keymap, config, project_open, project_root, notifier);
+						default:
+							break;
+					}
+				}
+				else
+				{
+					self.selected = row;
+				}
 			}
 		}
 	}
@@ -1030,6 +1559,75 @@ fn void draw_text(RLFont font, String text, float x, float y, float size, RLColo
 	};
 }
 
+fn void draw_text_clipped(RLFont font, String text, float x, float y, float size, float max_width, RLColor color)
+{
+	if (text.len == 0) return;
+	if (measure_text(font, text, size) <= max_width)
+	{
+		draw_text(font, text, x, y, size, color);
+		return;
+	}
+	@pool()
+	{
+		float ellipsis_width = measure_text(font, "...", size);
+		usz fit              = 0;
+		for (usz i = 1; i <= text.len; i++)
+		{
+			if (measure_text(font, text[0:i], size) + ellipsis_width > max_width) break;
+			fit = i;
+		}
+		DString out;
+		out.init(tmem, (sz)(fit + 4));
+		out.append_bytes(text.ptr[0:fit]);
+		out.append_string("...");
+		rl::draw_text_ex(font, out.str_view().zstr_tcopy(), { x, y }, size, 0.0f, color);
+		out.free();
+	};
+}
+
+fn String Panel.binding_source(&self, commands::CommandId id, config::Config* config)
+{
+	if (config == null) return "default";
+	String chord;
+	settings::SettingLayer layer;
+	if (!config.keymap_override(commands::command_name(id), &chord, &layer)) return "default";
+	return layer == settings::SettingLayer.PROJECT ? "project" : "global";
+}
+
+fn String Panel.key_empty_title(&self)
+{
+	if (self.query_len > 0) return "No matching keybindings";
+	switch (self.key_filter)
+	{
+		case KeyFilter.CONFLICTS:
+			return "No shortcut conflicts";
+		case KeyFilter.MODIFIED:
+			return "No modified bindings";
+		case KeyFilter.UNBOUND:
+			return "No unbound commands";
+		case KeyFilter.ALL:
+		case KeyFilter.COUNT:
+			return "No keybindings";
+	}
+}
+
+fn String Panel.key_empty_hint(&self)
+{
+	if (self.query_len > 0) return "Try another search or filter.";
+	switch (self.key_filter)
+	{
+		case KeyFilter.CONFLICTS:
+			return "Every shortcut is unique in its context.";
+		case KeyFilter.MODIFIED:
+			return "Every shortcut is at its default.";
+		case KeyFilter.UNBOUND:
+			return "Every command has a shortcut.";
+		case KeyFilter.ALL:
+		case KeyFilter.COUNT:
+			return "";
+	}
+}
+
 
 fn icons::IconKind page_icon(settings::SettingPage page)
 {
@@ -1054,6 +1652,203 @@ fn icons::IconKind page_icon(settings::SettingPage page)
 		case settings::SettingPage.COUNT:
 			return icons::IconKind.SETTINGS;
 	}
+}
+
+fn void Panel.draw_key_filters(&self, RLFont font)
+{
+	for (int i = 0; i < (int)KEY_FILTER_LABELS.len; i++)
+	{
+		Rect r                 = self.filter_rect(i);
+		bool active            = (int)self.key_filter == i;
+		ui::ControlState state = ui::control_state(r, true, active);
+		ui::rounded_rect(r, ui::row_radius(), ui::control_fill(state, active ? theme::current()
+			.panel_selected : theme::current()
+				.panel_field, theme::current()
+					.topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
+		draw_text(
+			font,
+			key_filter_label((KeyFilter)i),
+			r.x + (float)ui::px(10),
+			r.y + (float)ui::px(6),
+			(float)ui::tpx(14),
+			active ? theme::current()
+			.panel_text : theme::current().panel_dim);
+	}
+}
+
+fn void Panel.draw_key_card(
+	&self,
+	RLFont font,
+	Rect card,
+	int index,
+	bool selected,
+	bool hovered,
+	bool pressed,
+	keymap::Keymap* keymap,
+	config::Config* config
+)
+{
+	Row row                = self.rows[index];
+	commands::CommandId id = row.command;
+	RLColor fill           = theme::current().panel_field;
+	if (selected)
+	{
+		fill = theme::current().panel_bg_alt;
+	}
+	else if (hovered)
+	{
+		fill = pressed ? theme::current().panel_selected : theme::current().topbar_hover;
+		if (pressed) fill[3] = 80;
+	}
+	ui::rounded_rect(card, ui::row_radius(), fill);
+	ui::rounded_rect_lines(card, ui::row_radius(), selected ? 2.0f : 1.0f, selected ? theme::current()
+		.card_focus : theme::current().panel_border);
+
+	String source      = self.binding_source(id, config);
+	float source_size  = (float)ui::tpx(13);
+	float source_width = measure_text(font, source, source_size);
+	float pad          = (float)ui::px(10);
+	draw_text(
+		font,
+		source,
+		card.x + card.width - pad - source_width,
+		card.y + (float)ui::px(8),
+		source_size,
+		source.compare_to("default") == 0 ? theme::current()
+		.panel_dim : theme::current().panel_header);
+	draw_text_clipped(font, commands::command_def(id)
+		.label, card.x + pad, card.y + (float)ui::px(
+			5
+		), (float)ui::tpx(19), card.width - pad * 2.0f - source_width - (float)ui::px(8), theme::current()
+			.panel_text);
+	draw_text_clipped(
+		font,
+		commands::command_description(id),
+		card.x + pad,
+		card.y + (float)ui::px(26),
+		(float)ui::tpx(14),
+		card.width - pad * 2.0f,
+		theme::current()
+		.panel_dim);
+
+	Rect chip         = self.key_chip_rect(index, keymap);
+	bool capturing    = self.capturing && (int)id == (int)self.capture_id;
+	bool unbound      = !capturing && keymap != null && keymap.shortcut(id).len == 0;
+	RLColor chip_text = capturing ? theme::current()
+		.panel_match : (unbound ? theme::current().panel_dim : theme::current().panel_text);
+	ui::rounded_rect(chip, ui::row_radius(), theme::current().panel_bg_alt);
+	draw_text(
+		font,
+		self.key_chip_text(id, keymap),
+		chip.x + (float)ui::px(8),
+		chip.y + (chip.height - (float)ui::tpx(15)) * 0.5f,
+		(float)ui::tpx(15),
+		chip_text
+	);
+
+	if (self.command_conflict(id))
+	{
+		String marker     = "conflict";
+		float marker_size = (float)ui::tpx(12);
+		float marker_w    = measure_text(font, marker, marker_size);
+		draw_text(
+			font,
+			marker,
+			card.x + card.width - pad - marker_w,
+			card.y + (float)ui::px(50),
+			marker_size,
+			theme::current()
+			.panel_match);
+	}
+}
+
+fn void Panel.draw_key_grid(&self, RLFont font, keymap::Keymap* keymap, config::Config* config)
+{
+	Rect panel   = self.panel_rect();
+	float top    = self.keys_list_top();
+	float limit  = panel.y + panel.height - (float)ui::px(FOOTER_HEIGHT);
+	bool has_any = false;
+	for (sz i = 0; i < self.rows.len(); i++)
+	{
+		if (self.rows[i].kind == RowKind.COMMAND)
+		{
+			has_any = true;
+			break;
+		}
+	}
+	if (!has_any)
+	{
+		ui::empty_state(
+			font,
+			{
+				.x = panel.x + (float)ui::px(PADDING),
+				.y = top,
+				.width = panel.width - (float)ui::px(PADDING * 2),
+				.height = limit - top,
+			},
+			self.key_empty_title(),
+			self.key_empty_hint()
+		);
+		return;
+	}
+
+	RLVector2 mouse = rl::get_mouse_position();
+	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
+	int hover       = self.row_at(mouse);
+	rl::begin_scissor_mode((int)panel.x, (int)top, (int)panel.width, (int)(limit - top));
+	for (int i = 0; i < (int)self.rows.len(); i++)
+	{
+		Rect r = self.key_rect(i);
+		if (r.y + r.height < top || r.y > limit) continue;
+		Row row = self.rows[i];
+		if (row.kind == RowKind.HEADER)
+		{
+			draw_text(
+				font,
+				row.section,
+				r.x + (float)ui::px(4),
+				r.y + (float)ui::px(5),
+				(float)ui::tpx(18),
+				theme::current()
+				.panel_header);
+			ui::separator_h(
+				{
+					.x = r.x,
+					.y = r.y + r.height - (float)ui::px(2),
+					.width = r.width,
+					.height = 1.0f,
+				}
+			);
+			continue;
+		}
+		bool selected = i == self.selected;
+		bool hovered  = i == hover;
+		if (row.kind == RowKind.ACTION)
+		{
+			RLColor fill = theme::current().panel_field;
+			if (selected)
+			{
+				fill = theme::current().panel_bg_alt;
+			}
+			else if (hovered)
+			{
+				fill = pressed ? theme::current().panel_selected : theme::current().topbar_hover;
+				if (pressed) fill[3] = 80;
+			}
+			ui::rounded_rect(r, ui::row_radius(), fill);
+			draw_text(
+				font,
+				"Reset all keybindings in this scope",
+				r.x + (float)ui::px(10),
+				r.y + (float)ui::px(9),
+				(float)ui::tpx(17),
+				theme::current()
+				.panel_text);
+			continue;
+		}
+		self.draw_key_card(font, r, i, selected, hovered, pressed, keymap, config);
+	}
+	rl::end_scissor_mode();
 }
 
 fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap, config::Config* config)
@@ -1172,7 +1967,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 	{
 		draw_text(
 			font,
-			"Search settings",
+			"Search settings and commands",
 			field.x + (float)ui::px(8),
 			field.y + (float)ui::px(8),
 			(float)ui::tpx(20),
@@ -1195,99 +1990,107 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		theme::current()
 		.panel_caret);
 
-	float y         = self.list_y();
-	float limit     = panel.y + panel.height - (float)ui::px(FOOTER_HEIGHT);
-	RLVector2 mouse = rl::get_mouse_position();
-	int hover_row   = self.row_at(mouse);
-	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
-	for (int index = self.scroll; index < (int)self.rows.len(); index++)
+	if (self.page == settings::SettingPage.KEYS)
 	{
-		if (y >= limit) break;
-		Row row = self.rows[index];
-		if (row.kind == RowKind.HEADER)
+		self.draw_key_filters(font);
+		self.draw_key_grid(font, keymap, config);
+	}
+	else
+	{
+		float y         = self.list_y();
+		float limit     = panel.y + panel.height - (float)ui::px(FOOTER_HEIGHT);
+		RLVector2 mouse = rl::get_mouse_position();
+		int hover_row   = self.row_at(mouse);
+		bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
+		for (int index = self.scroll; index < (int)self.rows.len(); index++)
 		{
-			float header_icon = icons::icon_size(16);
-			icons::draw(
-				page_icon(row.page),
-				{
-					.x = panel.x + (float)ui::px(PADDING),
-					.y = y + (float)ui::px(7),
-					.width = header_icon,
-					.height = header_icon,
-				},
-				theme::current()
-				.panel_header);
-			draw_text(
-				font,
-				row.section,
-				panel.x + (float)ui::px(PADDING) + header_icon + (float)ui::px(6),
-				y + (float)ui::px(7),
-				(float)ui::tpx(18),
-				theme::current()
-				.panel_header);
-			y += (float)ui::px(HEADER_HEIGHT);
-			continue;
-		}
-		bool selected = index == self.selected;
-		if (selected)
-		{
-			ui::row(
-				{
-					.x = panel.x + 2.0f,
-					.y = y,
-					.width = panel.width - 4.0f,
-					.height = (float)ui::px(ROW_HEIGHT),
-				},
-				theme::current()
-				.panel_selected);
-		}
-		else if (index == hover_row)
-		{
-			ui::row(
-				{
-					.x = panel.x + 2.0f,
-					.y = y,
-					.width = panel.width - 4.0f,
-					.height = (float)ui::px(ROW_HEIGHT),
-				},
-				pressed ? theme::current()
-				.panel_selected : theme::current().panel_bg_alt);
-		}
-		if (row.kind == RowKind.SETTING)
-		{
-			self.draw_setting_row(font, panel, row, selected, y, config);
-		}
-		else if (row.kind == RowKind.COMMAND)
-		{
-			self.draw_command_row(font, panel, row, selected, y, keymap, config);
-		}
-		else if (row.kind == RowKind.ACTION)
-		{
-			draw_text(
-				font,
-				"Reset all keybindings (scope)",
-				panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
-				y + (float)ui::px(9),
-				(float)ui::tpx(20),
-				theme::current()
-				.panel_text);
-		}
-		else
-		{
-			@pool()
+			if (y >= limit) break;
+			Row row = self.rows[index];
+			if (row.kind == RowKind.HEADER)
 			{
-				String label = string::format(tmem, "Reset %s to defaults", row.section);
+				float header_icon = icons::icon_size(16);
+				icons::draw(
+					page_icon(row.page),
+					{
+						.x = panel.x + (float)ui::px(PADDING),
+						.y = y + (float)ui::px(7),
+						.width = header_icon,
+						.height = header_icon,
+					},
+					theme::current()
+					.panel_header);
 				draw_text(
 					font,
-					label,
+					row.section,
+					panel.x + (float)ui::px(PADDING) + header_icon + (float)ui::px(6),
+					y + (float)ui::px(7),
+					(float)ui::tpx(18),
+					theme::current()
+					.panel_header);
+				y += (float)ui::px(HEADER_HEIGHT);
+				continue;
+			}
+			bool selected = index == self.selected;
+			if (selected)
+			{
+				ui::row(
+					{
+						.x = panel.x + 2.0f,
+						.y = y,
+						.width = panel.width - 4.0f,
+						.height = (float)ui::px(ROW_HEIGHT),
+					},
+					theme::current()
+					.panel_selected);
+			}
+			else if (index == hover_row)
+			{
+				ui::row(
+					{
+						.x = panel.x + 2.0f,
+						.y = y,
+						.width = panel.width - 4.0f,
+						.height = (float)ui::px(ROW_HEIGHT),
+					},
+					pressed ? theme::current()
+					.panel_selected : theme::current().panel_bg_alt);
+			}
+			if (row.kind == RowKind.SETTING)
+			{
+				self.draw_setting_row(font, panel, row, selected, y, config);
+			}
+			else if (row.kind == RowKind.COMMAND)
+			{
+				self.draw_command_row(font, panel, row, selected, y, keymap, config);
+			}
+			else if (row.kind == RowKind.ACTION)
+			{
+				draw_text(
+					font,
+					"Reset all keybindings (scope)",
 					panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
 					y + (float)ui::px(9),
 					(float)ui::tpx(20),
 					theme::current()
 					.panel_text);
-			};
+			}
+			else
+			{
+				@pool()
+				{
+					String label = string::format(tmem, "Reset %s to defaults", row.section);
+					draw_text(
+						font,
+						label,
+						panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
+						y + (float)ui::px(9),
+						(float)ui::tpx(20),
+						theme::current()
+						.panel_text);
+				};
+			}
+			y += (float)ui::px(ROW_HEIGHT);
 		}
-		y += (float)ui::px(ROW_HEIGHT);
 	}
 
 	float footer_y = panel.y + panel.height - (float)ui::px(FOOTER_HEIGHT);
@@ -1312,7 +2115,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		{
 			draw_text(
 				font,
-				"Enter: capture   Del: unbind   Backspace: reset (empty search)",
+				"Arrows: navigate   Enter: capture   Del: unbind   Backspace: reset",
 				panel.x + (float)ui::px(PADDING),
 				footer_y + (float)ui::px(10),
 				(float)ui::tpx(18),
