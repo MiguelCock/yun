@@ -81,6 +81,22 @@ struct EditorMetrics
 	float font_size;
 }
 
+fn EditorMetrics default_metrics()
+{
+	return {
+		.char_width = 8.0f,
+		.line_height = 16.0f,
+		.padding_x = g_editor_settings.padding_x,
+		.padding_y = g_editor_settings.padding_y,
+		.font_size = (float)FONT_SIZE_DEFAULT,
+	};
+}
+
+fn RLVector2 default_card_size(EditorMetrics metrics)
+{
+	return { min_card_width(metrics), min_card_height(metrics) };
+}
+
 struct VisibleRange
 {
 	usz first;

@@ -1063,6 +1063,39 @@ fn void test_minimize_selected_card()
 		assert(p.cards[0].rect.height == editor::min_card_height(metrics));
 	};
 }
+fn void test_new_card_uses_resize_minimum()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		EditorMetrics metrics = {
+			.char_width = 8.0f,
+			.line_height = 16.0f,
+			.padding_x = 8.0f,
+			.padding_y = 8.0f,
+			.font_size = 16.0f,
+		};
+		p.set_editor_metrics(metrics);
+
+		RLVector2 center = { 100.0f, 200.0f };
+		int index        = p.append_card("/root/new.c3", center);
+		float width      = editor::min_card_width(metrics);
+		float height     = editor::min_card_height(metrics);
+		assert(p.cards[index].rect.x == center[0] - width / 2.0f);
+		assert(p.cards[index].rect.y == center[1] - height / 2.0f);
+		assert(p.cards[index].rect.width == width);
+		assert(p.cards[index].rect.height == height);
+
+		p.cards[index].resize_from(3, { 0.0f, 0.0f }, width, height);
+		assert(p.cards[index].rect.width == width);
+		p.cards[index].resize_from(3, { -500.0f, 0.0f }, width, height);
+		assert(p.cards[index].rect.width == width);
+		p.cards[index].resize_from(5, { 0.0f, -500.0f }, width, height);
+		assert(p.cards[index].rect.height == height);
+	};
+}
+
 fn void test_layout_compact_square()
 {
 	@pool()
