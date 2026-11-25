@@ -110,6 +110,7 @@ struct Symbols
 	int selected;
 	int scroll;
 	bool consumed;
+	ui::Motion motion;
 }
 
 fn TSQuery* make_query(language::Language language, String text)
@@ -851,11 +852,17 @@ fn SymbolTarget Symbols.update(&self, keymap::Keymap* keymap, project::Project* 
 
 fn void Symbols.draw(&self, RLFont font)
 {
-	if (!self.open) return;
+	if (!self.open)
+	{
+		self.motion.update(false);
+		return;
+	}
+	self.motion.update(true);
 
 	float s    = ui::scale();
 	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
+	panel.y -= self.motion.offset(ui::pxf(8.0f));
 	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	float pad     = 10.0f * s;

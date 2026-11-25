@@ -161,6 +161,19 @@ fn void test_scrollbar_geometry()
 	assert(right.x == 100.0f);
 }
 
+fn void test_motion_respects_animations_setting()
+{
+	set_animations(false);
+	Motion motion;
+	motion.update(true);
+	assert(motion.value == 1.0f);
+	assert(motion.offset(10.0f) == 0.0f);
+	motion.update(false);
+	assert(motion.value == 0.0f);
+	assert(motion.offset(10.0f) == 10.0f);
+	set_animations(true);
+}
+
 fn void test_cursor_priority()
 {
 	reset_cursor();
