@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_diff",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-diff"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-diff"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-diff"
+      ]
+    }
+  }
+}

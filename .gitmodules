@@ -97,3 +97,72 @@
 [submodule "lib/tree_sitter_markdown_inline.c3l/upstream"]
 	path = lib/tree_sitter_markdown_inline.c3l/upstream
 	url = https://github.com/tree-sitter-grammars/tree-sitter-markdown
+[submodule "lib/tree_sitter_json.c3l/upstream"]
+	path = lib/tree_sitter_json.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-json
+[submodule "lib/tree_sitter_yaml.c3l/upstream"]
+	path = lib/tree_sitter_yaml.c3l/upstream
+	url = https://github.com/tree-sitter-grammars/tree-sitter-yaml
+[submodule "lib/tree_sitter_toml.c3l/upstream"]
+	path = lib/tree_sitter_toml.c3l/upstream
+	url = https://github.com/tree-sitter-grammars/tree-sitter-toml
+[submodule "lib/tree_sitter_sql.c3l/upstream"]
+	path = lib/tree_sitter_sql.c3l/upstream
+	url = https://github.com/DerekStride/tree-sitter-sql
+[submodule "lib/tree_sitter_regex.c3l/upstream"]
+	path = lib/tree_sitter_regex.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-regex
+[submodule "lib/tree_sitter_comment.c3l/upstream"]
+	path = lib/tree_sitter_comment.c3l/upstream
+	url = https://github.com/stsewd/tree-sitter-comment
+[submodule "lib/tree_sitter_bash.c3l/upstream"]
+	path = lib/tree_sitter_bash.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-bash
+[submodule "lib/tree_sitter_xml.c3l/upstream"]
+	path = lib/tree_sitter_xml.c3l/upstream
+	url = https://github.com/tree-sitter-grammars/tree-sitter-xml
+[submodule "lib/tree_sitter_diff.c3l/upstream"]
+	path = lib/tree_sitter_diff.c3l/upstream
+	url = https://github.com/tree-sitter-grammars/tree-sitter-diff
+[submodule "lib/tree_sitter_dockerfile.c3l/upstream"]
+	path = lib/tree_sitter_dockerfile.c3l/upstream
+	url = https://github.com/camdencheek/tree-sitter-dockerfile
+[submodule "lib/tree_sitter_ini.c3l/upstream"]
+	path = lib/tree_sitter_ini.c3l/upstream
+	url = https://github.com/justinmk/tree-sitter-ini
+[submodule "lib/tree_sitter_csv.c3l/upstream"]
+	path = lib/tree_sitter_csv.c3l/upstream
+	url = https://github.com/tree-sitter-grammars/tree-sitter-csv
+[submodule "lib/tree_sitter_hcl.c3l/upstream"]
+	path = lib/tree_sitter_hcl.c3l/upstream
+	url = https://github.com/tree-sitter-grammars/tree-sitter-hcl
+[submodule "lib/tree_sitter_nix.c3l/upstream"]
+	path = lib/tree_sitter_nix.c3l/upstream
+	url = https://github.com/nix-community/tree-sitter-nix
+[submodule "lib/tree_sitter_graphql.c3l/upstream"]
+	path = lib/tree_sitter_graphql.c3l/upstream
+	url = https://github.com/bkegley/tree-sitter-graphql
+[submodule "lib/tree_sitter_scss.c3l/upstream"]
+	path = lib/tree_sitter_scss.c3l/upstream
+	url = https://github.com/tree-sitter-grammars/tree-sitter-scss
+[submodule "lib/tree_sitter_sass.c3l/upstream"]
+	path = lib/tree_sitter_sass.c3l/upstream
+	url = https://github.com/bajrangCoder/tree-sitter-sass
+[submodule "lib/tree_sitter_less.c3l/upstream"]
+	path = lib/tree_sitter_less.c3l/upstream
+	url = https://github.com/mdovale/tree-sitter-less
+[submodule "lib/tree_sitter_phpdoc.c3l/upstream"]
+	path = lib/tree_sitter_phpdoc.c3l/upstream
+	url = https://github.com/claytonrcarter/tree-sitter-phpdoc
+[submodule "lib/tree_sitter_jsdoc.c3l/upstream"]
+	path = lib/tree_sitter_jsdoc.c3l/upstream
+	url = https://github.com/tree-sitter/tree-sitter-jsdoc
+[submodule "lib/tree_sitter_heex.c3l/upstream"]
+	path = lib/tree_sitter_heex.c3l/upstream
+	url = https://github.com/phoenixframework/tree-sitter-heex
+[submodule "lib/tree_sitter_vue.c3l/upstream"]
+	path = lib/tree_sitter_vue.c3l/upstream
+	url = https://github.com/tree-sitter-grammars/tree-sitter-vue
+[submodule "lib/tree_sitter_latex.c3l/upstream"]
+	path = lib/tree_sitter_latex.c3l/upstream
+	url = https://github.com/latex-lsp/tree-sitter-latex

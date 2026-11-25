@@ -27,7 +27,9 @@ The runtime lives in `lib/tree_sitter.c3l/` and is linked statically
 them with the script below.
 
 The `yun::language` registry (`src/language.c3`) lists each language (extensions,
-library name, symbol, query paths). See #151.
+library name, symbol, query paths). See #151. Injection-only grammars
+(`comment`, `regex`, `phpdoc`, `jsdoc`) have no file extensions, but
+`language_for_name` still resolves them for fenced code and dynamic injections.
 
 ## Adding a grammar
 
@@ -154,43 +156,66 @@ shipped alongside the binary.
 ## Licenses
 
 Vendored grammars and the runtime keep their own licenses (`LICENSE` in each
-C3L). Most are MIT; the Nim grammar is MPL-2.0 and the Erlang, Elixir, and Gleam
-grammars are Apache-2.0.
+C3L). Most are MIT; the Nim grammar is MPL-2.0, and the Erlang, Elixir, Gleam,
+HCL, and INI grammars are Apache-2.0.
 
 | grammar | upstream | pinned | license |
 | --- | --- | --- | --- |
 | tree_sitter (runtime) | tree-sitter/tree-sitter | `d97971e` | MIT |
-| tree_sitter_c3 | c3lang/tree-sitter-c3 | `56d7388` | MIT |
+| tree_sitter_bash | tree-sitter/tree-sitter-bash | `v0.25.1` | MIT |
 | tree_sitter_c | tree-sitter/tree-sitter-c | `v0.24.2` | MIT |
+| tree_sitter_c3 | c3lang/tree-sitter-c3 | `56d7388` | MIT |
 | tree_sitter_c_sharp | tree-sitter/tree-sitter-c-sharp | `v0.23.5` | MIT |
+| tree_sitter_comment | stsewd/tree-sitter-comment | `v0.3.0` | MIT |
 | tree_sitter_cpp | tree-sitter/tree-sitter-cpp | `v0.23.4` | MIT |
+| tree_sitter_csv | tree-sitter-grammars/tree-sitter-csv | `v1.2.0` | MIT |
 | tree_sitter_css | tree-sitter/tree-sitter-css | `v0.25.0` | MIT |
 | tree_sitter_dart | UserNobody14/tree-sitter-dart | `be07cf711` | MIT |
+| tree_sitter_diff | tree-sitter-grammars/tree-sitter-diff | `v0.2.0` | MIT |
+| tree_sitter_dockerfile | camdencheek/tree-sitter-dockerfile | `v0.2.0` | MIT |
 | tree_sitter_elixir | elixir-lang/tree-sitter-elixir | `v0.3.5` | Apache-2.0 |
 | tree_sitter_erlang | WhatsApp/tree-sitter-erlang | `0.20` | Apache-2.0 |
 | tree_sitter_gleam | gleam-lang/tree-sitter-gleam | `v1.1.0` | Apache-2.0 |
-| tree_sitter_sol | MiguelCock/sol (vendored) | `37feb74` | MIT |
 | tree_sitter_go | tree-sitter/tree-sitter-go | `v0.25.0` | MIT |
+| tree_sitter_graphql | bkegley/tree-sitter-graphql | `5e66e961` | MIT |
 | tree_sitter_haskell | tree-sitter-grammars/tree-sitter-haskell | `98aedbd` | MIT |
+| tree_sitter_hcl | tree-sitter-grammars/tree-sitter-hcl | `v1.2.0` | Apache-2.0 |
+| tree_sitter_heex | phoenixframework/tree-sitter-heex | `v0.9.0` | MIT |
 | tree_sitter_html | tree-sitter/tree-sitter-html | `v0.23.2` | MIT |
+| tree_sitter_ini | justinmk/tree-sitter-ini | `v1.4.0` | Apache-2.0 |
 | tree_sitter_java | tree-sitter/tree-sitter-java | `v0.23.5` | MIT |
 | tree_sitter_javascript | tree-sitter/tree-sitter-javascript | `44c892e` | MIT |
+| tree_sitter_jsdoc | tree-sitter/tree-sitter-jsdoc | `v0.25.0` | MIT |
+| tree_sitter_json | tree-sitter/tree-sitter-json | `v0.24.8` | MIT |
 | tree_sitter_julia | tree-sitter/tree-sitter-julia | `v0.25.0` | MIT |
 | tree_sitter_kotlin | fwcd/tree-sitter-kotlin | `0.3.8` | MIT |
+| tree_sitter_latex | latex-lsp/tree-sitter-latex | `v0.3.0` | MIT |
+| tree_sitter_less | mdovale/tree-sitter-less | `02988c76` | MIT |
 | tree_sitter_lua | tree-sitter-grammars/tree-sitter-lua | `v0.5.0` | MIT |
 | tree_sitter_markdown | tree-sitter-grammars/tree-sitter-markdown | `v0.5.3` | MIT |
 | tree_sitter_markdown_inline | tree-sitter-grammars/tree-sitter-markdown | `v0.5.3` | MIT |
 | tree_sitter_nim | alaviss/tree-sitter-nim | `0.6.2` | MPL-2.0 |
+| tree_sitter_nix | nix-community/tree-sitter-nix | `v0.3.0` | MIT |
 | tree_sitter_odin | tree-sitter-grammars/tree-sitter-odin | `v1.3.0` | MIT |
 | tree_sitter_php | tree-sitter/tree-sitter-php | `v0.25.0` | MIT |
+| tree_sitter_phpdoc | claytonrcarter/tree-sitter-phpdoc | `v0.1.8` | MIT |
 | tree_sitter_python | tree-sitter/tree-sitter-python | `293fdc0` | MIT |
 | tree_sitter_r | r-lib/tree-sitter-r | `v1.3.0` | MIT |
+| tree_sitter_regex | tree-sitter/tree-sitter-regex | `v1.0.0` | MIT |
 | tree_sitter_ruby | tree-sitter/tree-sitter-ruby | `v0.23.1` | MIT |
 | tree_sitter_rust | tree-sitter/tree-sitter-rust | `v0.24.2` | MIT |
+| tree_sitter_sass | bajrangCoder/tree-sitter-sass | `fb280c41` | MIT |
 | tree_sitter_scala | tree-sitter/tree-sitter-scala | `v0.26.2` | MIT |
+| tree_sitter_scss | tree-sitter-grammars/tree-sitter-scss | `v1.0.0` | MIT |
+| tree_sitter_sol | MiguelCock/sol (vendored) | `37feb74` | MIT |
+| tree_sitter_sql | DerekStride/tree-sitter-sql | `gh-pages@2d08852` | MIT |
+| tree_sitter_toml | tree-sitter-grammars/tree-sitter-toml | `v0.7.0` | MIT |
 | tree_sitter_tsx | tree-sitter/tree-sitter-typescript | `v0.23.2` | MIT |
 | tree_sitter_typescript | tree-sitter/tree-sitter-typescript | `v0.23.2` | MIT |
 | tree_sitter_v | nedpals/tree-sitter-v | `fee18d64a5` | MIT |
+| tree_sitter_vue | tree-sitter-grammars/tree-sitter-vue | `ce8011a4` | MIT |
+| tree_sitter_xml | tree-sitter-grammars/tree-sitter-xml | `v0.7.0` | MIT |
+| tree_sitter_yaml | tree-sitter-grammars/tree-sitter-yaml | `v0.7.2` | MIT |
 | tree_sitter_zig | tree-sitter-grammars/tree-sitter-zig | `v1.1.2` | MIT |
 
 The scaffold copies the upstream license into the new C3L; add a row here.
@@ -201,7 +226,9 @@ A grammar's `queries/highlights.scm` may begin with `; inherits: <lang>[,<lang>]
 (e.g. C++ inherits C). `yun::highlight` resolves each name via the registry and
 prepends the parent query before compiling, so inherited captures apply. The
 C++ vendored query carries this directive even though the upstream 0.23.4 tree
-declares the inheritance in `tree-sitter.json` instead.
+declares the inheritance in `tree-sitter.json` instead. Vue is a special case:
+upstream inherits the repo-local `html_tags` query, which is not a registry
+language, so the vendored Vue query concatenates `html_tags` and `vue` directly.
 
 ### Injections
 
@@ -219,8 +246,9 @@ Supported query features:
 - **Dynamic language**: a capture named `@injection.language` (or a `#set!`
   value that is a capture). The capture text is resolved through
   `language::language_for_name` with aliases (`js`→javascript, `ts`→typescript,
-  `sh`/`md`/`regex`/`comment`/... resolve to nothing). Unresolved names fall back
-  to plain text.
+  `sh`/`shell`/`zsh`→bash, `psql`→sql, `yml`→yaml, `jsonc`→json, `svg`→xml,
+  `tex`→latex, `terraform`/`tf`→hcl, `md`→markdown, ...). Unresolved names fall
+  back to plain text.
 - **Combined**: `(#set! injection.combined)` concatenates all content ranges
   captured for the same injected language (across every match, in document
   order) into one parse and maps spans back to the original ranges. PHP needs
@@ -235,11 +263,29 @@ Supported query features:
 
 Injections recurse with a depth limit of 3 and reuse a cached parser per
 language. Rust's self-injection (`macro token_tree → rust`) is intentionally not
-enabled; a few upstream rules resolve to languages that are not vendored yet
-(`markdown`, `sql`, `regex`, `comment`, ...) and are therefore no-ops. PHP's
-vendored `injections.scm` adds a Yun-specific `(text) → html` rule because the
-PHP grammar exposes markup outside `<?php ?>` as opaque `(text)` nodes (one per
-PHP block), which upstream does not inject.
+enabled. The injection targets covered by #181 resolve, including Markdown
+fences and front matter (`json`, `yaml`, `toml`), PHP heredocs/nowdocs, Elixir
+`~SQL`/`~H` sigils, Julia backtick commands and `r`/`md` strings, Haskell
+quasiquotes, documentation comments (`@comment`→comment, PHP→phpdoc,
+JavaScript→jsdoc), and HTML/Vue/HEEx templates.
+
+The remaining upstream references are intentional no-ops:
+
+- `haskell_persistent`: no usable maintained grammar; Persistent quasiquotes
+  stay plain text.
+- `glimmer`: JavaScript `hbs` tagged templates need `#offset!` range adjustment,
+  which the engine does not implement (tracked outside #181).
+- `diff` hunk contents and HEEx `<style>`/`<script>` blocks also rely on
+  `#offset!`; those rules are skipped, though HEEx `<%= ... %>` Elixir
+  expressions still inject.
+- `asm` (Zig) and `coffeescript` (Haskell Shakespeare): the rules are commented
+  out upstream and are not injected.
+- `uri` (Sass `url(...)`) and `pug` (Vue templates): no usable maintained
+  grammar is vendored, so the content stays plain.
+
+PHP's vendored `injections.scm` adds a Yun-specific `(text) → html` rule because
+the PHP grammar exposes markup outside `<?php ?>` as opaque `(text)` nodes (one
+per PHP block), which upstream does not inject.
 
 ## Checks
 
