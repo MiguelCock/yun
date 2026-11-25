@@ -277,10 +277,19 @@ fn bool ConsolePty.start(&self, String root, int cols, int rows)
 				(void)closePseudoConsole(console);
 				return false;
 			}
-			Char16[]? cwd_opt = null;
-			if (root.len > 0) cwd_opt = root.to_temp_utf16();
-			Char16* cwd_ptr = null;
-			if (try cwd_value = cwd_opt) cwd_ptr = &cwd_value[0];
+			Char16[] cwd_value = { };
+			if (root.len > 0)
+			{
+				Char16[]? converted = root.to_temp_utf16();
+				if (catch excuse = converted)
+				{
+				}
+				else
+				{
+					cwd_value = converted;
+				}
+			}
+			Char16* cwd_ptr = cwd_value.len > 0 ? &cwd_value[0] : null;
 			int created = createProcessW(
 				null,
 				&command[0],
