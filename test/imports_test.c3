@@ -896,3 +896,213 @@ fn void test_importers_of()
 		out.free();
 	};
 }
+fn void test_package_key_normalization()
+{
+	@pool()
+	{
+		assert(package_key(tmem, "react/jsx-runtime").compare_to("react") == 0);
+		assert(package_key(tmem, "react").compare_to("react") == 0);
+		assert(package_key(tmem, "@scope/pkg/sub").compare_to("@scope/pkg") == 0);
+		assert(package_key(tmem, "@scope/pkg").compare_to("@scope/pkg") == 0);
+		assert(package_key(tmem, "node:fs").compare_to("node:fs") == 0);
+		assert(package_key(tmem, "node:fs/promises").compare_to("node:fs") == 0);
+		assert(package_key(tmem, "foo.bar").compare_to("foo") == 0);
+		assert(package_key(tmem, "github.com/user/pkg").compare_to("github.com/user/pkg") == 0);
+		assert(package_key(tmem, "./local").compare_to("./local") == 0);
+	};
+}
+
+fn void test_aggregate_folder_and_package_edges()
+{
+	@pool()
+	{
+		project::Project p;
+		p.init(mem);
+		if (p.root.len) p.root.free(mem);
+		p.root = (Path)"/root".copy(mem);
+		int src  = p.add_folder("/root/src", project::ROOT_FOLDER);
+		int deep = p.add_folder("/root/src/deep", src);
+		int lib  = p.add_folder("/root/lib", project::ROOT_FOLDER);
+		(void)deep;
+
+		int a = p.append_card("/root/src/a.ts", { 0.0f, 0.0f });
+		int b = p.append_card("/root/src/b.ts", { 0.0f, 0.0f });
+		int c = p.append_card("/root/src/deep/c.ts", { 0.0f, 0.0f });
+		(void)p.append_card("/root/lib/x.ts", { 0.0f, 0.0f });
+		(void)p.append_card("/root/lib/y.ts", { 0.0f, 0.0f });
+		(void)p.append_card("/root/lib/index.ts", { 0.0f, 0.0f });
+
+		ImportIndex index;
+		index.init(mem);
+		index.refresh_card_paths(&p);
+
+		List{ImportRef} refs_a;
+		refs_a.init(mem);
+		refs_a.push(
+			{
+				.specifier = "./x".copy(mem),
+				.target_path = "/root/lib/x.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.line = 0,
+			}
+		);
+		refs_a.push(
+			{
+				.specifier = "./y".copy(mem),
+				.target_path = "/root/lib/y.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.line = 1,
+			}
+		);
+		index.store("/root/src/a.ts", &refs_a, "", false);
+
+		List{ImportRef} refs_b;
+		refs_b.init(mem);
+		refs_b.push(
+			{
+				.specifier = "./y".copy(mem),
+				.target_path = "/root/lib/y.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.line = 0,
+			}
+		);
+		refs_b.push(
+			{
+				.specifier = "react/jsx-runtime".copy(mem),
+				.kind = "import".copy(mem),
+				.line = 1,
+			}
+		);
+		refs_b.push({ .specifier = "react".copy(mem), .kind = "import".copy(mem), .line = 2 });
+		index.store("/root/src/b.ts", &refs_b, "", false);
+
+		List{ImportRef} refs_c;
+		refs_c.init(mem);
+		refs_c.push(
+			{
+				.specifier = "./components".copy(mem),
+				.target_path = "/root/lib/index.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.line = 0,
+			}
+		);
+		index.store("/root/src/deep/c.ts", &refs_c, "", false);
+
+		ImportSettings old = settings();
+		defer set_settings(old);
+
+		ImportSettings folder = old;
+		folder.aggregation = AggregationMode.FOLDER;
+		set_settings(folder);
+		List{ImportEdge} edges;
+		edges.init(tmem);
+		index.build_edges(&p, &edges);
+		int internal      = 0;
+		int external      = 0;
+		int internal_refs = 0;
+		int external_refs = 0;
+		for (sz i = 0; i < edges.len(); i++)
+		{
+			ImportEdge edge = edges[i];
+			if (edge.external)
+			{
+				external++;
+				external_refs += edge.count;
+			}
+			else
+			{
+				internal++;
+				internal_refs += edge.count;
+				assert(edge.target_folder == lib);
+			}
+		}
+		assert(internal == 2);
+		assert(internal_refs == 4);
+		assert(external == 2);
+		assert(external_refs == 2);
+
+		ImportHit hit = { .valid = true, .source = a, .ref_index = 0 };
+		List{ImporterRef} group;
+		group.init(tmem);
+		index.collect_group(&p, hit, &group);
+		assert(group.len() == 3);
+
+		ImportSettings package = old;
+		package.aggregation = AggregationMode.PACKAGE;
+		set_settings(package);
+		edges.clear();
+		index.build_edges(&p, &edges);
+		internal = 0;
+		external = 0;
+		for (sz i = 0; i < edges.len(); i++)
+		{
+			ImportEdge edge = edges[i];
+			if (edge.external)
+			{
+				external++;
+				assert(edge.count == 2);
+				assert(edge.label.compare_to("react") == 0);
+			}
+			else
+			{
+				internal++;
+				assert(edge.count >= 1);
+			}
+		}
+		assert(internal == 2);
+		assert(external == 1);
+
+		ImportSettings off = old;
+		off.aggregation = AggregationMode.OFF;
+		set_settings(off);
+		edges.clear();
+		index.build_edges(&p, &edges);
+		assert(edges.len() == 6);
+		for (sz i = 0; i < edges.len(); i++) assert(edges[i].count == 1);
+
+		p.folders[src].collapsed = true;
+		ImportSettings folded = old;
+		folded.aggregation = AggregationMode.FOLDER;
+		set_settings(folded);
+		edges.clear();
+		index.build_edges(&p, &edges);
+		int folded_edges    = 0;
+		int folded_internal = 0;
+		for (sz i = 0; i < edges.len(); i++)
+		{
+			if (!edges[i].external)
+			{
+				folded_edges++;
+				folded_internal += edges[i].count;
+			}
+		}
+		assert(folded_edges == 1);
+		assert(folded_internal == 4);
+
+		ImportHit folded_hit = { .valid = true, .source = c, .ref_index = 0 };
+		group.clear();
+		index.collect_group(&p, folded_hit, &group);
+		assert(group.len() == 4);
+
+		edges.free();
+		index.destroy();
+		p.destroy();
+	};
+}
+fn void test_parse_aggregation_mode()
+{
+	assert(parse_aggregation_mode("off") == AggregationMode.OFF);
+	assert(parse_aggregation_mode("folder") == AggregationMode.FOLDER);
+	assert(parse_aggregation_mode("package") == AggregationMode.PACKAGE);
+	assert(parse_aggregation_mode("unknown") == AggregationMode.FOLDER);
+	ImportSettings value = settings();
+	value.aggregation = AggregationMode.PACKAGE;
+	set_settings(value);
+	assert(settings().aggregation == AggregationMode.PACKAGE);
+	value.aggregation = AggregationMode.FOLDER;
+	set_settings(value);
+}

@@ -42,6 +42,13 @@ enum ArrowStyle : int
 	DASH_DOT,
 }
 
+enum AggregationMode : int
+{
+	OFF,
+	FOLDER,
+	PACKAGE,
+}
+
 struct ImportSettings
 {
 	bool enabled;
@@ -54,10 +61,18 @@ struct ImportSettings
 	float hit_tolerance;
 	float rescan_debounce;
 	int scan_workers;
+	AggregationMode aggregation;
 	ArrowStyle internal_style;
 	ArrowStyle external_style;
 	float dash_length;
 	float dash_gap;
+}
+
+fn AggregationMode parse_aggregation_mode(String value)
+{
+	if (value.compare_to("off") == 0) return AggregationMode.OFF;
+	if (value.compare_to("package") == 0) return AggregationMode.PACKAGE;
+	return AggregationMode.FOLDER;
 }
 
 fn ArrowStyle parse_arrow_style(String value)
@@ -80,6 +95,7 @@ ImportSettings g_import_settings = {
 	.hit_tolerance = ARROW_HIT_PX,
 	.rescan_debounce = (float)EDIT_DEBOUNCE_SECONDS,
 	.scan_workers = 0,
+	.aggregation = AggregationMode.FOLDER,
 	.internal_style = ArrowStyle.SOLID,
 	.external_style = ArrowStyle.DASHED,
 	.dash_length = 8.0f,
@@ -123,6 +139,23 @@ struct ImportHit
 	usz ref_index;
 	int target;
 	RLVector2 world;
+	bool grouped;
+	int group_count;
+}
+
+struct ImportEdge
+{
+	String source_key;
+	String target_key;
+	String label;
+	bool external;
+	int count;
+	int source_card;
+	int target_card;
+	usz source_ref;
+	int source_folder;
+	int target_folder;
+	int slot;
 }
 
 struct ImporterRef
@@ -2450,6 +2483,313 @@ fn void bezier_controls(RLVector2 p1, RLVector2 p2, RLVector2* c2, RLVector2* c3
 	*c3 = { mx, p2[1] };
 }
 
+fn int nearest_collapsed_folder(project::Project* project, int folder)
+{
+	if (folder < 0 || folder >= (int)project.folders.len()) return project::ROOT_FOLDER;
+	int current = folder;
+	while (current != project::ROOT_FOLDER)
+	{
+		if (project.folders[current].collapsed) return current;
+		current = project.folders[current].parent;
+	}
+	return folder;
+}
+
+fn bool folder_contains(project::Project* project, int ancestor, int folder)
+{
+	if (ancestor == project::ROOT_FOLDER) return true;
+	int current = folder;
+	while (current != project::ROOT_FOLDER)
+	{
+		if (current == ancestor) return true;
+		current = project.folders[current].parent;
+	}
+	return false;
+}
+
+fn String edge_source_group(project::Project* project, int card_index, int* anchor)
+{
+	*anchor = project::ROOT_FOLDER;
+	if (card_index < 0 || card_index >= (int)project.cards.len()) return "";
+	FileCard* card = &project.cards[card_index];
+	int folder     = card.folder;
+	if (folder == project::ROOT_FOLDER) return (String)card.path;
+	int visible = nearest_collapsed_folder(project, folder);
+	*anchor = visible;
+	return (String)project.folders[visible].path;
+}
+
+fn String edge_target_group(ImportIndex* index, project::Project* project, ImportRef ref, int* anchor, int* target_card)
+{
+	*anchor = project::ROOT_FOLDER;
+	*target_card = -1;
+	if (ref.target_path.len == 0) return "";
+	int*? target = index.card_paths.get_ref(ref.target_path);
+	if (catch excuse = target) return "";
+	int card = *target;
+	if (card < 0 || card >= (int)project.cards.len()) return "";
+	*target_card = card;
+	int folder = project.cards[card].folder;
+	if (folder == project::ROOT_FOLDER) return (String)project.cards[card].path;
+	int visible = nearest_collapsed_folder(project, folder);
+	*anchor = visible;
+	return (String)project.folders[visible].path;
+}
+
+fn bool edge_anchor_visible(project::Project* project, int folder, int card)
+{
+	if (folder == project::ROOT_FOLDER)
+	{
+		return card >= 0 && card < (int)project.cards.len() && project.card_visible(card);
+	}
+	return project.cluster_visible(folder);
+}
+
+fn String package_key_view(String specifier)
+{
+	String text = specifier;
+	if (text.len == 0) return "";
+	if (text[0] == '.') return text;
+	if (text.starts_with("node:"))
+	{
+		for (usz i = 5; i < text.len; i++)
+		{
+			if (text[i] == '/') return text[0:i];
+		}
+		return text;
+	}
+	if (text[0] == '@')
+	{
+		usz first_slash = text.len;
+		for (usz i = 0; i < text.len; i++)
+		{
+			if (text[i] == '/')
+			{
+				first_slash = i;
+				break;
+			}
+		}
+		if (first_slash == text.len) return text;
+		usz second_slash = text.len;
+		for (usz i = first_slash + 1; i < text.len; i++)
+		{
+			if (text[i] == '/')
+			{
+				second_slash = i;
+				break;
+			}
+		}
+		return text[0:second_slash];
+	}
+	for (usz i = 0; i + 2 <= text.len; i++)
+	{
+		if (text[i] == ':' && text[i + 1] == ':') return text[0:i];
+	}
+	for (usz i = 0; i < text.len; i++)
+	{
+		if (text[i] != '/') continue;
+		String first = text[0:i];
+		for (usz j = 0; j < first.len; j++)
+		{
+			if (first[j] == '.') return text;
+		}
+		return first;
+	}
+	for (usz i = 0; i < text.len; i++)
+	{
+		if (text[i] == '.') return text[0:i];
+	}
+	return text;
+}
+
+fn String package_key(Allocator allocator, String specifier)
+{
+	return package_key_view(specifier).copy(allocator);
+}
+
+fn bool refs_share_edge(project::Project* project, ImportIndex* index, int file_a, ImportRef a, int file_b, ImportRef b)
+{
+	AggregationMode mode = g_import_settings.aggregation;
+	if (mode == AggregationMode.OFF)
+	{
+		return file_a == file_b && a.line == b.line && a.column == b.column;
+	}
+	if (a.resolved != b.resolved) return false;
+
+	int source_anchor_a;
+	int source_anchor_b;
+	String source_a = edge_source_group(project, file_a, &source_anchor_a);
+	String source_b = edge_source_group(project, file_b, &source_anchor_b);
+	if (source_a.compare_to(source_b) != 0) return false;
+	if (!a.resolved)
+	{
+		if (mode == AggregationMode.PACKAGE)
+		{
+			return package_key_view(a.specifier).compare_to(package_key_view(b.specifier)) == 0;
+		}
+		return a.specifier.compare_to(b.specifier) == 0;
+	}
+
+	int target_card_a;
+	int target_card_b;
+	int target_anchor_a;
+	int target_anchor_b;
+	String target_a = edge_target_group(index, project, a, &target_anchor_a, &target_card_a);
+	String target_b = edge_target_group(index, project, b, &target_anchor_b, &target_card_b);
+	if (target_card_a < 0 || target_card_b < 0) return false;
+	if (source_a.compare_to(target_a) == 0 && source_anchor_a == target_anchor_a)
+	{
+		return file_a == file_b && a.target_path.compare_to(b.target_path) == 0;
+	}
+	return target_a.compare_to(target_b) == 0;
+}
+
+fn void ImportIndex.build_edges(&self, project::Project* project, List{ImportEdge}* out)
+{
+	out.clear();
+	self.refresh_card_paths(project);
+	AggregationMode mode = g_import_settings.aggregation;
+	HashMap{String, int} seen;
+	seen.init(tmem);
+
+	for (sz c = 0; c < project.cards.len(); c++)
+	{
+		FileCard* card   = &project.cards[c];
+		ImportRef[] refs = self.imports_for((String)card.path);
+		for (usz r = 0; r < refs.len; r++)
+		{
+			ImportRef ref = refs[r];
+			if (ref.resolved && !g_import_settings.show_internal) continue;
+			if (!ref.resolved && !g_import_settings.show_external) continue;
+
+			int source_folder;
+			String source_key = edge_source_group(project, (int)c, &source_folder);
+			if (!edge_anchor_visible(project, source_folder, (int)c)) continue;
+
+			ImportEdge edge;
+			edge.source_card = (int)c;
+			edge.source_ref = r;
+			edge.count = 1;
+			edge.slot = 0;
+			edge.label = "";
+			edge.external = !ref.resolved;
+			edge.source_key = source_key;
+			edge.source_folder = source_folder;
+			edge.target_folder = project::ROOT_FOLDER;
+			edge.target_card = -1;
+			edge.target_key = "";
+
+			String key = "";
+			if (mode == AggregationMode.OFF)
+			{
+				edge.source_folder = project::ROOT_FOLDER;
+				edge.source_key = (String)card.path;
+				if (ref.resolved)
+				{
+					int*? target = self.card_paths.get_ref(ref.target_path);
+					if (catch excuse = target) continue;
+					edge.target_card = *target;
+					if (edge.target_card < 0 || !project.card_visible(edge.target_card)) continue;
+					if (ref.target_path.compare_to((String)card.path) == 0) continue;
+				}
+				key = string::format(tmem, "%s|O|%d", (String)card.path, (long)r);
+				edge.label = ref.specifier;
+			}
+			else if (!ref.resolved)
+			{
+				if (mode == AggregationMode.PACKAGE)
+				{
+					edge.target_key = package_key(tmem, ref.specifier);
+					edge.label = edge.target_key;
+				}
+				else
+				{
+					edge.target_key = ref.specifier;
+					edge.label = ref.specifier;
+				}
+				key = string::format(tmem, "%s|E|%s", source_key, edge.target_key);
+			}
+			else
+			{
+				int target_card;
+				String target_key = edge_target_group(self, project, ref, &edge.target_folder, &target_card);
+				if (target_card < 0) continue;
+				if (!edge_anchor_visible(project, edge.target_folder, target_card)) continue;
+				edge.target_card = target_card;
+				edge.target_key = target_key;
+				if (ref.target_path.compare_to((String)card.path) == 0) continue;
+				if (source_key.compare_to(target_key) == 0 && source_folder == edge.target_folder)
+				{
+					edge.source_folder = project::ROOT_FOLDER;
+					edge.target_folder = project::ROOT_FOLDER;
+					key = string::format(tmem, "%s|F|%s", (String)card.path, ref.target_path);
+				}
+				else
+				{
+					key = string::format(tmem, "%s|I|%s", source_key, target_key);
+				}
+			}
+
+			int*? existing = seen.get_ref(key);
+			if (catch excuse = existing)
+			{
+				seen.set(key, (int)out.len());
+				out.push(edge);
+			}
+			else
+			{
+				out.get_ref(*existing).count++;
+			}
+		}
+	}
+
+	HashMap{String, int} slots;
+	slots.init(tmem);
+	for (sz i = 0; i < out.len(); i++)
+	{
+		ImportEdge* edge = out.get_ref(i);
+		if (!edge.external) continue;
+		int*? slot = slots.get_ref(edge.source_key);
+		if (catch excuse = slot)
+		{
+			slots.set(edge.source_key, 0);
+			edge.slot = 0;
+		}
+		else
+		{
+			*slot = *slot + 1;
+			edge.slot = *slot;
+		}
+	}
+}
+
+fn void ImportIndex.collect_group(&self, project::Project* project, ImportHit hit, List{ImporterRef}* out)
+{
+	if (!hit.valid) return;
+	if (hit.source < 0 || hit.source >= (int)project.cards.len()) return;
+	int*? first_file = self.file_index.get_ref((String)project.cards[hit.source].path);
+	if (catch excuse = first_file) return;
+	CardImports first = self.files[*first_file];
+	if (hit.ref_index >= (usz)first.imports.len()) return;
+	ImportRef first_ref = first.imports[(sz)hit.ref_index];
+
+	@pool()
+	{
+		for (sz f = 0; f < self.files.len(); f++)
+		{
+			CardImports file = self.files[f];
+			for (sz r = 0; r < file.imports.len(); r++)
+			{
+				ImportRef ref = file.imports[r];
+				if (refs_share_edge(project, self, (int)f, ref, hit.source, first_ref))
+				{
+					out.push({ .file = (int)f, .ref = (usz)r });
+				}
+			}
+		}
+	};
+}
+
 fn void draw_arrowhead(RLVector2 p1, RLVector2 c2, RLVector2 c3, RLVector2 p2, float zoom, RLColor color)
 {
 	RLVector2 before = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, 0.9f);
@@ -2555,45 +2895,64 @@ fn void draw_label(RLFont font, String text, float x, float y, float size, RLCol
 	};
 }
 
-fn bool arrow_geometry(
-	ImportIndex* index,
+fn Rect edge_source_rect(project::Project* project, ImportEdge* edge)
+{
+	if (edge.source_folder != project::ROOT_FOLDER)
+	{
+		return project.cluster_visual_bounds(edge.source_folder);
+	}
+	return project.cards[edge.source_card].rect;
+}
+
+fn Rect edge_target_rect(project::Project* project, ImportEdge* edge)
+{
+	if (edge.target_folder != project::ROOT_FOLDER)
+	{
+		return project.cluster_visual_bounds(edge.target_folder);
+	}
+	return project.cards[edge.target_card].rect;
+}
+
+fn bool edge_geometry(
 	project::Project* project,
-	FileCard* card,
-	ImportRef ref,
-	int slot,
-	int* out_target,
+	ImportEdge* edge,
 	RLVector2* out_p1,
 	RLVector2* out_c2,
 	RLVector2* out_c3,
 	RLVector2* out_p2
 )
 {
-	*out_target = -1;
-	if (ref.resolved)
+	if (edge.source_card < 0 || edge.source_card >= (int)project.cards.len()) return false;
+	Rect source_rect = edge_source_rect(project, edge);
+	if (edge.external)
 	{
-		if (ref.target_path.compare_to((String)card.path) == 0) return false;
-		int*? target = index.card_paths.get_ref(ref.target_path);
-		if (catch excuse = target) return false;
-		if (*target < 0 || *target >= (int)project.cards.len()) return false;
-		if (!project.card_visible(*target)) return false;
-		FileCard* target_card = &project.cards[*target];
-		RLVector2 source_pt   = rect_center(card.rect);
-		RLVector2 target_pt   = rect_center(target_card.rect);
-		*out_target = *target;
-		*out_p1 = rect_edge_point(card.rect, target_pt);
-		*out_p2 = rect_edge_point(target_card.rect, source_pt);
+		float label_scale = ui::scale();
+		*out_p2 = {
+			source_rect.x + source_rect.width + 40.0f * label_scale,
+			source_rect.y - (18.0f + (float)edge.slot * 16.0f) * label_scale,
+		};
+		*out_p1 = rect_edge_point(source_rect, *out_p2);
 		bezier_controls(*out_p1, *out_p2, out_c2, out_c3);
 		return true;
 	}
-
-	float label_scale = ui::scale();
-	*out_p2 = {
-		card.rect.x + card.rect.width + 40.0f * label_scale,
-		card.rect.y - (18.0f + (float)slot * 16.0f) * label_scale,
-	};
-	*out_p1 = rect_edge_point(card.rect, *out_p2);
+	if (edge.target_card < 0 || edge.target_card >= (int)project.cards.len()) return false;
+	Rect target_rect    = edge_target_rect(project, edge);
+	RLVector2 source_pt = rect_center(source_rect);
+	RLVector2 target_pt = rect_center(target_rect);
+	*out_p1 = rect_edge_point(source_rect, target_pt);
+	*out_p2 = rect_edge_point(target_rect, source_pt);
 	bezier_controls(*out_p1, *out_p2, out_c2, out_c3);
 	return true;
+}
+
+fn bool edge_related(project::Project* project, ImportEdge* edge, int active)
+{
+	if (active < 0 || active >= (int)project.cards.len()) return true;
+	if (edge.source_card == active || edge.target_card == active) return true;
+	int folder = project.cards[active].folder;
+	if (edge.source_folder != project::ROOT_FOLDER && folder_contains(project, edge.source_folder, folder)) return true;
+	if (edge.target_folder != project::ROOT_FOLDER && folder_contains(project, edge.target_folder, folder)) return true;
+	return false;
 }
 
 fn float point_segment_distance(RLVector2 p, RLVector2 a, RLVector2 b)
@@ -2630,30 +2989,50 @@ fn float bezier_min_distance(RLVector2 p, RLVector2 p1, RLVector2 c2, RLVector2 
 	return best;
 }
 
-fn void draw_one(
-	ImportIndex* index,
-	project::Project* project,
-	int source_index,
-	FileCard* card,
-	ImportRef ref,
-	RLCamera2D camera,
+fn bool edge_visible(project::Project* project, ImportEdge* edge, Rect visible)
+{
+	Rect source = edge_source_rect(project, edge);
+	if (!project::rect_intersects(source, visible)) return false;
+	if (edge.external) return true;
+	if (edge.target_card < 0) return false;
+	Rect target = edge_target_rect(project, edge);
+	return project::rect_intersects(target, visible);
+}
+
+fn void draw_edge_count(
 	RLFont font,
-	int active,
-	int slot,
-	bool hovered
+	ImportEdge* edge,
+	RLVector2 p1,
+	RLVector2 c2,
+	RLVector2 c3,
+	RLVector2 p2,
+	RLColor color
 )
 {
-	float zoom = camera.zoom > 0.0f ? camera.zoom : 1.0f;
-	if (ref.resolved && !g_import_settings.show_internal) return;
-	if (!ref.resolved && !g_import_settings.show_external) return;
+	if (edge.count <= 1) return;
+	@pool()
+	{
+		RLVector2 mid = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, 0.5f);
+		String label  = string::format(tmem, "x%d", (long)edge.count);
+		draw_label(
+			font,
+			label,
+			mid[0] + 6.0f * ui::scale(),
+			mid[1] - 8.0f * ui::scale(),
+			13.0f * ui::text_scale(),
+			color
+		);
+	};
+}
 
-	int target = -1;
+fn void draw_edge(project::Project* project, ImportEdge* edge, RLCamera2D camera, RLFont font, int active, bool hovered)
+{
+	float zoom = camera.zoom > 0.0f ? camera.zoom : 1.0f;
 	RLVector2 p1;
 	RLVector2 c2;
 	RLVector2 c3;
 	RLVector2 p2;
-	if (!arrow_geometry(index, project, card, ref, slot, &target, &p1, &c2, &c3, &p2)) return;
-
+	if (!edge_geometry(project, edge, &p1, &c2, &c3, &p2)) return;
 	if (!hovered)
 	{
 		float dx = p2[0] - p1[0];
@@ -2661,19 +3040,17 @@ fn void draw_one(
 		if (math::sqrt(dx * dx + dy * dy) * zoom < ARROW_MIN_DRAW_PX) return;
 	}
 
-	bool related = active < 0 || source_index == active || target == active;
+	bool related = edge_related(project, edge, active) || hovered;
 	float thick  = (hovered ? g_import_settings.hover_thickness : g_import_settings.line_thickness) / zoom;
-	if (hovered)
-	{
-		related = true;
-	}
 
-	if (ref.resolved)
+	if (!edge.external)
 	{
 		RLColor color = hovered ? theme::current()
 			.import_solid_hover : (related ? theme::current().import_solid : theme::current().import_solid_dim);
 		draw_styled_bezier(p1, p2, thick, zoom, g_import_settings.internal_style, color);
 		draw_arrowhead(p1, c2, c3, p2, zoom, color);
+		draw_edge_count(font, edge, p1, c2, c3, p2, related ? theme::current()
+			.import_label : theme::current().import_label_dim);
 		return;
 	}
 
@@ -2683,12 +3060,17 @@ fn void draw_one(
 		.import_external_hover : (related ? theme::current().import_label : theme::current().import_label_dim);
 	draw_styled_bezier(p1, p2, thick, zoom, g_import_settings.external_style, line_color);
 	draw_arrowhead(p1, c2, c3, p2, zoom, line_color);
+	draw_edge_count(font, edge, p1, c2, c3, p2, label_color);
 	float s  = ui::scale();
 	float ts = ui::text_scale();
 	rl::draw_circle_v(p2, 3.0f * s / zoom, line_color);
 	if (g_import_settings.labels && (hovered || zoom >= ARROW_LABEL_MIN_ZOOM))
 	{
-		draw_label(font, ref.specifier, p2[0] + 8.0f * s / zoom, p2[1] - 6.0f * s / zoom, 14.0f * ts, label_color);
+		@pool()
+		{
+			String label = edge.count > 1 ? string::format(tmem, "%s  x%d", edge.label, (long)edge.count) : edge.label;
+			draw_label(font, label, p2[0] + 8.0f * s / zoom, p2[1] - 6.0f * s / zoom, 14.0f * ts, label_color);
+		};
 	}
 }
 
@@ -2701,51 +3083,37 @@ fn bool ImportIndex.hit_test(&self, project::Project* project, RLCamera2D camera
 {
 	self.hover.valid = false;
 	if (!g_import_settings.enabled) return false;
-	self.refresh_card_paths(project);
 	float zoom      = camera.zoom > 0.0f ? camera.zoom : 1.0f;
 	float threshold = g_import_settings.hit_tolerance / zoom;
 	Rect visible    = project::expand_rect(project::visible_world_rect(camera), 64.0f);
 	float best      = threshold;
 
-	for (sz i = 0; i < project.cards.len(); i++)
+	@pool()
 	{
-		FileCard* card = &project.cards[i];
-		if (!project.card_visible((int)i)) continue;
-		if (!project::rect_intersects(card.rect, visible)) continue;
-
-		ImportRef[] refs = self.imports_for((String)card.path);
-		if (refs.len == 0) continue;
-
-		usz external_slot = 0;
-		for (usz r = 0; r < refs.len; r++)
+		List{ImportEdge} edges;
+		edges.init(tmem);
+		self.build_edges(project, &edges);
+		for (sz i = 0; i < edges.len(); i++)
 		{
-			ImportRef ref = refs[r];
-			int slot      = 0;
-			if (!ref.resolved)
-			{
-				slot = (int)external_slot;
-				external_slot++;
-			}
-			if (ref.resolved && !g_import_settings.show_internal) continue;
-			if (!ref.resolved && !g_import_settings.show_external) continue;
-			int target = -1;
+			ImportEdge* edge = edges.get_ref(i);
+			if (!edge_visible(project, edge, visible)) continue;
 			RLVector2 p1;
 			RLVector2 c2;
 			RLVector2 c3;
 			RLVector2 p2;
-			if (!arrow_geometry(self, project, card, ref, slot, &target, &p1, &c2, &c3, &p2)) continue;
+			if (!edge_geometry(project, edge, &p1, &c2, &c3, &p2)) continue;
 			float d = bezier_min_distance(world, p1, c2, c3, p2, BEZIER_HIT_STEPS);
-			if (d <= best)
-			{
-				best = d;
-				self.hover.valid = true;
-				self.hover.source = (int)i;
-				self.hover.ref_index = r;
-				self.hover.target = target;
-				self.hover.world = world;
-			}
+			if (d > best) continue;
+			best = d;
+			self.hover.valid = true;
+			self.hover.source = edge.source_card;
+			self.hover.ref_index = edge.source_ref;
+			self.hover.target = edge.target_card;
+			self.hover.world = world;
+			self.hover.grouped = edge.count > 1;
+			self.hover.group_count = edge.count;
 		}
-	}
+	};
 	return self.hover.valid;
 }
 
@@ -2753,39 +3121,23 @@ fn void ImportIndex.draw(&self, project::Project* project, RLCamera2D camera, RL
 {
 	if (!g_import_settings.enabled) return;
 	if (camera.zoom < ARROW_MIN_DRAW_ZOOM) return;
-	self.refresh_card_paths(project);
 	int active   = project.focused;
 	Rect visible = project::expand_rect(project::visible_world_rect(camera), 64.0f);
 
-	int drawn = 0;
 	@pool()
 	{
-		List{int} draw_list;
-		draw_list.init(tmem);
-		project.visible_cards(visible, &draw_list);
-		for (sz c = 0; c < draw_list.len() && drawn < ARROW_MAX_PER_FRAME; c++)
+		List{ImportEdge} edges;
+		edges.init(tmem);
+		self.build_edges(project, &edges);
+		int drawn = 0;
+		for (sz i = 0; i < edges.len() && drawn < ARROW_MAX_PER_FRAME; i++)
 		{
-			sz i           = (sz)draw_list[c];
-			FileCard* card = &project.cards[i];
-
-			ImportRef[] refs = self.imports_for((String)card.path);
-			if (refs.len == 0) continue;
-
-			usz external_slot = 0;
-			for (usz r = 0; r < refs.len; r++)
-			{
-				ImportRef ref = refs[r];
-				int slot      = 0;
-				if (!ref.resolved)
-				{
-					slot = (int)external_slot;
-					external_slot++;
-				}
-				bool hovered = self.hover.valid && self.hover.source == (int)i && self.hover.ref_index == r;
-				draw_one(self, project, (int)i, card, ref, camera, font, active, slot, hovered);
-				drawn++;
-				if (drawn >= ARROW_MAX_PER_FRAME) break;
-			}
+			ImportEdge* edge = edges.get_ref(i);
+			if (!edge_visible(project, edge, visible)) continue;
+			bool hovered = self.hover.valid && self.hover.source == edge.source_card
+				&& self.hover.ref_index == edge.source_ref;
+			draw_edge(project, edge, camera, font, active, hovered);
+			drawn++;
 		}
 	};
 }
@@ -2805,6 +3157,12 @@ fn void ImportIndex.draw_tooltip(&self, project::Project* project, RLFont font)
 		String source_name = rl::get_file_name((ZString)card.path.ptr).str_view();
 		String keyword     = language::language_for_path((String)card.path) == language::Language.C ? "#include"
 			: "import";
+		String group       = self.hover.grouped ? string::format(
+			tmem,
+			"\n%d imports grouped",
+			(long)self.hover.group_count
+		)
+			: "";
 		String markdown;
 		if (ref.resolved)
 		{
@@ -2820,23 +3178,25 @@ fn void ImportIndex.draw_tooltip(&self, project::Project* project, RLFont font)
 			}
 			markdown = string::format(
 				tmem,
-				"`%s %s`\n%s:%d -> %s",
+				"`%s %s`\n%s:%d -> %s%s",
 				keyword,
 				ref.specifier,
 				source_name,
 				(long)(ref.line + 1),
-				target_name
+				target_name,
+				group
 			);
 		}
 		else
 		{
 			markdown = string::format(
 				tmem,
-				"`%s %s`\n%s:%d (unresolved)",
+				"`%s %s`\n%s:%d (unresolved)%s",
 				keyword,
 				ref.specifier,
 				source_name,
-				(long)(ref.line + 1)
+				(long)(ref.line + 1),
+				group
 			);
 		}
 		hover::draw_hover(markdown, rl::get_mouse_position(), font);
