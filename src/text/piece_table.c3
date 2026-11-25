@@ -334,9 +334,16 @@ fn void PieceTable.rebuild_line_index(&self)
 {
 	self.line_starts.clear();
 	self.line_starts.push(0);
-	for (usz i = 0; i < self.total; i++)
+	usz base = 0;
+	for (sz piece_index = 0; piece_index < self.pieces.len(); piece_index++)
 	{
-		if (self.byte_at(i) == '\n') self.line_starts.push(i + 1);
+		Piece piece  = self.pieces[piece_index];
+		char[] bytes = self.piece_bytes(piece);
+		for (usz i = 0; i < bytes.len; i++)
+		{
+			if (bytes[i] == '\n') self.line_starts.push(base + i + 1);
+		}
+		base += bytes.len;
 	}
 }
 

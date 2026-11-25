@@ -942,3 +942,26 @@ fn void test_word_navigation_utf8()
 		t.destroy();
 	};
 }
+fn void test_highlight_size_limit()
+{
+	EditorSettings saved = settings();
+	EditorSettings es    = saved;
+	es.highlight_max_mb = 1;
+	set_settings(es);
+
+	PieceTable small;
+	small.init_from_buffer(mem, "fn int main() { return 0; }\n");
+	assert(highlight_allowed(&small));
+	small.total = 2u * 1024u * 1024u;
+	assert(!highlight_allowed(&small));
+	small.destroy();
+
+	es.highlight_max_mb = 0;
+	set_settings(es);
+	PieceTable unlimited;
+	unlimited.init_from_buffer(mem, "x");
+	unlimited.total = 64u * 1024u * 1024u;
+	assert(highlight_allowed(&unlimited));
+	unlimited.destroy();
+	set_settings(saved);
+}
