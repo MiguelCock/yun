@@ -3560,25 +3560,62 @@ fn int main(String[] args)
 					}
 					else
 					{
-						float zoom      = canvas.camera.zoom > 0.0f ? canvas.camera.zoom : 1.0f;
-						float speed     = project::shift_down() ? GRAB_MOVE_FINE_SPEED : GRAB_MOVE_SPEED;
-						float step      = speed * dt / zoom;
-						RLVector2 delta = { 0.0f, 0.0f };
-						if (rl::is_key_down(
-							rl::RLKeyboardKey.LEFT
-						) || rl::is_key_down(rl::RLKeyboardKey.H)) delta[0] -= step;
-						if (rl::is_key_down(
-							rl::RLKeyboardKey.RIGHT
-						) || rl::is_key_down(rl::RLKeyboardKey.L)) delta[0] += step;
-						if (rl::is_key_down(
-							rl::RLKeyboardKey.UP
-						) || rl::is_key_down(rl::RLKeyboardKey.K)) delta[1] -= step;
-						if (rl::is_key_down(
-							rl::RLKeyboardKey.DOWN
-						) || rl::is_key_down(rl::RLKeyboardKey.J)) delta[1] += step;
-						if (delta[0] != 0.0f || delta[1] != 0.0f)
+						float grid = project.grid_snap_step(&canvas);
+						if (grid > 0.0f)
 						{
-							project.apply_grab_delta(delta, project.grid_snap_step(&canvas));
+							RLVector2 direction = { 0.0f, 0.0f };
+							if (rl::is_key_pressed(
+								rl::RLKeyboardKey.LEFT
+							) || rl::is_key_pressed_repeat(
+								rl::RLKeyboardKey.LEFT
+							) || rl::is_key_pressed(
+								rl::RLKeyboardKey.H
+							) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.H)) direction[0] -= 1.0f;
+							if (rl::is_key_pressed(
+								rl::RLKeyboardKey.RIGHT
+							) || rl::is_key_pressed_repeat(
+								rl::RLKeyboardKey.RIGHT
+							) || rl::is_key_pressed(
+								rl::RLKeyboardKey.L
+							) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.L)) direction[0] += 1.0f;
+							if (rl::is_key_pressed(
+								rl::RLKeyboardKey.UP
+							) || rl::is_key_pressed_repeat(
+								rl::RLKeyboardKey.UP
+							) || rl::is_key_pressed(
+								rl::RLKeyboardKey.K
+							) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.K)) direction[1] -= 1.0f;
+							if (rl::is_key_pressed(
+								rl::RLKeyboardKey.DOWN
+							) || rl::is_key_pressed_repeat(
+								rl::RLKeyboardKey.DOWN
+							) || rl::is_key_pressed(
+								rl::RLKeyboardKey.J
+							) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.J)) direction[1] += 1.0f;
+							if (direction[0] != 0.0f || direction[1] != 0.0f)
+							{
+								project.apply_grab_delta({ direction[0] * grid, direction[1] * grid }, grid);
+							}
+						}
+						else
+						{
+							float zoom      = canvas.camera.zoom > 0.0f ? canvas.camera.zoom : 1.0f;
+							float speed     = project::shift_down() ? GRAB_MOVE_FINE_SPEED : GRAB_MOVE_SPEED;
+							float step      = speed * dt / zoom;
+							RLVector2 delta = { 0.0f, 0.0f };
+							if (rl::is_key_down(
+								rl::RLKeyboardKey.LEFT
+							) || rl::is_key_down(rl::RLKeyboardKey.H)) delta[0] -= step;
+							if (rl::is_key_down(
+								rl::RLKeyboardKey.RIGHT
+							) || rl::is_key_down(rl::RLKeyboardKey.L)) delta[0] += step;
+							if (rl::is_key_down(
+								rl::RLKeyboardKey.UP
+							) || rl::is_key_down(rl::RLKeyboardKey.K)) delta[1] -= step;
+							if (rl::is_key_down(
+								rl::RLKeyboardKey.DOWN
+							) || rl::is_key_down(rl::RLKeyboardKey.J)) delta[1] += step;
+							if (delta[0] != 0.0f || delta[1] != 0.0f) project.apply_grab_delta(delta, 0.0f);
 						}
 
 						Rect item = project.selected_item_rect();

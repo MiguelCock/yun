@@ -990,6 +990,31 @@ fn void test_enter_and_leave_folder()
 	};
 }
 
+fn void test_grab_discrete_grid_steps()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.name = "a.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f },
+			}
+		);
+		p.selected = 0;
+		p.begin_grab();
+		p.apply_grab_delta({ 64.0f, 0.0f }, 64.0f);
+		assert(p.cards[0].rect.x == 64.0f);
+		p.apply_grab_delta({ 64.0f, 0.0f }, 64.0f);
+		assert(p.cards[0].rect.x == 128.0f);
+		p.apply_grab_delta({ 0.0f, -64.0f }, 64.0f);
+		assert(p.cards[0].rect.y == -64.0f);
+	};
+}
+
 fn void test_grab_move_selected()
 {
 	@pool()
