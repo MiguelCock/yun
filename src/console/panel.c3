@@ -1403,10 +1403,11 @@ fn void ConsolePanel.draw(
 )
 {
 	if (!self.visible) return;
-	Rect panel  = self.rect();
-	Rect header = self.header_rect();
-	Rect output = self.output_rect();
-	Rect input  = self.input_rect();
+	Rect panel      = self.rect();
+	Rect header     = self.header_rect();
+	RLVector2 mouse = rl::get_mouse_position();
+	Rect output     = self.output_rect();
+	Rect input      = self.input_rect();
 
 	float radius = ui::corner_radius();
 	ui::rounded_top(panel, radius, theme::current().panel_bg);
@@ -1475,6 +1476,20 @@ fn void ConsolePanel.draw(
 				0.0f,
 				theme::current()
 				.panel_dim);
+			if (ui::pointer_in(tab, mouse))
+			{
+				if (console_tab_close_at(manager, header, mouse))
+				{
+					ui::tooltip_shortcut(
+						"Close Console Session",
+						commands::command_def(commands::CommandId.CONSOLE_CLOSE_SESSION)
+						.shortcut);
+				}
+				else
+				{
+					ui::tooltip_shortcut("Console Session", "");
+				}
+			}
 		}
 		Rect new_tab = console_new_tab_rect(manager, header);
 		if (new_tab.x + new_tab.width <= header.x + header.width - ui::pxf(130.0f))
@@ -1491,6 +1506,13 @@ fn void ConsolePanel.draw(
 				0.0f,
 				theme::current()
 				.panel_header);
+			if (ui::pointer_in(new_tab, mouse))
+			{
+				ui::tooltip_shortcut(
+					"New Console Session",
+					commands::command_def(commands::CommandId.CONSOLE_NEW_SESSION)
+					.shortcut);
+			}
 		}
 	}
 
@@ -1775,7 +1797,6 @@ fn void ConsolePanel.draw(
 		.panel_caret);
 	rl::end_scissor_mode();
 
-	RLVector2 mouse = rl::get_mouse_position();
 	for (int i = 0; i < BUTTON_COUNT; i++)
 	{
 		ConsoleButton button = (ConsoleButton)i;

@@ -607,7 +607,7 @@ fn void TopBar.draw(
 		if (def.icon_only)
 		{
 			icons::draw(icon_for_command(def.id), icons::icon_box(r, 16), color);
-			if (hovered) ui::tooltip(def.label);
+			if (hovered) ui::tooltip_shortcut(def.label, def.shortcut);
 		}
 		else
 		{
@@ -626,7 +626,7 @@ fn void TopBar.draw(
 				0.0f,
 				color
 			);
-			if (hovered) ui::tooltip(label);
+			if (hovered) ui::tooltip_shortcut(label, def.shortcut);
 		}
 	}
 
