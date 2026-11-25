@@ -337,7 +337,7 @@ fn void Problems.draw(&self, RLFont font)
 	float s    = ui::scale();
 	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
-	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
+	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	float icon_px = icons::icon_size(18);
 	icons::draw(
@@ -359,10 +359,20 @@ fn void Problems.draw(&self, RLFont font)
 	};
 
 	float list_y = self.list_y();
+	ui::separator_h({ .x = panel.x + 2.0f, .y = list_y - 1.0f, .width = panel.width - 4.0f, .height = 1.0f });
 	if (self.rows.len() == 0)
 	{
-		draw_text(font, "No problems", panel.x + (float)PADDING * s, list_y + 4.0f * s, 16.0f * ts, theme::current()
-			.panel_dim);
+		ui::empty_state(
+			font,
+			{
+				.x = panel.x + 2.0f,
+				.y = list_y,
+				.width = panel.width - 4.0f,
+				.height = panel.height - (list_y - panel.y)
+			},
+			"No problems",
+			"Diagnostics from the language server appear here"
+		);
 		return;
 	}
 

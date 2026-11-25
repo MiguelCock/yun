@@ -1715,14 +1715,14 @@ fn void Panel.draw_branch_picker(&self, State* git, Canvas* canvas, float text_s
 	rl::begin_scissor_mode((int)list.x, (int)list.y, (int)list.width, (int)list.height);
 	if (git.branches.len() == 0)
 	{
-		rl::draw_text_ex(
-			ui::font(),
-			git.branches_loaded ? "No local branches" : "Loading branches...",
-			{ list.x + ui::pxf(14.0f), list.y + ui::pxf(6.0f) },
-			(float)ui::tpx(13),
-			0.0f,
-			theme::current()
-			.panel_dim);
+		if (git.branches_loaded)
+		{
+			ui::empty_state(ui::font(), list, "No local branches", "Create a branch to get started.");
+		}
+		else
+		{
+			ui::loading_state(ui::font(), list, "Loading branches...");
+		}
 	}
 	int last = math::min(self.branch_scroll + self.branch_visible_rows(canvas), (int)git.branches.len());
 	for (int i = self.branch_scroll; i < last; i++)
@@ -1818,6 +1818,7 @@ fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
 		{ .x = panel.x, .y = panel.y, .width = panel.width, .height = header.height },
 		theme::current()
 		.panel_bg_alt);
+	ui::separator_h({ .x = header.x, .y = header.y + header.height - 1.0f, .width = header.width, .height = 1.0f });
 	rl::draw_text_ex(
 		ui::font(),
 		"SOURCE CONTROL",
@@ -1865,39 +1866,17 @@ fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
 	rl::begin_scissor_mode((int)list.x, (int)list.y, (int)list.width, (int)list.height);
 	if (!git.is_repo)
 	{
-		String message = git.error.kind == GitErrorKind.NONE ? "Open a Git repository to see changes."
-			: git.error.message;
-		rl::draw_text_ex(
-			ui::font(),
-			message.zstr_tcopy(),
-			{ list.x + ui::pxf(PAD), list.y + ui::pxf(PAD) },
-			(float)ui::tpx(13),
-			0.0f,
-			theme::current()
-			.panel_dim);
+		String message = git.error.kind == GitErrorKind.NONE ? "Not a Git repository" : git.error.message;
+		ui::empty_state(ui::font(), list, message, "Open a folder inside a Git repository.");
 	}
 	else if (!git.has_status)
 	{
-		rl::draw_text_ex(
-			ui::font(),
-			"Loading status...",
-			{ list.x + ui::pxf(PAD), list.y + ui::pxf(PAD) },
-			(float)ui::tpx(13),
-			0.0f,
-			theme::current()
-			.panel_dim);
+		ui::loading_state(ui::font(), list, "Loading status...");
 	}
 	else if (self.rows.len() == 0
 		|| (self.staged == 0 && self.changes == 0 && self.untracked == 0 && self.conflicts == 0))
 	{
-		rl::draw_text_ex(
-			ui::font(),
-			"No changes",
-			{ list.x + ui::pxf(PAD), list.y + ui::pxf(PAD) },
-			(float)ui::tpx(13),
-			0.0f,
-			theme::current()
-			.panel_dim);
+		ui::empty_state(ui::font(), list, "No changes", "The working tree is clean.");
 	}
 	else
 	{

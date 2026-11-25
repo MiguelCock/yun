@@ -393,3 +393,78 @@ fn void draw_scrollbar(
 	bool hovered = pointer_in(track, rl::get_mouse_position());
 	rounded_rect(thumb, radius, hovered ? hover_color : thumb_color);
 }
+fn void empty_state(RLFont font, Rect area, String title, String hint)
+{
+	float title_size = (float)tpx(16);
+	float hint_size  = (float)tpx(13);
+	float gap        = pxf(6.0f);
+	float height     = title_size + (hint.len > 0 ? gap + hint_size : 0.0f);
+	float y          = area.y + (area.height - height) * 0.5f;
+	@pool()
+	{
+		ZString title_z = title.zstr_tcopy();
+		float title_w   = rl::measure_text_ex(font, title_z, title_size, 0.0f)[0];
+		rl::draw_text_ex(
+			font,
+			title_z,
+			{ area.x + (area.width - title_w) * 0.5f, y },
+			title_size,
+			0.0f,
+			theme::current()
+			.panel_dim);
+		if (hint.len > 0)
+		{
+			ZString hint_z = hint.zstr_tcopy();
+			float hint_w   = rl::measure_text_ex(font, hint_z, hint_size, 0.0f)[0];
+			rl::draw_text_ex(
+				font,
+				hint_z,
+				{ area.x + (area.width - hint_w) * 0.5f, y + title_size + gap },
+				hint_size,
+				0.0f,
+				theme::current()
+				.panel_disabled);
+		}
+	};
+}
+
+fn void loading_state(RLFont font, Rect area, String label)
+{
+	empty_state(font, area, label, "");
+}
+
+fn void separator_h(Rect r)
+{
+	rounded_rect(r, 0.0f, theme::current().panel_border);
+}
+
+fn void separator_v(Rect r)
+{
+	rounded_rect(r, 0.0f, theme::current().panel_border);
+}
+
+fn void panel_shadow(Rect r)
+{
+	for (int i = 3; i >= 1; i--)
+	{
+		float offset  = pxf((float)i);
+		RLColor color = theme::current().panel_border;
+		color[3] = (char)(10 * i);
+		rounded_rect(
+			{
+				.x = r.x - offset,
+				.y = r.y - offset,
+				.width = r.width + offset * 2.0f,
+				.height = r.height + offset * 2.0f
+			},
+			corner_radius(),
+			color
+		);
+	}
+}
+
+fn void floating_panel(Rect r, RLColor fill, RLColor border)
+{
+	panel_shadow(r);
+	panel(r, fill, border);
+}

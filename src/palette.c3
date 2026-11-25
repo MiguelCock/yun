@@ -362,7 +362,7 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 	if (!self.open) return;
 
 	Rect panel = self.panel_rect();
-	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
+	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	Rect field = self.field_rect();
 	ui::rounded_rect(field, ui::row_radius(), theme::current().panel_field);
@@ -383,13 +383,17 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 	if (self.results.len() == 0)
 	{
-		draw_run(
+		ui::empty_state(
 			font,
+			{
+				.x = panel.x + 2.0f,
+				.y = list_y,
+				.width = panel.width - 4.0f,
+				.height = panel.height - (list_y - panel.y)
+			},
 			"No matching commands",
-			panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
-			list_y + (float)ui::px(5),
-			theme::current()
-			.panel_dim);
+			"Try a different search"
+		);
 		return;
 	}
 
