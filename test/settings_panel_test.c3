@@ -1,9 +1,49 @@
 module yun::settings_panel @test;
 
 import yun::commands;
+import yun::config;
+import yun::keymap;
 import yun::settings;
 
-fn void test_keys_section_rows()
+fn void test_command_descriptions()
+{
+	for (usz i = 0; i < commands::command_count(); i++)
+	{
+		String description = commands::command_description((commands::CommandId)i);
+		assert(description.len > 0);
+		for (usz c = 0; c < description.len; c++) assert(description[c] != '\n');
+	}
+}
+
+fn void test_command_groups()
+{
+	assert(commands::COMMAND_GROUPS.len == 7);
+	bool[7] used;
+	for (usz i = 0; i < commands::command_count(); i++)
+	{
+		String group =  commands::command_group((commands::CommandId)i);
+		int found    = -1;
+		for (usz g = 0; g < commands::COMMAND_GROUPS.len; g++)
+		{
+			if (commands::COMMAND_GROUPS[g].compare_to(group) == 0) found = (int)g;
+		}
+		assert(found >= 0);
+		used[found] = true;
+	}
+	for (usz g = 0; g < commands::COMMAND_GROUPS.len; g++) assert(used[g]);
+	assert(commands::command_group(commands::CommandId.SAVE).compare_to("General") == 0);
+	assert(commands::command_group(commands::CommandId.PAN_LEFT).compare_to("Canvas") == 0);
+	assert(commands::command_group(commands::CommandId.UNDO).compare_to("Editor") == 0);
+	assert(commands::command_group(commands::CommandId.CONSOLE_RUN).compare_to("Console") == 0);
+	assert(commands::command_group(commands::CommandId.LIST_UP).compare_to("Overlays") == 0);
+	assert(commands::command_group(commands::CommandId.SETTINGS_RESET).compare_to("Settings") == 0);
+	assert(commands::command_group(commands::CommandId.TOPBAR_LEFT).compare_to("Top bar") == 0);
+	assert(commands::command_group(commands::CommandId.TOGGLE_CONSOLE).compare_to("Console") == 0);
+	assert(commands::command_group(commands::CommandId.TOGGLE_SETTINGS).compare_to("Settings") == 0);
+	assert(commands::command_group(commands::CommandId.FOCUS_TOP_BAR).compare_to("Top bar") == 0);
+}
+
+fn void test_keys_grouped_rows()
 {
 	@pool()
 	{
@@ -12,21 +52,204 @@ fn void test_keys_section_rows()
 		p.show();
 		p.set_page(settings::SettingPage.KEYS);
 
-		assert(p.rows.len() == (sz)commands::command_count() + 2);
-		bool found_header = false;
-		bool found_action = false;
+		assert(p.rows.len() == (sz)commands::command_count() + (sz)commands::COMMAND_GROUPS.len + 1);
+		String current    = "";
 		int command_rows  = 0;
+		int headers       = 0;
+		bool found_action = false;
 		for (sz i = 0; i < p.rows.len(); i++)
 		{
 			Row row = p.rows[i];
-			if (row.kind == RowKind.HEADER && row.section.compare_to("Keybindings") == 0) found_header = true;
+			if (row.kind == RowKind.HEADER)
+			{
+				current = row.section;
+				headers++;
+				bool known = false;
+				for (usz g = 0; g < commands::COMMAND_GROUPS.len; g++)
+				{
+					if (commands::COMMAND_GROUPS[g].compare_to(current) == 0) known = true;
+				}
+				assert(known);
+			}
+			if (row.kind == RowKind.COMMAND)
+			{
+				command_rows++;
+				assert(current.len > 0);
+				assert(commands::command_group(row.command).compare_to(current) == 0);
+			}
 			if (row.kind == RowKind.ACTION) found_action = true;
-			if (row.kind == RowKind.COMMAND) command_rows++;
 		}
-		assert(found_header);
-		assert(found_action);
 		assert(command_rows == (int)commands::command_count());
+		assert(headers == (int)commands::COMMAND_GROUPS.len);
+		assert(found_action);
 		assert(p.selected_row() >= 0);
+		assert(p.rows[p.rows.len() - 1].kind == RowKind.ACTION);
+
+		p.layout_keys(2);
+		int first  = -1;
+		int second = -1;
+		int third  = -1;
+		for (sz i = 0; i < p.rows.len(); i++)
+		{
+			if (p.rows[i].kind != RowKind.COMMAND) continue;
+			if (first < 0)
+			{
+				first = (int)i;
+			}
+			else if (second < 0)
+			{
+				second = (int)i;
+			}
+			else if (third < 0)
+			{
+				third = (int)i;
+				break;
+			}
+		}
+		assert(first >= 0 && second >= 0 && third >= 0);
+		assert(p.rows[first].grid_col == 0);
+		assert(p.rows[second].grid_col == 1);
+		assert(p.rows[first].grid_y == p.rows[second].grid_y);
+		assert(p.rows[third].grid_y > p.rows[first].grid_y);
+		p.destroy();
+	};
+}
+
+fn void test_key_search_description_and_group()
+{
+	assert(command_matches(commands::CommandId.SAVE, "disk"));
+	assert(!command_matches(commands::CommandId.QUIT, "disk"));
+	assert(command_matches(commands::CommandId.LIST_UP, "overlays"));
+	assert(command_matches(commands::CommandId.SAVE, "general"));
+	assert(command_matches(commands::CommandId.SAVE, "save"));
+	assert(command_matches(commands::CommandId.SAVE, "save_file") == false);
+	assert(!command_matches(commands::CommandId.SAVE, "zzzzz"));
+}
+
+fn void test_key_filters()
+{
+	@pool()
+	{
+		config::Config cfg;
+		cfg.init(tmem);
+		cfg.set_key_binding("save", "Ctrl+O", settings::SettingLayer.GLOBAL);
+		cfg.set_key_binding("quit", "", settings::SettingLayer.GLOBAL);
+
+		keymap::Keymap km;
+		km.init(tmem);
+		km.build(&cfg);
+
+		Panel p;
+		p.init(tmem);
+		p.set_sources(&km, &cfg);
+		p.show();
+		p.set_page(settings::SettingPage.KEYS);
+
+		p.set_key_filter(KeyFilter.ALL);
+		int all_rows = 0;
+		for (sz i = 0; i < p.rows.len(); i++)
+		{
+			if (p.rows[i].kind == RowKind.COMMAND) all_rows++;
+		}
+		assert(all_rows == (int)commands::command_count());
+
+		p.set_key_filter(KeyFilter.CONFLICTS);
+		bool conflict_save = false;
+		bool conflict_open = false;
+		bool conflict_quit = false;
+		for (sz i = 0; i < p.rows.len(); i++)
+		{
+			if (p.rows[i].kind != RowKind.COMMAND) continue;
+			if (p.rows[i].command == commands::CommandId.SAVE) conflict_save = true;
+			if (p.rows[i].command == commands::CommandId.OPEN) conflict_open = true;
+			if (p.rows[i].command == commands::CommandId.QUIT) conflict_quit = true;
+		}
+		assert(conflict_save);
+		assert(conflict_open);
+		assert(!conflict_quit);
+
+		p.set_key_filter(KeyFilter.MODIFIED);
+		bool modified_save = false;
+		bool modified_quit = false;
+		bool modified_open = false;
+		for (sz i = 0; i < p.rows.len(); i++)
+		{
+			if (p.rows[i].kind != RowKind.COMMAND) continue;
+			if (p.rows[i].command == commands::CommandId.SAVE) modified_save = true;
+			if (p.rows[i].command == commands::CommandId.QUIT) modified_quit = true;
+			if (p.rows[i].command == commands::CommandId.OPEN) modified_open = true;
+		}
+		assert(modified_save);
+		assert(modified_quit);
+		assert(!modified_open);
+
+		p.set_key_filter(KeyFilter.UNBOUND);
+		bool unbound_quit       = false;
+		bool unbound_new_folder = false;
+		bool unbound_save       = false;
+		for (sz i = 0; i < p.rows.len(); i++)
+		{
+			if (p.rows[i].kind != RowKind.COMMAND) continue;
+			if (p.rows[i].command == commands::CommandId.QUIT) unbound_quit = true;
+			if (p.rows[i].command == commands::CommandId.NEW_FOLDER) unbound_new_folder = true;
+			if (p.rows[i].command == commands::CommandId.SAVE) unbound_save = true;
+		}
+		assert(unbound_quit);
+		assert(unbound_new_folder);
+		assert(!unbound_save);
+
+		p.destroy();
+		km.destroy();
+		cfg.destroy();
+	};
+}
+
+fn void test_key_selection_movement()
+{
+	@pool()
+	{
+		Panel p;
+		p.init(tmem);
+		p.show();
+		p.set_page(settings::SettingPage.KEYS);
+		p.layout_keys(2);
+
+		int first  = -1;
+		int second = -1;
+		int third  = -1;
+		int last   = -1;
+		for (sz i = 0; i < p.rows.len(); i++)
+		{
+			if (p.rows[i].kind != RowKind.COMMAND) continue;
+			if (first < 0)
+			{
+				first = (int)i;
+			}
+			else if (second < 0)
+			{
+				second = (int)i;
+			}
+			else if (third < 0)
+			{
+				third = (int)i;
+			}
+			last = (int)i;
+		}
+		assert(first >= 0 && second >= 0 && third >= 0 && last >= 0);
+
+		p.selected = first;
+		p.move_keys_horizontal(1);
+		assert(p.selected == second);
+		p.move_keys_horizontal(-1);
+		assert(p.selected == first);
+		p.move_keys_vertical(1);
+		assert(p.selected == third);
+		p.move_keys_edge(true);
+		assert(p.selected == last);
+		p.move_keys_edge(false);
+		assert(p.selected == first);
+		p.move_keys_page(1);
+		assert(p.selected != first);
 		p.destroy();
 	};
 }
