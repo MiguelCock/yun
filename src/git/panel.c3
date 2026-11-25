@@ -1970,6 +1970,24 @@ fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
 		}
 	}
 	rl::end_scissor_mode();
+	int visible_rows = self.visible_rows(canvas);
+	if ((int)self.rows.len() > visible_rows)
+	{
+		Rect track = {
+			.x = list.x + list.width - ui::pxf(4.0f),
+			.y = list.y,
+			.width = ui::pxf(3.0f),
+			.height = list.height,
+		};
+		ui::draw_scrollbar(
+			track,
+			(float)self.rows.len(),
+			(float)visible_rows,
+			(float)self.scroll,
+			false,
+			theme::current()
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
+	}
 
 	if (git.error.kind != GitErrorKind.NONE && git.is_repo)
 	{

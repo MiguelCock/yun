@@ -429,4 +429,22 @@ fn void Connections.draw(&self, RLFont font, project::Project* project, imports:
 		};
 	}
 	rl::end_scissor_mode();
+	int scroll_visible = self.visible_rows();
+	if ((int)self.rows.len() > scroll_visible)
+	{
+		Rect track = {
+			.x = panel.x + panel.width - (float)ui::px(5),
+			.y = list_y + 2.0f,
+			.width = (float)ui::px(3),
+			.height = panel.y + panel.height - list_y - 4.0f,
+		};
+		ui::draw_scrollbar(
+			track,
+			(float)self.rows.len(),
+			(float)scroll_visible,
+			(float)self.scroll,
+			false,
+			theme::current()
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
+	}
 }

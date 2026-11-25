@@ -343,3 +343,53 @@ fn void rounded_top(Rect r, float radius, RLColor color)
 	rl::draw_circle_sector({ r.x + rad, r.y + rad }, rad, 180.0f, 360.0f, 16, color);
 	rl::draw_circle_sector({ r.x + r.width - rad, r.y + rad }, rad, 180.0f, 360.0f, 16, color);
 }
+const float SCROLLBAR_MIN_THUMB = 24.0f;
+
+fn Rect scrollbar_thumb(Rect track, float content, float view, float scroll, bool horizontal)
+{
+	if (content <= view || content <= 0.0f || view <= 0.0f) return track;
+	float track_len = horizontal ? track.width : track.height;
+	if (track_len <= 0.0f) return track;
+	float thumb_len = track_len * (view / content);
+	float min_len   = pxf(SCROLLBAR_MIN_THUMB);
+	if (thumb_len < min_len) thumb_len = min_len;
+	if (thumb_len > track_len) thumb_len = track_len;
+	float max_scroll = content - view;
+	float t          = max_scroll > 0.0f ? scroll / max_scroll : 0.0f;
+	if (t < 0.0f) t = 0.0f;
+	if (t > 1.0f) t = 1.0f;
+	if (horizontal)
+	{
+		return {
+			.x = track.x + t * (track.width - thumb_len),
+			.y = track.y,
+			.width = thumb_len,
+			.height = track.height,
+		};
+	}
+	return {
+		.x = track.x,
+		.y = track.y + t * (track.height - thumb_len),
+		.width = track.width,
+		.height = thumb_len,
+	};
+}
+
+fn void draw_scrollbar(
+	Rect track,
+	float content,
+	float view,
+	float scroll,
+	bool horizontal,
+	RLColor track_color,
+	RLColor thumb_color,
+	RLColor hover_color
+)
+{
+	if (content <= view || content <= 0.0f || view <= 0.0f) return;
+	float radius = math::min(row_radius(), math::min(track.width, track.height) * 0.5f);
+	rounded_rect(track, radius, track_color);
+	Rect thumb   = scrollbar_thumb(track, content, view, scroll, horizontal);
+	bool hovered = pointer_in(track, rl::get_mouse_position());
+	rounded_rect(thumb, radius, hovered ? hover_color : thumb_color);
+}

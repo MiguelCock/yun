@@ -1685,42 +1685,33 @@ fn void ConsolePanel.draw(
 
 	if (content > output_view)
 	{
-		float track_x = output.x + ui::pxf(PADDING);
-		float track_y = output.y + output.height - ui::pxf(4.0f);
-		float track_w = output_view;
-		float thumb_w = track_w * output_view / content;
-		if (thumb_w < ui::pxf(24.0f)) thumb_w = ui::pxf(24.0f);
-		float max     = content - output_view;
-		float thumb_x = track_x;
-		if (max > 0.0f) thumb_x += (track_w - thumb_w) * self.output_scroll_x / max;
-		rl::draw_rectangle_rec(
-			{ .x = track_x, .y = track_y, .width = track_w, .height = ui::pxf(2.0f) },
-			theme::current()
-			.editor_scrollbar);
-		rl::draw_rectangle_rec(
-			{ .x = thumb_x, .y = track_y, .width = thumb_w, .height = ui::pxf(2.0f) },
-			theme::current()
-			.panel_dim);
+		Rect track = {
+			.x = output.x + ui::pxf(PADDING),
+			.y = output.y + output.height - ui::pxf(4.0f),
+			.width = output_view,
+			.height = ui::pxf(2.0f),
+		};
+		ui::draw_scrollbar(track, content, output_view, self.output_scroll_x, true, theme::current()
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
 	}
 
 	int max_scroll = console_max_scroll((int)console.buffer.line_count(), visible);
 	if (max_scroll > 0)
 	{
-		float track_x = panel.x + panel.width - ui::pxf(5.0f);
-		float track_y = output.y + ui::pxf(2.0f);
-		float track_h = output.height - ui::pxf(4.0f);
-		float thumb_h = track_h * (float)visible / (float)(visible + max_scroll);
-		if (thumb_h < ui::pxf(24.0f)) thumb_h = ui::pxf(24.0f);
-		float thumb_y = track_y;
-		if (max_scroll > 0) thumb_y += (track_h - thumb_h) * (float)scroll / (float)max_scroll;
-		rl::draw_rectangle_rec(
-			{ .x = track_x, .y = track_y, .width = ui::pxf(3.0f), .height = track_h },
+		Rect track = {
+			.x = panel.x + panel.width - ui::pxf(5.0f),
+			.y = output.y + ui::pxf(2.0f),
+			.width = ui::pxf(3.0f),
+			.height = output.height - ui::pxf(4.0f),
+		};
+		ui::draw_scrollbar(
+			track,
+			(float)console.buffer.line_count(),
+			(float)visible,
+			(float)scroll,
+			false,
 			theme::current()
-			.editor_scrollbar);
-		rl::draw_rectangle_rec(
-			{ .x = track_x, .y = thumb_y, .width = ui::pxf(3.0f), .height = thumb_h },
-			theme::current()
-			.panel_dim);
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
 	}
 
 	ui::row(input, theme::current().panel_field);
