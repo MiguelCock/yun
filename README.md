@@ -106,6 +106,7 @@ c3c run -- --benchmark=200 --benchmark-frames=240   # synth N cards, scripted pa
 c3c run -- <directory> --benchmark --benchmark-frames=240   # benchmark a real project (card/folder count + frame times)
 c3c benchmark             # micro benchmarks (hit-test, bounds cache, highlight runs)
 c3c test                  # run the test suite
+scripts/visual-check.sh   # capture deterministic UI screenshots locally
 c3fmt --check $(git ls-files '*.c3')   # formatting check
 ```
 
