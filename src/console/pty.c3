@@ -249,7 +249,7 @@ fn bool ConsolePty.start(&self, String root, int cols, int rows)
 			}
 			usz attr_size = 0;
 			(void)initializeProcThreadAttributeList(null, 1, 0, &attr_size);
-			char[] attr_buffer = alloc::new_array(tmem, char, attr_size);
+			char[] attr_buffer = alloc::new_array(tmem, char, (sz)attr_size);
 			void* attrs        = &attr_buffer[0];
 			if (!initializeProcThreadAttributeList(
 				attrs,
