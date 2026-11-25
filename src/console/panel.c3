@@ -7,6 +7,7 @@ import yun::commands;
 import yun::editor;
 import yun::keymap;
 import yun::theme;
+import yun::topbar;
 import yun::ui;
 
 const float DEFAULT_HEIGHT = 220.0f;
@@ -161,15 +162,29 @@ fn void ConsolePanel.apply_settings(&self, ConsoleSettings settings)
 	}
 }
 
-fn Rect console_panel_rect(float height, int screen_w, int screen_h)
+fn Rect console_panel_rect(
+	float height,
+	int screen_w,
+	int screen_h,
+	float left_inset = 0.0f,
+	float right_inset = 0.0f,
+	float bottom_inset = 0.0f
+)
 {
 	float h     = ui::pxf(height);
 	float min_h = ui::pxf(MIN_HEIGHT);
-	float max_h = (float)screen_h - ui::pxf(MIN_HEIGHT);
+	float max_h = (float)screen_h - bottom_inset - ui::pxf(MIN_HEIGHT);
+	if (max_h < min_h) max_h = min_h;
 	if (h < min_h) h = min_h;
 	if (h > max_h) h = max_h;
-	if (h > (float)screen_h) h = (float)screen_h;
-	return { .x = 0.0f, .y = (float)screen_h - h, .width = (float)screen_w, .height = h };
+	float width = (float)screen_w - left_inset - right_inset;
+	if (width < 1.0f) width = 1.0f;
+	return {
+		.x = left_inset,
+		.y = (float)screen_h - bottom_inset - h,
+		.width = width,
+		.height = h,
+	};
 }
 
 fn int console_max_scroll(int lines, int visible)
@@ -273,7 +288,20 @@ fn String console_status_label(ConsoleStatus status)
 
 fn Rect ConsolePanel.rect(&self)
 {
-	return console_panel_rect(self.height, rl::get_screen_width(), rl::get_screen_height());
+	Rect content       = topbar::content_rect();
+	float screen_w     = (float)rl::get_screen_width();
+	float bottom_inset = topbar::position() == topbar::TopBarPosition.BOTTOM ? topbar::thickness_for(
+		topbar::TopBarPosition.BOTTOM
+	)
+		: 0.0f;
+	return console_panel_rect(
+		self.height,
+		rl::get_screen_width(),
+		rl::get_screen_height(),
+		content.x,
+		screen_w - content.x - content.width,
+		bottom_inset
+	);
 }
 
 fn bool ConsolePanel.contains_screen(&self, RLVector2 point)
@@ -1169,8 +1197,13 @@ fn void ConsolePanel.update_mouse(
 	{
 		if (rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
 		{
-			float height = ((float)rl::get_screen_height() - mouse[1]) / ui::scale();
-			float max    = (float)rl::get_screen_height() / ui::scale() - MIN_HEIGHT;
+			Rect content       = topbar::content_rect();
+			float bottom_inset = topbar::position() == topbar::TopBarPosition.BOTTOM ? topbar::thickness_for(
+				topbar::TopBarPosition.BOTTOM
+			)
+				: 0.0f;
+			float height       = ((float)rl::get_screen_height() - bottom_inset - mouse[1]) / ui::scale();
+			float max          = content.height / ui::scale() - MIN_HEIGHT;
 			if (max < MIN_HEIGHT) max = MIN_HEIGHT;
 			self.height = math::clamp(height, MIN_HEIGHT, max);
 		}

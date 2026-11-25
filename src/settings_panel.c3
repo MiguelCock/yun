@@ -584,11 +584,12 @@ fn void Panel.reset_all(
 
 fn Rect Panel.outer_rect(&self)
 {
-	float width  = math::min((float)ui::px(PANEL_WIDTH), (float)rl::get_screen_width() - (float)ui::px(40));
-	float y      = ui::pxf(topbar::TOP_BAR_HEIGHT) + (float)ui::px(18);
-	float height = math::min((float)ui::px(700), (float)rl::get_screen_height() - y - (float)ui::px(24));
+	Rect content = topbar::content_rect();
+	float width  = math::min((float)ui::px(PANEL_WIDTH), content.width - (float)ui::px(40));
+	float y      = content.y + (float)ui::px(18);
+	float height = math::min((float)ui::px(700), content.y + content.height - y - (float)ui::px(24));
 	return {
-		.x = ((float)rl::get_screen_width() - width) / 2.0f,
+		.x = content.x + (content.width - width) / 2.0f,
 		.y = y,
 		.width = width,
 		.height = height,

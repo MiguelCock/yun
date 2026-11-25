@@ -45,6 +45,7 @@ enum SettingId : int
 	APP_NOTIFICATIONS_TTL,
 	APP_NOTIFICATIONS_MAX,
 	APP_NOTIFICATIONS_POSITION,
+	APP_TOPBAR_POSITION,
 	APP_ANIMATIONS,
 	APP_JUMP_HIGHLIGHT_MS,
 	APP_EXTERNAL_RELOAD,
@@ -271,6 +272,15 @@ const SettingSpec[] SETTINGS = {
 		.kind = SettingKind.ENUM,
 		.fallback = { .s = "bottom_left" },
 		.options = { "top_left", "top_right", "bottom_left", "bottom_right" },
+	},
+	{
+		.section = "app",
+		.key = "topbar_position",
+		.label = "Top bar position",
+		.description = "Dock the top bar to any screen edge.",
+		.kind = SettingKind.ENUM,
+		.fallback = { .s = "top" },
+		.options = { "top", "bottom", "left", "right" },
 	},
 	{
 		.section = "app",

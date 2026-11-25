@@ -192,9 +192,10 @@ fn Rect Palette.panel_rect(&self)
 	int rows = (int)self.results.len();
 	if (rows > MAX_VISIBLE_ROWS) rows = MAX_VISIBLE_ROWS;
 	if (rows == 0) rows = 1;
-	int height = pad * 2 + rh + ui::px(6) + rows * rh;
-	int x      = (rl::get_screen_width() - ui::px(PANEL_WIDTH)) / 2;
-	int y      = (int)ui::pxf(topbar::TOP_BAR_HEIGHT) + ui::px(TOP_MARGIN);
+	int height   = pad * 2 + rh + ui::px(6) + rows * rh;
+	Rect content = topbar::content_rect();
+	int x        = (int)(content.x + (content.width - (float)ui::px(PANEL_WIDTH)) / 2.0f);
+	int y        = (int)content.y + ui::px(TOP_MARGIN);
 	return { .x = (float)x, .y = (float)y, .width = (float)ui::px(PANEL_WIDTH), .height = (float)height };
 }
 

@@ -115,7 +115,9 @@ struct Canvas
 	RLCamera2D target;
 	RLVector2 velocity;
 	float top_inset;
+	float bottom_inset;
 	float left_inset;
+	float right_inset;
 	bool pointer_over_ui;
 	bool block_zoom;
 	bool block_pan;
@@ -136,7 +138,9 @@ fn void Canvas.init(&self)
 	self.camera = initial;
 	self.target = initial;
 	self.top_inset = 0.0f;
+	self.bottom_inset = 0.0f;
 	self.left_inset = 0.0f;
+	self.right_inset = 0.0f;
 }
 
 fn void Canvas.update(&self)
@@ -207,30 +211,54 @@ fn void Canvas.update(&self)
 	self.ease_camera(dt);
 }
 
+fn Rect usable_rect_for(
+	float screen_w,
+	float screen_h,
+	float top_inset,
+	float bottom_inset,
+	float left_inset,
+	float right_inset
+)
+{
+	float width  = screen_w - left_inset - right_inset;
+	float height = screen_h - top_inset - bottom_inset;
+	if (width < 0.0f) width = 0.0f;
+	if (height < 0.0f) height = 0.0f;
+	return { .x = left_inset, .y = top_inset, .width = width, .height = height };
+}
+
 fn float Canvas.usable_offset_y(&self)
 {
-	float height = (float)rl::get_screen_height() - self.top_inset;
-	if (height < 0.0f) height = 0.0f;
-	return self.top_inset + height / 2.0f;
+	Rect usable = self.usable_rect();
+	return usable.y + usable.height / 2.0f;
 }
 
 fn float Canvas.usable_width(&self)
 {
-	float width = (float)rl::get_screen_width() - self.left_inset;
-	if (width < 0.0f) width = 0.0f;
-	return width;
+	return self.usable_rect().width;
 }
 
 fn float Canvas.usable_height(&self)
 {
-	float height = (float)rl::get_screen_height() - self.top_inset;
-	if (height < 0.0f) height = 0.0f;
-	return height;
+	return self.usable_rect().height;
 }
 
 fn float Canvas.usable_offset_x(&self)
 {
-	return self.left_inset + self.usable_width() / 2.0f;
+	Rect usable = self.usable_rect();
+	return usable.x + usable.width / 2.0f;
+}
+
+fn Rect Canvas.usable_rect(&self)
+{
+	return usable_rect_for(
+		(float)rl::get_screen_width(),
+		(float)rl::get_screen_height(),
+		self.top_inset,
+		self.bottom_inset,
+		self.left_inset,
+		self.right_inset
+	);
 }
 
 fn void Canvas.begin_drag(&self, RLMouseButton button, RLVector2 mouse)
@@ -274,22 +302,26 @@ fn RLVector2 edge_pan_delta(
 	float margin,
 	float speed,
 	float zoom,
-	float dt
+	float dt,
+	float bottom_inset = 0.0f,
+	float left_inset = 0.0f,
+	float right_inset = 0.0f
 )
 {
 	RLVector2 delta = { 0.0f, 0.0f };
 	if (zoom <= 0.0f) zoom = 1.0f;
 	if (margin <= 0.0f) return delta;
 
-	if (width < margin * 2.0f) margin = width * 0.5f;
-	float usable_height = height - top_inset;
+	float usable_width  = width - left_inset - right_inset;
+	float usable_height = height - top_inset - bottom_inset;
+	if (usable_width < margin * 2.0f) margin = usable_width * 0.5f;
 	if (usable_height < margin * 2.0f) margin = usable_height * 0.5f;
 	if (margin <= 0.0f) return delta;
 
-	float left   = margin;
-	float right  = width - margin;
+	float left   = left_inset + margin;
+	float right  = width - right_inset - margin;
 	float top    = top_inset + margin;
-	float bottom = height - margin;
+	float bottom = height - bottom_inset - margin;
 
 	if (mouse[0] < left)
 	{
@@ -445,8 +477,8 @@ fn void Canvas.fit_zoom(&self, Rect content, int screen_w, int screen_h)
 {
 	if (content.width <= 0.0f || content.height <= 0.0f) return;
 	float margin = 40.0f;
-	float width  = (float)screen_w - self.left_inset;
-	float height = (float)screen_h - self.top_inset;
+	float width  = (float)screen_w - self.left_inset - self.right_inset;
+	float height = (float)screen_h - self.top_inset - self.bottom_inset;
 	if (width < 1.0f) width = 1.0f;
 	if (height < 1.0f) height = 1.0f;
 	float fit_x = (width - margin * 2.0f) / content.width;
@@ -464,8 +496,8 @@ fn void Canvas.fit_zoom_floor(&self, Rect content, int screen_w, int screen_h, f
 	self.fit_zoom(content, screen_w, screen_h);
 	if (floor <= 0.0f || self.target.zoom >= floor) return;
 	self.target.zoom = floor;
-	float width  = (float)screen_w - self.left_inset;
-	float height = (float)screen_h - self.top_inset;
+	float width  = (float)screen_w - self.left_inset - self.right_inset;
+	float height = (float)screen_h - self.top_inset - self.bottom_inset;
 	if (width < 1.0f) width = 1.0f;
 	if (height < 1.0f) height = 1.0f;
 	self.target.target = {
