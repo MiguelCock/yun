@@ -118,8 +118,12 @@ not clutter the Yun repo's own canvas) but committed with `git add -f`.
 ## Configuration
 
 The `arrows` section of the settings/config controls rendering and scanning:
-`enabled`, `related_only`, `labels`, `line_thickness`, `hover_thickness`,
-`arrowhead_size`, `hit_tolerance`, `rescan_debounce`, and `scan_workers`.
+`enabled`, `related_only`, `min_zoom`, `labels`, `line_thickness`,
+`hover_thickness`, `arrowhead_size`, `hit_tolerance`, `rescan_debounce`, and
+`scan_workers`.
+
+Arrows remain visible down to `min_zoom` (default `0.05`, or 5% zoom) and labels
+appear at 50% zoom or closer.
 
 Arrows are routed as Manhattan paths: they leave a card edge horizontally or
 vertically, turn at 90-degree corners, and enter the target card edge. Adjacent

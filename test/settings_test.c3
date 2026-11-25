@@ -457,6 +457,7 @@ fn void test_arrows_defaults()
 {
 	assert(SETTINGS[(int)SettingId.ARROWS_ENABLED].fallback.b);
 	assert(SETTINGS[(int)SettingId.ARROWS_RELATED_ONLY].fallback.b);
+	assert(SETTINGS[(int)SettingId.ARROWS_MIN_ZOOM].fallback.f == 0.05);
 	assert(SETTINGS[(int)SettingId.ARROWS_LABELS].fallback.b);
 	assert(SETTINGS[(int)SettingId.ARROWS_LINE_THICKNESS].fallback.f == 2.0);
 	assert(SETTINGS[(int)SettingId.ARROWS_HOVER_THICKNESS].fallback.f == 3.6);
@@ -513,7 +514,7 @@ fn void test_arrows_clamp()
 		warnings.init(tmem);
 		Object*? parsed = json::parse(
 			tmem,
-			"{\"arrows\":{\"scan_workers\":99,\"line_thickness\":0.0,\"arrowhead_size\":999}}"
+			"{\"arrows\":{\"scan_workers\":99,\"line_thickness\":0.0,\"arrowhead_size\":999,\"min_zoom\":99}}"
 		);
 		if (catch excuse = parsed)
 		{
@@ -533,6 +534,7 @@ fn void test_arrows_clamp()
 				assert(s.get_int(SettingId.ARROWS_SCAN_WORKERS) == 8);
 				assert(s.get_float(SettingId.ARROWS_LINE_THICKNESS) == 0.5);
 				assert(s.get_float(SettingId.ARROWS_ARROWHEAD_SIZE) == 40.0);
+				assert(s.get_float(SettingId.ARROWS_MIN_ZOOM) == 0.5);
 			}
 		}
 		s.destroy();

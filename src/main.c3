@@ -376,6 +376,7 @@ fn void apply_settings(
 	imports::ImportSettings is = imports::settings();
 	is.enabled = config.settings.get_bool(settings::SettingId.ARROWS_ENABLED);
 	is.related_only = config.settings.get_bool(settings::SettingId.ARROWS_RELATED_ONLY);
+	is.min_zoom = (float)config.settings.get_float(settings::SettingId.ARROWS_MIN_ZOOM);
 	is.labels = config.settings.get_bool(settings::SettingId.ARROWS_LABELS);
 	is.line_thickness = (float)config.settings.get_float(settings::SettingId.ARROWS_LINE_THICKNESS);
 	is.hover_thickness = (float)config.settings.get_float(settings::SettingId.ARROWS_HOVER_THICKNESS);
@@ -867,6 +868,7 @@ const String[] VISUAL_STATE_NAMES = {
 	"vim",
 	"notifications",
 	"imports",
+	"imports-far",
 };
 
 const int VISUAL_STATE_COUNT = (int)VISUAL_STATE_NAMES.len;
@@ -1018,6 +1020,28 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 					break;
 				}
 			}
+		case 19:
+			for (sz i = 0; i < project.cards.len(); i++)
+			{
+				if (project.cards[i].name.compare_to("arrow_main.c3") == 0)
+				{
+					int index = project.focus((int)i);
+					project.selected = index;
+					editor::ensure_buffer(&project.cards[index], project.allocator);
+					break;
+				}
+			}
+			Rect bounds;
+			if (project.content_bounds(&bounds))
+			{
+				app.canvas.camera.target = {
+					bounds.x + bounds.width / 2.0f,
+					bounds.y + bounds.height / 2.0f,
+				};
+				app.canvas.target.target = app.canvas.camera.target;
+			}
+			app.canvas.camera.zoom = 0.05f;
+			app.canvas.target.zoom = 0.05f;
 	}
 }
 

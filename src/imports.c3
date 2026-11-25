@@ -26,8 +26,7 @@ import yun::ui;
 const int MAX_SCAN_WORKERS         = 8;
 const int RESULT_BATCH_BUDGET      = 32;
 const float ARROW_HIT_PX           = 6.0f;
-const float ARROW_MIN_DRAW_PX      = 6.0f;
-const float ARROW_MIN_DRAW_ZOOM    = 0.3f;
+const float ARROW_MIN_DRAW_PX      = 2.0f;
 const int ARROW_MAX_PER_FRAME      = 400;
 const float ARROW_LABEL_MIN_ZOOM   = 0.5f;
 const float ORTHO_STUB_PX          = 16.0f;
@@ -47,6 +46,7 @@ struct ImportSettings
 {
 	bool enabled;
 	bool related_only;
+	float min_zoom;
 	bool labels;
 	float line_thickness;
 	float hover_thickness;
@@ -71,6 +71,7 @@ fn ArrowStyle parse_arrow_style(String value)
 ImportSettings g_import_settings = {
 	.enabled = true,
 	.related_only = true,
+	.min_zoom = 0.05f,
 	.labels = true,
 	.line_thickness = 2.0f,
 	.hover_thickness = 3.6f,
@@ -109,6 +110,8 @@ fn void set_settings(ImportSettings value)
 	if (value.rescan_debounce < 0.0f) value.rescan_debounce = 0.0f;
 	if (value.scan_workers < 0) value.scan_workers = 0;
 	if (value.scan_workers > MAX_SCAN_WORKERS) value.scan_workers = MAX_SCAN_WORKERS;
+	if (value.min_zoom < 0.001f) value.min_zoom = 0.001f;
+	if (value.min_zoom > 1.0f) value.min_zoom = 1.0f;
 	if (value.dash_length < 1.0f) value.dash_length = 1.0f;
 	if (value.dash_gap < 1.0f) value.dash_gap = 1.0f;
 	g_import_settings = value;
@@ -2859,7 +2862,7 @@ fn void ImportIndex.clear_hover(&self)
 fn bool ImportIndex.hit_test(&self, project::Project* project, RLCamera2D camera, RLVector2 world)
 {
 	self.hover.valid = false;
-	if (!g_import_settings.enabled || camera.zoom < ARROW_MIN_DRAW_ZOOM) return false;
+	if (!g_import_settings.enabled || camera.zoom < g_import_settings.min_zoom) return false;
 	float zoom      = camera.zoom > 0.0f ? camera.zoom : 1.0f;
 	float threshold = g_import_settings.hit_tolerance / zoom;
 	Rect visible    = project::expand_rect(project::visible_world_rect(camera), 64.0f);
@@ -2892,7 +2895,7 @@ fn bool ImportIndex.hit_test(&self, project::Project* project, RLCamera2D camera
 fn void ImportIndex.draw(&self, project::Project* project, RLCamera2D camera, RLFont font)
 {
 	if (!g_import_settings.enabled) return;
-	if (camera.zoom < ARROW_MIN_DRAW_ZOOM) return;
+	if (camera.zoom < g_import_settings.min_zoom) return;
 	int active = edge_active_card(project);
 	if (g_import_settings.related_only && active < 0) return;
 	Rect visible = project::expand_rect(project::visible_world_rect(camera), 64.0f);
