@@ -136,6 +136,7 @@ fn void set_console_settings(config::Config* config)
 		.notify = mode,
 		.persist_history = config.settings.get_bool(settings::SettingId.CONSOLE_PERSIST_HISTORY),
 		.restore_sessions = config.settings.get_bool(settings::SettingId.CONSOLE_RESTORE_SESSIONS),
+		.pty = config.settings.get_bool(settings::SettingId.CONSOLE_PTY),
 	};
 	console::set_settings(cs);
 }
@@ -856,6 +857,7 @@ const String[] VISUAL_STATE_NAMES = {
 	"topbar-bottom",
 	"topbar-left",
 	"topbar-right",
+	"terminal",
 	"vim",
 	"notifications",
 };
@@ -965,6 +967,20 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 			);
 			topbar::set_position(topbar::TopBarPosition.RIGHT);
 		case 14:
+			app.config.settings.set_bool(settings::SettingId.CONSOLE_PTY, true, settings::SettingLayer.GLOBAL);
+			set_console_settings(app.config);
+			app.console_manager.apply_settings(console::settings());
+			app.console_manager.open();
+			focus_console(app);
+			if (app.console_manager.active_console())
+			{
+				Console* terminal_console = app.console_manager.active_console();
+				if (terminal_console.start_terminal(80, 24))
+				{
+					terminal_console.pty.write("printf 'Yun terminal ready\\n'\n");
+				}
+			}
+		case 15:
 			app.config.settings.set_bool(settings::SettingId.EDITOR_VIM_MODE, true, settings::SettingLayer.GLOBAL);
 			for (sz i = 0; i < project.cards.len(); i++)
 			{
@@ -978,7 +994,7 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 			}
 			*app.ui_mode = UiMode.EDIT;
 			app.vim_command.show();
-		case 15:
+		case 16:
 			app.notifier.push("Visual regression check");
 	}
 }

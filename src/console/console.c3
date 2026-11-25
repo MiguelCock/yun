@@ -31,6 +31,7 @@ struct ConsoleSettings
 	ConsoleNotify notify;
 	bool persist_history;
 	bool restore_sessions;
+	bool pty;
 }
 
 ConsoleSettings g_console_settings = {
@@ -48,6 +49,7 @@ ConsoleSettings g_console_settings = {
 	.notify = ConsoleNotify.FAILURE,
 	.persist_history = true,
 	.restore_sessions = true,
+	.pty = false,
 };
 
 fn void set_settings(ConsoleSettings settings)
@@ -77,6 +79,10 @@ struct Console
 	ConsoleRunner runner;
 	ConsoleInput input;
 	ConsoleHistory history;
+	ConsoleTerminal terminal;
+	ConsolePty pty;
+	bool pty_enabled;
+	bool terminal_active;
 	String root;
 }
 
@@ -87,6 +93,10 @@ fn void Console.init(&self, Allocator allocator)
 	self.runner.init(allocator);
 	self.input.init(allocator);
 	self.history.init(allocator);
+	self.terminal.init(allocator);
+	self.pty.init(allocator);
+	self.pty_enabled = false;
+	self.terminal_active = false;
 	self.root = "";
 }
 
@@ -94,6 +104,8 @@ fn void Console.set_root(&self, String root)
 {
 	if (self.root.len > 0 && root.len > 0 && self.root.compare_to(root) == 0) return;
 	self.runner.stop(&self.buffer);
+	self.pty.stop();
+	self.terminal_active = false;
 	self.buffer.clear();
 	self.history.clear();
 	if (self.root.len > 0) self.root.free(self.allocator);
@@ -145,6 +157,22 @@ fn bool Console.run(&self, String command)
 	return self.run_display(command, command);
 }
 
+fn bool Console.start_terminal(&self, int cols, int rows)
+{
+	if (!self.pty_enabled) return false;
+	if (self.pty.running)
+	{
+		self.terminal_active = true;
+		return true;
+	}
+	if (!self.pty.start(self.root, cols, rows)) return false;
+	self.terminal_active = true;
+	self.terminal.resize(cols, rows);
+	self.runner.status = ConsoleStatus.RUNNING;
+	self.runner.exit_code = 0;
+	return true;
+}
+
 fn bool Console.submit(&self)
 {
 	String command = self.input.text_view().trim();
@@ -158,6 +186,12 @@ fn bool Console.submit(&self)
 
 fn void Console.apply_settings(&self, ConsoleSettings settings)
 {
+	self.pty_enabled = settings.pty;
+	if (!self.pty_enabled)
+	{
+		self.terminal_active = false;
+		self.pty.stop();
+	}
 	self.buffer.set_limits(settings.max_lines, (usz)settings.max_output_kb * 1024);
 	self.buffer.set_render_ansi(settings.ansi_colors);
 	self.buffer.set_show_headers(settings.show_headers);
@@ -183,16 +217,56 @@ fn bool Console.take_notify(&self, int* exit_code, ConsoleStatus* status)
 
 fn void Console.pump(&self)
 {
+	if (self.pty_enabled && self.pty.running)
+	{
+		char[4096] buffer;
+		while (true)
+		{
+			usz count = self.pty.read(buffer[0:buffer.len]);
+			if (count == 0) break;
+			self.terminal.feed((String)buffer[0:count]);
+		}
+		int exit_code = 0;
+		if (self.pty.poll_exit(&exit_code))
+		{
+			self.runner.status = self.runner.kill_requested ? ConsoleStatus.KILLED : ConsoleStatus.EXITED;
+			self.runner.exit_code = exit_code;
+			self.runner.notify_pending = true;
+			self.runner.notify_code = exit_code;
+			self.runner.notify_status = self.runner.status;
+			self.terminal_active = false;
+			self.buffer.flush();
+		}
+		return;
+	}
 	self.runner.pump(&self.buffer, PUMP_BUDGET);
+}
+
+fn void Console.resize_terminal(&self, int cols, int rows)
+{
+	if (!self.pty_enabled) return;
+	self.terminal.resize(cols, rows);
+	self.pty.resize(cols, rows);
 }
 
 fn bool Console.running(&self)
 {
-	return self.runner.running();
+	return self.runner.running() || self.pty.running;
 }
 
 fn void Console.kill(&self)
 {
+	if (self.pty.running)
+	{
+		self.pty.stop();
+		self.runner.status = ConsoleStatus.KILLED;
+		self.runner.exit_code = -1;
+		self.runner.notify_pending = true;
+		self.runner.notify_code = -1;
+		self.runner.notify_status = ConsoleStatus.KILLED;
+		self.terminal_active = false;
+		return;
+	}
 	(void)self.runner.kill();
 }
 
@@ -203,6 +277,9 @@ fn void Console.clear(&self)
 
 fn void Console.destroy(&self)
 {
+	self.pty.stop();
+	self.pty.destroy();
+	self.terminal.destroy();
 	self.runner.destroy(&self.buffer);
 	self.buffer.destroy();
 	self.input.destroy();
