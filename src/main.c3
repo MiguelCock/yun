@@ -704,6 +704,164 @@ fn void poll_global(keymap::Keymap* keymap, App* app)
 	if (cmd >= 0) run_command((commands::CommandId)cmd, app);
 }
 
+const String[] VISUAL_STATE_NAMES = {
+	"canvas",
+	"settings",
+	"connections",
+	"source-control",
+	"console",
+	"problems",
+	"search",
+	"symbols",
+	"palette",
+	"browser",
+	"topbar-bottom",
+	"topbar-left",
+	"topbar-right",
+	"notifications",
+};
+
+const int VISUAL_STATE_COUNT = (int)VISUAL_STATE_NAMES.len;
+
+struct VisualSuite
+{
+	bool active;
+	String dir;
+	int state;
+	int frame;
+}
+
+VisualSuite g_visual;
+
+fn String visual_shot_path(Allocator allocator, String dir, String name)
+{
+	if (dir.len > 0 && (dir[^1] == '/' || dir[^1] == '\\')) return string::format(allocator, "%s%s.png", dir, name);
+	return string::format(allocator, "%s/%s.png", dir, name);
+}
+
+fn void visual_suite_close(App* app)
+{
+	close_overlays(app);
+	app.connections.close();
+	app.git_panel.close();
+	app.console_manager.close();
+	app.browser.open = false;
+	*app.ui_mode = UiMode.MOVE;
+}
+
+fn void visual_suite_setup(App* app, project::Project* project, int state)
+{
+	visual_suite_close(app);
+	app.config.settings.set_string(settings::SettingId.APP_TOPBAR_POSITION, "top", settings::SettingLayer.GLOBAL);
+	topbar::set_position(topbar::TopBarPosition.TOP);
+	switch (state)
+	{
+		case 0:
+			if (project.cards.len() > 0)
+			{
+				int index = project.focus(0);
+				project.selected = index;
+				editor::ensure_buffer(&project.cards[index], project.allocator);
+			}
+		case 1:
+			app.settings_panel.show();
+		case 2:
+			app.connections.show();
+		case 3:
+			app.git_panel.open();
+		case 4:
+			app.console_manager.open();
+			focus_console(app);
+		case 5:
+			app.problems.show();
+		case 6:
+			app.search.show();
+		case 7:
+			app.symbols.show(project);
+		case 8:
+			app.palette.show();
+		case 9:
+			app.browser.open_at((String)project.root);
+		case 10:
+			app.config.settings.set_string(
+				settings::SettingId.APP_TOPBAR_POSITION,
+				"bottom",
+				settings::SettingLayer.GLOBAL
+			);
+			topbar::set_position(topbar::TopBarPosition.BOTTOM);
+		case 11:
+			app.config.settings.set_string(
+				settings::SettingId.APP_TOPBAR_POSITION,
+				"left",
+				settings::SettingLayer.GLOBAL
+			);
+			topbar::set_position(topbar::TopBarPosition.LEFT);
+		case 12:
+			app.config.settings.set_string(
+				settings::SettingId.APP_TOPBAR_POSITION,
+				"right",
+				settings::SettingLayer.GLOBAL
+			);
+			topbar::set_position(topbar::TopBarPosition.RIGHT);
+		case 13:
+			app.notifier.push("Visual regression check");
+	}
+}
+
+fn void visual_suite_begin(App* app, project::Project* project, String dir)
+{
+	if (g_visual.active) return;
+	g_visual.active = true;
+	g_visual.dir = dir.copy(mem);
+	g_visual.state = 0;
+	g_visual.frame = 0;
+	@pool()
+	{
+		if (catch excuse = path::mkdir((Path)dir, recursive: true)) return;
+		if (catch excuse = path::mkdir((Path)".yun/visual-tmp", recursive: true)) return;
+		io::printfn("visual suite: writing to %s", dir.zstr_tcopy());
+	};
+	visual_suite_setup(app, project, 0);
+}
+
+fn void visual_suite_tick(App* app, project::Project* project)
+{
+	if (!g_visual.active) return;
+	g_visual.frame++;
+	int duration = 30;
+	if (g_visual.state == 7 && app.symbols.scanning) duration = 240;
+	if (g_visual.frame < duration) return;
+	@pool()
+	{
+		String name     = VISUAL_STATE_NAMES[g_visual.state];
+		String target   = visual_shot_path(tmem, g_visual.dir, name);
+		String temp_rel = string::format(tmem, ".yun/visual-tmp/%s.png", name);
+		String cwd      = rl::get_working_directory().str_view();
+		String temp_abs = string::format(tmem, "%s/%s", cwd, temp_rel);
+		io::printfn("visual suite: %s", target.zstr_tcopy());
+		rl::gl_draw_render_batch_active();
+		rl::take_screenshot(temp_rel.zstr_tcopy());
+		char[]? shot = file::load(tmem, temp_abs);
+		if (catch excuse = shot)
+		{
+			return;
+		}
+		(void)file::save((Path)target, shot);
+		(void)file::delete(temp_abs);
+	};
+	g_visual.state++;
+	g_visual.frame = 0;
+	if (g_visual.state >= VISUAL_STATE_COUNT)
+	{
+		g_visual.active = false;
+		if (g_visual.dir.len) g_visual.dir.free(mem);
+		g_visual.dir = "";
+		*app.quit_requested = true;
+		return;
+	}
+	visual_suite_setup(app, project, g_visual.state);
+}
+
 fn bool is_select_command(int cmd)
 {
 	return cmd == (int)commands::CommandId.SELECT_LEFT || cmd == (int)commands::CommandId.SELECT_RIGHT
@@ -2325,6 +2483,7 @@ fn int main(String[] args)
 	UiMode history_saved_mode   = UiMode.MOVE;
 	int edit_grace_frames       = 0;
 	bool selftest               = false;
+	String visual_dir           = "";
 	bool benchmark_on           = false;
 	bool benchmark_synthetic    = false;
 	int benchmark_cards         = 0;
@@ -2335,6 +2494,10 @@ fn int main(String[] args)
 		if (arg.compare_to("--selftest") == 0)
 		{
 			selftest = true;
+		}
+		else if (arg.starts_with("--visual-suite="))
+		{
+			visual_dir = arg[15..].copy(mem);
 		}
 		else if (arg.starts_with("--benchmark-frames="))
 		{
@@ -2681,6 +2844,7 @@ fn int main(String[] args)
 					lsp.set_root((String)project.root);
 					completion::completion_close();
 					import_index.start_scan(&project);
+					if (visual_dir.len > 0) visual_suite_begin(&app, &project, visual_dir);
 				}
 				else if (!open_job.cancelled)
 				{
@@ -4221,6 +4385,7 @@ fn int main(String[] args)
 				}
 			}
 			ui::draw_tooltip(font);
+			visual_suite_tick(&app, &project);
 		};
 		ui::apply_cursor();
 		prof_update += (update_ms - prof_update) * 0.1;
