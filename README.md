@@ -159,6 +159,8 @@ In the editor, open the **Settings** panel with `Ctrl+Shift+S`, the top bar's se
 
 Keybindings use chords like `Ctrl+Shift+P`. Modifiers are `Ctrl` (shown as `Cmd` on macOS), `Shift`, `Alt` and `Super`; keys can be letters/digits, punctuation (`, . / ; ' [ ] - = \ \``), named keys (`Enter`, `Esc`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `CapsLock`, `PrintScreen`, `Pause`), function keys `F1`-`F12`, or keypad keys (`KP_0`-`KP_9`, `KP_Add`, `KP_Subtract`, `KP_Multiply`, `KP_Divide`, `KP_Enter`). Set a command's chord to `""` to unbind it. Editor and completion actions (undo/redo, indentation, cursor movement, completion next/prev/accept), canvas/mode/top-bar navigation (pan, zoom in/out/reset/fit, item select/cycle, enter/leave folder, cycle focus/grab, minimize, focus switching), overlay navigation (lists, accept/close, find next/replace, search toggles) and card actions (close/toggle/rename/duplicate/copy-path/delete, context menu, focus content) are registered commands too, so they can be rebound the same way.
 
+The Lua 5.4 runtime used by mods is vendored and statically linked from `lib/lua54.c3l`; see [`docs/mods.md`](docs/mods.md). No system Lua installation is required.
+
 Bundled assets (fonts, icons, highlighting queries) are resolved from the current directory first and then from the executable's directory, so a shortcut or terminal can launch Yun from any working directory. Set `YUN_DEBUG_UI=1` to print window/render/monitor sizes, DPI and UI scale factors, theme and icon themes, asset paths, and the working/executable directories to stderr at startup.
 
 ## Versioning and releases

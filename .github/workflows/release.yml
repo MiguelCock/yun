@@ -79,6 +79,16 @@ jobs:
         shell: pwsh
         run: scripts/build-tree-sitter-windows.ps1 -Target "${{ matrix.target }}"
 
+      - name: Build Lua (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ "${{ matrix.target }}" = "linux-x64" ]; then
+            CC=cc scripts/build-lua.sh "${{ matrix.target }}"
+          else
+            CC=clang scripts/build-lua.sh "${{ matrix.target }}"
+          fi
+
       - name: Build yun
         shell: bash
         run: '"$C3C" build -O2'
@@ -137,6 +147,7 @@ jobs:
             $libs = Join-Path $_.FullName "linked-libs/$target/*.dll"
             if (Test-Path $libs) { Copy-Item $libs $grammarDest }
           }
+          Copy-Item "lib/lua54.c3l/linked-libs/$target/lua54.dll" "$dist/lua54.dll"
           Copy-Item "LICENSE", "README.md" $dist
           Compress-Archive -Path $dist -DestinationPath "$name.zip" -Force
           $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
