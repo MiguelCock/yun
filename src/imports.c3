@@ -11,9 +11,11 @@ import std::math;
 import std::os;
 import std::thread;
 import std::thread::channel;
+import std::time;
 import tree_sitter;
 import yun::card;
 import yun::editor;
+import yun::index_cache;
 import yun::language;
 import yun::hover;
 import yun::project;
@@ -177,6 +179,8 @@ struct ImportIndex
 	double pending_since;
 	List{ImportContext*} contexts;
 	HashMap{String, int} context_index;
+	bool cache_dirty;
+	double cache_dirty_at;
 }
 
 TSQuery*[language::LANGUAGE_COUNT] import_query_cache;
@@ -232,6 +236,8 @@ fn void ImportIndex.init(&self, Allocator allocator)
 	self.pending_since = 0.0;
 	self.contexts.init(allocator);
 	self.context_index.init(allocator);
+	self.cache_dirty = false;
+	self.cache_dirty_at = 0.0;
 	self.init_pool();
 }
 
@@ -1809,6 +1815,8 @@ fn void ImportIndex.resolve_file(&self, project::Project* project, CardImports[]
 	free_refs(self.allocator, &file.imports);
 	file.imports.free();
 	file.imports = next;
+	self.cache_dirty = true;
+	self.cache_dirty_at = rl::get_time();
 }
 
 fn void ImportIndex.resolve_all(&self, project::Project* project)
@@ -1834,6 +1842,242 @@ fn void ImportIndex.resolve_one(&self, project::Project* project, String path)
 	};
 }
 
+const String IMPORT_CACHE_MAGIC = "YUNIMPT1";
+
+fn String cache_abs_path(Allocator allocator, String root, String relative)
+{
+	if (relative.len == 0) return "";
+	Path? appended = ((Path)root).append(allocator, relative);
+	if (catch excuse = appended) return "";
+	return (String)appended;
+}
+
+fn String cache_rel_path(Allocator allocator, String root, String absolute)
+{
+	if (!project::path_is_inside(root, absolute) || absolute.len <= root.len) return "";
+	return absolute[root.len + 1..].copy(allocator);
+}
+
+fn bool ImportIndex.load_cache(&self, project::Project* project)
+{
+	index_cache::CacheFile cache;
+	@pool()
+	{
+		String dir  = string::format(tmem, "%s/.yun/cache", project.root);
+		String path = string::format(tmem, "%s/imports.bin", dir);
+		if (!index_cache::load_file(
+			self.allocator,
+			path,
+			IMPORT_CACHE_MAGIC,
+			index_cache::query_stamp(),
+			&cache
+		)) return false;
+	};
+
+	for (uint record = 0; record < cache.records; record++)
+	{
+		String relative    = "";
+		String module_name = "";
+		ulong mtime_cached;
+		ulong size_cached;
+		char cached_language;
+		char flags;
+		ulong import_count;
+		if (!cache.reader.string(
+			self.allocator,
+			&relative
+		) || !cache.reader.read_u64(
+			&mtime_cached
+		) || !cache.reader.read_u64(
+			&size_cached
+		) || !cache.reader.u8(
+			&cached_language
+		) || !cache.reader.u8(
+			&flags
+		) || !cache.reader.string(self.allocator, &module_name) || !cache.reader.varint(&import_count))
+		{
+			if (relative.len) relative.free(self.allocator);
+			if (module_name.len) module_name.free(self.allocator);
+			cache.destroy(self.allocator);
+			return false;
+		}
+
+		String absolute = cache_abs_path(self.allocator, (String)project.root, relative);
+		bool valid      = absolute.len > 0 && self.card_paths.has_key(
+			absolute
+		) && (int)cached_language == (int)language::language_for_path(absolute);
+		if (valid)
+		{
+			long? size = file::get_size(absolute);
+			if (catch excuse = size)
+			{
+				valid = false;
+			}
+			else
+			{
+				Time? mtime = file::last_modified(absolute);
+				if (catch mtime_excuse = mtime)
+				{
+					valid = false;
+				}
+				else
+				{
+					valid = (ulong)mtime == mtime_cached && (ulong)size == size_cached;
+				}
+			}
+		}
+
+		List{ImportRef} refs;
+		refs.init(self.allocator);
+		bool parsed = true;
+		for (ulong r = 0; r < import_count; r++)
+		{
+			String specifier = "";
+			String kind      = "";
+			String target    = "";
+			char ref_flags;
+			ulong line;
+			ulong column;
+			if (!cache.reader.string(
+				self.allocator,
+				&specifier
+			) || !cache.reader.string(
+				self.allocator,
+				&kind
+			) || !cache.reader.string(
+				self.allocator,
+				&target
+			) || !cache.reader.u8(&ref_flags) || !cache.reader.varint(&line) || !cache.reader.varint(&column))
+			{
+				if (specifier.len) specifier.free(self.allocator);
+				if (kind.len) kind.free(self.allocator);
+				if (target.len) target.free(self.allocator);
+				parsed = false;
+				break;
+			}
+			String target_abs = cache_abs_path(self.allocator, (String)project.root, target);
+			if (target.len) target.free(self.allocator);
+			refs.push(
+				{
+					.specifier = specifier,
+					.target_path = target_abs,
+					.kind = kind,
+					.resolved = (ref_flags & 1) != 0,
+					.angled = (ref_flags & 2) != 0,
+					.line = (usz)line,
+					.column = (usz)column,
+				}
+			);
+		}
+
+		if (!parsed)
+		{
+			free_refs(self.allocator, &refs);
+			refs.free();
+			if (absolute.len) absolute.free(self.allocator);
+			if (relative.len) relative.free(self.allocator);
+			if (module_name.len) module_name.free(self.allocator);
+			cache.destroy(self.allocator);
+			return false;
+		}
+
+		if (valid)
+		{
+			self.store(absolute, &refs, module_name, (flags & 1) != 0);
+			module_name = "";
+		}
+		else
+		{
+			free_refs(self.allocator, &refs);
+			refs.free();
+			if (module_name.len) module_name.free(self.allocator);
+		}
+		if (absolute.len) absolute.free(self.allocator);
+		if (relative.len) relative.free(self.allocator);
+	}
+
+	cache.destroy(self.allocator);
+	return true;
+}
+
+fn void ImportIndex.save_cache(&self, project::Project* project)
+{
+	DString body;
+	body.init(self.allocator, 4096);
+	uint count = 0;
+	for (sz i = 0; i < self.files.len(); i++)
+	{
+		CardImports* file = &self.files[i];
+		int*? card_index  = self.card_paths.get_ref(file.path);
+		if (catch excuse = card_index) continue;
+		if (*card_index < 0 || *card_index >= (int)project.cards.len()) continue;
+		FileCard* card = &project.cards[*card_index];
+		if (card.dirty || card.missing) continue;
+
+		String relative = cache_rel_path(self.allocator, (String)project.root, file.path);
+		if (relative.len == 0) continue;
+		long? size = file::get_size(file.path);
+		if (catch excuse = size)
+		{
+			relative.free(self.allocator);
+			continue;
+		}
+		Time? mtime = file::last_modified(file.path);
+		if (catch excuse = mtime)
+		{
+			relative.free(self.allocator);
+			continue;
+		}
+		index_cache::write_string(&body, relative);
+		index_cache::write_u64(&body, (ulong)mtime);
+		index_cache::write_u64(&body, (ulong)size);
+		index_cache::write_u8(&body, (char)language::language_for_path(file.path));
+		index_cache::write_u8(&body, file.is_test ? 1 : 0);
+		index_cache::write_string(&body, file.module_name);
+		index_cache::write_varint(&body, (ulong)file.imports.len());
+		for (sz r = 0; r < file.imports.len(); r++)
+		{
+			ImportRef* ref = &file.imports[r];
+			index_cache::write_string(&body, ref.specifier);
+			index_cache::write_string(&body, ref.kind);
+			String target = cache_rel_path(self.allocator, (String)project.root, ref.target_path);
+			index_cache::write_string(&body, target);
+			if (target.len) target.free(self.allocator);
+			char flags = (char)((ref.resolved ? 1 : 0) | (ref.angled ? 2 : 0));
+			index_cache::write_u8(&body, flags);
+			index_cache::write_varint(&body, (ulong)ref.line);
+			index_cache::write_varint(&body, (ulong)ref.column);
+		}
+		relative.free(self.allocator);
+		count++;
+	}
+	if (count == 0)
+	{
+		body.free();
+		return;
+	}
+	@pool()
+	{
+		String dir  = string::format(tmem, "%s/.yun/cache", project.root);
+		String path = string::format(tmem, "%s/imports.bin", dir);
+		if (catch excuse = path::mkdir((Path)dir, recursive: true))
+		{
+			body.free();
+			return;
+		}
+		String view = body.str_view();
+		(void)index_cache::save_file(
+			self.allocator,
+			path,
+			IMPORT_CACHE_MAGIC,
+			index_cache::query_stamp(),
+			count,
+			view.ptr[0:view.len]
+		);
+	};
+	body.free();
+}
+
 fn void ImportIndex.start_scan(&self, project::Project* project)
 {
 	self.free_files();
@@ -1846,6 +2090,11 @@ fn void ImportIndex.start_scan(&self, project::Project* project)
 	self.received = 0;
 	self.scanning = true;
 
+	bool cache_ok = self.load_cache(project);
+	if (!cache_ok) self.free_files();
+	self.cache_dirty = false;
+	self.cache_dirty_at = 0.0;
+
 	if (!self.pool_ready)
 	{
 		self.scan_cursor = 0;
@@ -1857,6 +2106,7 @@ fn void ImportIndex.start_scan(&self, project::Project* project)
 		FileCard* card              = &project.cards[i];
 		language::Language language = language::language_for_path((String)card.path);
 		if (language == language::Language.NONE) continue;
+		if (self.file_index.has_key((String)card.path)) continue;
 		if (card.buffer)
 		{
 			self.scan_one(project, (int)i);
@@ -1876,6 +2126,7 @@ fn void ImportIndex.start_scan(&self, project::Project* project)
 		}
 		self.pending++;
 	}
+	if (self.pending == 0) self.scanning = false;
 }
 
 fn void ImportIndex.sync(&self, project::Project* project)
@@ -1895,6 +2146,8 @@ fn void ImportIndex.store(&self, String path, List{ImportRef}* refs, String modu
 		file.imports = *refs;
 		self.files.push(file);
 		self.file_index.set(file.path, (int)(self.files.len() - 1));
+		self.cache_dirty = true;
+		self.cache_dirty_at = rl::get_time();
 		return;
 	}
 	CardImports* file = &self.files[*existing];
@@ -1904,6 +2157,8 @@ fn void ImportIndex.store(&self, String path, List{ImportRef}* refs, String modu
 	file.module_name = module_name;
 	file.is_test = is_test;
 	file.imports = *refs;
+	self.cache_dirty = true;
+	self.cache_dirty_at = rl::get_time();
 }
 
 fn void ImportIndex.scan_one(&self, project::Project* project, int card_index)
@@ -1951,7 +2206,8 @@ fn bool ImportIndex.scan_step(&self, project::Project* project, usz budget)
 	usz processed = 0;
 	while (self.scan_cursor < (usz)project.cards.len() && processed < budget)
 	{
-		self.scan_one(project, (int)self.scan_cursor);
+		FileCard* card = &project.cards[(sz)self.scan_cursor];
+		if (!self.file_index.has_key((String)card.path)) self.scan_one(project, (int)self.scan_cursor);
 		self.scan_cursor++;
 		processed++;
 	}
@@ -1970,6 +2226,11 @@ fn void ImportIndex.pump(&self, project::Project* project)
 	if (!self.pool_ready)
 	{
 		(void)self.scan_step(project, 16);
+		if (self.cache_dirty && !self.scanning && rl::get_time() - self.cache_dirty_at >= 1.5)
+		{
+			self.save_cache(project);
+			self.cache_dirty = false;
+		}
 		return;
 	}
 	if (self.results)
@@ -2006,6 +2267,11 @@ fn void ImportIndex.pump(&self, project::Project* project)
 	{
 		self.scanning = false;
 		self.resolve_all(project);
+	}
+	if (self.cache_dirty && !self.scanning && rl::get_time() - self.cache_dirty_at >= 1.5)
+	{
+		self.save_cache(project);
+		self.cache_dirty = false;
 	}
 }
 

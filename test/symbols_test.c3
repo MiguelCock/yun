@@ -6,6 +6,7 @@ import std::io::path;
 import std::io;
 import tree_sitter;
 import yun::language;
+import yun::project;
 
 macro bool has_symbol(list, name)
 {
@@ -124,6 +125,63 @@ fn void test_extract_javascript()
 		assert(has_symbol(&out, "Foo"));
 		assert(has_symbol(&out, "g"));
 		free_symbols(&out);
+		(void)path::rmtree(dir);
+	};
+}
+
+fn void test_symbols_defer_does_not_scan()
+{
+	project::Project p;
+	p.init(mem);
+	Symbols s;
+	s.init(mem);
+	s.defer_project(&p);
+	assert(!s.auto_scan);
+	assert(!s.scanning);
+	assert(s.known_cards == (usz)p.cards.len());
+	s.destroy();
+	p.destroy();
+}
+
+fn void test_symbol_cache_roundtrip()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_sym_cache");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? f = dir.append(tmem, "a.c3");
+		if (catch excuse = f) return;
+		String src = "module demo;\nfn int add(int a, int b) { return a + b; }\n";
+		if (catch excuse = file::save(f, src)) return;
+
+		project::Project p;
+		p.init(mem);
+		if (p.root.len) p.root.free(mem);
+		p.root = (Path)((String)dir).copy(mem);
+		(void)p.append_card((String)f, { 0.0f, 0.0f });
+
+		Symbols first;
+		first.init(mem);
+		List{Symbol} symbols;
+		symbols.init(mem);
+		symbols.push({ .name = "add".copy(mem), .kind = SymbolKind.FUNCTION, .line = 1, .column = 3 });
+		first.store((String)f, &symbols);
+		first.save_cache(&p);
+		first.destroy();
+
+		Symbols second;
+		second.init(mem);
+		assert(second.load_cache(&p));
+		assert(second.files.len() == 1);
+		assert(second.files[0].symbols.len() == 1);
+		assert(second.files[0].symbols[0].name.compare_to("add") == 0);
+		second.destroy();
+		p.destroy();
 		(void)path::rmtree(dir);
 	};
 }

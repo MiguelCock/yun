@@ -135,6 +135,8 @@ Settings are JSON, layered as `defaults < global < project`, so a project can ov
 - Global: `<OS config dir>/yun/config.json` (e.g. `~/.config/yun/config.json` on Linux).
 - Project: `.yun/config.json` at the project root (wins over global).
 
+Yun also keeps a binary import cache at `.yun/cache/imports.bin` and a symbol cache at `.yun/cache/symbols.bin`. They are disposable, validated by file mtime/size and a CRC, and rebuilt automatically when needed.
+
 Values are grouped into sections, for example:
 
 ```json
