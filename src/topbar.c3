@@ -586,16 +586,24 @@ fn void TopBar.draw(
 		CommandDef def = commands::bar_command(i);
 		bool enabled   = commands::command_enabled(def.id, has_project, has_buffer);
 		Rect r         = button_rect_for(g_position, i, screen_w, screen_h);
-		bool hovered   = mouse[0] >= r.x && mouse[0] <= r.x + r.width && mouse[1] >= r.y && mouse[1] <= r.y + r.height;
-		ui::rounded_rect(r, ui::row_radius(), hovered && enabled ? theme::current()
-			.topbar_hover : theme::current().topbar_button);
+		bool hovered   = ui::pointer_in(r, mouse);
+		ui::ControlState state = ui::control_state_at(
+			r,
+			mouse,
+			rl::is_mouse_button_down(rl::RLMouseButton.LEFT),
+			enabled,
+			false
+		);
+		ui::rounded_rect(r, ui::row_radius(), ui::control_fill(state, theme::current()
+			.topbar_button, theme::current()
+				.topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
 		if (hovered && enabled) ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
 
-		String label           = def.bar_label.len > 0 ? def.bar_label : def.label;
+		String label = def.bar_label.len > 0 ? def.bar_label : def.label;
 		float button_text_size = (float)ui::tpx(15);
-		float icon_size        = icons::icon_size(16);
-		float gap              = (float)ui::px(6);
-		RLColor color          = enabled ? theme::current().topbar_text : theme::current().topbar_disabled;
+		float icon_size = icons::icon_size(16);
+		float gap = (float)ui::px(6);
+		RLColor color = ui::control_text(state, theme::current().topbar_text, theme::current().topbar_disabled);
 		if (def.icon_only)
 		{
 			icons::draw(icon_for_command(def.id), icons::icon_box(r, 16), color);
@@ -629,7 +637,7 @@ fn void TopBar.draw(
 	))
 	{
 		Rect selected_rect = button_rect_for(g_position, (usz)self.selected, screen_w, screen_h);
-		ui::rounded_rect_lines(selected_rect, ui::row_radius(), 2.0f, theme::current().card_focus);
+		ui::focus_ring(selected_rect);
 	}
 
 	if (horizontal)

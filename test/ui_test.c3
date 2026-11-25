@@ -98,6 +98,31 @@ fn void test_corner_radius()
 	assert(corner_radius() == 0.0f);
 	set_corner_radius(6.0f);
 }
+fn void test_control_state()
+{
+	Rect r            = { .x = 10.0f, .y = 20.0f, .width = 100.0f, .height = 40.0f };
+	RLVector2 inside  = { 20.0f, 30.0f };
+	RLVector2 outside = { 0.0f, 0.0f };
+	assert(control_state_at(r, inside, false, true, false) == ControlState.HOVER);
+	assert(control_state_at(r, inside, true, true, false) == ControlState.PRESSED);
+	assert(control_state_at(r, inside, false, false, false) == ControlState.DISABLED);
+	assert(control_state_at(r, outside, false, true, true) == ControlState.FOCUSED);
+	assert(control_state_at(r, outside, false, true, false) == ControlState.NORMAL);
+}
+
+fn void test_control_colors()
+{
+	RLColor normal   = { 1, 2, 3, 4 };
+	RLColor hover    = { 5, 6, 7, 8 };
+	RLColor pressed  = { 9, 10, 11, 12 };
+	RLColor disabled = { 13, 14, 15, 16 };
+	assert(control_fill(ControlState.NORMAL, normal, hover, pressed, disabled)[0] == 1);
+	assert(control_fill(ControlState.HOVER, normal, hover, pressed, disabled)[0] == 5);
+	assert(control_fill(ControlState.PRESSED, normal, hover, pressed, disabled)[0] == 9);
+	assert(control_fill(ControlState.DISABLED, normal, hover, pressed, disabled)[0] == 13);
+	assert(control_text(ControlState.DISABLED, normal, disabled)[0] == 13);
+}
+
 fn void test_cursor_priority()
 {
 	reset_cursor();

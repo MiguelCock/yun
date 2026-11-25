@@ -1095,11 +1095,13 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 
 	for (int i = 0; i < (int)settings::SettingPage.COUNT; i++)
 	{
-		Rect pr = self.page_rect(i);
-		if (i == (int)self.page)
-		{
-			ui::row(pr, theme::current().panel_selected);
-		}
+		Rect pr                = self.page_rect(i);
+		bool active            = i == (int)self.page;
+		ui::ControlState state = ui::control_state(pr, true, active);
+		ui::row(pr, ui::control_fill(state, active ? theme::current()
+			.panel_selected : theme::current()
+				.panel_field, theme::current()
+					.topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
 		float icon_size = icons::icon_size(16);
 		icons::draw(
 			page_icon((settings::SettingPage)i),
@@ -1121,13 +1123,29 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 			.panel_text : theme::current().panel_dim);
 	}
 
-	Rect global_scope    = self.scope_rect(false);
-	Rect project_scope   = self.scope_rect(true);
-	bool project_enabled = project_open;
-	ui::rounded_rect(global_scope, ui::row_radius(), self.scope == settings::SettingLayer.GLOBAL ? theme::current()
-		.panel_selected : theme::current().panel_field);
-	ui::rounded_rect(project_scope, ui::row_radius(), self.scope == settings::SettingLayer.PROJECT ? theme::current()
-		.panel_selected : theme::current().panel_field);
+	Rect global_scope             = self.scope_rect(false);
+	Rect project_scope            = self.scope_rect(true);
+	bool project_enabled          = project_open;
+	ui::ControlState global_state = ui::control_state(global_scope, true, self.scope == settings::SettingLayer.GLOBAL);
+	ui::ControlState project_state = ui::control_state(
+		project_scope,
+		project_enabled,
+		self.scope == settings::SettingLayer.PROJECT
+	);
+	ui::rounded_rect(
+		global_scope,
+		ui::row_radius(),
+		ui::control_fill(global_state, self.scope == settings::SettingLayer.GLOBAL ? theme::current()
+		.panel_selected : theme::current()
+			.panel_field, theme::current()
+				.topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
+	ui::rounded_rect(
+		project_scope,
+		ui::row_radius(),
+		ui::control_fill(project_state, self.scope == settings::SettingLayer.PROJECT ? theme::current()
+		.panel_selected : theme::current()
+			.panel_field, theme::current()
+				.topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
 	draw_text(
 		font,
 		"Global",
@@ -1177,8 +1195,11 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		theme::current()
 		.panel_caret);
 
-	float y     = self.list_y();
-	float limit = panel.y + panel.height - (float)ui::px(FOOTER_HEIGHT);
+	float y         = self.list_y();
+	float limit     = panel.y + panel.height - (float)ui::px(FOOTER_HEIGHT);
+	RLVector2 mouse = rl::get_mouse_position();
+	int hover_row   = self.row_at(mouse);
+	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 	for (int index = self.scroll; index < (int)self.rows.len(); index++)
 	{
 		if (y >= limit) break;
@@ -1219,6 +1240,18 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 				},
 				theme::current()
 				.panel_selected);
+		}
+		else if (index == hover_row)
+		{
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = y,
+					.width = panel.width - 4.0f,
+					.height = (float)ui::px(ROW_HEIGHT),
+				},
+				pressed ? theme::current()
+				.panel_selected : theme::current().panel_bg_alt);
 		}
 		if (row.kind == RowKind.SETTING)
 		{

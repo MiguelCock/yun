@@ -154,6 +154,67 @@ fn void row(Rect r, RLColor color)
 	rounded_rect(r, row_radius(), color);
 }
 
+enum ControlState : int
+{
+	NORMAL,
+	HOVER,
+	PRESSED,
+	FOCUSED,
+	DISABLED,
+}
+
+fn bool pointer_in(Rect r, RLVector2 point)
+{
+	return point[0] >= r.x && point[0] <= r.x + r.width && point[1] >= r.y && point[1] <= r.y + r.height;
+}
+
+fn ControlState control_state_at(Rect r, RLVector2 mouse, bool mouse_down, bool enabled, bool focused)
+{
+	if (!enabled) return ControlState.DISABLED;
+	bool hovered = pointer_in(r, mouse);
+	if (hovered && mouse_down) return ControlState.PRESSED;
+	if (hovered) return ControlState.HOVER;
+	if (focused) return ControlState.FOCUSED;
+	return ControlState.NORMAL;
+}
+
+fn ControlState control_state(Rect r, bool enabled, bool focused)
+{
+	return control_state_at(
+		r,
+		rl::get_mouse_position(),
+		rl::is_mouse_button_down(rl::RLMouseButton.LEFT),
+		enabled,
+		focused
+	);
+}
+
+fn RLColor control_fill(ControlState state, RLColor normal, RLColor hover, RLColor pressed, RLColor disabled)
+{
+	switch (state)
+	{
+		case ControlState.HOVER:
+			return hover;
+		case ControlState.PRESSED:
+			return pressed;
+		case ControlState.DISABLED:
+			return disabled;
+		case ControlState.NORMAL:
+		case ControlState.FOCUSED:
+			return normal;
+	}
+}
+
+fn RLColor control_text(ControlState state, RLColor normal, RLColor disabled)
+{
+	return state == ControlState.DISABLED ? disabled : normal;
+}
+
+fn void focus_ring(Rect r)
+{
+	rounded_rect_lines(r, row_radius(), 2.0f, theme::current().card_focus);
+}
+
 fn void reset_cursor()
 {
 	g_cursor = RLMouseCursor.DEFAULT;
