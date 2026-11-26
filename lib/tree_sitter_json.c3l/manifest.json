@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_json",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-json"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-json"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-json"
+      ]
+    }
+  }
+}

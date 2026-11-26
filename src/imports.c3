@@ -11,9 +11,11 @@ import std::math;
 import std::os;
 import std::thread;
 import std::thread::channel;
+import std::time;
 import tree_sitter;
 import yun::card;
 import yun::editor;
+import yun::index_cache;
 import yun::language;
 import yun::hover;
 import yun::project;
@@ -24,11 +26,11 @@ import yun::ui;
 const int MAX_SCAN_WORKERS         = 8;
 const int RESULT_BATCH_BUDGET      = 32;
 const float ARROW_HIT_PX           = 6.0f;
-const float ARROW_MIN_DRAW_PX      = 6.0f;
-const float ARROW_MIN_DRAW_ZOOM    = 0.3f;
+const float ARROW_MIN_DRAW_PX      = 2.0f;
 const int ARROW_MAX_PER_FRAME      = 400;
 const float ARROW_LABEL_MIN_ZOOM   = 0.5f;
-const int BEZIER_HIT_STEPS         = 20;
+const float ORTHO_STUB_PX          = 16.0f;
+const int ORTHO_ROUTE_POINTS       = 6;
 const double EDIT_DEBOUNCE_SECONDS = 0.15;
 
 enum ArrowStyle : int
@@ -43,8 +45,8 @@ enum ArrowStyle : int
 struct ImportSettings
 {
 	bool enabled;
-	bool show_internal;
-	bool show_external;
+	bool related_only;
+	float min_zoom;
 	bool labels;
 	float line_thickness;
 	float hover_thickness;
@@ -53,7 +55,6 @@ struct ImportSettings
 	float rescan_debounce;
 	int scan_workers;
 	ArrowStyle internal_style;
-	ArrowStyle external_style;
 	float dash_length;
 	float dash_gap;
 }
@@ -69,8 +70,8 @@ fn ArrowStyle parse_arrow_style(String value)
 
 ImportSettings g_import_settings = {
 	.enabled = true,
-	.show_internal = true,
-	.show_external = true,
+	.related_only = true,
+	.min_zoom = 0.05f,
 	.labels = true,
 	.line_thickness = 2.0f,
 	.hover_thickness = 3.6f,
@@ -79,7 +80,6 @@ ImportSettings g_import_settings = {
 	.rescan_debounce = (float)EDIT_DEBOUNCE_SECONDS,
 	.scan_workers = 0,
 	.internal_style = ArrowStyle.SOLID,
-	.external_style = ArrowStyle.DASHED,
 	.dash_length = 8.0f,
 	.dash_gap = 6.0f,
 };
@@ -87,6 +87,18 @@ ImportSettings g_import_settings = {
 fn ImportSettings settings()
 {
 	return g_import_settings;
+}
+
+bool g_draw_on_top = false;
+
+fn bool draw_on_top()
+{
+	return g_draw_on_top;
+}
+
+fn void set_draw_on_top(bool enabled)
+{
+	g_draw_on_top = enabled;
 }
 
 fn void set_settings(ImportSettings value)
@@ -98,6 +110,8 @@ fn void set_settings(ImportSettings value)
 	if (value.rescan_debounce < 0.0f) value.rescan_debounce = 0.0f;
 	if (value.scan_workers < 0) value.scan_workers = 0;
 	if (value.scan_workers > MAX_SCAN_WORKERS) value.scan_workers = MAX_SCAN_WORKERS;
+	if (value.min_zoom < 0.001f) value.min_zoom = 0.001f;
+	if (value.min_zoom > 1.0f) value.min_zoom = 1.0f;
 	if (value.dash_length < 1.0f) value.dash_length = 1.0f;
 	if (value.dash_gap < 1.0f) value.dash_gap = 1.0f;
 	g_import_settings = value;
@@ -121,6 +135,23 @@ struct ImportHit
 	usz ref_index;
 	int target;
 	RLVector2 world;
+	bool grouped;
+	int group_count;
+}
+
+struct ImportEdge
+{
+	String label;
+	int count;
+	int source_card;
+	int target_card;
+	usz source_ref;
+}
+
+struct EdgeRoute
+{
+	RLVector2[ORTHO_ROUTE_POINTS] points;
+	int count;
 }
 
 struct ImporterRef
@@ -171,12 +202,17 @@ struct ImportIndex
 	usz scan_cursor;
 	usz known_cards;
 	int cached_revision;
+	int cached_order_revision;
 	ImportHit hover;
 	bool pending_edit;
 	String pending_path;
 	double pending_since;
 	List{ImportContext*} contexts;
 	HashMap{String, int} context_index;
+	List{ImportEdge} edges;
+	bool edges_dirty;
+	bool cache_dirty;
+	double cache_dirty_at;
 }
 
 TSQuery*[language::LANGUAGE_COUNT] import_query_cache;
@@ -221,6 +257,7 @@ fn void ImportIndex.init(&self, Allocator allocator)
 	self.scan_cursor = 0;
 	self.known_cards = 0;
 	self.cached_revision = -1;
+	self.cached_order_revision = -1;
 	self.generation = 0;
 	self.pending = 0;
 	self.received = 0;
@@ -232,6 +269,10 @@ fn void ImportIndex.init(&self, Allocator allocator)
 	self.pending_since = 0.0;
 	self.contexts.init(allocator);
 	self.context_index.init(allocator);
+	self.edges.init(allocator);
+	self.edges_dirty = true;
+	self.cache_dirty = false;
+	self.cache_dirty_at = 0.0;
 	self.init_pool();
 }
 
@@ -335,6 +376,7 @@ fn void ImportIndex.destroy(&self)
 	self.free_contexts();
 	self.contexts.free();
 	self.context_index.free();
+	self.edges.free();
 }
 
 fn TSQuery* make_query(language::Language language, String text)
@@ -1731,17 +1773,22 @@ fn void ImportIndex.free_files(&self)
 	}
 	self.files.clear();
 	self.file_index.clear();
+	self.edges.clear();
+	self.edges_dirty = true;
+	self.hover.valid = false;
 }
 
 fn void ImportIndex.refresh_card_paths(&self, project::Project* project)
 {
-	if (self.cached_revision == project.cards_revision) return;
+	if (self.cached_revision == project.cards_revision && self.cached_order_revision == project.order_revision) return;
 	self.card_paths.clear();
 	for (sz i = 0; i < project.cards.len(); i++)
 	{
 		self.card_paths.set((String)project.cards[i].path, (int)i);
 	}
 	self.cached_revision = project.cards_revision;
+	self.cached_order_revision = project.order_revision;
+	self.edges_dirty = true;
 }
 
 fn void ImportIndex.resolve_file(&self, project::Project* project, CardImports[] all_files, CardImports* file)
@@ -1809,6 +1856,8 @@ fn void ImportIndex.resolve_file(&self, project::Project* project, CardImports[]
 	free_refs(self.allocator, &file.imports);
 	file.imports.free();
 	file.imports = next;
+	self.cache_dirty = true;
+	self.cache_dirty_at = rl::get_time();
 }
 
 fn void ImportIndex.resolve_all(&self, project::Project* project)
@@ -1821,6 +1870,7 @@ fn void ImportIndex.resolve_all(&self, project::Project* project)
 			self.resolve_file(project, all_files, &self.files[i]);
 		}
 	};
+	self.edges_dirty = true;
 }
 
 fn void ImportIndex.resolve_one(&self, project::Project* project, String path)
@@ -1832,6 +1882,243 @@ fn void ImportIndex.resolve_one(&self, project::Project* project, String path)
 		if (catch excuse = entry) return;
 		self.resolve_file(project, all_files, &self.files[*entry]);
 	};
+	self.edges_dirty = true;
+}
+
+const String IMPORT_CACHE_MAGIC = "YUNIMPT1";
+
+fn String cache_abs_path(Allocator allocator, String root, String relative)
+{
+	if (relative.len == 0) return "";
+	Path? appended = ((Path)root).append(allocator, relative);
+	if (catch excuse = appended) return "";
+	return (String)appended;
+}
+
+fn String cache_rel_path(Allocator allocator, String root, String absolute)
+{
+	if (!project::path_is_inside(root, absolute) || absolute.len <= root.len) return "";
+	return absolute[root.len + 1..].copy(allocator);
+}
+
+fn bool ImportIndex.load_cache(&self, project::Project* project)
+{
+	index_cache::CacheFile cache;
+	@pool()
+	{
+		String dir  = string::format(tmem, "%s/.yun/cache", project.root);
+		String path = string::format(tmem, "%s/imports.bin", dir);
+		if (!index_cache::load_file(
+			self.allocator,
+			path,
+			IMPORT_CACHE_MAGIC,
+			index_cache::query_stamp(),
+			&cache
+		)) return false;
+	};
+
+	for (uint record = 0; record < cache.records; record++)
+	{
+		String relative    = "";
+		String module_name = "";
+		ulong mtime_cached;
+		ulong size_cached;
+		char cached_language;
+		char flags;
+		ulong import_count;
+		if (!cache.reader.string(
+			self.allocator,
+			&relative
+		) || !cache.reader.read_u64(
+			&mtime_cached
+		) || !cache.reader.read_u64(
+			&size_cached
+		) || !cache.reader.u8(
+			&cached_language
+		) || !cache.reader.u8(
+			&flags
+		) || !cache.reader.string(self.allocator, &module_name) || !cache.reader.varint(&import_count))
+		{
+			if (relative.len) relative.free(self.allocator);
+			if (module_name.len) module_name.free(self.allocator);
+			cache.destroy(self.allocator);
+			return false;
+		}
+
+		String absolute = cache_abs_path(self.allocator, (String)project.root, relative);
+		bool valid      = absolute.len > 0 && self.card_paths.has_key(
+			absolute
+		) && (int)cached_language == (int)language::language_for_path(absolute);
+		if (valid)
+		{
+			long? size = file::get_size(absolute);
+			if (catch excuse = size)
+			{
+				valid = false;
+			}
+			else
+			{
+				Time? mtime = file::last_modified(absolute);
+				if (catch mtime_excuse = mtime)
+				{
+					valid = false;
+				}
+				else
+				{
+					valid = (ulong)mtime == mtime_cached && (ulong)size == size_cached;
+				}
+			}
+		}
+
+		List{ImportRef} refs;
+		refs.init(self.allocator);
+		bool parsed = true;
+		for (ulong r = 0; r < import_count; r++)
+		{
+			String specifier = "";
+			String kind      = "";
+			String target    = "";
+			char ref_flags;
+			ulong line;
+			ulong column;
+			if (!cache.reader.string(
+				self.allocator,
+				&specifier
+			) || !cache.reader.string(
+				self.allocator,
+				&kind
+			) || !cache.reader.string(
+				self.allocator,
+				&target
+			) || !cache.reader.u8(&ref_flags) || !cache.reader.varint(&line) || !cache.reader.varint(&column))
+			{
+				if (specifier.len) specifier.free(self.allocator);
+				if (kind.len) kind.free(self.allocator);
+				if (target.len) target.free(self.allocator);
+				parsed = false;
+				break;
+			}
+			String target_abs = cache_abs_path(self.allocator, (String)project.root, target);
+			if (target.len) target.free(self.allocator);
+			refs.push(
+				{
+					.specifier = specifier,
+					.target_path = target_abs,
+					.kind = kind,
+					.resolved = (ref_flags & 1) != 0,
+					.angled = (ref_flags & 2) != 0,
+					.line = (usz)line,
+					.column = (usz)column,
+				}
+			);
+		}
+
+		if (!parsed)
+		{
+			free_refs(self.allocator, &refs);
+			refs.free();
+			if (absolute.len) absolute.free(self.allocator);
+			if (relative.len) relative.free(self.allocator);
+			if (module_name.len) module_name.free(self.allocator);
+			cache.destroy(self.allocator);
+			return false;
+		}
+
+		if (valid)
+		{
+			self.store(absolute, &refs, module_name, (flags & 1) != 0);
+			module_name = "";
+		}
+		else
+		{
+			free_refs(self.allocator, &refs);
+			refs.free();
+			if (module_name.len) module_name.free(self.allocator);
+		}
+		if (absolute.len) absolute.free(self.allocator);
+		if (relative.len) relative.free(self.allocator);
+	}
+
+	cache.destroy(self.allocator);
+	return true;
+}
+
+fn void ImportIndex.save_cache(&self, project::Project* project)
+{
+	DString body;
+	body.init(self.allocator, 4096);
+	uint count = 0;
+	for (sz i = 0; i < self.files.len(); i++)
+	{
+		CardImports* file = &self.files[i];
+		int*? card_index  = self.card_paths.get_ref(file.path);
+		if (catch excuse = card_index) continue;
+		if (*card_index < 0 || *card_index >= (int)project.cards.len()) continue;
+		FileCard* card = &project.cards[*card_index];
+		if (card.dirty || card.missing) continue;
+
+		String relative = cache_rel_path(self.allocator, (String)project.root, file.path);
+		if (relative.len == 0) continue;
+		long? size = file::get_size(file.path);
+		if (catch excuse = size)
+		{
+			relative.free(self.allocator);
+			continue;
+		}
+		Time? mtime = file::last_modified(file.path);
+		if (catch excuse = mtime)
+		{
+			relative.free(self.allocator);
+			continue;
+		}
+		index_cache::write_string(&body, relative);
+		index_cache::write_u64(&body, (ulong)mtime);
+		index_cache::write_u64(&body, (ulong)size);
+		index_cache::write_u8(&body, (char)language::language_for_path(file.path));
+		index_cache::write_u8(&body, file.is_test ? 1 : 0);
+		index_cache::write_string(&body, file.module_name);
+		index_cache::write_varint(&body, (ulong)file.imports.len());
+		for (sz r = 0; r < file.imports.len(); r++)
+		{
+			ImportRef* ref = &file.imports[r];
+			index_cache::write_string(&body, ref.specifier);
+			index_cache::write_string(&body, ref.kind);
+			String target = cache_rel_path(self.allocator, (String)project.root, ref.target_path);
+			index_cache::write_string(&body, target);
+			if (target.len) target.free(self.allocator);
+			char flags = (char)((ref.resolved ? 1 : 0) | (ref.angled ? 2 : 0));
+			index_cache::write_u8(&body, flags);
+			index_cache::write_varint(&body, (ulong)ref.line);
+			index_cache::write_varint(&body, (ulong)ref.column);
+		}
+		relative.free(self.allocator);
+		count++;
+	}
+	if (count == 0)
+	{
+		body.free();
+		return;
+	}
+	@pool()
+	{
+		String dir  = string::format(tmem, "%s/.yun/cache", project.root);
+		String path = string::format(tmem, "%s/imports.bin", dir);
+		if (catch excuse = path::mkdir((Path)dir, recursive: true))
+		{
+			body.free();
+			return;
+		}
+		String view = body.str_view();
+		(void)index_cache::save_file(
+			self.allocator,
+			path,
+			IMPORT_CACHE_MAGIC,
+			index_cache::query_stamp(),
+			count,
+			view.ptr[0:view.len]
+		);
+	};
+	body.free();
 }
 
 fn void ImportIndex.start_scan(&self, project::Project* project)
@@ -1846,6 +2133,11 @@ fn void ImportIndex.start_scan(&self, project::Project* project)
 	self.received = 0;
 	self.scanning = true;
 
+	bool cache_ok = self.load_cache(project);
+	if (!cache_ok) self.free_files();
+	self.cache_dirty = false;
+	self.cache_dirty_at = 0.0;
+
 	if (!self.pool_ready)
 	{
 		self.scan_cursor = 0;
@@ -1857,6 +2149,7 @@ fn void ImportIndex.start_scan(&self, project::Project* project)
 		FileCard* card              = &project.cards[i];
 		language::Language language = language::language_for_path((String)card.path);
 		if (language == language::Language.NONE) continue;
+		if (self.file_index.has_key((String)card.path)) continue;
 		if (card.buffer)
 		{
 			self.scan_one(project, (int)i);
@@ -1876,6 +2169,7 @@ fn void ImportIndex.start_scan(&self, project::Project* project)
 		}
 		self.pending++;
 	}
+	if (self.pending == 0) self.scanning = false;
 }
 
 fn void ImportIndex.sync(&self, project::Project* project)
@@ -1895,6 +2189,10 @@ fn void ImportIndex.store(&self, String path, List{ImportRef}* refs, String modu
 		file.imports = *refs;
 		self.files.push(file);
 		self.file_index.set(file.path, (int)(self.files.len() - 1));
+		self.cache_dirty = true;
+		self.cache_dirty_at = rl::get_time();
+		self.edges_dirty = true;
+		self.hover.valid = false;
 		return;
 	}
 	CardImports* file = &self.files[*existing];
@@ -1904,6 +2202,10 @@ fn void ImportIndex.store(&self, String path, List{ImportRef}* refs, String modu
 	file.module_name = module_name;
 	file.is_test = is_test;
 	file.imports = *refs;
+	self.cache_dirty = true;
+	self.cache_dirty_at = rl::get_time();
+	self.edges_dirty = true;
+	self.hover.valid = false;
 }
 
 fn void ImportIndex.scan_one(&self, project::Project* project, int card_index)
@@ -1951,7 +2253,8 @@ fn bool ImportIndex.scan_step(&self, project::Project* project, usz budget)
 	usz processed = 0;
 	while (self.scan_cursor < (usz)project.cards.len() && processed < budget)
 	{
-		self.scan_one(project, (int)self.scan_cursor);
+		FileCard* card = &project.cards[(sz)self.scan_cursor];
+		if (!self.file_index.has_key((String)card.path)) self.scan_one(project, (int)self.scan_cursor);
 		self.scan_cursor++;
 		processed++;
 	}
@@ -1970,6 +2273,11 @@ fn void ImportIndex.pump(&self, project::Project* project)
 	if (!self.pool_ready)
 	{
 		(void)self.scan_step(project, 16);
+		if (self.cache_dirty && !self.scanning && rl::get_time() - self.cache_dirty_at >= 1.5)
+		{
+			self.save_cache(project);
+			self.cache_dirty = false;
+		}
 		return;
 	}
 	if (self.results)
@@ -2006,6 +2314,11 @@ fn void ImportIndex.pump(&self, project::Project* project)
 	{
 		self.scanning = false;
 		self.resolve_all(project);
+	}
+	if (self.cache_dirty && !self.scanning && rl::get_time() - self.cache_dirty_at >= 1.5)
+	{
+		self.save_cache(project);
+		self.cache_dirty = false;
 	}
 }
 
@@ -2160,77 +2473,112 @@ fn void import_scan_worker(void* arg)
 	alloc::free(index.allocator, work);
 }
 
-fn RLVector2 rect_center(Rect r)
+fn void ImportIndex.build_edges(&self, project::Project* project, List{ImportEdge}* out)
 {
-	return { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+	out.clear();
+	self.refresh_card_paths(project);
+	HashMap{long, int} seen;
+	seen.init(tmem);
+
+	for (sz c = 0; c < project.cards.len(); c++)
+	{
+		FileCard* card   = &project.cards[c];
+		ImportRef[] refs = self.imports_for((String)card.path);
+		for (usz r = 0; r < refs.len; r++)
+		{
+			ImportRef ref = refs[r];
+			if (!ref.resolved || ref.target_path.len == 0) continue;
+			int*? target = self.card_paths.get_ref(ref.target_path);
+			if (catch excuse = target) continue;
+			int target_card = *target;
+			if (target_card < 0 || target_card >= (int)project.cards.len()) continue;
+			if (target_card == (int)c) continue;
+
+			long key       = ((long)(uint)(int)c << 32) | (long)(uint)target_card;
+			int*? existing = seen.get_ref(key);
+			if (catch excuse = existing)
+			{
+				seen.set(key, (int)out.len());
+				out.push(
+					{
+						.label = ref.specifier,
+						.count = 1,
+						.source_card = (int)c,
+						.target_card = target_card,
+						.source_ref = r,
+					}
+				);
+			}
+			else
+			{
+				out.get_ref(*existing).count++;
+			}
+		}
+	}
 }
 
-fn RLVector2 rect_edge_point(Rect r, RLVector2 toward)
+fn void ImportIndex.ensure_edges(&self, project::Project* project)
 {
-	RLVector2 center = rect_center(r);
-	float dx         = toward[0] - center[0];
-	float dy         = toward[1] - center[1];
-	if (dx == 0.0f && dy == 0.0f) return center;
-	float tx = dx != 0.0f ? (r.width / 2.0f) / math::abs(dx) : 1000000.0f;
-	float ty = dy != 0.0f ? (r.height / 2.0f) / math::abs(dy) : 1000000.0f;
-	float t  = math::min(tx, ty);
-	return { center[0] + dx * t, center[1] + dy * t };
+	self.refresh_card_paths(project);
+	if (!self.edges_dirty) return;
+	@pool()
+	{
+		self.build_edges(project, &self.edges);
+	};
+	self.edges_dirty = false;
+	self.hover.valid = false;
 }
 
-fn void bezier_controls(RLVector2 p1, RLVector2 p2, RLVector2* c2, RLVector2* c3)
+fn void ImportIndex.collect_group(&self, project::Project* project, ImportHit hit, List{ImporterRef}* out)
 {
-	float mx = (p1[0] + p2[0]) * 0.5f;
-	*c2 = { mx, p1[1] };
-	*c3 = { mx, p2[1] };
+	out.clear();
+	if (!hit.valid) return;
+	if (hit.source < 0 || hit.source >= (int)project.cards.len()) return;
+	int*? source = self.file_index.get_ref((String)project.cards[hit.source].path);
+	if (catch excuse = source) return;
+	CardImports* source_file = &self.files[*source];
+	if ((sz)hit.ref_index >= source_file.imports.len()) return;
+	ImportRef first = source_file.imports[(sz)hit.ref_index];
+	if (!first.resolved || first.target_path.len == 0) return;
+
+	for (sz r = 0; r < source_file.imports.len(); r++)
+	{
+		ImportRef ref = source_file.imports[r];
+		if (!ref.resolved) continue;
+		if (ref.target_path.compare_to(first.target_path) != 0) continue;
+		out.push({ .file = *source, .ref = (usz)r });
+	}
 }
 
-fn void draw_arrowhead(RLVector2 p1, RLVector2 c2, RLVector2 c3, RLVector2 p2, float zoom, RLColor color)
+fn void draw_arrowhead(RLVector2 from, RLVector2 tip, float thick, float zoom, RLColor color)
 {
-	RLVector2 before = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, 0.9f);
-	float dx         = p2[0] - before[0];
-	float dy         = p2[1] - before[1];
-	float len        = math::sqrt(dx * dx + dy * dy);
+	float dx  = tip[0] - from[0];
+	float dy  = tip[1] - from[1];
+	float len = math::sqrt(dx * dx + dy * dy);
 	if (len <= 0.0001f) return;
 	float ux        = dx / len;
 	float uy        = dy / len;
 	float size      = g_import_settings.arrowhead_size / zoom;
 	float half      = size * 0.5f;
-	RLVector2 base  = { p2[0] - ux * size, p2[1] - uy * size };
+	RLVector2 base  = { tip[0] - ux * size, tip[1] - uy * size };
 	RLVector2 perp  = { -uy, ux };
 	RLVector2 left  = { base[0] + perp[0] * half, base[1] + perp[1] * half };
 	RLVector2 right = { base[0] - perp[0] * half, base[1] - perp[1] * half };
-	rl::draw_triangle(p2, left, right, color);
+	rl::draw_line_ex(tip, left, thick, color);
+	rl::draw_line_ex(tip, right, thick, color);
 }
 
-fn void draw_bezier(RLVector2 p1, RLVector2 p2, float thick, RLColor color)
-{
-	RLVector2 c2;
-	RLVector2 c3;
-	bezier_controls(p1, p2, &c2, &c3);
-	rl::draw_spline_segment_bezier_cubic(p1, c2, c3, p2, thick, color);
-}
-
-fn int dash_steps(RLVector2 p1, RLVector2 p2, float zoom)
-{
-	float dx         = p2[0] - p1[0];
-	float dy         = p2[1] - p1[1];
-	float screen_len = math::sqrt(dx * dx + dy * dy) * zoom;
-	int steps        = (int)(screen_len / 5.0f);
-	return (int)math::clamp((float)steps, 16.0f, 64.0f);
-}
-
-fn void draw_styled_bezier(RLVector2 p1, RLVector2 p2, float thick, float zoom, ArrowStyle style, RLColor color)
+fn void draw_styled_line(RLVector2 p1, RLVector2 p2, float thick, float zoom, ArrowStyle style, RLColor color)
 {
 	if (style == ArrowStyle.SOLID)
 	{
-		draw_bezier(p1, p2, thick, color);
+		rl::draw_line_ex(p1, p2, thick, color);
 		return;
 	}
-
-	RLVector2 c2;
-	RLVector2 c3;
-	bezier_controls(p1, p2, &c2, &c3);
-
+	float dx  = p2[0] - p1[0];
+	float dy  = p2[1] - p1[1];
+	float len = math::sqrt(dx * dx + dy * dy);
+	if (len <= 0.0001f) return;
 	float dash = g_import_settings.dash_length / zoom;
 	float gap  = g_import_settings.dash_gap / zoom;
 	if (style == ArrowStyle.DOTTED)
@@ -2241,42 +2589,42 @@ fn void draw_styled_bezier(RLVector2 p1, RLVector2 p2, float thick, float zoom, 
 	{
 		dash = (g_import_settings.dash_length * 2.0f) / zoom;
 	}
-	float small = 1.0f / zoom;
-
-	int steps       = dash_steps(p1, p2, zoom);
+	float small     = 1.0f / zoom;
+	float pos       = 0.0f;
 	bool on         = true;
 	bool short_dash = false;
-	float remaining = dash;
-	RLVector2 prev  = p1;
-	for (int s = 1; s <= steps; s++)
+	float segment   = dash;
+	while (pos < len)
 	{
-		float t         = (float)s / (float)steps;
-		RLVector2 point = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, t);
-		if (on) rl::draw_line_ex(prev, point, thick, color);
-		float dx = point[0] - prev[0];
-		float dy = point[1] - prev[1];
-		remaining -= math::sqrt(dx * dx + dy * dy);
-		if (remaining <= 0.0f)
+		float end = pos + segment;
+		if (end > len) end = len;
+		if (on)
 		{
-			if (on)
-			{
-				on = false;
-				remaining = gap;
-			}
-			else if (style == ArrowStyle.DASH_DOT && !short_dash)
-			{
-				on = true;
-				short_dash = true;
-				remaining = small;
-			}
-			else
-			{
-				on = true;
-				short_dash = false;
-				remaining = dash;
-			}
+			rl::draw_line_ex(
+				{ p1[0] + dx * pos / len, p1[1] + dy * pos / len },
+				{ p1[0] + dx * end / len, p1[1] + dy * end / len },
+				thick,
+				color
+			);
 		}
-		prev = point;
+		pos = end;
+		if (on)
+		{
+			on = false;
+			segment = gap;
+		}
+		else if (style == ArrowStyle.DASH_DOT && !short_dash)
+		{
+			on = true;
+			short_dash = true;
+			segment = small;
+		}
+		else
+		{
+			on = true;
+			short_dash = false;
+			segment = dash;
+		}
 	}
 }
 
@@ -2289,45 +2637,126 @@ fn void draw_label(RLFont font, String text, float x, float y, float size, RLCol
 	};
 }
 
-fn bool arrow_geometry(
-	ImportIndex* index,
-	project::Project* project,
-	FileCard* card,
-	ImportRef ref,
-	int slot,
-	int* out_target,
-	RLVector2* out_p1,
-	RLVector2* out_c2,
-	RLVector2* out_c3,
-	RLVector2* out_p2
-)
+fn void route_point(EdgeRoute* route, float x, float y)
 {
-	*out_target = -1;
-	if (ref.resolved)
+	if (route.count > 0)
 	{
-		if (ref.target_path.compare_to((String)card.path) == 0) return false;
-		int*? target = index.card_paths.get_ref(ref.target_path);
-		if (catch excuse = target) return false;
-		if (*target < 0 || *target >= (int)project.cards.len()) return false;
-		if (!project.card_visible(*target)) return false;
-		FileCard* target_card = &project.cards[*target];
-		RLVector2 source_pt   = rect_center(card.rect);
-		RLVector2 target_pt   = rect_center(target_card.rect);
-		*out_target = *target;
-		*out_p1 = rect_edge_point(card.rect, target_pt);
-		*out_p2 = rect_edge_point(target_card.rect, source_pt);
-		bezier_controls(*out_p1, *out_p2, out_c2, out_c3);
-		return true;
+		RLVector2 last = route.points[(usz)route.count - 1];
+		if (math::abs(last[0] - x) < 0.01f && math::abs(last[1] - y) < 0.01f) return;
 	}
+	if (route.count >= ORTHO_ROUTE_POINTS) return;
+	route.points[(usz)route.count] = { x, y };
+	route.count++;
+}
 
-	float label_scale = ui::scale();
-	*out_p2 = {
-		card.rect.x + card.rect.width + 40.0f * label_scale,
-		card.rect.y - (18.0f + (float)slot * 16.0f) * label_scale,
-	};
-	*out_p1 = rect_edge_point(card.rect, *out_p2);
-	bezier_controls(*out_p1, *out_p2, out_c2, out_c3);
-	return true;
+fn bool edge_route(project::Project* project, ImportEdge* edge, float zoom, EdgeRoute* out)
+{
+	out.count = 0;
+	if (edge.source_card < 0 || edge.source_card >= (int)project.cards.len()) return false;
+	if (edge.target_card < 0 || edge.target_card >= (int)project.cards.len()) return false;
+	Rect source = project.cards[edge.source_card].rect;
+	Rect target = project.cards[edge.target_card].rect;
+	if (source.width <= 0.0f || source.height <= 0.0f) return false;
+	if (target.width <= 0.0f || target.height <= 0.0f) return false;
+	if (project::rect_intersects(source, target)) return false;
+
+	float source_x  = source.x + source.width * 0.5f;
+	float source_y  = source.y + source.height * 0.5f;
+	float target_x  = target.x + target.width * 0.5f;
+	float target_y  = target.y + target.height * 0.5f;
+	float gap_x     = math::max(target.x - (source.x + source.width), source.x - (target.x + target.width));
+	float gap_y     = math::max(target.y - (source.y + source.height), source.y - (target.y + target.height));
+	bool horizontal = gap_x >= gap_y;
+	if (horizontal && gap_x <= 0.0f && gap_y > 0.0f) horizontal = false;
+	if (!horizontal && gap_y <= 0.0f && gap_x > 0.0f) horizontal = true;
+	float stub = ui::pxf(ORTHO_STUB_PX);
+
+	float head = g_import_settings.arrowhead_size / zoom;
+	if (horizontal && gap_x < stub * 2.0f + head)
+	{
+		float lane_y = math::min(source.y, target.y) - math::max(stub, head + 4.0f / zoom);
+		route_point(out, source_x, source.y);
+		route_point(out, source_x, lane_y);
+		route_point(out, target_x, lane_y);
+		route_point(out, target_x, target.y);
+	}
+	else if (!horizontal && gap_y < stub * 2.0f + head)
+	{
+		float lane_x = math::min(source.x, target.x) - math::max(stub, head + 4.0f / zoom);
+		route_point(out, source.x, source_y);
+		route_point(out, lane_x, source_y);
+		route_point(out, lane_x, target_y);
+		route_point(out, target.x, target_y);
+	}
+	else if (horizontal)
+	{
+		bool right   = target_x >= source_x;
+		RLVector2 p1 = { right ? source.x + source.width : source.x, source_y };
+		RLVector2 p2 = { right ? target.x : target.x + target.width, target_y };
+		RLVector2 o1 = { p1[0] + (right ? stub : -stub), p1[1] };
+		RLVector2 o2 = { p2[0] + (right ? -stub : stub), p2[1] };
+		float mid_x  = (o1[0] + o2[0]) * 0.5f;
+		route_point(out, p1[0], p1[1]);
+		route_point(out, o1[0], o1[1]);
+		route_point(out, mid_x, o1[1]);
+		route_point(out, mid_x, o2[1]);
+		route_point(out, o2[0], o2[1]);
+		route_point(out, p2[0], p2[1]);
+	}
+	else
+	{
+		bool down    = target_y >= source_y;
+		RLVector2 p1 = { source_x, down ? source.y + source.height : source.y };
+		RLVector2 p2 = { target_x, down ? target.y : target.y + target.height };
+		RLVector2 o1 = { p1[0], p1[1] + (down ? stub : -stub) };
+		RLVector2 o2 = { p2[0], p2[1] + (down ? -stub : stub) };
+		float mid_y  = (o1[1] + o2[1]) * 0.5f;
+		route_point(out, p1[0], p1[1]);
+		route_point(out, o1[0], o1[1]);
+		route_point(out, o1[0], mid_y);
+		route_point(out, o2[0], mid_y);
+		route_point(out, o2[0], o2[1]);
+		route_point(out, p2[0], p2[1]);
+	}
+	return out.count >= 2;
+}
+
+fn float route_length(EdgeRoute* route)
+{
+	float total = 0.0f;
+	for (int i = 1; i < route.count; i++)
+	{
+		RLVector2 a = route.points[(usz)i - 1];
+		RLVector2 b = route.points[(usz)i];
+		float dx    = b[0] - a[0];
+		float dy    = b[1] - a[1];
+		total += math::sqrt(dx * dx + dy * dy);
+	}
+	return total;
+}
+
+fn RLVector2 route_midpoint(EdgeRoute* route)
+{
+	if (route.count == 0) return { 0.0f, 0.0f };
+	float total = route_length(route);
+	if (total <= 0.0001f) return route.points[0];
+	float wanted = total * 0.5f;
+	float walked = 0.0f;
+	for (int i = 1; i < route.count; i++)
+	{
+		RLVector2 a = route.points[(usz)i - 1];
+		RLVector2 b = route.points[(usz)i];
+		float dx    = b[0] - a[0];
+		float dy    = b[1] - a[1];
+		float len   = math::sqrt(dx * dx + dy * dy);
+		if (walked + len >= wanted && len > 0.0001f)
+		{
+			float t = (wanted - walked) / len;
+			return { a[0] + dx * t, a[1] + dy * t };
+		}
+		walked += len;
+	}
+	return route.points[(usz)route.count - 1];
 }
 
 fn float point_segment_distance(RLVector2 p, RLVector2 a, RLVector2 b)
@@ -2348,81 +2777,80 @@ fn float point_segment_distance(RLVector2 p, RLVector2 a, RLVector2 b)
 	return math::sqrt(dx * dx + dy * dy);
 }
 
-fn float bezier_min_distance(RLVector2 p, RLVector2 p1, RLVector2 c2, RLVector2 c3, RLVector2 p2, int steps)
+fn float route_distance(EdgeRoute* route, RLVector2 point)
 {
-	if (steps < 1) steps = 1;
-	float best     = 1000000000.0f;
-	RLVector2 prev = p1;
-	for (int s = 1; s <= steps; s++)
+	float best = 1000000000.0f;
+	for (int i = 1; i < route.count; i++)
 	{
-		float t         = (float)s / (float)steps;
-		RLVector2 point = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, t);
-		float d         = point_segment_distance(p, prev, point);
+		float d = point_segment_distance(point, route.points[(usz)i - 1], route.points[(usz)i]);
 		if (d < best) best = d;
-		prev = point;
 	}
 	return best;
 }
 
-fn void draw_one(
-	ImportIndex* index,
-	project::Project* project,
-	int source_index,
-	FileCard* card,
-	ImportRef ref,
-	RLCamera2D camera,
-	RLFont font,
-	int active,
-	int slot,
-	bool hovered
-)
+fn int edge_active_card(project::Project* project)
+{
+	if (project.focused >= 0 && project.focused < (int)project.cards.len()) return project.focused;
+	if (project.selected >= 0 && project.selected < (int)project.cards.len()) return project.selected;
+	if (project.hover_card >= 0 && project.hover_card < (int)project.cards.len()) return project.hover_card;
+	return -1;
+}
+
+fn bool edge_related(ImportEdge* edge, int active)
+{
+	return active >= 0 && (edge.source_card == active || edge.target_card == active);
+}
+
+fn bool edge_visible(project::Project* project, ImportEdge* edge, Rect visible)
+{
+	if (edge.source_card < 0 || edge.source_card >= (int)project.cards.len()) return false;
+	if (edge.target_card < 0 || edge.target_card >= (int)project.cards.len()) return false;
+	if (!project.card_visible(edge.source_card) || !project.card_visible(edge.target_card)) return false;
+	Rect source = project.cards[edge.source_card].rect;
+	Rect target = project.cards[edge.target_card].rect;
+	return project::rect_intersects(source, visible) && project::rect_intersects(target, visible);
+}
+
+fn void draw_edge(project::Project* project, ImportEdge* edge, RLCamera2D camera, RLFont font, int active, bool hovered)
 {
 	float zoom = camera.zoom > 0.0f ? camera.zoom : 1.0f;
-	if (ref.resolved && !g_import_settings.show_internal) return;
-	if (!ref.resolved && !g_import_settings.show_external) return;
+	EdgeRoute route;
+	if (!edge_route(project, edge, zoom, &route)) return;
+	if (!hovered && route_length(&route) * zoom < ARROW_MIN_DRAW_PX) return;
 
-	int target = -1;
-	RLVector2 p1;
-	RLVector2 c2;
-	RLVector2 c3;
-	RLVector2 p2;
-	if (!arrow_geometry(index, project, card, ref, slot, &target, &p1, &c2, &c3, &p2)) return;
+	bool related  = edge_related(edge, active) || hovered;
+	float thick   = (hovered ? g_import_settings.hover_thickness : g_import_settings.line_thickness) / zoom;
+	RLColor color = hovered ? theme::current()
+		.import_solid_hover : (related ? theme::current().import_solid : theme::current().import_solid_dim);
 
-	if (!hovered)
+	for (int i = 1; i < route.count; i++)
 	{
-		float dx = p2[0] - p1[0];
-		float dy = p2[1] - p1[1];
-		if (math::sqrt(dx * dx + dy * dy) * zoom < ARROW_MIN_DRAW_PX) return;
+		draw_styled_line(
+			route.points[(usz)i - 1],
+			route.points[(usz)i],
+			thick,
+			zoom,
+			g_import_settings.internal_style,
+			color
+		);
 	}
+	draw_arrowhead(route.points[(usz)route.count - 2], route.points[(usz)route.count - 1], thick, zoom, color);
 
-	bool related = active < 0 || source_index == active || target == active;
-	float thick  = (hovered ? g_import_settings.hover_thickness : g_import_settings.line_thickness) / zoom;
-	if (hovered)
+	if (g_import_settings.labels && (hovered || related) && zoom >= ARROW_LABEL_MIN_ZOOM && edge.label.len > 0)
 	{
-		related = true;
-	}
-
-	if (ref.resolved)
-	{
-		RLColor color = hovered ? theme::current()
-			.import_solid_hover : (related ? theme::current().import_solid : theme::current().import_solid_dim);
-		draw_styled_bezier(p1, p2, thick, zoom, g_import_settings.internal_style, color);
-		draw_arrowhead(p1, c2, c3, p2, zoom, color);
-		return;
-	}
-
-	RLColor line_color  = hovered ? theme::current()
-		.import_external_hover : (related ? theme::current().import_external : theme::current().import_external_dim);
-	RLColor label_color = hovered ? theme::current()
-		.import_external_hover : (related ? theme::current().import_label : theme::current().import_label_dim);
-	draw_styled_bezier(p1, p2, thick, zoom, g_import_settings.external_style, line_color);
-	draw_arrowhead(p1, c2, c3, p2, zoom, line_color);
-	float s  = ui::scale();
-	float ts = ui::text_scale();
-	rl::draw_circle_v(p2, 3.0f * s / zoom, line_color);
-	if (g_import_settings.labels && (hovered || zoom >= ARROW_LABEL_MIN_ZOOM))
-	{
-		draw_label(font, ref.specifier, p2[0] + 8.0f * s / zoom, p2[1] - 6.0f * s / zoom, 14.0f * ts, label_color);
+		@pool()
+		{
+			RLVector2 mid = route_midpoint(&route);
+			String label  = edge.count > 1 ? string::format(tmem, "%s  x%d", edge.label, (long)edge.count) : edge.label;
+			draw_label(
+				font,
+				label,
+				mid[0] + 8.0f * ui::scale() / zoom,
+				mid[1] - 16.0f * ui::scale() / zoom,
+				13.0f * ui::text_scale(),
+				related ? theme::current()
+				.import_label : theme::current().import_label_dim);
+		};
 	}
 }
 
@@ -2434,51 +2862,32 @@ fn void ImportIndex.clear_hover(&self)
 fn bool ImportIndex.hit_test(&self, project::Project* project, RLCamera2D camera, RLVector2 world)
 {
 	self.hover.valid = false;
-	if (!g_import_settings.enabled) return false;
-	self.refresh_card_paths(project);
+	if (!g_import_settings.enabled || camera.zoom < g_import_settings.min_zoom) return false;
 	float zoom      = camera.zoom > 0.0f ? camera.zoom : 1.0f;
 	float threshold = g_import_settings.hit_tolerance / zoom;
 	Rect visible    = project::expand_rect(project::visible_world_rect(camera), 64.0f);
-	float best      = threshold;
+	int active      = edge_active_card(project);
+	if (g_import_settings.related_only && active < 0) return false;
+	self.ensure_edges(project);
 
-	for (sz i = 0; i < project.cards.len(); i++)
+	float best = threshold;
+	for (sz i = 0; i < self.edges.len(); i++)
 	{
-		FileCard* card = &project.cards[i];
-		if (!project.card_visible((int)i)) continue;
-		if (!project::rect_intersects(card.rect, visible)) continue;
-
-		ImportRef[] refs = self.imports_for((String)card.path);
-		if (refs.len == 0) continue;
-
-		usz external_slot = 0;
-		for (usz r = 0; r < refs.len; r++)
-		{
-			ImportRef ref = refs[r];
-			int slot      = 0;
-			if (!ref.resolved)
-			{
-				slot = (int)external_slot;
-				external_slot++;
-			}
-			if (ref.resolved && !g_import_settings.show_internal) continue;
-			if (!ref.resolved && !g_import_settings.show_external) continue;
-			int target = -1;
-			RLVector2 p1;
-			RLVector2 c2;
-			RLVector2 c3;
-			RLVector2 p2;
-			if (!arrow_geometry(self, project, card, ref, slot, &target, &p1, &c2, &c3, &p2)) continue;
-			float d = bezier_min_distance(world, p1, c2, c3, p2, BEZIER_HIT_STEPS);
-			if (d <= best)
-			{
-				best = d;
-				self.hover.valid = true;
-				self.hover.source = (int)i;
-				self.hover.ref_index = r;
-				self.hover.target = target;
-				self.hover.world = world;
-			}
-		}
+		ImportEdge* edge = self.edges.get_ref(i);
+		if (g_import_settings.related_only && !edge_related(edge, active)) continue;
+		if (!edge_visible(project, edge, visible)) continue;
+		EdgeRoute route;
+		if (!edge_route(project, edge, zoom, &route)) continue;
+		float d = route_distance(&route, world);
+		if (d > best) continue;
+		best = d;
+		self.hover.valid = true;
+		self.hover.source = edge.source_card;
+		self.hover.ref_index = edge.source_ref;
+		self.hover.target = edge.target_card;
+		self.hover.world = world;
+		self.hover.grouped = edge.count > 1;
+		self.hover.group_count = edge.count;
 	}
 	return self.hover.valid;
 }
@@ -2486,42 +2895,23 @@ fn bool ImportIndex.hit_test(&self, project::Project* project, RLCamera2D camera
 fn void ImportIndex.draw(&self, project::Project* project, RLCamera2D camera, RLFont font)
 {
 	if (!g_import_settings.enabled) return;
-	if (camera.zoom < ARROW_MIN_DRAW_ZOOM) return;
-	self.refresh_card_paths(project);
-	int active   = project.focused;
+	if (camera.zoom < g_import_settings.min_zoom) return;
+	int active = edge_active_card(project);
+	if (g_import_settings.related_only && active < 0) return;
 	Rect visible = project::expand_rect(project::visible_world_rect(camera), 64.0f);
+	self.ensure_edges(project);
 
 	int drawn = 0;
-	@pool()
+	for (sz i = 0; i < self.edges.len() && drawn < ARROW_MAX_PER_FRAME; i++)
 	{
-		List{int} draw_list;
-		draw_list.init(tmem);
-		project.visible_cards(visible, &draw_list);
-		for (sz c = 0; c < draw_list.len() && drawn < ARROW_MAX_PER_FRAME; c++)
-		{
-			sz i           = (sz)draw_list[c];
-			FileCard* card = &project.cards[i];
-
-			ImportRef[] refs = self.imports_for((String)card.path);
-			if (refs.len == 0) continue;
-
-			usz external_slot = 0;
-			for (usz r = 0; r < refs.len; r++)
-			{
-				ImportRef ref = refs[r];
-				int slot      = 0;
-				if (!ref.resolved)
-				{
-					slot = (int)external_slot;
-					external_slot++;
-				}
-				bool hovered = self.hover.valid && self.hover.source == (int)i && self.hover.ref_index == r;
-				draw_one(self, project, (int)i, card, ref, camera, font, active, slot, hovered);
-				drawn++;
-				if (drawn >= ARROW_MAX_PER_FRAME) break;
-			}
-		}
-	};
+		ImportEdge* edge = self.edges.get_ref(i);
+		if (g_import_settings.related_only && !edge_related(edge, active)) continue;
+		if (!edge_visible(project, edge, visible)) continue;
+		bool hovered = self.hover.valid && self.hover.source == edge.source_card
+			&& self.hover.ref_index == edge.source_ref;
+		draw_edge(project, edge, camera, font, active, hovered);
+		drawn++;
+	}
 }
 
 fn void ImportIndex.draw_tooltip(&self, project::Project* project, RLFont font)
@@ -2539,6 +2929,12 @@ fn void ImportIndex.draw_tooltip(&self, project::Project* project, RLFont font)
 		String source_name = rl::get_file_name((ZString)card.path.ptr).str_view();
 		String keyword     = language::language_for_path((String)card.path) == language::Language.C ? "#include"
 			: "import";
+		String group       = self.hover.grouped ? string::format(
+			tmem,
+			"\n%d imports grouped",
+			(long)self.hover.group_count
+		)
+			: "";
 		String markdown;
 		if (ref.resolved)
 		{
@@ -2554,23 +2950,25 @@ fn void ImportIndex.draw_tooltip(&self, project::Project* project, RLFont font)
 			}
 			markdown = string::format(
 				tmem,
-				"`%s %s`\n%s:%d -> %s",
+				"`%s %s`\n%s:%d -> %s%s",
 				keyword,
 				ref.specifier,
 				source_name,
 				(long)(ref.line + 1),
-				target_name
+				target_name,
+				group
 			);
 		}
 		else
 		{
 			markdown = string::format(
 				tmem,
-				"`%s %s`\n%s:%d (unresolved)",
+				"`%s %s`\n%s:%d (unresolved)%s",
 				keyword,
 				ref.specifier,
 				source_name,
-				(long)(ref.line + 1)
+				(long)(ref.line + 1),
+				group
 			);
 		}
 		hover::draw_hover(markdown, rl::get_mouse_position(), font);

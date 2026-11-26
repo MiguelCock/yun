@@ -74,6 +74,30 @@ fn void test_language_for_path()
 	assert(language::language_for_path("main.dart") == language::Language.DART);
 	assert(language::language_for_path("README.md") == language::Language.MARKDOWN);
 	assert(language::language_for_path("doc.markdown") == language::Language.MARKDOWN);
+	assert(language::language_for_path("config.json") == language::Language.JSON);
+	assert(language::language_for_path("config.jsonc") == language::Language.JSON);
+	assert(language::language_for_path("config.yaml") == language::Language.YAML);
+	assert(language::language_for_path("config.yml") == language::Language.YAML);
+	assert(language::language_for_path("Cargo.toml") == language::Language.TOML);
+	assert(language::language_for_path("schema.sql") == language::Language.SQL);
+	assert(language::language_for_path("script.sh") == language::Language.BASH);
+	assert(language::language_for_path("script.bash") == language::Language.BASH);
+	assert(language::language_for_path("doc.xml") == language::Language.XML);
+	assert(language::language_for_path("icon.svg") == language::Language.XML);
+	assert(language::language_for_path("change.diff") == language::Language.DIFF);
+	assert(language::language_for_path("change.patch") == language::Language.DIFF);
+	assert(language::language_for_path("build.dockerfile") == language::Language.DOCKERFILE);
+	assert(language::language_for_path("app.ini") == language::Language.INI);
+	assert(language::language_for_path("data.csv") == language::Language.CSV);
+	assert(language::language_for_path("main.tf") == language::Language.HCL);
+	assert(language::language_for_path("flake.nix") == language::Language.NIX);
+	assert(language::language_for_path("schema.graphql") == language::Language.GRAPHQL);
+	assert(language::language_for_path("style.scss") == language::Language.SCSS);
+	assert(language::language_for_path("style.sass") == language::Language.SASS);
+	assert(language::language_for_path("style.less") == language::Language.LESS);
+	assert(language::language_for_path("page.heex") == language::Language.HEEX);
+	assert(language::language_for_path("App.vue") == language::Language.VUE);
+	assert(language::language_for_path("paper.tex") == language::Language.LATEX);
 	assert(language::language_for_path("notes.txt") == language::Language.NONE);
 	assert(language::language_for_path("Makefile") == language::Language.NONE);
 	assert(language::language_for_path("dir.with.dots/file") == language::Language.NONE);
@@ -326,8 +350,46 @@ fn void test_language_for_name()
 	assert(language::language_for_name("md") == language::Language.MARKDOWN);
 	assert(language::language_for_name("markdown") == language::Language.MARKDOWN);
 	assert(language::language_for_name("markdown_inline") == language::Language.MARKDOWN_INLINE);
-	assert(language::language_for_name("sql") == language::Language.NONE);
-	assert(language::language_for_name("comment") == language::Language.NONE);
+	assert(language::language_for_name("json") == language::Language.JSON);
+	assert(language::language_for_name("jsonc") == language::Language.JSON);
+	assert(language::language_for_name("yaml") == language::Language.YAML);
+	assert(language::language_for_name("yml") == language::Language.YAML);
+	assert(language::language_for_name("toml") == language::Language.TOML);
+	assert(language::language_for_name("sql") == language::Language.SQL);
+	assert(language::language_for_name("psql") == language::Language.SQL);
+	assert(language::language_for_name("regex") == language::Language.REGEX);
+	assert(language::language_for_name("regexp") == language::Language.REGEX);
+	assert(language::language_for_name("comment") == language::Language.COMMENT);
+	assert(language::language_for_name("bash") == language::Language.BASH);
+	assert(language::language_for_name("sh") == language::Language.BASH);
+	assert(language::language_for_name("shell") == language::Language.BASH);
+	assert(language::language_for_name("xml") == language::Language.XML);
+	assert(language::language_for_name("svg") == language::Language.XML);
+	assert(language::language_for_name("diff") == language::Language.DIFF);
+	assert(language::language_for_name("patch") == language::Language.DIFF);
+	assert(language::language_for_name("dockerfile") == language::Language.DOCKERFILE);
+	assert(language::language_for_name("docker") == language::Language.DOCKERFILE);
+	assert(language::language_for_name("ini") == language::Language.INI);
+	assert(language::language_for_name("csv") == language::Language.CSV);
+	assert(language::language_for_name("hcl") == language::Language.HCL);
+	assert(language::language_for_name("terraform") == language::Language.HCL);
+	assert(language::language_for_name("nix") == language::Language.NIX);
+	assert(language::language_for_name("graphql") == language::Language.GRAPHQL);
+	assert(language::language_for_name("gql") == language::Language.GRAPHQL);
+	assert(language::language_for_name("scss") == language::Language.SCSS);
+	assert(language::language_for_name("sass") == language::Language.SASS);
+	assert(language::language_for_name("less") == language::Language.LESS);
+	assert(language::language_for_name("phpdoc") == language::Language.PHPDOC);
+	assert(language::language_for_name("jsdoc") == language::Language.JSDOC);
+	assert(language::language_for_name("heex") == language::Language.HEEX);
+	assert(language::language_for_name("vue") == language::Language.VUE);
+	assert(language::language_for_name("latex") == language::Language.LATEX);
+	assert(language::language_for_name("tex") == language::Language.LATEX);
+	assert(language::language_for_name("haskell_persistent") == language::Language.NONE);
+	assert(language::language_for_name("glimmer") == language::Language.NONE);
+	assert(language::language_for_name("asm") == language::Language.NONE);
+	assert(language::language_for_name("coffeescript") == language::Language.NONE);
+	assert(language::language_for_name("nope") == language::Language.NONE);
 	assert(language::language_for_name("") == language::Language.NONE);
 }
 
@@ -697,6 +759,110 @@ fn void test_markdown_fence_injects_language()
 		highlighter.ensure_parsed();
 
 		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.TYPE));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_markdown_fence_injects_json()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "```json\n{\"key\": 1}\n```\n");
+
+		Highlighter* highlighter = create(tmem, &table, "README.md");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.STRING));
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.NUMBER));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_markdown_fence_injects_sql()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "```sql\nSELECT id FROM users WHERE id = 1;\n```\n");
+
+		Highlighter* highlighter = create(tmem, &table, "README.md");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 1, SyntaxRole.KEYWORD));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_markdown_fence_unknown_language_is_plain()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "```notalang\nplain text here\n```\n");
+
+		Highlighter* highlighter = create(tmem, &table, "README.md");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(!runs_have_role(highlighter, &table, 1, SyntaxRole.KEYWORD));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_elixir_sigil_injects_sql()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "x = ~SQL[SELECT id FROM users WHERE id = 1]\n");
+
+		Highlighter* highlighter = create(tmem, &table, "lib.ex");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.KEYWORD));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_c3_comment_injects_comment()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "// TODO: fix this\nint x = 1;\n");
+
+		Highlighter* highlighter = create(tmem, &table, "main.c3");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.KEYWORD));
+		assert(runs_have_role(highlighter, &table, 0, SyntaxRole.COMMENT));
+
+		destroy(highlighter, tmem);
+	};
+}
+
+fn void test_php_heredoc_injects_sql()
+{
+	@pool()
+	{
+		PieceTable table;
+		table.init_from_buffer(tmem, "<?php\n$sql = <<<SQL\nSELECT 1;\nSQL;\n");
+
+		Highlighter* highlighter = create(tmem, &table, "index.php");
+		assert(highlighter != null);
+		highlighter.ensure_parsed();
+
+		assert(runs_have_role(highlighter, &table, 2, SyntaxRole.KEYWORD));
 
 		destroy(highlighter, tmem);
 	};

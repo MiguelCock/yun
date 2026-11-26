@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_phpdoc",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-phpdoc"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-phpdoc"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-phpdoc"
+      ]
+    }
+  }
+}

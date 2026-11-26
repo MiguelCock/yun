@@ -105,7 +105,7 @@ fn usz History.replace(&self, PieceTable* table, usz offset, usz del_len, String
 			.kind = CommandKind.REPLACE,
 			.offset = offset,
 			.text = removed,
-			.inserted = replacement.copy(self.allocator),
+			.inserted = replacement.len > 0 ? replacement.copy(self.allocator) : "",
 		}
 	);
 	self.index = self.commands.len();
@@ -241,9 +241,9 @@ fn bool History.redo(&self, PieceTable* table, usz* cursor)
 	}
 	else if (cmd.kind == CommandKind.REPLACE)
 	{
-		(void)table.delete(cmd.offset, cmd.inserted.len);
-		(void)table.insert(cmd.offset, cmd.text);
-		*cursor = cmd.offset + cmd.text.len;
+		(void)table.delete(cmd.offset, cmd.text.len);
+		(void)table.insert(cmd.offset, cmd.inserted);
+		*cursor = cmd.offset + cmd.inserted.len;
 	}
 	else
 	{

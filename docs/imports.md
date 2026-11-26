@@ -1,9 +1,13 @@
 # Import arrows
 
-Yun scans each card's file for its imports and draws an arrow from the card to
-the card that defines each import. Imports that resolve inside the project get a
-solid arrow; imports that resolve outside it (standard library, third-party
-packages) get a dashed arrow labeled with the specifier.
+Yun scans each card's file for its imports and draws an orthogonal arrow from
+the importing card to the card that defines the import. Arrows only connect
+project cards; imports that resolve outside the project (standard library,
+third-party packages) are listed in the Connections panel instead of being
+drawn to empty space.
+
+By default, only arrows related to the selected, focused, or hovered card are
+shown. Disable `arrows.related_only` to show every visible file-to-file arrow.
 
 ## How it works
 
@@ -17,8 +21,9 @@ packages) get a dashed arrow labeled with the specifier.
 3. For each specifier, the resolver converts it to candidate paths, tries each
    source root (and the importing file's directory for relative imports), and
    resolves to the first candidate that is an existing project file.
-4. If nothing matches, the import is **external**: the dashed arrow still shows
-   where it is used, but not where it points.
+4. If nothing matches, the import is **external**. External imports are kept in
+   the import index for the Connections panel, but they do not produce canvas
+   arrows.
 
 Nothing outside the project is indexed, so standard-library and third-party
 specifiers never resolve and stay external.
@@ -113,17 +118,26 @@ not clutter the Yun repo's own canvas) but committed with `git add -f`.
 ## Configuration
 
 The `arrows` section of the settings/config controls rendering and scanning:
-`enabled`, `show_internal`, `show_external`, `labels`, `line_thickness`,
+`enabled`, `related_only`, `min_zoom`, `labels`, `line_thickness`,
 `hover_thickness`, `arrowhead_size`, `hit_tolerance`, `rescan_debounce`, and
 `scan_workers`.
 
-Arrow **line styles** are configurable independently for internal and external
-arrows via `internal_style` and `external_style`
-(`solid`, `dashed`, `dotted`, `long-dash`, `dash-dot`; defaults `solid` and
-`dashed`). `dash_length` and `dash_gap` are in screen pixels, so the pattern
-stays constant at any zoom. Card, selected, and cluster outlines also keep a
-constant on-screen thickness (they are divided by the camera zoom), and the card
-under the cursor gets a subtle hover outline.
+Arrows remain visible down to `min_zoom` (default `0.05`, or 5% zoom) and labels
+appear at 50% zoom or closer.
+
+Arrows are routed as Manhattan paths: they leave a card edge horizontally or
+vertically, turn at 90-degree corners, and enter the target card edge. Adjacent
+or overlapping cards do not draw an arrow through their content.
+
+Arrow **line style** is configurable via `internal_style` (`solid`, `dashed`,
+`dotted`, `long-dash`, `dash-dot`; default `solid`). `dash_length` and
+`dash_gap` are in screen pixels, so the pattern stays constant at any zoom.
+Card, selected, and cluster outlines also keep a constant on-screen thickness
+(they are divided by the camera zoom), and the card under the cursor gets a
+subtle hover outline.
+
+Folder-level arrows were removed. Imports always connect the actual importing
+and imported cards, even when their folders are expanded or collapsed.
 
 Resolution runs on a thread pool; edits are debounced and only the edited file
 is re-resolved unless a module name changed.

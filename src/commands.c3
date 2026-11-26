@@ -49,6 +49,7 @@ enum CommandId
 	CODE_ACTIONS,
 	SELECT_THEME,
 	SEARCH_PROJECT,
+	SEARCH_REPLACE_PROJECT,
 	SYMBOLS_PROJECT,
 	TOGGLE_SETTINGS,
 	UNDO,
@@ -91,6 +92,8 @@ enum CommandId
 	FOCUS_EDITOR,
 	TOPBAR_LEFT,
 	TOPBAR_RIGHT,
+	TOPBAR_UP,
+	TOPBAR_DOWN,
 	TOPBAR_ACTIVATE,
 	FOCUS_CANVAS,
 	OVERLAY_CLOSE,
@@ -106,6 +109,8 @@ enum CommandId
 	FIND_CYCLE_FIELD,
 	SEARCH_TOGGLE_CASE,
 	SEARCH_TOGGLE_WORD,
+	SEARCH_REPLACE,
+	SEARCH_REPLACE_ALL,
 	SETTINGS_SCOPE_TOGGLE,
 	SETTINGS_RESET,
 	SETTINGS_VALUE_DEC,
@@ -149,6 +154,7 @@ enum CommandId
 	CONSOLE_DELETE_WORD_BACK,
 	CONSOLE_DELETE_WORD_FORWARD,
 	TOGGLE_CONNECTIONS,
+	TOGGLE_ARROWS_OVERLAY,
 	QUIT,
 }
 
@@ -156,6 +162,7 @@ struct CommandDef
 {
 	CommandId id;
 	String label;
+	String description;
 	String shortcut;
 	bool in_top_bar;
 	bool icon_only;
@@ -165,24 +172,89 @@ struct CommandDef
 }
 
 const CommandDef[] COMMAND_DEFS = {
-	{ .id = CommandId.NEW_FILE, .label = "New", .shortcut = "Ctrl+N", .in_top_bar = true, .contexts = CTX_GLOBAL },
-	{ .id = CommandId.NEW_FOLDER, .label = "New Folder", .shortcut = "", .in_top_bar = false, .contexts = CTX_GLOBAL },
-	{ .id = CommandId.OPEN, .label = "Open", .shortcut = "Ctrl+O", .in_top_bar = true, .contexts = CTX_GLOBAL },
-	{ .id = CommandId.SAVE, .label = "Save", .shortcut = "Ctrl+S", .in_top_bar = true, .contexts = CTX_GLOBAL },
+	{
+		.id = CommandId.NEW_FILE,
+		.description = "Create a new file card on the canvas.",
+		.label = "New",
+		.shortcut = "Ctrl+N",
+		.in_top_bar = true,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.NEW_FOLDER,
+		.description = "Create a new folder in the project.",
+		.label = "New Folder",
+		.shortcut = "",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.OPEN,
+		.description = "Open a folder as the current project.",
+		.label = "Open",
+		.shortcut = "Ctrl+O",
+		.in_top_bar = true,
+		.contexts = CTX_GLOBAL
+	},
+	{
+		.id = CommandId.SAVE,
+		.description = "Save the focused file to disk.",
+		.label = "Save",
+		.shortcut = "Ctrl+S",
+		.in_top_bar = true,
+		.contexts = CTX_GLOBAL
+	},
 	{
 		.id = CommandId.SHOW_PALETTE,
+		.description = "Search and run any command.",
 		.label = "Command Palette",
 		.shortcut = "Ctrl+Shift+P",
 		.in_top_bar = false,
 		.contexts = CTX_GLOBAL
 	},
-	{ .id = CommandId.FIND, .label = "Find", .shortcut = "Ctrl+F", .in_top_bar = false, .contexts = CTX_EDIT },
-	{ .id = CommandId.REPLACE, .label = "Replace", .shortcut = "Ctrl+H", .in_top_bar = false, .contexts = CTX_EDIT },
-	{ .id = CommandId.COPY, .label = "Copy", .shortcut = "Ctrl+C", .in_top_bar = false, .contexts = CTX_EDIT },
-	{ .id = CommandId.CUT, .label = "Cut", .shortcut = "Ctrl+X", .in_top_bar = false, .contexts = CTX_EDIT },
-	{ .id = CommandId.PASTE, .label = "Paste", .shortcut = "Ctrl+V", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.FIND,
+		.description = "Find text in the focused file.",
+		.label = "Find",
+		.shortcut = "Ctrl+F",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{
+		.id = CommandId.REPLACE,
+		.description = "Find and replace text in the focused file.",
+		.label = "Replace",
+		.shortcut = "Ctrl+H",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{
+		.id = CommandId.COPY,
+		.description = "Copy the selected text.",
+		.label = "Copy",
+		.shortcut = "Ctrl+C",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{
+		.id = CommandId.CUT,
+		.description = "Cut the selected text.",
+		.label = "Cut",
+		.shortcut = "Ctrl+X",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{
+		.id = CommandId.PASTE,
+		.description = "Paste clipboard text at the caret.",
+		.label = "Paste",
+		.shortcut = "Ctrl+V",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
 	{
 		.id = CommandId.SELECT_ALL,
+		.description = "Select the whole focused file.",
 		.label = "Select All",
 		.shortcut = "Ctrl+A",
 		.in_top_bar = false,
@@ -190,6 +262,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.PROBLEMS,
+		.description = "Show workspace problems.",
 		.label = "Problems",
 		.shortcut = "Ctrl+Shift+M",
 		.in_top_bar = false,
@@ -197,6 +270,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.GO_TO_DEFINITION,
+		.description = "Jump to the symbol under the caret.",
 		.label = "Go to Definition",
 		.shortcut = "F12",
 		.in_top_bar = false,
@@ -204,6 +278,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.COMPLETE,
+		.description = "Request completion suggestions.",
 		.label = "Complete",
 		.shortcut = "Ctrl+Space",
 		.in_top_bar = false,
@@ -211,6 +286,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.FORMAT_DOCUMENT,
+		.description = "Format the focused document.",
 		.label = "Format Document",
 		.shortcut = "Ctrl+Alt+F",
 		.in_top_bar = false,
@@ -218,6 +294,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.REFERENCES,
+		.description = "List references to the symbol under the caret.",
 		.label = "Find References",
 		.shortcut = "Shift+F12",
 		.in_top_bar = false,
@@ -225,6 +302,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.RENAME_SYMBOL,
+		.description = "Rename a symbol across the project.",
 		.label = "Rename Symbol",
 		.shortcut = "F2",
 		.in_top_bar = false,
@@ -232,6 +310,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CODE_ACTIONS,
+		.description = "Show available code actions.",
 		.label = "Code Actions",
 		.shortcut = "Ctrl+.",
 		.in_top_bar = false,
@@ -239,6 +318,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.SELECT_THEME,
+		.description = "Choose the interface theme.",
 		.label = "Theme",
 		.shortcut = "Ctrl+Shift+T",
 		.in_top_bar = false,
@@ -246,13 +326,24 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.SEARCH_PROJECT,
+		.description = "Search text across the project.",
 		.label = "Search in Project",
 		.shortcut = "Ctrl+Shift+F",
 		.in_top_bar = false,
 		.contexts = CTX_GLOBAL
 	},
 	{
+		.id = CommandId.SEARCH_REPLACE_PROJECT,
+		.description = "Search and replace text across the project.",
+		.label = "Search and Replace in Project",
+		.bar_label = "Search",
+		.shortcut = "Ctrl+Shift+H",
+		.in_top_bar = true,
+		.contexts = CTX_GLOBAL
+	},
+	{
 		.id = CommandId.SYMBOLS_PROJECT,
+		.description = "Jump to a symbol in the project.",
 		.label = "Go to Symbol",
 		.shortcut = "Ctrl+Shift+O",
 		.in_top_bar = false,
@@ -260,25 +351,56 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.TOGGLE_SETTINGS,
+		.description = "Open or close settings.",
 		.label = "Settings",
 		.shortcut = "Ctrl+Shift+S",
 		.in_top_bar = true,
 		.icon_only = true,
 		.contexts = CTX_GLOBAL,
 	},
-	{ .id = CommandId.UNDO, .label = "Undo", .shortcut = "Ctrl+Z", .in_top_bar = false, .contexts = CTX_EDIT },
-	{ .id = CommandId.REDO, .label = "Redo", .shortcut = "Ctrl+Y", .in_top_bar = false, .contexts = CTX_EDIT },
-	{ .id = CommandId.INDENT, .label = "Indent", .shortcut = "Tab", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.UNDO,
+		.description = "Undo the last edit.",
+		.label = "Undo",
+		.shortcut = "Ctrl+Z",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{
+		.id = CommandId.REDO,
+		.description = "Redo the last undone edit.",
+		.label = "Redo",
+		.shortcut = "Ctrl+Y",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{
+		.id = CommandId.INDENT,
+		.description = "Indent the selected lines.",
+		.label = "Indent",
+		.shortcut = "Tab",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
 	{
 		.id = CommandId.OUTDENT,
+		.description = "Outdent the selected lines.",
 		.label = "Outdent",
 		.shortcut = "Shift+Tab",
 		.in_top_bar = false,
 		.contexts = CTX_EDIT
 	},
-	{ .id = CommandId.NEWLINE, .label = "New Line", .shortcut = "Enter", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.NEWLINE,
+		.description = "Insert a new line.",
+		.label = "New Line",
+		.shortcut = "Enter",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
 	{
 		.id = CommandId.DELETE_BACK,
+		.description = "Delete the character before the caret.",
 		.label = "Delete Back",
 		.shortcut = "Backspace",
 		.in_top_bar = false,
@@ -286,6 +408,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.DELETE_FORWARD,
+		.description = "Delete the character after the caret.",
 		.label = "Delete Forward",
 		.shortcut = "Delete",
 		.in_top_bar = false,
@@ -293,6 +416,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CURSOR_LEFT,
+		.description = "Move the caret one character left.",
 		.label = "Cursor Left",
 		.shortcut = "Left",
 		.in_top_bar = false,
@@ -300,14 +424,23 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CURSOR_RIGHT,
+		.description = "Move the caret one character right.",
 		.label = "Cursor Right",
 		.shortcut = "Right",
 		.in_top_bar = false,
 		.contexts = CTX_EDIT,
 	},
-	{ .id = CommandId.CURSOR_UP, .label = "Cursor Up", .shortcut = "Up", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.CURSOR_UP,
+		.description = "Move the caret one line up.",
+		.label = "Cursor Up",
+		.shortcut = "Up",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
 	{
 		.id = CommandId.CURSOR_DOWN,
+		.description = "Move the caret one line down.",
 		.label = "Cursor Down",
 		.shortcut = "Down",
 		.in_top_bar = false,
@@ -315,6 +448,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CURSOR_WORD_LEFT,
+		.description = "Move the caret one word left.",
 		.label = "Cursor Word Left",
 		.shortcut = "Ctrl+Left",
 		.in_top_bar = false,
@@ -323,6 +457,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CURSOR_WORD_RIGHT,
+		.description = "Move the caret one word right.",
 		.label = "Cursor Word Right",
 		.shortcut = "Ctrl+Right",
 		.in_top_bar = false,
@@ -331,6 +466,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.DELETE_WORD_BACK,
+		.description = "Delete the word before the caret.",
 		.label = "Delete Word Back",
 		.shortcut = "Ctrl+Backspace",
 		.in_top_bar = false,
@@ -339,6 +475,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.DELETE_WORD_FORWARD,
+		.description = "Delete the word after the caret.",
 		.label = "Delete Word Forward",
 		.shortcut = "Ctrl+Delete",
 		.in_top_bar = false,
@@ -347,15 +484,31 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.LINE_START,
+		.description = "Move the caret to the line start.",
 		.label = "Line Start",
 		.shortcut = "Home",
 		.in_top_bar = false,
 		.contexts = CTX_EDIT,
 	},
-	{ .id = CommandId.LINE_END, .label = "Line End", .shortcut = "End", .in_top_bar = false, .contexts = CTX_EDIT },
-	{ .id = CommandId.PAGE_UP, .label = "Page Up", .shortcut = "PageUp", .in_top_bar = false, .contexts = CTX_EDIT },
+	{
+		.id = CommandId.LINE_END,
+		.description = "Move the caret to the line end.",
+		.label = "Line End",
+		.shortcut = "End",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
+	{
+		.id = CommandId.PAGE_UP,
+		.description = "Move the caret one page up.",
+		.label = "Page Up",
+		.shortcut = "PageUp",
+		.in_top_bar = false,
+		.contexts = CTX_EDIT
+	},
 	{
 		.id = CommandId.PAGE_DOWN,
+		.description = "Move the caret one page down.",
 		.label = "Page Down",
 		.shortcut = "PageDown",
 		.in_top_bar = false,
@@ -363,6 +516,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.EXIT_EDITOR,
+		.description = "Leave the editor and return to the canvas.",
 		.label = "Exit Editor",
 		.shortcut = "Esc",
 		.in_top_bar = false,
@@ -370,6 +524,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.COMPLETION_NEXT,
+		.description = "Select the next completion.",
 		.label = "Completion Next",
 		.shortcut = "Down",
 		.in_top_bar = false,
@@ -377,6 +532,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.COMPLETION_PREV,
+		.description = "Select the previous completion.",
 		.label = "Completion Previous",
 		.shortcut = "Up",
 		.in_top_bar = false,
@@ -384,6 +540,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.COMPLETION_ACCEPT,
+		.description = "Accept the selected completion.",
 		.label = "Completion Accept",
 		.shortcut = "Enter",
 		.in_top_bar = false,
@@ -391,6 +548,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.COMPLETION_CLOSE,
+		.description = "Dismiss the completion list.",
 		.label = "Completion Close",
 		.shortcut = "Esc",
 		.in_top_bar = false,
@@ -398,6 +556,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.PAN_LEFT,
+		.description = "Pan the canvas left.",
 		.label = "Pan Left",
 		.shortcut = "Shift+H",
 		.in_top_bar = false,
@@ -406,6 +565,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.PAN_RIGHT,
+		.description = "Pan the canvas right.",
 		.label = "Pan Right",
 		.shortcut = "Shift+L",
 		.in_top_bar = false,
@@ -414,6 +574,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.PAN_UP,
+		.description = "Pan the canvas up.",
 		.label = "Pan Up",
 		.shortcut = "Shift+K",
 		.in_top_bar = false,
@@ -422,6 +583,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.PAN_DOWN,
+		.description = "Pan the canvas down.",
 		.label = "Pan Down",
 		.shortcut = "Shift+J",
 		.in_top_bar = false,
@@ -430,6 +592,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.SELECT_LEFT,
+		.description = "Select the item to the left.",
 		.label = "Select Left",
 		.shortcut = "H",
 		.in_top_bar = false,
@@ -437,6 +600,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.SELECT_RIGHT,
+		.description = "Select the item to the right.",
 		.label = "Select Right",
 		.shortcut = "L",
 		.in_top_bar = false,
@@ -444,6 +608,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.SELECT_UP,
+		.description = "Select the item above.",
 		.label = "Select Up",
 		.shortcut = "K",
 		.in_top_bar = false,
@@ -451,6 +616,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.SELECT_DOWN,
+		.description = "Select the item below.",
 		.label = "Select Down",
 		.shortcut = "J",
 		.in_top_bar = false,
@@ -458,6 +624,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CYCLE_NEXT,
+		.description = "Select the next item in the folder.",
 		.label = "Next Card",
 		.shortcut = "]",
 		.in_top_bar = false,
@@ -465,15 +632,31 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CYCLE_PREV,
+		.description = "Select the previous item in the folder.",
 		.label = "Previous Card",
 		.shortcut = "[",
 		.in_top_bar = false,
 		.contexts = CTX_MOVE,
 	},
-	{ .id = CommandId.ZOOM_IN, .label = "Zoom In", .shortcut = "=", .in_top_bar = false, .contexts = CTX_MOVE },
-	{ .id = CommandId.ZOOM_OUT, .label = "Zoom Out", .shortcut = "-", .in_top_bar = false, .contexts = CTX_MOVE },
+	{
+		.id = CommandId.ZOOM_IN,
+		.description = "Zoom the canvas in.",
+		.label = "Zoom In",
+		.shortcut = "=",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE
+	},
+	{
+		.id = CommandId.ZOOM_OUT,
+		.description = "Zoom the canvas out.",
+		.label = "Zoom Out",
+		.shortcut = "-",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE
+	},
 	{
 		.id = CommandId.FOCUS_TOP_BAR,
+		.description = "Move focus to the top bar.",
 		.label = "Focus Top Bar",
 		.shortcut = "",
 		.in_top_bar = false,
@@ -481,6 +664,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.FOCUS_EDITOR,
+		.description = "Open the selected card in the editor.",
 		.label = "Focus Editor",
 		.shortcut = "Enter",
 		.in_top_bar = false,
@@ -488,6 +672,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.TOPBAR_LEFT,
+		.description = "Focus the previous top bar button.",
 		.label = "Top Bar Left",
 		.shortcut = "Left",
 		.in_top_bar = false,
@@ -496,6 +681,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.TOPBAR_RIGHT,
+		.description = "Focus the next top bar button.",
 		.label = "Top Bar Right",
 		.shortcut = "Right",
 		.in_top_bar = false,
@@ -503,7 +689,26 @@ const CommandDef[] COMMAND_DEFS = {
 		.repeat = true,
 	},
 	{
+		.id = CommandId.TOPBAR_UP,
+		.description = "Focus the top bar button above.",
+		.label = "Top Bar Up",
+		.shortcut = "Up",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+		.repeat = true,
+	},
+	{
+		.id = CommandId.TOPBAR_DOWN,
+		.description = "Focus the top bar button below.",
+		.label = "Top Bar Down",
+		.shortcut = "Down",
+		.in_top_bar = false,
+		.contexts = CTX_TOP_BAR,
+		.repeat = true,
+	},
+	{
 		.id = CommandId.TOPBAR_ACTIVATE,
+		.description = "Activate the focused top bar button.",
 		.label = "Top Bar Activate",
 		.shortcut = "Enter",
 		.in_top_bar = false,
@@ -511,6 +716,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.FOCUS_CANVAS,
+		.description = "Return focus from the top bar to the canvas.",
 		.label = "Focus Canvas",
 		.shortcut = "Esc",
 		.in_top_bar = false,
@@ -518,6 +724,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.OVERLAY_CLOSE,
+		.description = "Close the active overlay.",
 		.label = "Close Overlay",
 		.shortcut = "Esc",
 		.in_top_bar = false,
@@ -525,6 +732,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.LIST_UP,
+		.description = "Select the previous item in a list.",
 		.label = "List Up",
 		.shortcut = "Up",
 		.in_top_bar = false,
@@ -533,6 +741,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.LIST_DOWN,
+		.description = "Select the next item in a list.",
 		.label = "List Down",
 		.shortcut = "Down",
 		.in_top_bar = false,
@@ -541,6 +750,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.LIST_PAGE_UP,
+		.description = "Scroll the list up one page.",
 		.label = "List Page Up",
 		.shortcut = "PageUp",
 		.in_top_bar = false,
@@ -548,6 +758,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.LIST_PAGE_DOWN,
+		.description = "Scroll the list down one page.",
 		.label = "List Page Down",
 		.shortcut = "PageDown",
 		.in_top_bar = false,
@@ -555,6 +766,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.LIST_ACCEPT,
+		.description = "Accept the selected list item.",
 		.label = "List Accept",
 		.shortcut = "Enter",
 		.in_top_bar = false,
@@ -562,6 +774,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.FIND_NEXT,
+		.description = "Jump to the next find match.",
 		.label = "Find Next",
 		.shortcut = "Enter",
 		.in_top_bar = false,
@@ -569,6 +782,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.FIND_PREV,
+		.description = "Jump to the previous find match.",
 		.label = "Find Previous",
 		.shortcut = "Shift+Enter",
 		.in_top_bar = false,
@@ -576,6 +790,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.FIND_REPLACE,
+		.description = "Replace the current find match.",
 		.label = "Replace Match",
 		.shortcut = "Ctrl+H",
 		.in_top_bar = false,
@@ -583,6 +798,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.FIND_REPLACE_ALL,
+		.description = "Replace every find match.",
 		.label = "Replace All",
 		.shortcut = "Ctrl+Enter",
 		.in_top_bar = false,
@@ -590,6 +806,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.FIND_CYCLE_FIELD,
+		.description = "Move between find and replace fields.",
 		.label = "Find Field",
 		.shortcut = "Tab",
 		.in_top_bar = false,
@@ -597,6 +814,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.SEARCH_TOGGLE_CASE,
+		.description = "Toggle case-sensitive search.",
 		.label = "Match Case",
 		.shortcut = "Alt+C",
 		.in_top_bar = false,
@@ -604,13 +822,31 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.SEARCH_TOGGLE_WORD,
+		.description = "Toggle whole-word search.",
 		.label = "Whole Word",
 		.shortcut = "Alt+W",
 		.in_top_bar = false,
 		.contexts = CTX_SEARCH,
 	},
 	{
+		.id = CommandId.SEARCH_REPLACE,
+		.description = "Replace the selected project search match.",
+		.label = "Replace Match",
+		.shortcut = "Ctrl+Enter",
+		.in_top_bar = false,
+		.contexts = CTX_SEARCH,
+	},
+	{
+		.id = CommandId.SEARCH_REPLACE_ALL,
+		.description = "Replace every project search match.",
+		.label = "Replace All in Project",
+		.shortcut = "Ctrl+Shift+Enter",
+		.in_top_bar = false,
+		.contexts = CTX_SEARCH,
+	},
+	{
 		.id = CommandId.SETTINGS_SCOPE_TOGGLE,
+		.description = "Switch between global and project settings.",
 		.label = "Toggle Scope",
 		.shortcut = "Tab",
 		.in_top_bar = false,
@@ -618,6 +854,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.SETTINGS_RESET,
+		.description = "Reset the selected setting or binding.",
 		.label = "Reset Setting",
 		.shortcut = "Del",
 		.in_top_bar = false,
@@ -625,6 +862,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.SETTINGS_VALUE_DEC,
+		.description = "Decrease the selected setting.",
 		.label = "Decrease Value",
 		.shortcut = "Left",
 		.in_top_bar = false,
@@ -633,6 +871,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.SETTINGS_VALUE_INC,
+		.description = "Increase the selected setting.",
 		.label = "Increase Value",
 		.shortcut = "Right",
 		.in_top_bar = false,
@@ -641,14 +880,23 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.BROWSER_PARENT,
+		.description = "Go to the parent folder in the browser.",
 		.label = "Parent Folder",
 		.shortcut = "Backspace",
 		.in_top_bar = false,
 		.contexts = CTX_BROWSER,
 	},
-	{ .id = CommandId.CLOSE_CARD, .label = "Close Card", .shortcut = "C", .in_top_bar = false, .contexts = CTX_MOVE },
+	{
+		.id = CommandId.CLOSE_CARD,
+		.description = "Close the selected card.",
+		.label = "Close Card",
+		.shortcut = "C",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE
+	},
 	{
 		.id = CommandId.TOGGLE_CARD,
+		.description = "Open or collapse the selected card.",
 		.label = "Toggle Card",
 		.shortcut = "Space",
 		.in_top_bar = false,
@@ -656,6 +904,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.RENAME_CARD,
+		.description = "Rename the selected card.",
 		.label = "Rename Card",
 		.shortcut = "F2",
 		.in_top_bar = false,
@@ -663,6 +912,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.DUPLICATE_CARD,
+		.description = "Duplicate the selected card.",
 		.label = "Duplicate Card",
 		.shortcut = "Ctrl+D",
 		.in_top_bar = false,
@@ -670,6 +920,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.COPY_PATH,
+		.description = "Copy the selected card's path.",
 		.label = "Copy Path",
 		.shortcut = "Ctrl+Shift+C",
 		.in_top_bar = false,
@@ -677,6 +928,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.DELETE_CARD,
+		.description = "Delete the selected card.",
 		.label = "Delete Card",
 		.shortcut = "Delete",
 		.in_top_bar = false,
@@ -684,6 +936,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.OPEN_CONTEXT_MENU,
+		.description = "Open the canvas context menu.",
 		.label = "Context Menu",
 		.shortcut = "Shift+F10",
 		.in_top_bar = false,
@@ -691,15 +944,31 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.MINIMAP_FOCUS,
+		.description = "Focus the content under the minimap.",
 		.label = "Focus Content",
 		.shortcut = "Shift+M",
 		.in_top_bar = false,
 		.contexts = CTX_MOVE,
 	},
-	{ .id = CommandId.ZOOM_RESET, .label = "Reset Zoom", .shortcut = "0", .in_top_bar = false, .contexts = CTX_MOVE },
-	{ .id = CommandId.ZOOM_FIT, .label = "Fit Content", .shortcut = "F", .in_top_bar = false, .contexts = CTX_MOVE },
+	{
+		.id = CommandId.ZOOM_RESET,
+		.description = "Reset canvas zoom to 100%.",
+		.label = "Reset Zoom",
+		.shortcut = "0",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE
+	},
+	{
+		.id = CommandId.ZOOM_FIT,
+		.description = "Fit all content in view.",
+		.label = "Fit Content",
+		.shortcut = "F",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE
+	},
 	{
 		.id = CommandId.TOGGLE_PREVIEW,
+		.description = "Show or hide the Markdown preview.",
 		.label = "Toggle Preview",
 		.shortcut = "Ctrl+Shift+V",
 		.in_top_bar = false,
@@ -707,6 +976,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.LEAVE_FOLDER,
+		.description = "Leave the current folder.",
 		.label = "Leave Folder",
 		.shortcut = "Backspace",
 		.in_top_bar = false,
@@ -714,6 +984,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CYCLE_FOCUS,
+		.description = "Cycle between grab and top bar focus.",
 		.label = "Grab / Focus",
 		.shortcut = "Tab",
 		.in_top_bar = false,
@@ -721,6 +992,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.MINIMIZE_CARD,
+		.description = "Collapse the selected card to its title.",
 		.label = "Minimize Card",
 		.shortcut = "z",
 		.in_top_bar = false,
@@ -728,6 +1000,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.TOGGLE_FOCUS_MODE,
+		.description = "Expand the focused card to fill the canvas.",
 		.label = "Focus Mode",
 		.shortcut = "Ctrl+Shift+Enter",
 		.in_top_bar = false,
@@ -735,6 +1008,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.TOGGLE_CONSOLE,
+		.description = "Open or close the console.",
 		.label = "Console",
 		.shortcut = "Ctrl+J",
 		.in_top_bar = true,
@@ -742,6 +1016,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.TOGGLE_SCM,
+		.description = "Open or close the Source Control panel.",
 		.label = "Source Control",
 		.bar_label = "Git",
 		.shortcut = "Ctrl+Shift+G",
@@ -750,6 +1025,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_RUN,
+		.description = "Run the typed console command.",
 		.label = "Run Command",
 		.shortcut = "Enter",
 		.in_top_bar = false,
@@ -757,6 +1033,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_HISTORY_PREV,
+		.description = "Recall the previous console command.",
 		.label = "Console History Previous",
 		.shortcut = "Up",
 		.in_top_bar = false,
@@ -765,6 +1042,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_HISTORY_NEXT,
+		.description = "Recall the next console command.",
 		.label = "Console History Next",
 		.shortcut = "Down",
 		.in_top_bar = false,
@@ -773,6 +1051,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_CLEAR,
+		.description = "Clear the console output.",
 		.label = "Clear Console",
 		.shortcut = "Ctrl+L",
 		.in_top_bar = false,
@@ -780,6 +1059,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_KILL,
+		.description = "Stop the running console command.",
 		.label = "Kill Command",
 		.shortcut = "Ctrl+C",
 		.in_top_bar = false,
@@ -787,6 +1067,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_COPY,
+		.description = "Copy the console selection or output.",
 		.label = "Copy Console Output",
 		.shortcut = "Ctrl+Shift+C",
 		.in_top_bar = false,
@@ -794,6 +1075,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_FIND,
+		.description = "Search the console output.",
 		.label = "Find in Console",
 		.shortcut = "Ctrl+F",
 		.in_top_bar = false,
@@ -801,6 +1083,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_PASTE,
+		.description = "Paste into the console input.",
 		.label = "Paste Into Console",
 		.shortcut = "Ctrl+V",
 		.in_top_bar = false,
@@ -808,6 +1091,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_SCROLL_UP,
+		.description = "Scroll the console output up.",
 		.label = "Console Scroll Up",
 		.shortcut = "PageUp",
 		.in_top_bar = false,
@@ -815,6 +1099,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_SCROLL_DOWN,
+		.description = "Scroll the console output down.",
 		.label = "Console Scroll Down",
 		.shortcut = "PageDown",
 		.in_top_bar = false,
@@ -822,6 +1107,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_LEAVE_FOCUS,
+		.description = "Leave the console input.",
 		.label = "Leave Console",
 		.shortcut = "Esc",
 		.in_top_bar = false,
@@ -829,6 +1115,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_NEW_SESSION,
+		.description = "Start a new console session.",
 		.label = "New Console Session",
 		.shortcut = "Ctrl+T",
 		.in_top_bar = false,
@@ -836,6 +1123,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_CLOSE_SESSION,
+		.description = "Close the active console session.",
 		.label = "Close Console Session",
 		.shortcut = "Ctrl+W",
 		.in_top_bar = false,
@@ -843,6 +1131,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_NEXT_SESSION,
+		.description = "Switch to the next console session.",
 		.label = "Next Console Session",
 		.shortcut = "Ctrl+Tab",
 		.in_top_bar = false,
@@ -850,6 +1139,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_PREV_SESSION,
+		.description = "Switch to the previous console session.",
 		.label = "Previous Console Session",
 		.shortcut = "Ctrl+Shift+Tab",
 		.in_top_bar = false,
@@ -857,6 +1147,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_RUN_PROFILE,
+		.description = "Run a project command profile.",
 		.label = "Run Profile",
 		.shortcut = "F5",
 		.in_top_bar = false,
@@ -864,6 +1155,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_WORD_LEFT,
+		.description = "Move the console caret one word left.",
 		.label = "Console Word Left",
 		.shortcut = "Ctrl+Left",
 		.in_top_bar = false,
@@ -872,6 +1164,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_WORD_RIGHT,
+		.description = "Move the console caret one word right.",
 		.label = "Console Word Right",
 		.shortcut = "Ctrl+Right",
 		.in_top_bar = false,
@@ -880,6 +1173,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_DELETE_WORD_BACK,
+		.description = "Delete the word before the console caret.",
 		.label = "Console Delete Word Back",
 		.shortcut = "Ctrl+Backspace",
 		.in_top_bar = false,
@@ -888,6 +1182,7 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.CONSOLE_DELETE_WORD_FORWARD,
+		.description = "Delete the word after the console caret.",
 		.label = "Console Delete Word Forward",
 		.shortcut = "Ctrl+Delete",
 		.in_top_bar = false,
@@ -896,12 +1191,39 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.TOGGLE_CONNECTIONS,
+		.description = "Open or close the connections panel.",
 		.label = "Connections",
 		.shortcut = "Ctrl+Shift+I",
 		.in_top_bar = false,
 		.contexts = CTX_GLOBAL,
 	},
-	{ .id = CommandId.QUIT, .label = "Quit Yun", .shortcut = "Ctrl+Q", .in_top_bar = false, .contexts = CTX_GLOBAL },
+	{
+		.id = CommandId.TOGGLE_ARROWS_OVERLAY,
+		.description = "Draw import arrows on top of cards and files.",
+		.label = "Arrows on Top",
+		.bar_label = "Arrows",
+		.shortcut = "Ctrl+Shift+A",
+		.in_top_bar = true,
+		.contexts = CTX_GLOBAL,
+	},
+	{
+		.id = CommandId.QUIT,
+		.description = "Quit Yun.",
+		.label = "Quit Yun",
+		.shortcut = "Ctrl+Q",
+		.in_top_bar = false,
+		.contexts = CTX_GLOBAL
+	},
+};
+
+const String[] COMMAND_GROUPS = {
+	"General",
+	"Canvas",
+	"Editor",
+	"Console",
+	"Overlays",
+	"Settings",
+	"Top bar",
 };
 
 fn usz command_count()
@@ -909,12 +1231,46 @@ fn usz command_count()
 	return COMMAND_DEFS.len;
 }
 
+fn String command_description(CommandId id)
+{
+	return COMMAND_DEFS[(int)id].description;
+}
+
+fn String command_group(CommandId id)
+{
+	switch (id)
+	{
+		case CommandId.FOCUS_TOP_BAR:
+			return "Top bar";
+		case CommandId.TOGGLE_SETTINGS:
+			return "Settings";
+		case CommandId.TOGGLE_CONSOLE:
+		case CommandId.CONSOLE_RUN_PROFILE:
+			return "Console";
+		default:
+			break;
+	}
+
+	ulong contexts = COMMAND_DEFS[(int)id].contexts;
+	if ((contexts & (CTX_CONSOLE)) != 0) return "Console";
+	if ((contexts & (CTX_EDIT | CTX_COMPLETION)) != 0) return "Editor";
+	if ((contexts & CTX_MOVE) != 0) return "Canvas";
+	if ((contexts & CTX_TOP_BAR) != 0) return "Top bar";
+	ulong overlay = CTX_PALETTE | CTX_FIND | CTX_SEARCH | CTX_SYMBOLS | CTX_PROBLEMS | CTX_PROMPT | CTX_BROWSER
+		| CTX_MENU;
+	if ((contexts & overlay) != 0) return "Overlays";
+	if ((contexts & (CTX_SETTINGS)) != 0) return "Settings";
+	return "General";
+}
+
 const CommandId[] TOP_BAR_COMMANDS = {
 	CommandId.NEW_FILE,
 	CommandId.OPEN,
 	CommandId.SAVE,
+	CommandId.SEARCH_REPLACE_PROJECT,
 	CommandId.TOGGLE_SCM,
 	CommandId.TOGGLE_CONSOLE,
+	CommandId.TOGGLE_ARROWS_OVERLAY,
 	CommandId.TOGGLE_SETTINGS,
 };
 
@@ -967,6 +1323,8 @@ fn String command_name(CommandId id)
 			return "select_theme";
 		case CommandId.SEARCH_PROJECT:
 			return "search_project";
+		case CommandId.SEARCH_REPLACE_PROJECT:
+			return "search_replace_project";
 		case CommandId.SYMBOLS_PROJECT:
 			return "symbols_project";
 		case CommandId.TOGGLE_SETTINGS:
@@ -1051,6 +1409,10 @@ fn String command_name(CommandId id)
 			return "topbar_left";
 		case CommandId.TOPBAR_RIGHT:
 			return "topbar_right";
+		case CommandId.TOPBAR_UP:
+			return "topbar_up";
+		case CommandId.TOPBAR_DOWN:
+			return "topbar_down";
 		case CommandId.TOPBAR_ACTIVATE:
 			return "topbar_activate";
 		case CommandId.FOCUS_CANVAS:
@@ -1081,6 +1443,10 @@ fn String command_name(CommandId id)
 			return "search_toggle_case";
 		case CommandId.SEARCH_TOGGLE_WORD:
 			return "search_toggle_word";
+		case CommandId.SEARCH_REPLACE:
+			return "search_replace";
+		case CommandId.SEARCH_REPLACE_ALL:
+			return "search_replace_all";
 		case CommandId.SETTINGS_SCOPE_TOGGLE:
 			return "settings_scope_toggle";
 		case CommandId.SETTINGS_RESET:
@@ -1167,6 +1533,8 @@ fn String command_name(CommandId id)
 			return "console_delete_word_forward";
 		case CommandId.TOGGLE_CONNECTIONS:
 			return "toggle_connections";
+		case CommandId.TOGGLE_ARROWS_OVERLAY:
+			return "toggle_arrows_overlay";
 		case CommandId.QUIT:
 			return "quit";
 	}
@@ -1256,6 +1624,9 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.SELECT_THEME:
 			return true;
 		case CommandId.SEARCH_PROJECT:
+		case CommandId.SEARCH_REPLACE_PROJECT:
+		case CommandId.SEARCH_REPLACE:
+		case CommandId.SEARCH_REPLACE_ALL:
 			return has_project;
 		case CommandId.SYMBOLS_PROJECT:
 			return has_project;
@@ -1308,6 +1679,8 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.FOCUS_TOP_BAR:
 		case CommandId.TOPBAR_LEFT:
 		case CommandId.TOPBAR_RIGHT:
+		case CommandId.TOPBAR_UP:
+		case CommandId.TOPBAR_DOWN:
 		case CommandId.TOPBAR_ACTIVATE:
 		case CommandId.FOCUS_CANVAS:
 		case CommandId.OVERLAY_CLOSE:
@@ -1323,6 +1696,7 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.FIND_CYCLE_FIELD:
 		case CommandId.SEARCH_TOGGLE_CASE:
 		case CommandId.SEARCH_TOGGLE_WORD:
+		case CommandId.TOGGLE_ARROWS_OVERLAY:
 		case CommandId.SETTINGS_SCOPE_TOGGLE:
 		case CommandId.SETTINGS_RESET:
 		case CommandId.SETTINGS_VALUE_DEC:

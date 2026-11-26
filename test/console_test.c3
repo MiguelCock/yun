@@ -888,3 +888,143 @@ fn void test_console_kill_on_close()
 	manager.close();
 	assert(console.runner.status == ConsoleStatus.KILLING);
 }
+fn void test_terminal_text_and_utf8()
+{
+	ConsoleTerminal term;
+	term.init(mem);
+	term.resize(10, 3);
+	term.feed("abc\r\ndef");
+	TermCell* a = term.cell_at(0, 0);
+	TermCell* b = term.cell_at(1, 0);
+	TermCell* c = term.cell_at(2, 0);
+	TermCell* d = term.cell_at(0, 1);
+	assert(a && a.text[0] == 'a');
+	assert(b && b.text[0] == 'b');
+	assert(c && c.text[0] == 'c');
+	assert(d && d.text[0] == 'd');
+	assert(term.cursor_y == 1);
+	assert(term.cursor_x == 3);
+
+	term.feed("é");
+	TermCell* utf = term.cell_at(3, 1);
+	assert(utf && utf.len == 2);
+	term.destroy();
+}
+
+fn void test_terminal_cursor_and_erase()
+{
+	ConsoleTerminal term;
+	term.init(mem);
+	term.resize(10, 4);
+	term.feed("hello");
+	term.feed("\x1b[2D");
+	assert(term.cursor_x == 3);
+	term.feed("\x1b[1;1H");
+	assert(term.cursor_x == 0 && term.cursor_y == 0);
+	term.feed("\x1b[3;5H");
+	assert(term.cursor_x == 4 && term.cursor_y == 2);
+	term.feed("\x1b[2J");
+	TermCell* cleared = term.cell_at(0, 0);
+	assert(cleared && cleared.len == 0);
+	term.feed("one\ntwo");
+	term.feed("\x1b[1;1H\x1b[K");
+	TermCell* first = term.cell_at(0, 0);
+	assert(first && first.len == 0);
+	term.destroy();
+}
+
+fn void test_terminal_sgr()
+{
+	ConsoleTerminal term;
+	term.init(mem);
+	term.resize(10, 2);
+	term.feed("\x1b[31mR\x1b[0mN");
+	TermCell* red    = term.cell_at(0, 0);
+	TermCell* normal = term.cell_at(1, 0);
+	assert(red && red.text[0] == 'R');
+	assert(normal && normal.text[0] == 'N');
+	assert(red.fg.r != normal.fg.r || red.fg.g != normal.fg.g || red.fg.b != normal.fg.b);
+	term.destroy();
+}
+
+fn void test_terminal_alt_screen()
+{
+	ConsoleTerminal term;
+	term.init(mem);
+	term.resize(10, 2);
+	term.feed("main");
+	assert(term.cell_at(0, 0).text[0] == 'm');
+	term.feed("\x1b[?1049h");
+	term.feed("alt");
+	assert(term.alt_screen);
+	assert(term.cell_at(0, 0).text[0] == 'a');
+	term.feed("\x1b[?1049l");
+	assert(!term.alt_screen);
+	assert(term.cell_at(0, 0).text[0] == 'm');
+	term.destroy();
+}
+
+fn void test_terminal_scroll_region()
+{
+	ConsoleTerminal term;
+	term.init(mem);
+	term.resize(8, 3);
+	term.feed("\x1b[1;1Ha\x1b[2;1Hb\x1b[3;1Hc");
+	term.feed("\x1b[1;2r");
+	term.feed("\x1b[2;1H\nX");
+	assert(term.scroll_top == 0);
+	assert(term.scroll_bottom == 1);
+	TermCell* bottom = term.cell_at(0, 2);
+	assert(bottom && bottom.text[0] == 'c');
+	term.destroy();
+}
+
+fn void test_pty_lifecycle()
+{
+	$if env::WIN32:
+		return;
+	$else
+		@pool()
+		{
+			ConsolePty pty;
+			pty.init(mem);
+			assert(pty.start("", 80, 24));
+			assert(pty.running);
+			pty.write("printf 'pty-ok\\n'\n");
+			char[4096] buffer;
+			bool found = false;
+			for (int attempt = 0; attempt < 40 && !found; attempt++)
+			{
+				thread::sleep_ms(25);
+				usz count = pty.read(buffer[0:buffer.len]);
+				if (count == 0) continue;
+				String output = (String)buffer[0:count];
+				if (output.contains("pty-ok")) found = true;
+			}
+			assert(found);
+			pty.resize(100, 30);
+			pty.stop();
+			assert(!pty.running);
+			pty.destroy();
+		};
+	$endif
+}
+fn void test_terminal_copy_and_resize()
+{
+	ConsoleTerminal term;
+	term.init(mem);
+	term.resize(6, 3);
+	term.feed("\x1b[1;1Hab\x1b[2;1Hcd");
+	@pool()
+	{
+		String text = term.copy_text(tmem);
+		assert(text.starts_with("ab"));
+		assert(text.contains("cd"));
+	};
+	term.resize(8, 4);
+	TermCell* a = term.cell_at(0, 0);
+	TermCell* c = term.cell_at(0, 1);
+	assert(a && a.text[0] == 'a');
+	assert(c && c.text[0] == 'c');
+	term.destroy();
+}

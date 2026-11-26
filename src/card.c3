@@ -12,8 +12,6 @@ import yun::text;
 import yun::theme;
 import yun::ui;
 
-const float CARD_WIDTH            = 240.0f;
-const float CARD_HEIGHT           = 160.0f;
 const float CARD_TITLE_HEIGHT     = 28.0f;
 const float CARD_TITLE_BUTTON     = 24.0f;
 const float CARD_TITLE_BUTTON_GAP = 2.0f;
@@ -263,6 +261,33 @@ fn void FileCard.draw_lod(&self, float zoom)
 	ui::rounded_rect(r, radius, theme::current().card_body);
 	ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 }
+
+fn void FileCard.draw_lod_title(&self, RLFont font, float zoom)
+{
+	Rect r       = self.effective_rect();
+	float radius = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
+	ui::rounded_rect(r, radius, theme::current().card_body);
+	Rect title = {
+		.x = r.x,
+		.y = r.y,
+		.width = r.width,
+		.height = ui::pxf(CARD_TITLE_HEIGHT),
+	};
+	ui::rounded_top(title, radius, theme::current().card_title);
+	ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
+	@pool()
+	{
+		rl::draw_text_ex(
+			font,
+			self.name.zstr_tcopy(),
+			{ r.x + (float)ui::px(10), r.y + (float)ui::px(7) },
+			(float)ui::tpx(16),
+			0.0f,
+			theme::current()
+			.card_text);
+	};
+}
+
 fn void FileCard.handle_points(&self, RLVector2[8]* points)
 {
 	Rect r = self.rect;

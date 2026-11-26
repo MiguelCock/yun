@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_toml",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-toml"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-toml"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-toml"
+      ]
+    }
+  }
+}

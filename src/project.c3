@@ -25,6 +25,7 @@ import yun::spatial;
 import yun::text;
 import yun::theme;
 import yun::ui;
+import yun::vim;
 
 const int ROOT_FOLDER               = -1;
 const double POLL_SECONDS           =  1.0;
@@ -38,6 +39,7 @@ const String[] IGNORED_NAMES        =  { ".git", ".gitmodules", ".yun", "build",
 const float DRAW_CULL_MARGIN        =  64.0f;
 const float CARD_MIN_DRAW_PX        =  3.0f;
 const float CARD_LOD_MIN_PX         =  48.0f;
+const float CARD_DETAIL_MIN_PX      =  180.0f;
 const float CLUSTER_TEXT_MIN_ZOOM   =  0.45f;
 const double DOUBLE_CLICK_SECONDS   =  0.35;
 const float DOUBLE_CLICK_DIST       =  6.0f;
@@ -112,6 +114,7 @@ struct Project
 	int current_folder;
 	bool grabbing;
 	bool grab_accum_valid;
+	bool grab_moved;
 	RLVector2 grab_accum;
 	bool focus_toggle_requested;
 	int hover_card;
@@ -150,6 +153,7 @@ struct Project
 	int awake_count;
 	int asleep_count;
 	int cards_revision;
+	int order_revision;
 	bool skip_nested_repos;
 	int focus_card;
 	Rect focus_saved_rect;
@@ -162,6 +166,8 @@ struct Project
 	bool content_bounds_valid;
 	Rect content_bounds_cache;
 	int hover_cluster;
+	EditorMetrics card_metrics;
+	vim::State vim_state;
 }
 
 fn void Project.init(&self, Allocator allocator)
@@ -176,6 +182,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
 	self.grab_accum_valid = false;
+	self.grab_moved = false;
 	self.grab_accum = { 0.0f, 0.0f };
 	self.focus_toggle_requested = false;
 	self.drag_card = false;
@@ -201,6 +208,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.awake_count = 0;
 	self.asleep_count = 0;
 	self.cards_revision = 0;
+	self.order_revision = 0;
 	self.skip_nested_repos = true;
 	self.focus_card = -1;
 	self.focus_screen_w = 0.0f;
@@ -209,6 +217,8 @@ fn void Project.init(&self, Allocator allocator)
 	self.grid_dirty = true;
 	self.content_bounds_valid = false;
 	self.hover_cluster = -1;
+	self.card_metrics = editor::default_metrics();
+	self.vim_state.init(allocator);
 	Path? cwd = path::cwd(allocator);
 	if (catch excuse = cwd)
 	{
@@ -246,6 +256,7 @@ fn void Project.destroy_folders(&self)
 
 fn void Project.destroy(&self)
 {
+	self.vim_state.destroy();
 	self.destroy_cards();
 	self.destroy_folders();
 	self.cards.free();
@@ -262,12 +273,14 @@ fn void Project.reset(&self)
 	self.destroy_cards();
 	self.destroy_folders();
 	self.cards_revision++;
+	self.order_revision = 0;
 	self.focused = -1;
 	self.selected = -1;
 	self.selected_cluster = -1;
 	self.current_folder = ROOT_FOLDER;
 	self.grabbing = false;
 	self.grab_accum_valid = false;
+	self.grab_moved = false;
 	self.grab_accum = { 0.0f, 0.0f };
 	self.focus_toggle_requested = false;
 	self.drag_card = false;
@@ -275,6 +288,7 @@ fn void Project.reset(&self)
 	self.drag_cluster_title = false;
 	self.cluster_moved = false;
 	self.selecting = false;
+	self.vim_state.reset();
 	self.grid_dirty = true;
 	self.content_bounds_valid = false;
 	self.clear_jump();
@@ -307,6 +321,7 @@ fn void Project.clear_jump(&self)
 
 fn void Project.discard_ephemeral(&self, int keep)
 {
+	bool removed = false;
 	for (sz i = self.cards.len(); i > 0; i--)
 	{
 		sz index = i - 1;
@@ -319,6 +334,7 @@ fn void Project.discard_ephemeral(&self, int keep)
 			(void)libc::remove(((String)card.path).zstr_tcopy());
 		};
 		self.cards.remove_at(index);
+		removed = true;
 		if (((String)card.path).len) ((String)card.path).free(self.allocator);
 		if (card.name.len) card.name.free(self.allocator);
 		if (self.focused > (int)index)
@@ -339,7 +355,12 @@ fn void Project.discard_ephemeral(&self, int keep)
 			self.selected = -1;
 		}
 	}
-	self.invalidate_bounds();
+	if (removed)
+	{
+		self.cards_revision++;
+		self.order_revision++;
+		self.invalidate_bounds();
+	}
 }
 
 fn bool path_is_inside(String root, String abs)
@@ -810,8 +831,19 @@ fn String? Project.external_copy(&self, String abs)
 	return (String)dest;
 }
 
+fn void Project.set_editor_metrics(&self, EditorMetrics metrics)
+{
+	self.card_metrics = metrics;
+}
+
+fn RLVector2 Project.default_card_size(&self)
+{
+	return editor::default_card_size(self.card_metrics);
+}
+
 fn int Project.append_card(&self, String abs, RLVector2 world_pos)
 {
+	RLVector2 size = editor::default_card_size(self.card_metrics);
 	FileCard card = {
 		.path = (Path)abs.copy(self.allocator),
 		.name = rl::get_file_name((ZString)abs.ptr)
@@ -819,10 +851,10 @@ fn int Project.append_card(&self, String abs, RLVector2 world_pos)
 		.copy(
 			self.allocator
 		), .rect = {
-			.x = world_pos[0] - ui::pxf(card::CARD_WIDTH) / 2.0f,
-			.y = world_pos[1] - ui::pxf(card::CARD_HEIGHT) / 2.0f,
-			.width = ui::pxf(card::CARD_WIDTH),
-			.height = ui::pxf(card::CARD_HEIGHT),
+			.x = world_pos[0] - size[0] / 2.0f,
+			.y = world_pos[1] - size[1] / 2.0f,
+			.width = size[0],
+			.height = size[1],
 		}, .open = true, .dirty = false, .folder = self.folder_for(abs), };
 	self.cards.push(card);
 	int index = (int)(self.cards.len() - 1);
@@ -872,19 +904,20 @@ fn int Project.add_folder_from_disk(&self, String dir, RLVector2 world_pos)
 	PathList? entries = path::ls(self.allocator, (Path)dir, no_dirs: true, recursive: false, relative: false);
 	if (catch excuse = entries) return index;
 
-	float x = world_pos[0] + ui::pxf(CLUSTER_PADDING);
-	float y = world_pos[1] + ui::pxf(CLUSTER_TITLE_HEIGHT) + ui::pxf(CLUSTER_PADDING);
-	int col = 0;
+	float x             = world_pos[0] + ui::pxf(CLUSTER_PADDING);
+	float y             = world_pos[1] + ui::pxf(CLUSTER_TITLE_HEIGHT) + ui::pxf(CLUSTER_PADDING);
+	RLVector2 card_size = editor::default_card_size(self.card_metrics);
+	int col             = 0;
 	foreach (Path entry : entries)
 	{
-		self.add_card((String)entry, { x + ui::pxf(card::CARD_WIDTH) / 2.0f, y + ui::pxf(card::CARD_HEIGHT) / 2.0f });
-		x += ui::pxf(card::CARD_WIDTH) + ui::pxf((float)CARD_GAP);
+		self.add_card((String)entry, { x + card_size[0] / 2.0f, y + card_size[1] / 2.0f });
+		x += card_size[0] + ui::pxf((float)CARD_GAP);
 		col++;
 		if (col >= CLUSTER_COLUMNS)
 		{
 			col = 0;
 			x = world_pos[0] + ui::pxf(CLUSTER_PADDING);
-			y += ui::pxf(card::CARD_HEIGHT) + ui::pxf((float)CARD_GAP);
+			y += card_size[1] + ui::pxf((float)CARD_GAP);
 		}
 	}
 	return index;
@@ -943,13 +976,14 @@ fn RLVector2 Project.chip_size(&self)
 
 fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* cards_by, List{int}[]* children_by)
 {
-	float pad      = ui::pxf(CLUSTER_PADDING);
-	float title    = ui::pxf(CLUSTER_TITLE_HEIGHT);
-	float cw       = ui::pxf(card::CARD_WIDTH);
-	float ch       = ui::pxf(card::CARD_HEIGHT);
-	float cg       = ui::pxf((float)CARD_GAP);
-	float gap      = ui::pxf(CLUSTER_GAP);
-	RLVector2 chip = self.chip_size();
+	float pad           = ui::pxf(CLUSTER_PADDING);
+	float title         = ui::pxf(CLUSTER_TITLE_HEIGHT);
+	RLVector2 card_size = editor::default_card_size(self.card_metrics);
+	float cw            = card_size[0];
+	float ch            = card_size[1];
+	float cg            = ui::pxf((float)CARD_GAP);
+	float gap           = ui::pxf(CLUSTER_GAP);
+	RLVector2 chip      = self.chip_size();
 
 	float content_x = origin[0] + pad;
 	float content_y = origin[1] + title + pad;
@@ -992,12 +1026,13 @@ fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* car
 
 fn void Project.layout(&self)
 {
-	int nf         = (int)self.folders.len();
-	float cw       = ui::pxf(card::CARD_WIDTH);
-	float ch       = ui::pxf(card::CARD_HEIGHT);
-	float cg       = ui::pxf((float)CARD_GAP);
-	float gap      = ui::pxf(CLUSTER_GAP);
-	RLVector2 chip = self.chip_size();
+	int nf              = (int)self.folders.len();
+	RLVector2 card_size = editor::default_card_size(self.card_metrics);
+	float cw            = card_size[0];
+	float ch            = card_size[1];
+	float cg            = ui::pxf((float)CARD_GAP);
+	float gap           = ui::pxf(CLUSTER_GAP);
+	RLVector2 chip      = self.chip_size();
 
 	@pool()
 	{
@@ -1053,6 +1088,7 @@ fn void Project.layout(&self)
 
 fn void Project.place_unrestored(&self)
 {
+	RLVector2 card_size = editor::default_card_size(self.card_metrics);
 	@pool()
 	{
 		HashMap{int, int} counts;
@@ -1070,14 +1106,12 @@ fn void Project.place_unrestored(&self)
 			int col = slot % CLUSTER_COLUMNS;
 			int row = slot / CLUSTER_COLUMNS;
 			card.rect = {
-				.x = anchor.x + ui::pxf(
-					CLUSTER_PADDING
-				) + (float)col * (ui::pxf(card::CARD_WIDTH) + ui::pxf((float)CARD_GAP)),
+				.x = anchor.x + ui::pxf(CLUSTER_PADDING) + (float)col * (card_size[0] + ui::pxf((float)CARD_GAP)),
 				.y = anchor.y + anchor.height + ui::pxf(
 					(float)CARD_GAP
-				) + (float)row * (ui::pxf(card::CARD_HEIGHT) + ui::pxf((float)CARD_GAP)),
-				.width = ui::pxf(card::CARD_WIDTH),
-				.height = ui::pxf(card::CARD_HEIGHT),
+				) + (float)row * (card_size[1] + ui::pxf((float)CARD_GAP)),
+				.width = card_size[0],
+				.height = card_size[1],
 			};
 			card.restored = true;
 		}
@@ -1541,6 +1575,8 @@ fn int Project.focus(&self, int index)
 	FileCard card = self.cards[index];
 	self.cards.remove_at(index);
 	self.cards.push(card);
+	self.order_revision++;
+	self.grid_dirty = true;
 	self.focused = (int)(self.cards.len() - 1);
 	self.selected = self.focused;
 	self.selected_cluster = -1;
@@ -1831,6 +1867,7 @@ fn bool Project.leave_folder(&self)
 
 fn void Project.begin_grab(&self)
 {
+	self.grab_moved = false;
 	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
 	{
 		Rect bounds = self.cluster_bounds(self.selected_cluster);
@@ -1852,6 +1889,29 @@ fn void Project.apply_grab_delta(&self, RLVector2 delta, float step)
 {
 	if (!self.grab_accum_valid) self.begin_grab();
 	if (!self.grab_accum_valid) return;
+	if (!self.grab_moved && step > 0.0f)
+	{
+		if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
+		{
+			Rect current = self.cluster_bounds(self.selected_cluster);
+			float sx     = canvas::snap_value(current.x, step);
+			float sy     = canvas::snap_value(current.y, step);
+			self.grab_accum = { sx, sy };
+			if (sx != current.x || sy != current.y) self.move_cluster(
+				self.selected_cluster,
+				{ sx - current.x, sy - current.y }
+			);
+		}
+		else if (self.selected >= 0 && self.selected < (int)self.cards.len())
+		{
+			FileCard* card = &self.cards[self.selected];
+			card.rect.x = canvas::snap_value(card.rect.x, step);
+			card.rect.y = canvas::snap_value(card.rect.y, step);
+			self.grab_accum = { card.rect.x, card.rect.y };
+			self.invalidate_bounds_for_card(self.selected);
+		}
+	}
+	if (delta[0] != 0.0f || delta[1] != 0.0f) self.grab_moved = true;
 	self.grab_accum[0] += delta[0];
 	self.grab_accum[1] += delta[1];
 	float target_x = step > 0.0f ? canvas::snap_value(self.grab_accum[0], step) : self.grab_accum[0];
@@ -1860,10 +1920,16 @@ fn void Project.apply_grab_delta(&self, RLVector2 delta, float step)
 	{
 		Rect current   = self.cluster_bounds(self.selected_cluster);
 		RLVector2 move = { target_x - current.x, target_y - current.y };
-		if (move[0] != 0.0f || move[1] != 0.0f) self.move_cluster(self.selected_cluster, move);
+		if (move[0] != 0.0f || move[1] != 0.0f)
+		{
+			self.move_cluster(self.selected_cluster, move);
+			self.grab_moved = true;
+		}
 	}
 	else if (self.selected >= 0 && self.selected < (int)self.cards.len())
 	{
+		if (target_x != self.cards[self.selected].rect.x
+			|| target_y != self.cards[self.selected].rect.y) self.grab_moved = true;
 		self.cards[self.selected].rect.x = target_x;
 		self.cards[self.selected].rect.y = target_y;
 		self.invalidate_bounds_for_card(self.selected);
@@ -2034,6 +2100,7 @@ fn bool Project.begin_focus(&self, int index, Canvas* canvas)
 	self.focus_card = at;
 
 	RLVector2 center = self.cards[at].center();
+	canvas.unfollow();
 	canvas.target.target = center;
 	canvas.target.zoom = 1.0f;
 	canvas.camera.target = center;
@@ -2186,7 +2253,10 @@ fn void Project.edge_pan_during_drag(&self, Canvas* canvas)
 		canvas::EDGE_PAN_MARGIN,
 		canvas::EDGE_PAN_SPEED,
 		canvas.camera.zoom,
-		dt
+		dt,
+		canvas.bottom_inset,
+		canvas.left_inset,
+		canvas.right_inset
 	);
 	canvas.target.target[0] += delta[0];
 	canvas.target.target[1] += delta[1];
@@ -2541,17 +2611,26 @@ fn void Project.update(
 			if (card.maximize_marker_hit(world))
 			{
 				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
-				ui::tooltip(self.focus_card >= 0 ? "Exit focus mode" : "Focus card");
+				ui::tooltip_shortcut(
+					self.focus_card >= 0 ? "Exit focus mode" : "Focus card",
+					commands::command_def(commands::CommandId.TOGGLE_FOCUS_MODE)
+					.shortcut);
 			}
 			else if (card.preview_marker_hit(world) && markdown::is_markdown_path((String)card.path))
 			{
 				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
-				ui::tooltip("Toggle Markdown preview");
+				ui::tooltip_shortcut(
+					"Toggle Markdown preview",
+					commands::command_def(commands::CommandId.TOGGLE_PREVIEW)
+					.shortcut);
 			}
 			else if (self.focus_card < 0 && card.minimize_marker_hit(world))
 			{
 				ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
-				ui::tooltip(card.open ? "Collapse card" : "Expand card");
+				ui::tooltip_shortcut(
+					card.open ? "Collapse card" : "Expand card",
+					commands::command_def(commands::CommandId.MINIMIZE_CARD)
+					.shortcut);
 			}
 		}
 	}
@@ -2969,6 +3048,7 @@ fn void Project.editor_move_select(&self, EditorMove move, EditorMetrics metrics
 fn void Project.editor_exit(&self)
 {
 	self.focused = -1;
+	self.vim_state.reset();
 }
 
 fn bool Project.completion_accept_cmd(&self, EditorMetrics metrics)
@@ -3044,6 +3124,61 @@ fn bool shift_down()
 	return rl::is_key_down(rl::RLKeyboardKey.LEFT_SHIFT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_SHIFT);
 }
 
+fn void Project.handle_vim_keyboard(&self, FileCard* card, EditorMetrics metrics, bool* out_changed)
+{
+	bool changed = false;
+	bool handled = false;
+	double now   = rl::get_time();
+	if (completion::completion_is_open()) completion::completion_close();
+	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	{
+		(void)self.vim_state.handle(card.buffer, card.history, &card.cursor, &card.selection_anchor, 27, now);
+		handled = true;
+	}
+	else if (ctrl_down() && rl::is_key_pressed(rl::RLKeyboardKey.R))
+	{
+		if (self.vim_state.handle(card.buffer, card.history, &card.cursor, &card.selection_anchor, 18, now))
+		{
+			changed = true;
+		}
+		handled = true;
+	}
+	else
+	{
+		int codepoint = rl::get_char_pressed();
+		while (codepoint != 0)
+		{
+			if (codepoint >= 32 && codepoint <= 126)
+			{
+				handled = true;
+				if (self.vim_state.handle(
+					card.buffer,
+					card.history,
+					&card.cursor,
+					&card.selection_anchor,
+					codepoint,
+					now
+				))
+				{
+					changed = true;
+				}
+				if (self.vim_state.mode == vim::Mode.INSERT) break;
+			}
+			codepoint = rl::get_char_pressed();
+		}
+	}
+
+	if (changed)
+	{
+		self.finish_edit(metrics);
+		if (out_changed) *out_changed = true;
+	}
+	else if (handled)
+	{
+		self.reveal_focused(metrics);
+	}
+}
+
 fn void Project.handle_keyboard(
 	&self,
 	keymap::Keymap* keymap,
@@ -3091,6 +3226,24 @@ fn void Project.handle_keyboard(
 		) || rl::is_key_pressed(rl::RLKeyboardKey.TAB) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.TAB))
 		{
 			if (self.completion_accept_cmd(metrics) && out_changed) *out_changed = true;
+			return;
+		}
+	}
+
+	if (editor::settings().vim_mode)
+	{
+		if (self.vim_state.mode == vim::Mode.INSERT)
+		{
+			if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+			{
+				(void)self.vim_state.handle(card.buffer, card.history, &card.cursor, &card.selection_anchor, 27, now);
+				self.reveal_focused(metrics);
+				return;
+			}
+		}
+		else
+		{
+			self.handle_vim_keyboard(card, metrics, out_changed);
 			return;
 		}
 	}
@@ -3421,12 +3574,21 @@ fn void Project.draw_cards(
 			if (!rect_intersects(card.rect, visible)) continue;
 			float on_screen_w = card.rect.width * camera.zoom;
 			if (!is_focused && on_screen_w < CARD_MIN_DRAW_PX) continue;
-			if (!is_focused && on_screen_w < CARD_LOD_MIN_PX)
+			bool simple_lod = !is_focused && on_screen_w < CARD_LOD_MIN_PX;
+			bool title_lod  = !is_focused && !simple_lod && on_screen_w < CARD_DETAIL_MIN_PX && (int)i != self.selected
+				&& (int)i != self.hover_card;
+			if (simple_lod)
 			{
 				card.draw_lod(camera.zoom);
-				continue;
 			}
-			card.draw(is_focused, camera, mouse_world, self.focus_card >= 0, git_status);
+			else if (title_lod)
+			{
+				card.draw_lod_title(font, camera.zoom);
+			}
+			else
+			{
+				card.draw(is_focused, camera, mouse_world, self.focus_card >= 0, git_status);
+			}
 			if (!is_focused && (int)i == self.selected)
 			{
 				ui::rounded_rect_lines(
@@ -3447,7 +3609,7 @@ fn void Project.draw_cards(
 					hover
 				);
 			}
-			if (!card.open) continue;
+			if (!card.open || simple_lod || title_lod) continue;
 
 			if (card.preview && markdown::is_markdown_path((String)card.path))
 			{

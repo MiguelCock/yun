@@ -1,0 +1,24 @@
+{
+  "provides": "tree_sitter_scss",
+  "linklib-dir": "linked-libs",
+  "dependencies": [
+    "tree_sitter"
+  ],
+  "targets": {
+    "linux-x64": {
+      "linked-libraries": [
+        "tree-sitter-scss"
+      ]
+    },
+    "macos-aarch64": {
+      "linked-libraries": [
+        "tree-sitter-scss"
+      ]
+    },
+    "windows-x64": {
+      "linked-libraries": [
+        "tree-sitter-scss"
+      ]
+    }
+  }
+}

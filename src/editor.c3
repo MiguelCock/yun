@@ -30,11 +30,13 @@ struct EditorSettings
 	int scroll_margin_lines;
 	int wheel_scroll_lines;
 	bool show_line_numbers;
+	bool vim_mode;
 	int indent_width;
 	bool indent_spaces;
 	bool auto_indent;
 	usz history_budget;
 	int diagnostic_segments;
+	int highlight_max_mb;
 }
 
 EditorSettings g_editor_settings = {
@@ -45,11 +47,13 @@ EditorSettings g_editor_settings = {
 	.scroll_margin_lines = 1,
 	.wheel_scroll_lines = 3,
 	.show_line_numbers = true,
+	.vim_mode = false,
 	.indent_width = 4,
 	.indent_spaces = false,
 	.auto_indent = true,
 	.history_budget = text::HISTORY_BUDGET,
 	.diagnostic_segments = MAX_DIAGNOSTIC_SEGMENTS,
+	.highlight_max_mb = 4,
 };
 
 fn EditorSettings settings()
@@ -59,7 +63,20 @@ fn EditorSettings settings()
 
 fn void set_settings(EditorSettings value)
 {
+	if (value.highlight_max_mb < 0) value.highlight_max_mb = 0;
 	g_editor_settings = value;
+}
+
+fn usz highlight_max_bytes()
+{
+	if (g_editor_settings.highlight_max_mb <= 0) return 0;
+	return (usz)g_editor_settings.highlight_max_mb * 1024u * 1024u;
+}
+
+fn bool highlight_allowed(PieceTable* table)
+{
+	usz limit = highlight_max_bytes();
+	return limit == 0 || table.length() <= limit;
 }
 
 fn float min_card_width(EditorMetrics metrics)
@@ -79,6 +96,22 @@ struct EditorMetrics
 	float padding_x;
 	float padding_y;
 	float font_size;
+}
+
+fn EditorMetrics default_metrics()
+{
+	return {
+		.char_width = 8.0f,
+		.line_height = 16.0f,
+		.padding_x = g_editor_settings.padding_x,
+		.padding_y = g_editor_settings.padding_y,
+		.font_size = (float)FONT_SIZE_DEFAULT,
+	};
+}
+
+fn RLVector2 default_card_size(EditorMetrics metrics)
+{
+	return { min_card_width(metrics), min_card_height(metrics) };
 }
 
 struct VisibleRange
@@ -596,6 +629,30 @@ fn void ensure_buffer(FileCard* card, Allocator allocator)
 	stamp_file(card);
 }
 
+fn void restore_buffer(FileCard* card, String text, Allocator allocator)
+{
+	destroy_buffer(card, allocator);
+	PieceTable* buffer = alloc::new(allocator, PieceTable);
+	buffer.init_from_buffer(allocator, text);
+	card.buffer = buffer;
+
+	History* history = alloc::new(allocator, History);
+	history.init(allocator);
+	history.budget = g_editor_settings.history_budget;
+	card.history = history;
+
+	card.highlight = highlight::create(allocator, card.buffer, (String)card.path);
+	if (markdown::is_markdown_path((String)card.path)) card.view = markdown::view_create(allocator);
+	lsp::lsp_did_open((String)card.path, card.buffer);
+	stamp_file(card);
+	card.dirty = true;
+	card.cursor = 0;
+	card.selection_anchor = 0;
+	card.preferred_column = 0;
+	card.scroll = 0.0f;
+	card.scroll_x = 0.0f;
+}
+
 fn void stamp_file(FileCard* card)
 {
 	Time_t? mtime = os::native_get_modified_time((String)card.path);
@@ -809,7 +866,7 @@ fn void draw_text_highlighted(
 	RLColor base
 )
 {
-	if (!highlighter || table.length() == 0 || metrics.line_height <= 0.0f)
+	if (!highlighter || table.length() == 0 || metrics.line_height <= 0.0f || !highlight_allowed(table))
 	{
 		draw_text(table, area, scroll_y, scroll_x, metrics, camera, font, font_size, base);
 		return;
@@ -1408,22 +1465,8 @@ fn Rect current_line_rect(PieceTable* table, Rect area, float scroll_y, EditorMe
 
 fn Rect scrollbar_thumb(Rect area, float content_height, float scroll_y)
 {
-	float width = 4.0f;
-	if (content_height <= area.height || content_height <= 0.0f)
-	{
-		return { .x = area.x + area.width - width, .y = area.y, .width = width, .height = area.height };
-	}
-
-	float thumb_height = area.height * (area.height / content_height);
-	if (thumb_height < 20.0f) thumb_height = 20.0f;
-
-	float max_scroll = content_height - area.height;
-	float t          = max_scroll > 0.0f ? scroll_y / max_scroll : 0.0f;
-	if (t < 0.0f) t = 0.0f;
-	if (t > 1.0f) t = 1.0f;
-
-	float y = area.y + t * (area.height - thumb_height);
-	return { .x = area.x + area.width - width, .y = y, .width = width, .height = thumb_height };
+	Rect track = { .x = area.x + area.width - 4.0f, .y = area.y, .width = 4.0f, .height = area.height };
+	return ui::scrollbar_thumb(track, content_height, area.height, scroll_y, false);
 }
 
 fn void draw_current_line(

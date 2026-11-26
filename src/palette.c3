@@ -5,6 +5,7 @@ import std::collections::list;
 import std::math;
 import yun::commands;
 import yun::keymap;
+import yun::mods;
 import yun::theme;
 import yun::topbar;
 import yun::ui;
@@ -21,12 +22,14 @@ struct Palette
 	bool open;
 	char[QUERY_MAX + 1] query;
 	int query_len;
-	List{commands::CommandId} results;
+	List{int} results;
 	List{commands::CommandId} recent;
 	Allocator allocator;
 	int selected;
 	int scroll;
 	bool consumed;
+	ui::Motion motion;
+	mods::Mods* mods;
 }
 
 fn void Palette.init(&self, Allocator allocator)
@@ -40,6 +43,7 @@ fn void Palette.init(&self, Allocator allocator)
 	self.selected = 0;
 	self.scroll = 0;
 	self.consumed = false;
+	self.mods = null;
 }
 
 fn void Palette.destroy(&self)
@@ -84,7 +88,7 @@ fn void Palette.backspace(&self)
 	self.query[self.query_len] = 0;
 }
 
-fn bool Palette.contains_result(&self, commands::CommandId id)
+fn bool Palette.contains_result(&self, int id)
 {
 	for (sz i = 0; i < self.results.len(); i++)
 	{
@@ -93,10 +97,26 @@ fn bool Palette.contains_result(&self, commands::CommandId id)
 	return false;
 }
 
-fn int Palette.score_of(&self, commands::CommandId id, String query)
+fn String Palette.label_of(&self, int id)
+{
+	if (id < 0)
+	{
+		int index = mods::palette_index(id);
+		return self.mods != null ? self.mods.palette_label(index) : "";
+	}
+	return commands::command_def((commands::CommandId)id).label;
+}
+
+fn bool Palette.enabled_of(&self, int id, bool has_project, bool has_buffer)
+{
+	if (id < 0) return self.mods != null && self.mods.palette_available(mods::palette_index(id));
+	return commands::command_enabled((commands::CommandId)id, has_project, has_buffer);
+}
+
+fn int Palette.score_of(&self, int id, String query)
 {
 	usz[QUERY_MAX] positions;
-	return commands::fuzzy_match(commands::command_def(id).label, query, positions[0:QUERY_MAX]);
+	return commands::fuzzy_match(self.label_of(id), query, positions[0:QUERY_MAX]);
 }
 
 fn void Palette.clamp_scroll(&self)
@@ -119,20 +139,28 @@ fn void Palette.filter(&self)
 	{
 		for (sz i = 0; i < self.recent.len(); i++)
 		{
-			self.results.push(self.recent[i]);
+			self.results.push((int)self.recent[i]);
 		}
 		for (usz i = 0; i < commands::command_count(); i++)
 		{
-			commands::CommandId id = (commands::CommandId)i;
+			int id = (int)i;
 			if (!self.contains_result(id)) self.results.push(id);
+		}
+		if (self.mods != null)
+		{
+			for (int i = 0; i < self.mods.palette_count(); i++)
+			{
+				if (!self.mods.palette_available(i)) continue;
+				self.results.push(mods::palette_encoded(i));
+			}
 		}
 	}
 	else
 	{
 		for (usz i = 0; i < commands::command_count(); i++)
 		{
-			commands::CommandId id = (commands::CommandId)i;
-			int score              = self.score_of(id, query);
+			int id    = (int)i;
+			int score = self.score_of(id, query);
 			if (score < 0) continue;
 			sz insert = (sz)self.results.len();
 			for (sz j = 0; j < self.results.len(); j++)
@@ -144,6 +172,26 @@ fn void Palette.filter(&self)
 				}
 			}
 			self.results.insert_at(insert, id);
+		}
+		if (self.mods != null)
+		{
+			for (int i = 0; i < self.mods.palette_count(); i++)
+			{
+				if (!self.mods.palette_available(i)) continue;
+				int id    = mods::palette_encoded(i);
+				int score = self.score_of(id, query);
+				if (score < 0) continue;
+				sz insert = (sz)self.results.len();
+				for (sz j = 0; j < self.results.len(); j++)
+				{
+					if (score > self.score_of(self.results[j], query))
+					{
+						insert = j;
+						break;
+					}
+				}
+				self.results.insert_at(insert, id);
+			}
 		}
 	}
 
@@ -192,9 +240,10 @@ fn Rect Palette.panel_rect(&self)
 	int rows = (int)self.results.len();
 	if (rows > MAX_VISIBLE_ROWS) rows = MAX_VISIBLE_ROWS;
 	if (rows == 0) rows = 1;
-	int height = pad * 2 + rh + ui::px(6) + rows * rh;
-	int x      = (rl::get_screen_width() - ui::px(PANEL_WIDTH)) / 2;
-	int y      = (int)ui::pxf(topbar::TOP_BAR_HEIGHT) + ui::px(TOP_MARGIN);
+	int height   = pad * 2 + rh + ui::px(6) + rows * rh;
+	Rect content = topbar::content_rect();
+	int x        = (int)(content.x + (content.width - (float)ui::px(PANEL_WIDTH)) / 2.0f);
+	int y        = (int)content.y + ui::px(TOP_MARGIN);
 	return { .x = (float)x, .y = (float)y, .width = (float)ui::px(PANEL_WIDTH), .height = (float)height };
 }
 
@@ -263,7 +312,12 @@ fn int Palette.update(&self, keymap::Keymap* keymap, bool has_project, bool has_
 	{
 		self.consumed = true;
 		int id = self.selected_command();
-		if (id >= 0 && commands::command_enabled((commands::CommandId)id, has_project, has_buffer))
+		if (id >= 0 && self.enabled_of(id, has_project, has_buffer))
+		{
+			self.open = false;
+			return id;
+		}
+		if (id < 0 && self.enabled_of(id, has_project, has_buffer))
 		{
 			self.open = false;
 			return id;
@@ -287,7 +341,7 @@ fn int Palette.update(&self, keymap::Keymap* keymap, bool has_project, bool has_
 		if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
 		{
 			int id = self.selected_command();
-			if (id >= 0 && commands::command_enabled((commands::CommandId)id, has_project, has_buffer))
+			if (self.enabled_of(id, has_project, has_buffer))
 			{
 				self.open = false;
 				return id;
@@ -358,12 +412,19 @@ fn float draw_label(RLFont font, String label, String query, float x, float y, R
 
 fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* keymap, RLFont font)
 {
-	if (!self.open) return;
+	if (!self.open)
+	{
+		self.motion.update(false);
+		return;
+	}
+	self.motion.update(true);
 
 	Rect panel = self.panel_rect();
-	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
+	panel.y -= self.motion.offset(ui::pxf(6.0f));
+	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	Rect field = self.field_rect();
+	field.y -= self.motion.offset(ui::pxf(6.0f));
 	ui::rounded_rect(field, ui::row_radius(), theme::current().panel_field);
 	String query = self.query_view();
 	draw_run(font, query, field.x + (float)ui::px(8), field.y + (float)ui::px(5), theme::current().panel_text);
@@ -376,16 +437,23 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 		theme::current()
 		.panel_caret);
 
-	float list_y = self.list_y();
+	float list_y    = panel.y + (float)ui::px(PADDING + ROW_HEIGHT + 6);
+	RLVector2 mouse = rl::get_mouse_position();
+	int hover_row   = self.row_at(mouse);
+	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 	if (self.results.len() == 0)
 	{
-		draw_run(
+		ui::empty_state(
 			font,
+			{
+				.x = panel.x + 2.0f,
+				.y = list_y,
+				.width = panel.width - 4.0f,
+				.height = panel.height - (list_y - panel.y)
+			},
 			"No matching commands",
-			panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
-			list_y + (float)ui::px(5),
-			theme::current()
-			.panel_dim);
+			"Try a different search"
+		);
 		return;
 	}
 
@@ -393,10 +461,10 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 	{
 		int index = self.scroll + slot;
 		if (index >= (int)self.results.len()) break;
-		commands::CommandId id   = self.results[index];
-		commands::CommandDef def = commands::command_def(id);
-		bool enabled             = commands::command_enabled(id, has_project, has_buffer);
-		float row_y              = list_y + (float)slot * (float)ui::px(ROW_HEIGHT);
+		int id       = self.results[index];
+		String label = self.label_of(id);
+		bool enabled = self.enabled_of(id, has_project, has_buffer);
+		float row_y  = list_y + (float)slot * (float)ui::px(ROW_HEIGHT);
 		if (index == self.selected)
 		{
 			ui::row(
@@ -409,15 +477,27 @@ fn void Palette.draw(&self, bool has_project, bool has_buffer, keymap::Keymap* k
 				theme::current()
 				.panel_selected);
 		}
+		else if (index == hover_row)
+		{
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = row_y,
+					.width = panel.width - 4.0f,
+					.height = (float)ui::px(ROW_HEIGHT),
+				},
+				pressed ? theme::current()
+				.panel_selected : theme::current().panel_bg_alt);
+		}
 		draw_label(
 			font,
-			def.label,
+			label,
 			query,
 			panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
 			row_y + (float)ui::px(5),
 			enabled ? theme::current()
 			.panel_text : theme::current().panel_disabled);
-		String shortcut = keymap.shortcut(id);
+		String shortcut = id >= 0 ? keymap.shortcut((commands::CommandId)id) : "";
 		if (shortcut.len > 0)
 		{
 			@pool()

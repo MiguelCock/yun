@@ -990,6 +990,31 @@ fn void test_enter_and_leave_folder()
 	};
 }
 
+fn void test_grab_discrete_grid_steps()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a.c3".copy(tmem),
+				.name = "a.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f },
+			}
+		);
+		p.selected = 0;
+		p.begin_grab();
+		p.apply_grab_delta({ 64.0f, 0.0f }, 64.0f);
+		assert(p.cards[0].rect.x == 64.0f);
+		p.apply_grab_delta({ 64.0f, 0.0f }, 64.0f);
+		assert(p.cards[0].rect.x == 128.0f);
+		p.apply_grab_delta({ 0.0f, -64.0f }, 64.0f);
+		assert(p.cards[0].rect.y == -64.0f);
+	};
+}
+
 fn void test_grab_move_selected()
 {
 	@pool()
@@ -1063,6 +1088,39 @@ fn void test_minimize_selected_card()
 		assert(p.cards[0].rect.height == editor::min_card_height(metrics));
 	};
 }
+fn void test_new_card_uses_resize_minimum()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		EditorMetrics metrics = {
+			.char_width = 8.0f,
+			.line_height = 16.0f,
+			.padding_x = 8.0f,
+			.padding_y = 8.0f,
+			.font_size = 16.0f,
+		};
+		p.set_editor_metrics(metrics);
+
+		RLVector2 center = { 100.0f, 200.0f };
+		int index        = p.append_card("/root/new.c3", center);
+		float width      = editor::min_card_width(metrics);
+		float height     = editor::min_card_height(metrics);
+		assert(p.cards[index].rect.x == center[0] - width / 2.0f);
+		assert(p.cards[index].rect.y == center[1] - height / 2.0f);
+		assert(p.cards[index].rect.width == width);
+		assert(p.cards[index].rect.height == height);
+
+		p.cards[index].resize_from(3, { 0.0f, 0.0f }, width, height);
+		assert(p.cards[index].rect.width == width);
+		p.cards[index].resize_from(3, { -500.0f, 0.0f }, width, height);
+		assert(p.cards[index].rect.width == width);
+		p.cards[index].resize_from(5, { 0.0f, -500.0f }, width, height);
+		assert(p.cards[index].rect.height == height);
+	};
+}
+
 fn void test_layout_compact_square()
 {
 	@pool()
@@ -1463,16 +1521,39 @@ fn void test_keyboard_grab_snapping()
 		p.selected = 0;
 		p.begin_grab();
 		assert(p.grab_accum[0] == 10.0f && p.grab_accum[1] == 20.0f);
+		assert(!p.grab_moved);
+		assert(p.cards[0].rect.x == 10.0f && p.cards[0].rect.y == 20.0f);
 
 		p.apply_grab_delta({ 10.0f, 10.0f }, 64.0f);
 		assert(p.cards[0].rect.x == 0.0f && p.cards[0].rect.y == 0.0f);
-		assert(p.grab_accum[0] == 20.0f && p.grab_accum[1] == 30.0f);
+		assert(p.grab_accum[0] == 10.0f && p.grab_accum[1] == 10.0f);
+		assert(p.grab_moved);
 
 		p.apply_grab_delta({ 40.0f, 40.0f }, 64.0f);
 		assert(p.cards[0].rect.x == 64.0f && p.cards[0].rect.y == 64.0f);
-		assert(p.grab_accum[0] == 60.0f && p.grab_accum[1] == 70.0f);
+		assert(p.grab_accum[0] == 50.0f && p.grab_accum[1] == 50.0f);
 
 		p.apply_grab_delta({ 1.0f, 1.0f }, 0.0f);
-		assert(p.cards[0].rect.x == 61.0f && p.cards[0].rect.y == 71.0f);
+		assert(p.cards[0].rect.x == 51.0f && p.cards[0].rect.y == 51.0f);
+	};
+}
+fn void test_discard_ephemeral_keeps_bounds_when_empty()
+{
+	@pool()
+	{
+		project::Project p;
+		p.init(mem);
+		if (p.root.len) p.root.free(mem);
+		p.root = (Path)"/root".copy(mem);
+		int folder = p.add_folder("/root/src", project::ROOT_FOLDER);
+		(void)p.append_card("/root/src/a.c3", { 0.0f, 0.0f });
+		p.grid_dirty = false;
+		p.folders[folder].bounds_valid = true;
+
+		p.discard_ephemeral(-1);
+		assert(!p.grid_dirty);
+		assert(p.folders[folder].bounds_valid);
+
+		p.destroy();
 	};
 }

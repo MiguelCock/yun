@@ -8,6 +8,7 @@ import std::math;
 import raylib6::rl;
 import tree_sitter;
 import yun::language;
+import yun::project;
 
 fn void test_extract_c3_module_and_imports()
 {
@@ -41,6 +42,65 @@ fn void test_extract_c3_module_and_imports()
 	}
 	refs.free();
 	module_name.free(mem);
+}
+
+fn void test_import_cache_roundtrip()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? d = tmp.append(tmem, "yun_import_cache");
+		if (catch excuse = d) return;
+		Path dir = d;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? a = dir.append(tmem, "a.c3");
+		if (catch excuse = a) return;
+		Path? b = dir.append(tmem, "b.c3");
+		if (catch excuse = b) return;
+		if (catch excuse = file::save(a, "module a;\nimport b;\n")) return;
+		if (catch excuse = file::save(b, "module b;\n")) return;
+
+		project::Project p;
+		p.init(mem);
+		if (p.root.len) p.root.free(mem);
+		p.root = (Path)((String)dir).copy(mem);
+		(void)p.append_card((String)a, { 0.0f, 0.0f });
+		(void)p.append_card((String)b, { 0.0f, 0.0f });
+
+		ImportIndex first;
+		first.init(mem);
+		first.refresh_card_paths(&p);
+		List{ImportRef} refs;
+		refs.init(mem);
+		refs.push(
+			{
+				.specifier = "b".copy(mem),
+				.target_path = ((String)b).copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.angled = false,
+				.line = 1,
+				.column = 0,
+			}
+		);
+		first.store((String)a, &refs, "a".copy(mem), false);
+		first.save_cache(&p);
+		first.destroy();
+
+		ImportIndex second;
+		second.init(mem);
+		second.refresh_card_paths(&p);
+		assert(second.load_cache(&p));
+		assert(second.files.len() == 1);
+		assert(second.files[0].module_name.compare_to("a") == 0);
+		assert(second.files[0].imports.len() == 1);
+		assert(second.files[0].imports[0].specifier.compare_to("b") == 0);
+		second.destroy();
+		p.destroy();
+		(void)path::rmtree(dir);
+	};
 }
 
 fn void test_extract_c3_test_module()
@@ -304,18 +364,6 @@ fn void test_point_segment_distance()
 	assert(math::is_approx(point_segment_distance({ 3.0f, 4.0f }, a, a), 5.0f, 0.001f));
 }
 
-fn void test_bezier_min_distance()
-{
-	RLVector2 p1 = { 0.0f, 0.0f };
-	RLVector2 p2 = { 100.0f, 0.0f };
-	RLVector2 c2;
-	RLVector2 c3;
-	bezier_controls(p1, p2, &c2, &c3);
-
-	RLVector2 mid = rl::get_spline_point_bezier_cubic(p1, c2, c3, p2, 0.5f);
-	assert(bezier_min_distance(mid, p1, c2, c3, p2, 20) < 1.0f);
-	assert(bezier_min_distance({ 50.0f, 500.0f }, p1, c2, c3, p2, 20) > 100.0f);
-}
 
 fn void test_edit_debounce_elapsed()
 {
@@ -343,6 +391,7 @@ fn void test_settings_clamps()
 	s.arrowhead_size = -3.0f;
 	s.hit_tolerance = -4.0f;
 	s.rescan_debounce = -1.0f;
+	s.min_zoom = -1.0f;
 	s.scan_workers = 99;
 	set_settings(s);
 	ImportSettings got = settings();
@@ -351,6 +400,7 @@ fn void test_settings_clamps()
 	assert(got.arrowhead_size >= 0.0f);
 	assert(got.hit_tolerance >= 0.0f);
 	assert(got.rescan_debounce >= 0.0f);
+	assert(got.min_zoom >= 0.001f);
 	assert(got.scan_workers <= MAX_SCAN_WORKERS);
 	set_settings(saved);
 }
@@ -758,14 +808,6 @@ fn void test_fixture_resolution()
 		};
 	}
 }
-fn void test_dash_steps_scales_with_length()
-{
-	RLVector2 a = { 0.0f, 0.0f };
-	assert(dash_steps(a, { 10.0f, 0.0f }, 1.0f) == 16);
-	assert(dash_steps(a, { 10000.0f, 0.0f }, 1.0f) == 64);
-	assert(dash_steps(a, { 300.0f, 0.0f }, 1.0f) == 60);
-	assert(dash_steps(a, { 300.0f, 0.0f }, 0.1f) == 16);
-}
 fn void test_importers_of()
 {
 	@pool()
@@ -835,4 +877,254 @@ fn void test_importers_of()
 
 		out.free();
 	};
+}
+fn void test_internal_edges_are_file_to_file()
+{
+	@pool()
+	{
+		project::Project p;
+		p.init(mem);
+		if (p.root.len) p.root.free(mem);
+		p.root = (Path)"/root".copy(mem);
+		int src = p.add_folder("/root/src", project::ROOT_FOLDER);
+		(void)p.add_folder("/root/src/deep", src);
+		(void)p.add_folder("/root/lib", project::ROOT_FOLDER);
+
+		int a          = p.append_card("/root/src/a.ts", { 0.0f, 0.0f });
+		int b          = p.append_card("/root/src/b.ts", { 0.0f, 0.0f });
+		int c          = p.append_card("/root/src/deep/c.ts", { 0.0f, 0.0f });
+		int x          = p.append_card("/root/lib/x.ts", { 0.0f, 0.0f });
+		int y          = p.append_card("/root/lib/y.ts", { 0.0f, 0.0f });
+		int index_card = p.append_card("/root/lib/index.ts", { 0.0f, 0.0f });
+
+		ImportIndex index;
+		index.init(mem);
+		index.refresh_card_paths(&p);
+
+		List{ImportRef} refs_a;
+		refs_a.init(mem);
+		refs_a.push(
+			{
+				.specifier = "./x".copy(mem),
+				.target_path = "/root/lib/x.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.line = 0,
+			}
+		);
+		refs_a.push(
+			{
+				.specifier = "./x".copy(mem),
+				.target_path = "/root/lib/x.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.line = 1,
+			}
+		);
+		refs_a.push(
+			{
+				.specifier = "./y".copy(mem),
+				.target_path = "/root/lib/y.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.line = 2,
+			}
+		);
+		index.store("/root/src/a.ts", &refs_a, "", false);
+
+		List{ImportRef} refs_b;
+		refs_b.init(mem);
+		refs_b.push(
+			{
+				.specifier = "./y".copy(mem),
+				.target_path = "/root/lib/y.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.line = 0,
+			}
+		);
+		refs_b.push({ .specifier = "react".copy(mem), .kind = "import".copy(mem), .line = 1 });
+		index.store("/root/src/b.ts", &refs_b, "", false);
+
+		List{ImportRef} refs_c;
+		refs_c.init(mem);
+		refs_c.push(
+			{
+				.specifier = "./components".copy(mem),
+				.target_path = "/root/lib/index.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+				.line = 0,
+			}
+		);
+		index.store("/root/src/deep/c.ts", &refs_c, "", false);
+
+		List{ImportEdge} edges;
+		edges.init(tmem);
+		index.build_edges(&p, &edges);
+		assert(edges.len() == 4);
+		int total = 0;
+		for (sz i = 0; i < edges.len(); i++)
+		{
+			ImportEdge edge = edges[i];
+			assert(edge.target_card >= 0);
+			assert(edge.target_card != edge.source_card);
+			total += edge.count;
+			if (edge.source_card == a && edge.target_card == x)
+			{
+				assert(edge.count == 2);
+				assert(edge.label.compare_to("./x") == 0);
+			}
+			if (edge.source_card == b) assert(edge.target_card == y);
+		}
+		assert(total == 5);
+
+		ImportHit hit = { .valid = true, .source = a, .ref_index = 0 };
+		List{ImporterRef} group;
+		group.init(tmem);
+		index.collect_group(&p, hit, &group);
+		assert(group.len() == 2);
+		for (sz i = 0; i < group.len(); i++)
+		{
+			assert(group[i].file == 0);
+			assert(group[i].ref < 3);
+		}
+
+		ImportEdge a_x = { .source_card = a, .target_card = x, .count = 1 };
+		ImportEdge b_y = { .source_card = b, .target_card = y, .count = 1 };
+		p.cards[a].rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		p.cards[x].rect = { .x = 200.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		Rect src_visible = { .x = -10.0f, .y = -10.0f, .width = 320.0f, .height = 100.0f };
+		assert(edge_visible(&p, &a_x, src_visible));
+		p.folders[src].collapsed = true;
+		assert(!edge_visible(&p, &a_x, src_visible));
+		p.folders[src].collapsed = false;
+
+		assert(edge_related(&a_x, a));
+		assert(!edge_related(&a_x, b));
+		p.cards[a].rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		p.cards[b].rect = { .x = 500.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		p.cards[x].rect = { .x = 200.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		p.cards[y].rect = { .x = 700.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		Rect visible = { .x = -10.0f, .y = -10.0f, .width = 320.0f, .height = 100.0f };
+		assert(edge_visible(&p, &a_x, visible));
+		assert(!edge_visible(&p, &b_y, visible));
+		(void)c;
+		(void)index_card;
+
+		edges.free();
+		index.destroy();
+		p.destroy();
+	};
+}
+
+macro void assert_orthogonal(route)
+{
+	assert(route.count >= 2);
+	for (int i = 1; i < route.count; i++)
+	{
+		RLVector2 a = route.points[(usz)i - 1];
+		RLVector2 b = route.points[(usz)i];
+		float dx    = math::abs(b[0] - a[0]);
+		float dy    = math::abs(b[1] - a[1]);
+		assert(dx < 0.01f || dy < 0.01f);
+	}
+}
+
+fn void test_focus_reorders_cached_edges()
+{
+	@pool()
+	{
+		project::Project p;
+		p.init(mem);
+		if (p.root.len) p.root.free(mem);
+		p.root = (Path)"/root".copy(mem);
+		int a = p.append_card("/root/a.ts", { 0.0f, 0.0f });
+		int b = p.append_card("/root/b.ts", { 100.0f, 0.0f });
+
+		ImportIndex index;
+		index.init(mem);
+		index.refresh_card_paths(&p);
+		List{ImportRef} refs;
+		refs.init(mem);
+		refs.push(
+			{
+				.specifier = "./b".copy(mem),
+				.target_path = "/root/b.ts".copy(mem),
+				.kind = "import".copy(mem),
+				.resolved = true,
+			}
+		);
+		index.store("/root/a.ts", &refs, "", false);
+		index.ensure_edges(&p);
+		assert(index.edges.len() == 1);
+		assert(index.edges[0].source_card == a);
+		assert(index.edges[0].target_card == b);
+
+		int focused = p.focus(a);
+		assert(focused == 1);
+		index.ensure_edges(&p);
+		assert(index.edges.len() == 1);
+		assert(index.edges[0].source_card == focused);
+		assert(index.edges[0].target_card == p.find_card("/root/b.ts"));
+
+		index.destroy();
+		p.destroy();
+	};
+}
+
+fn void test_orthogonal_routes_make_right_angles()
+{
+	@pool()
+	{
+		project::Project p;
+		p.init(mem);
+		if (p.root.len) p.root.free(mem);
+		p.root = (Path)"/root".copy(mem);
+		int a = p.append_card("/root/a.ts", { 0.0f, 0.0f });
+		int b = p.append_card("/root/b.ts", { 0.0f, 0.0f });
+		p.cards[a].rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		p.cards[b].rect = { .x = 300.0f, .y = 100.0f, .width = 100.0f, .height = 80.0f };
+
+		ImportEdge edge = { .source_card = a, .target_card = b, .count = 1 };
+		EdgeRoute route;
+		assert(edge_route(&p, &edge, 1.0f, &route));
+		assert_orthogonal(&route);
+		assert(route.points[0][0] == 100.0f);
+		assert(route.points[0][1] == 40.0f);
+		assert(route.points[(usz)route.count - 1][0] == 300.0f);
+		assert(route.points[(usz)route.count - 1][1] == 140.0f);
+		assert(route_length(&route) > 290.0f);
+		RLVector2 mid = route_midpoint(&route);
+		assert(route_distance(&route, mid) < 0.01f);
+
+		p.cards[b].rect = { .x = 50.0f, .y = 300.0f, .width = 100.0f, .height = 80.0f };
+		assert(edge_route(&p, &edge, 1.0f, &route));
+		assert_orthogonal(&route);
+		assert(route.points[0][0] == 50.0f);
+		assert(route.points[0][1] == 80.0f);
+		assert(route.points[(usz)route.count - 1][0] == 100.0f);
+		assert(route.points[(usz)route.count - 1][1] == 300.0f);
+
+		p.cards[b].rect = { .x = 300.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		assert(edge_route(&p, &edge, 1.0f, &route));
+		assert_orthogonal(&route);
+
+		p.cards[b].rect = { .x = 103.0f, .y = 0.0f, .width = 100.0f, .height = 80.0f };
+		assert(edge_route(&p, &edge, 1.0f, &route));
+		assert_orthogonal(&route);
+		assert(route.points[0][1] == 0.0f);
+		assert(route.points[(usz)route.count - 1][1] == 0.0f);
+
+		p.cards[b].rect = { .x = 20.0f, .y = 20.0f, .width = 100.0f, .height = 80.0f };
+		assert(!edge_route(&p, &edge, 1.0f, &route));
+		p.destroy();
+	};
+}
+fn void test_draw_on_top_toggle()
+{
+	set_draw_on_top(true);
+	assert(draw_on_top());
+	set_draw_on_top(false);
+	assert(!draw_on_top());
 }

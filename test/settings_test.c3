@@ -311,6 +311,18 @@ fn void test_theme_options_match_theme_module()
 	}
 }
 
+fn void test_topbar_position_options()
+{
+	assert(SETTINGS[(int)SettingId.APP_TOPBAR_POSITION].kind == SettingKind.ENUM);
+	assert(SETTINGS[(int)SettingId.APP_TOPBAR_POSITION].fallback.s.compare_to("top") == 0);
+	String[] options = SETTINGS[(int)SettingId.APP_TOPBAR_POSITION].options;
+	assert(options.len == 4);
+	assert(options[0].compare_to("top") == 0);
+	assert(options[1].compare_to("bottom") == 0);
+	assert(options[2].compare_to("left") == 0);
+	assert(options[3].compare_to("right") == 0);
+}
+
 fn void test_editor_defaults()
 {
 	assert(SETTINGS[(int)SettingId.EDITOR_FONT_SIZE].fallback.i == 16);
@@ -325,6 +337,7 @@ fn void test_editor_defaults()
 	assert(SETTINGS[(int)SettingId.EDITOR_SCROLL_MARGIN_LINES].fallback.i == 1);
 	assert(SETTINGS[(int)SettingId.EDITOR_WHEEL_SCROLL_LINES].fallback.i == 3);
 	assert(SETTINGS[(int)SettingId.EDITOR_SHOW_LINE_NUMBERS].fallback.b);
+	assert(SETTINGS[(int)SettingId.EDITOR_HIGHLIGHT_MAX_MB].fallback.i == 4);
 }
 
 fn void test_font_options_hook()
@@ -387,6 +400,7 @@ fn void test_canvas_defaults()
 	assert(SETTINGS[(int)SettingId.CANVAS_PAN_SMOOTHING].fallback.f == 20.0);
 	assert(SETTINGS[(int)SettingId.CANVAS_ZOOM_SMOOTHING].fallback.f == 16.0);
 	assert(SETTINGS[(int)SettingId.CANVAS_SMOOTHING].fallback.b);
+	assert(SETTINGS[(int)SettingId.CANVAS_FOLLOW_SELECTION].fallback.b);
 	assert(SETTINGS[(int)SettingId.CANVAS_INERTIA_FRICTION].fallback.f == 0.9);
 	assert(SETTINGS[(int)SettingId.CANVAS_INERTIA_MIN_SPEED].fallback.f == 5.0);
 	assert(SETTINGS[(int)SettingId.CANVAS_DRAG_THRESHOLD].fallback.f == 4.0);
@@ -442,8 +456,8 @@ fn void test_canvas_clamp()
 fn void test_arrows_defaults()
 {
 	assert(SETTINGS[(int)SettingId.ARROWS_ENABLED].fallback.b);
-	assert(SETTINGS[(int)SettingId.ARROWS_SHOW_INTERNAL].fallback.b);
-	assert(SETTINGS[(int)SettingId.ARROWS_SHOW_EXTERNAL].fallback.b);
+	assert(SETTINGS[(int)SettingId.ARROWS_RELATED_ONLY].fallback.b);
+	assert(SETTINGS[(int)SettingId.ARROWS_MIN_ZOOM].fallback.f == 0.05);
 	assert(SETTINGS[(int)SettingId.ARROWS_LABELS].fallback.b);
 	assert(SETTINGS[(int)SettingId.ARROWS_LINE_THICKNESS].fallback.f == 2.0);
 	assert(SETTINGS[(int)SettingId.ARROWS_HOVER_THICKNESS].fallback.f == 3.6);
@@ -451,6 +465,43 @@ fn void test_arrows_defaults()
 	assert(SETTINGS[(int)SettingId.ARROWS_HIT_TOLERANCE].fallback.f == 6.0);
 	assert(SETTINGS[(int)SettingId.ARROWS_RESCAN_DEBOUNCE].fallback.f == 0.15);
 	assert(SETTINGS[(int)SettingId.ARROWS_SCAN_WORKERS].fallback.i == 0);
+}
+
+fn void test_legacy_arrow_keys_are_ignored()
+{
+	@pool()
+	{
+		Settings s;
+		s.init(tmem);
+		List{String} warnings;
+		warnings.init(tmem);
+		Object*? parsed = json::parse(
+			tmem,
+			"{\"arrows\":{\"aggregation\":\"folder\",\"show_internal\":true,\"show_external\":true,"
+				"\"external_style\":\"dashed\"}}"
+		);
+		if (catch excuse = parsed)
+		{
+			assert(false);
+		}
+		else
+		{
+			Object* root  = parsed;
+			Object*? part = root.get("arrows");
+			if (catch part_excuse = part)
+			{
+				assert(false);
+			}
+			else
+			{
+				s.apply_section("arrows", part, SettingLayer.GLOBAL, &warnings);
+				assert(warnings.len() == 0);
+				assert(s.get_bool(SettingId.ARROWS_RELATED_ONLY));
+			}
+		}
+		s.destroy();
+		warnings.free();
+	};
 }
 
 fn void test_arrows_clamp()
@@ -463,7 +514,7 @@ fn void test_arrows_clamp()
 		warnings.init(tmem);
 		Object*? parsed = json::parse(
 			tmem,
-			"{\"arrows\":{\"scan_workers\":99,\"line_thickness\":0.0,\"arrowhead_size\":999}}"
+			"{\"arrows\":{\"scan_workers\":99,\"line_thickness\":0.0,\"arrowhead_size\":999,\"min_zoom\":99}}"
 		);
 		if (catch excuse = parsed)
 		{
@@ -483,6 +534,7 @@ fn void test_arrows_clamp()
 				assert(s.get_int(SettingId.ARROWS_SCAN_WORKERS) == 8);
 				assert(s.get_float(SettingId.ARROWS_LINE_THICKNESS) == 0.5);
 				assert(s.get_float(SettingId.ARROWS_ARROWHEAD_SIZE) == 40.0);
+				assert(s.get_float(SettingId.ARROWS_MIN_ZOOM) == 0.5);
 			}
 		}
 		s.destroy();

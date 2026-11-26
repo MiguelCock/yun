@@ -31,6 +31,8 @@ struct FindBar
 	int total;
 	bool capped;
 	bool needs_search;
+	bool backward;
+	bool vim_search;
 	List{usz} starts;
 	Allocator allocator;
 	bool consumed;
@@ -52,6 +54,8 @@ fn void FindBar.init(&self, Allocator allocator)
 	self.total = 0;
 	self.capped = false;
 	self.needs_search = false;
+	self.backward = false;
+	self.vim_search = false;
 	self.consumed = false;
 }
 
@@ -65,6 +69,17 @@ fn void FindBar.open_for(&self, find::FindField field)
 	self.open = true;
 	self.field = field;
 	self.needs_search = true;
+	self.backward = false;
+	self.vim_search = false;
+}
+
+fn void FindBar.open_for_direction(&self, find::FindField field, bool backward)
+{
+	self.open = true;
+	self.field = field;
+	self.needs_search = true;
+	self.backward = backward;
+	self.vim_search = true;
 }
 
 fn void FindBar.close(&self)
@@ -140,9 +155,32 @@ fn void FindBar.research(&self, PieceTable* table)
 	);
 	self.total = (int)count;
 	self.capped = count >= find::MATCH_COUNT_CAP;
-	if (self.current >= self.total) self.current = self.total - 1;
-	if (self.current < 0) self.current = 0;
+	self.current = self.backward && self.total > 0 ? self.total - 1 : 0;
 	self.needs_search = false;
+}
+
+fn bool FindBar.repeat(&self, PieceTable* table, usz cursor, bool opposite, usz* out_start)
+{
+	if (self.query_len == 0) return false;
+	bool backward = self.backward ^ opposite;
+	usz start     = 0;
+	if (backward)
+	{
+		if (!find::prev_match(table, cursor, self.query_view(), self.case_sensitive, self.whole_word, &start))
+		{
+			return false;
+		}
+	}
+	else
+	{
+		usz from = cursor < table.length() ? cursor + 1 : cursor;
+		if (!find::next_match(table, from, self.query_view(), self.case_sensitive, self.whole_word, &start))
+		{
+			return false;
+		}
+	}
+	*out_start = start;
+	return true;
 }
 
 fn usz FindBar.current_start(&self)
@@ -231,6 +269,14 @@ fn int FindBar.update(
 	double now = rl::get_time();
 
 	if (keymap.pressed((int)commands::CommandId.OVERLAY_CLOSE, commands::CTX_FIND))
+	{
+		self.consumed = true;
+		self.close();
+		return -1;
+	}
+	if (self.vim_search && (rl::is_key_pressed(
+		rl::RLKeyboardKey.ENTER
+	) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER)))
 	{
 		self.consumed = true;
 		self.close();

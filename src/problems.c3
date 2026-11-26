@@ -11,6 +11,7 @@ import yun::keymap;
 import yun::lsp;
 import yun::icons;
 import yun::theme;
+import yun::topbar;
 import yun::ui;
 
 const int ROW_HEIGHT       = 24;
@@ -45,6 +46,7 @@ struct Problems
 	int selected;
 	int scroll;
 	bool consumed;
+	ui::Motion motion;
 }
 
 fn void Problems.init(&self, Allocator allocator)
@@ -192,21 +194,21 @@ fn Rect Problems.panel_rect(&self)
 	int row_h   = (int)((float)ROW_HEIGHT * s);
 	if (row_h < 1) row_h = 1;
 
-	int screen_w = rl::get_screen_width();
+	Rect content = topbar::content_rect();
 	int width    = (int)((float)PANEL_WIDTH * s);
-	if (width > screen_w - pad * 2) width = screen_w - pad * 2;
+	if (width > (int)content.width - pad * 2) width = (int)content.width - pad * 2;
 
 	int rows = (int)self.rows.len();
 	if (rows > MAX_VISIBLE_ROWS) rows = MAX_VISIBLE_ROWS;
-	int avail    = rl::get_screen_height() - (int)TOP_MARGIN - pad * 2 - title_h;
+	int avail    = (int)content.height - (int)TOP_MARGIN - pad * 2 - title_h;
 	int max_rows = avail / row_h;
 	if (max_rows < 1) max_rows = 1;
 	if (rows > max_rows) rows = max_rows;
 	if (rows < 1) rows = 1;
 
 	int height = pad * 2 + title_h + rows * row_h;
-	int x      = (screen_w - width) / 2;
-	int y      = (int)TOP_MARGIN;
+	int x      = (int)content.x + ((int)content.width - width) / 2;
+	int y      = (int)content.y + (int)TOP_MARGIN;
 	return { .x = (float)x, .y = (float)y, .width = (float)width, .height = (float)height };
 }
 
@@ -331,12 +333,18 @@ fn void draw_text(RLFont font, String text, float x, float y, float size, RLColo
 
 fn void Problems.draw(&self, RLFont font)
 {
-	if (!self.open) return;
+	if (!self.open)
+	{
+		self.motion.update(false);
+		return;
+	}
+	self.motion.update(true);
 
 	float s    = ui::scale();
 	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
-	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
+	panel.y -= self.motion.offset(ui::pxf(8.0f));
+	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	float icon_px = icons::icon_size(18);
 	icons::draw(
@@ -357,11 +365,21 @@ fn void Problems.draw(&self, RLFont font)
 			.panel_text);
 	};
 
-	float list_y = self.list_y();
+	float list_y = panel.y + (float)PADDING * s + TITLE_HEIGHT * s;
+	ui::separator_h({ .x = panel.x + 2.0f, .y = list_y - 1.0f, .width = panel.width - 4.0f, .height = 1.0f });
 	if (self.rows.len() == 0)
 	{
-		draw_text(font, "No problems", panel.x + (float)PADDING * s, list_y + 4.0f * s, 16.0f * ts, theme::current()
-			.panel_dim);
+		ui::empty_state(
+			font,
+			{
+				.x = panel.x + 2.0f,
+				.y = list_y,
+				.width = panel.width - 4.0f,
+				.height = panel.height - (list_y - panel.y)
+			},
+			"No problems",
+			"Diagnostics from the language server appear here"
+		);
 		return;
 	}
 
@@ -371,6 +389,9 @@ fn void Problems.draw(&self, RLFont font)
 	int shown = (int)self.rows.len() - self.scroll;
 	if (shown > max_rows) shown = max_rows;
 	rl::begin_scissor_mode((int)panel.x + 2, (int)list_y, (int)panel.width - 4, (int)((float)shown * row_h));
+	RLVector2 mouse = rl::get_mouse_position();
+	int hover_row   = self.row_at(mouse);
+	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 	for (int slot = 0; slot < max_rows; slot++)
 	{
 		int index = self.scroll + slot;
@@ -397,6 +418,18 @@ fn void Problems.draw(&self, RLFont font)
 				theme::current()
 				.panel_selected);
 		}
+		else if (index == hover_row)
+		{
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = row_y,
+					.width = panel.width - 4.0f,
+					.height = row_h,
+				},
+				pressed ? theme::current()
+				.panel_selected : theme::current().panel_bg_alt);
+		}
 		ProblemEntry* entry = self.entry_at(row.entry);
 		if (!entry) continue;
 		@pool()
@@ -420,6 +453,17 @@ fn void Problems.draw(&self, RLFont font)
 		};
 	}
 	rl::end_scissor_mode();
+	if ((int)self.rows.len() > max_rows)
+	{
+		Rect track = {
+			.x = panel.x + panel.width - (float)ui::px(5),
+			.y = list_y,
+			.width = (float)ui::px(3),
+			.height = (float)max_rows * row_h,
+		};
+		ui::draw_scrollbar(track, (float)self.rows.len(), (float)max_rows, (float)self.scroll, false, theme::current()
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
+	}
 }
 
 fn float text_width(RLFont font, String text)

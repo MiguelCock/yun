@@ -7,6 +7,7 @@ import yun::commands;
 import yun::editor;
 import yun::keymap;
 import yun::theme;
+import yun::topbar;
 import yun::ui;
 
 const float DEFAULT_HEIGHT = 220.0f;
@@ -161,15 +162,29 @@ fn void ConsolePanel.apply_settings(&self, ConsoleSettings settings)
 	}
 }
 
-fn Rect console_panel_rect(float height, int screen_w, int screen_h)
+fn Rect console_panel_rect(
+	float height,
+	int screen_w,
+	int screen_h,
+	float left_inset = 0.0f,
+	float right_inset = 0.0f,
+	float bottom_inset = 0.0f
+)
 {
 	float h     = ui::pxf(height);
 	float min_h = ui::pxf(MIN_HEIGHT);
-	float max_h = (float)screen_h - ui::pxf(MIN_HEIGHT);
+	float max_h = (float)screen_h - bottom_inset - ui::pxf(MIN_HEIGHT);
+	if (max_h < min_h) max_h = min_h;
 	if (h < min_h) h = min_h;
 	if (h > max_h) h = max_h;
-	if (h > (float)screen_h) h = (float)screen_h;
-	return { .x = 0.0f, .y = (float)screen_h - h, .width = (float)screen_w, .height = h };
+	float width = (float)screen_w - left_inset - right_inset;
+	if (width < 1.0f) width = 1.0f;
+	return {
+		.x = left_inset,
+		.y = (float)screen_h - bottom_inset - h,
+		.width = width,
+		.height = h,
+	};
 }
 
 fn int console_max_scroll(int lines, int visible)
@@ -273,7 +288,20 @@ fn String console_status_label(ConsoleStatus status)
 
 fn Rect ConsolePanel.rect(&self)
 {
-	return console_panel_rect(self.height, rl::get_screen_width(), rl::get_screen_height());
+	Rect content       = topbar::content_rect();
+	float screen_w     = (float)rl::get_screen_width();
+	float bottom_inset = topbar::position() == topbar::TopBarPosition.BOTTOM ? topbar::thickness_for(
+		topbar::TopBarPosition.BOTTOM
+	)
+		: 0.0f;
+	return console_panel_rect(
+		self.height,
+		rl::get_screen_width(),
+		rl::get_screen_height(),
+		content.x,
+		screen_w - content.x - content.width,
+		bottom_inset
+	);
 }
 
 fn bool ConsolePanel.contains_screen(&self, RLVector2 point)
@@ -839,10 +867,271 @@ fn void ConsolePanel.find_next(&self, Console* console, EditorMetrics metrics, i
 	self.pinned = false;
 }
 
+fn Rect ConsolePanel.terminal_rect(&self)
+{
+	Rect panel   = self.rect();
+	float header = ui::pxf(HEADER_HEIGHT);
+	return {
+		.x = panel.x + 1.0f,
+		.y = panel.y + header,
+		.width = panel.width - 2.0f,
+		.height = panel.height - header - 1.0f,
+	};
+}
+
+fn int terminal_cols(Rect area, EditorMetrics metrics)
+{
+	if (metrics.char_width <= 0.0f) return 80;
+	int cols = (int)(area.width / metrics.char_width);
+	return cols > 0 ? cols : 1;
+}
+
+fn int terminal_rows(Rect area, EditorMetrics metrics)
+{
+	if (metrics.line_height <= 0.0f) return 24;
+	int rows = (int)(area.height / metrics.line_height);
+	return rows > 0 ? rows : 1;
+}
+
+fn int terminal_encode(int codepoint, char[] buffer)
+{
+	if (codepoint < 0x80)
+	{
+		buffer[0] = (char)codepoint;
+		return 1;
+	}
+	if (codepoint < 0x800)
+	{
+		buffer[0] = (char)(0xC0 | (codepoint >> 6));
+		buffer[1] = (char)(0x80 | (codepoint & 0x3F));
+		return 2;
+	}
+	if (codepoint < 0x10000)
+	{
+		buffer[0] = (char)(0xE0 | (codepoint >> 12));
+		buffer[1] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+		buffer[2] = (char)(0x80 | (codepoint & 0x3F));
+		return 3;
+	}
+	buffer[0] = (char)(0xF0 | (codepoint >> 18));
+	buffer[1] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
+	buffer[2] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+	buffer[3] = (char)(0x80 | (codepoint & 0x3F));
+	return 4;
+}
+
+fn bool ConsolePanel.update_terminal_input(&self, Console* console, keymap::Keymap* keymap, EditorMetrics metrics)
+{
+	Rect area = self.terminal_rect();
+	int cols  = terminal_cols(area, metrics);
+	int rows  = terminal_rows(area, metrics);
+	if (!console.pty.running)
+	{
+		if (!console.start_terminal(cols, rows))
+		{
+			console.buffer.append_stderr(console.pty.error);
+			console.buffer.append_stderr("\n");
+			console.buffer.flush();
+			return false;
+		}
+	}
+	console.resize_terminal(cols, rows);
+
+	bool ctrl  = ctrl_down();
+	bool super = super_down();
+	if (ctrl && rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	{
+		self.exit_requested = true;
+		drain_chars();
+		return true;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+	{
+		console.pty.write("\x1b");
+		drain_chars();
+		return false;
+	}
+	if (ctrl && shift_down() && keymap.pressed((int)commands::CommandId.CONSOLE_COPY, commands::CTX_CONSOLE))
+	{
+		@pool()
+		{
+			String text = console.terminal.copy_text(tmem);
+			rl::set_clipboard_text(text.zstr_tcopy());
+		};
+		drain_chars();
+		return false;
+	}
+	if (ctrl && rl::is_key_pressed(rl::RLKeyboardKey.C))
+	{
+		console.pty.write("\x03");
+		drain_chars();
+		return false;
+	}
+	if (keymap.pressed((int)commands::CommandId.CONSOLE_PASTE, commands::CTX_CONSOLE))
+	{
+		String clip = rl::get_clipboard_text().str_view();
+		if (clip.len > 0) console.pty.write(clip);
+		drain_chars();
+		return false;
+	}
+	if (ctrl)
+	{
+		for (int i = 0; i < 26; i++)
+		{
+			if (i == 2 || i == 21) continue;
+			if (!rl::is_key_pressed((rl::RLKeyboardKey)(65 + i))) continue;
+			char[1] code = { (char)(i + 1) };
+			console.pty.write((String)code[0:1]);
+		}
+	}
+
+	if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER) || rl::is_key_pressed(rl::RLKeyboardKey.KP_ENTER))
+	{
+		console.pty.write("\r");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))
+	{
+		console.pty.write("\x7f");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.TAB) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.TAB))
+	{
+		console.pty.write(shift_down() ? "\x1b[Z" : "\t");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.DELETE))
+	{
+		console.pty.write("\x1b[3~");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.UP) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.UP))
+	{
+		console.pty.write("\x1b[A");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.DOWN) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.DOWN))
+	{
+		console.pty.write("\x1b[B");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.RIGHT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.RIGHT))
+	{
+		console.pty.write("\x1b[C");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.LEFT) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.LEFT))
+	{
+		console.pty.write("\x1b[D");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.HOME))
+	{
+		console.pty.write("\x1b[H");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.END))
+	{
+		console.pty.write("\x1b[F");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_UP))
+	{
+		console.pty.write("\x1b[5~");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.PAGE_DOWN))
+	{
+		console.pty.write("\x1b[6~");
+	}
+	else if (rl::is_key_pressed(rl::RLKeyboardKey.INSERT))
+	{
+		console.pty.write("\x1b[2~");
+	}
+
+	if (!ctrl && !super)
+	{
+		char[256] text;
+		int len       = 0;
+		int codepoint = rl::get_char_pressed();
+		while (codepoint != 0)
+		{
+			char[4] encoded;
+			int count = terminal_encode(codepoint, encoded[0:4]);
+			if (len + count <= (int)text.len)
+			{
+				for (int i = 0; i < count; i++) text[len + i] = encoded[i];
+				len += count;
+			}
+			codepoint = rl::get_char_pressed();
+		}
+		if (len > 0) console.pty.write((String)text[0:(usz)len]);
+	}
+	else
+	{
+		drain_chars();
+	}
+	return false;
+}
+
+fn bool same_color(RLColor a, RLColor b)
+{
+	return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+fn void ConsolePanel.draw_terminal(&self, Console* console, RLFont font, RLFont editor_font, EditorMetrics metrics)
+{
+	(void)font;
+	Rect area = self.terminal_rect();
+	int cols  = terminal_cols(area, metrics);
+	int rows  = terminal_rows(area, metrics);
+	console.resize_terminal(cols, rows);
+	console.terminal.resize(cols, rows);
+	float char_w = metrics.char_width > 0.0f ? metrics.char_width : 8.0f;
+	float line_h = metrics.line_height > 0.0f ? metrics.line_height : 16.0f;
+	float text_y = (line_h - metrics.font_size) * 0.5f;
+	rl::draw_rectangle_rec(area, console.terminal.default_bg);
+	rl::begin_scissor_mode((int)area.x, (int)area.y, (int)area.width, (int)area.height);
+	for (int y = 0; y < console.terminal.rows; y++)
+	{
+		for (int x = 0; x < console.terminal.cols; x++)
+		{
+			TermCell* cell = console.terminal.cell_at(x, y);
+			if (!cell) continue;
+			float px   = area.x + (float)x * char_w;
+			float py   = area.y + (float)y * line_h;
+			RLColor fg = cell.fg;
+			RLColor bg = cell.bg;
+			if ((cell.attrs & TERM_INVERSE) != 0)
+			{
+				RLColor tmp = fg;
+				fg = bg;
+				bg = tmp;
+			}
+			if (!same_color(bg, console.terminal.default_bg))
+			{
+				rl::draw_rectangle_rec({ .x = px, .y = py, .width = char_w, .height = line_h }, bg);
+			}
+			if (cell.len > 0)
+			{
+				rl::draw_text_ex(editor_font, (ZString)&cell.text[0], { px, py + text_y }, metrics.font_size, 0.0f, fg);
+			}
+		}
+	}
+	if (console.terminal.cursor_visible && self.focused)
+	{
+		RLColor caret = theme::current().editor_caret;
+		caret.a = 110;
+		rl::draw_rectangle_rec(
+			{
+				.x = area.x + (float)console.terminal.cursor_x * char_w,
+				.y = area.y + (float)console.terminal.cursor_y * line_h,
+				.width = char_w,
+				.height = line_h,
+			},
+			caret
+		);
+	}
+	rl::end_scissor_mode();
+}
+
 fn bool ConsolePanel.update_input(&self, Console* console, keymap::Keymap* keymap, EditorMetrics metrics)
 {
 	if (!self.visible) return false;
 	self.exit_requested = false;
+	if (console.pty_enabled && console.terminal_active)
+	{
+		return self.update_terminal_input(console, keymap, metrics);
+	}
 	bool ctrl  = ctrl_down();
 	bool super = super_down();
 
@@ -1169,8 +1458,13 @@ fn void ConsolePanel.update_mouse(
 	{
 		if (rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
 		{
-			float height = ((float)rl::get_screen_height() - mouse[1]) / ui::scale();
-			float max    = (float)rl::get_screen_height() / ui::scale() - MIN_HEIGHT;
+			Rect content       = topbar::content_rect();
+			float bottom_inset = topbar::position() == topbar::TopBarPosition.BOTTOM ? topbar::thickness_for(
+				topbar::TopBarPosition.BOTTOM
+			)
+				: 0.0f;
+			float height       = ((float)rl::get_screen_height() - bottom_inset - mouse[1]) / ui::scale();
+			float max          = content.height / ui::scale() - MIN_HEIGHT;
 			if (max < MIN_HEIGHT) max = MIN_HEIGHT;
 			self.height = math::clamp(height, MIN_HEIGHT, max);
 		}
@@ -1325,13 +1619,14 @@ fn void draw_console_line(RLFont font, EditorMetrics metrics, ConsoleLine* line,
 	}
 }
 
-fn void draw_button(RLFont font, Rect r, String label, bool enabled, bool hovered)
+fn void draw_button(RLFont font, Rect r, String label, bool enabled)
 {
-	RLColor bg = hovered && enabled ? theme::current().topbar_hover : theme::current().panel_field;
-	ui::row(r, bg);
+	ui::ControlState state = ui::control_state(r, enabled, false);
+	ui::row(r, ui::control_fill(state, theme::current()
+		.panel_field, theme::current().topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
 	float size     = (float)ui::tpx(13);
 	RLVector2 text = rl::measure_text_ex(font, (ZString)label.ptr, size, 0.0f);
-	RLColor color  = enabled ? theme::current().panel_text : theme::current().panel_disabled;
+	RLColor color  = ui::control_text(state, theme::current().panel_text, theme::current().panel_disabled);
 	rl::draw_text_ex(
 		font,
 		(ZString)label.ptr,
@@ -1369,10 +1664,11 @@ fn void ConsolePanel.draw(
 )
 {
 	if (!self.visible) return;
-	Rect panel  = self.rect();
-	Rect header = self.header_rect();
-	Rect output = self.output_rect();
-	Rect input  = self.input_rect();
+	Rect panel      = self.rect();
+	Rect header     = self.header_rect();
+	RLVector2 mouse = rl::get_mouse_position();
+	Rect output     = self.output_rect();
+	Rect input      = self.input_rect();
 
 	float radius = ui::corner_radius();
 	ui::rounded_top(panel, radius, theme::current().panel_bg);
@@ -1398,6 +1694,7 @@ fn void ConsolePanel.draw(
 		},
 		theme::current()
 		.panel_dim);
+	ui::separator_h({ .x = header.x, .y = header.y + header.height - 1.0f, .width = header.width, .height = 1.0f });
 
 	float title_size = (float)ui::tpx(14);
 	if (manager.sessions.len() <= 1)
@@ -1418,8 +1715,12 @@ fn void ConsolePanel.draw(
 		{
 			Rect tab = console_tab_rect(header, i);
 			if (tab.x + tab.width > header.x + header.width - ui::pxf(130.0f)) break;
-			bool active = i == manager.active;
-			ui::row(tab, active ? theme::current().panel_selected : theme::current().panel_field);
+			bool active            = i == manager.active;
+			ui::ControlState state = ui::control_state(tab, true, active);
+			ui::row(tab, ui::control_fill(state, active ? theme::current()
+				.panel_selected : theme::current()
+					.panel_field, theme::current()
+						.topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
 			String title = manager.sessions[i].title;
 			rl::draw_text_ex(
 				font,
@@ -1437,11 +1738,28 @@ fn void ConsolePanel.draw(
 				0.0f,
 				theme::current()
 				.panel_dim);
+			if (ui::pointer_in(tab, mouse))
+			{
+				if (console_tab_close_at(manager, header, mouse))
+				{
+					ui::tooltip_shortcut(
+						"Close Console Session",
+						commands::command_def(commands::CommandId.CONSOLE_CLOSE_SESSION)
+						.shortcut);
+				}
+				else
+				{
+					ui::tooltip_shortcut("Console Session", "");
+				}
+			}
 		}
 		Rect new_tab = console_new_tab_rect(manager, header);
 		if (new_tab.x + new_tab.width <= header.x + header.width - ui::pxf(130.0f))
 		{
-			ui::row(new_tab, theme::current().panel_field);
+			ui::ControlState state = ui::control_state(new_tab, true, false);
+			ui::row(new_tab, ui::control_fill(state, theme::current()
+				.panel_field, theme::current()
+					.topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
 			rl::draw_text_ex(
 				font,
 				"+",
@@ -1450,6 +1768,13 @@ fn void ConsolePanel.draw(
 				0.0f,
 				theme::current()
 				.panel_header);
+			if (ui::pointer_in(new_tab, mouse))
+			{
+				ui::tooltip_shortcut(
+					"New Console Session",
+					commands::command_def(commands::CommandId.CONSOLE_NEW_SESSION)
+					.shortcut);
+			}
 		}
 	}
 
@@ -1551,6 +1876,11 @@ fn void ConsolePanel.draw(
 		};
 	}
 
+	if (console.pty_enabled && console.terminal_active)
+	{
+		self.draw_terminal(console, font, editor_font, metrics);
+		return;
+	}
 	if (self.find_open) self.find_refresh(console);
 	int scroll        = self.scroll_for(console, metrics);
 	int visible       = self.visible_rows(metrics);
@@ -1559,6 +1889,10 @@ fn void ConsolePanel.draw(
 	self.output_scroll_x = console_clamp_hscroll(self.output_scroll_x, content, output_view);
 	rl::begin_scissor_mode((int)output.x, (int)output.y, (int)output.width, (int)output.height);
 	float text_x = output.x + ui::pxf(PADDING) - self.output_scroll_x;
+	if (console.buffer.line_count() == 0)
+	{
+		ui::empty_state(font, output, "Console is empty", "Type a command below and press Enter");
+	}
 
 	if (self.find_open && self.find_count > 0)
 	{
@@ -1622,42 +1956,33 @@ fn void ConsolePanel.draw(
 
 	if (content > output_view)
 	{
-		float track_x = output.x + ui::pxf(PADDING);
-		float track_y = output.y + output.height - ui::pxf(4.0f);
-		float track_w = output_view;
-		float thumb_w = track_w * output_view / content;
-		if (thumb_w < ui::pxf(24.0f)) thumb_w = ui::pxf(24.0f);
-		float max     = content - output_view;
-		float thumb_x = track_x;
-		if (max > 0.0f) thumb_x += (track_w - thumb_w) * self.output_scroll_x / max;
-		rl::draw_rectangle_rec(
-			{ .x = track_x, .y = track_y, .width = track_w, .height = ui::pxf(2.0f) },
-			theme::current()
-			.editor_scrollbar);
-		rl::draw_rectangle_rec(
-			{ .x = thumb_x, .y = track_y, .width = thumb_w, .height = ui::pxf(2.0f) },
-			theme::current()
-			.panel_dim);
+		Rect track = {
+			.x = output.x + ui::pxf(PADDING),
+			.y = output.y + output.height - ui::pxf(4.0f),
+			.width = output_view,
+			.height = ui::pxf(2.0f),
+		};
+		ui::draw_scrollbar(track, content, output_view, self.output_scroll_x, true, theme::current()
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
 	}
 
 	int max_scroll = console_max_scroll((int)console.buffer.line_count(), visible);
 	if (max_scroll > 0)
 	{
-		float track_x = panel.x + panel.width - ui::pxf(5.0f);
-		float track_y = output.y + ui::pxf(2.0f);
-		float track_h = output.height - ui::pxf(4.0f);
-		float thumb_h = track_h * (float)visible / (float)(visible + max_scroll);
-		if (thumb_h < ui::pxf(24.0f)) thumb_h = ui::pxf(24.0f);
-		float thumb_y = track_y;
-		if (max_scroll > 0) thumb_y += (track_h - thumb_h) * (float)scroll / (float)max_scroll;
-		rl::draw_rectangle_rec(
-			{ .x = track_x, .y = track_y, .width = ui::pxf(3.0f), .height = track_h },
+		Rect track = {
+			.x = panel.x + panel.width - ui::pxf(5.0f),
+			.y = output.y + ui::pxf(2.0f),
+			.width = ui::pxf(3.0f),
+			.height = output.height - ui::pxf(4.0f),
+		};
+		ui::draw_scrollbar(
+			track,
+			(float)console.buffer.line_count(),
+			(float)visible,
+			(float)scroll,
+			false,
 			theme::current()
-			.editor_scrollbar);
-		rl::draw_rectangle_rec(
-			{ .x = track_x, .y = thumb_y, .width = ui::pxf(3.0f), .height = thumb_h },
-			theme::current()
-			.panel_dim);
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
 	}
 
 	ui::row(input, theme::current().panel_field);
@@ -1734,13 +2059,10 @@ fn void ConsolePanel.draw(
 		.panel_caret);
 	rl::end_scissor_mode();
 
-	RLVector2 mouse = rl::get_mouse_position();
 	for (int i = 0; i < BUTTON_COUNT; i++)
 	{
 		ConsoleButton button = (ConsoleButton)i;
 		Rect r               = self.button_rect(button);
-		bool hovered         = mouse[0] >= r.x && mouse[0] <= r.x + r.width && mouse[1] >= r.y
-			&& mouse[1] <= r.y + r.height;
-		draw_button(font, r, button_label(button), self.button_enabled(button, console), hovered);
+		draw_button(font, r, button_label(button), self.button_enabled(button, console));
 	}
 }

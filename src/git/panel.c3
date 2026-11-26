@@ -7,6 +7,7 @@ import std::io::file;
 import std::math;
 import yun::canvas;
 import yun::theme;
+import yun::topbar;
 import yun::ui;
 
 const float PANEL_WIDTH   = 286.0f;
@@ -164,7 +165,9 @@ fn Rect Panel.rect(&self, Canvas* canvas)
 	float width  = self.width(canvas);
 	float height = (float)rl::get_screen_height() - canvas.top_inset - self.bottom_inset;
 	if (height < 0.0f) height = 0.0f;
-	return { .x = 0.0f, .y = canvas.top_inset, .width = width, .height = height };
+	float x = topbar::position() == topbar::TopBarPosition.LEFT ? topbar::thickness_for(topbar::TopBarPosition.LEFT)
+		: 0.0f;
+	return { .x = x, .y = canvas.top_inset, .width = width, .height = height };
 }
 
 fn bool Panel.contains_screen(&self, Canvas* canvas, RLVector2 point)
@@ -1402,8 +1405,10 @@ fn void draw_section(Rect row, String label, int count, float text_size)
 
 fn void draw_button(Rect rect, String label, bool enabled, float text_size)
 {
-	RLColor fill = enabled ? theme::current().panel_field : theme::current().panel_bg_alt;
-	RLColor text = enabled ? theme::current().panel_text : theme::current().panel_disabled;
+	ui::ControlState state = ui::control_state(rect, enabled, false);
+	RLColor fill = ui::control_fill(state, theme::current()
+		.panel_field, theme::current().topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt);
+	RLColor text = ui::control_text(state, theme::current().panel_text, theme::current().panel_disabled);
 	ui::rounded_rect(rect, ui::row_radius(), fill);
 	float width = rl::measure_text_ex(ui::font(), label.zstr_tcopy(), text_size, 0.0f)[0];
 	rl::draw_text_ex(
@@ -1710,14 +1715,14 @@ fn void Panel.draw_branch_picker(&self, State* git, Canvas* canvas, float text_s
 	rl::begin_scissor_mode((int)list.x, (int)list.y, (int)list.width, (int)list.height);
 	if (git.branches.len() == 0)
 	{
-		rl::draw_text_ex(
-			ui::font(),
-			git.branches_loaded ? "No local branches" : "Loading branches...",
-			{ list.x + ui::pxf(14.0f), list.y + ui::pxf(6.0f) },
-			(float)ui::tpx(13),
-			0.0f,
-			theme::current()
-			.panel_dim);
+		if (git.branches_loaded)
+		{
+			ui::empty_state(ui::font(), list, "No local branches", "Create a branch to get started.");
+		}
+		else
+		{
+			ui::loading_state(ui::font(), list, "Loading branches...");
+		}
 	}
 	int last = math::min(self.branch_scroll + self.branch_visible_rows(canvas), (int)git.branches.len());
 	for (int i = self.branch_scroll; i < last; i++)
@@ -1813,6 +1818,7 @@ fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
 		{ .x = panel.x, .y = panel.y, .width = panel.width, .height = header.height },
 		theme::current()
 		.panel_bg_alt);
+	ui::separator_h({ .x = header.x, .y = header.y + header.height - 1.0f, .width = header.width, .height = 1.0f });
 	rl::draw_text_ex(
 		ui::font(),
 		"SOURCE CONTROL",
@@ -1860,39 +1866,17 @@ fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
 	rl::begin_scissor_mode((int)list.x, (int)list.y, (int)list.width, (int)list.height);
 	if (!git.is_repo)
 	{
-		String message = git.error.kind == GitErrorKind.NONE ? "Open a Git repository to see changes."
-			: git.error.message;
-		rl::draw_text_ex(
-			ui::font(),
-			message.zstr_tcopy(),
-			{ list.x + ui::pxf(PAD), list.y + ui::pxf(PAD) },
-			(float)ui::tpx(13),
-			0.0f,
-			theme::current()
-			.panel_dim);
+		String message = git.error.kind == GitErrorKind.NONE ? "Not a Git repository" : git.error.message;
+		ui::empty_state(ui::font(), list, message, "Open a folder inside a Git repository.");
 	}
 	else if (!git.has_status)
 	{
-		rl::draw_text_ex(
-			ui::font(),
-			"Loading status...",
-			{ list.x + ui::pxf(PAD), list.y + ui::pxf(PAD) },
-			(float)ui::tpx(13),
-			0.0f,
-			theme::current()
-			.panel_dim);
+		ui::loading_state(ui::font(), list, "Loading status...");
 	}
 	else if (self.rows.len() == 0
 		|| (self.staged == 0 && self.changes == 0 && self.untracked == 0 && self.conflicts == 0))
 	{
-		rl::draw_text_ex(
-			ui::font(),
-			"No changes",
-			{ list.x + ui::pxf(PAD), list.y + ui::pxf(PAD) },
-			(float)ui::tpx(13),
-			0.0f,
-			theme::current()
-			.panel_dim);
+		ui::empty_state(ui::font(), list, "No changes", "The working tree is clean.");
 	}
 	else
 	{
@@ -1965,6 +1949,24 @@ fn void Panel.draw(&self, State* git, Canvas* canvas, float text_size)
 		}
 	}
 	rl::end_scissor_mode();
+	int visible_rows = self.visible_rows(canvas);
+	if ((int)self.rows.len() > visible_rows)
+	{
+		Rect track = {
+			.x = list.x + list.width - ui::pxf(4.0f),
+			.y = list.y,
+			.width = ui::pxf(3.0f),
+			.height = list.height,
+		};
+		ui::draw_scrollbar(
+			track,
+			(float)self.rows.len(),
+			(float)visible_rows,
+			(float)self.scroll,
+			false,
+			theme::current()
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
+	}
 
 	if (git.error.kind != GitErrorKind.NONE && git.is_repo)
 	{

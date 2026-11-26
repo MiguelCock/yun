@@ -35,6 +35,7 @@ enum IconKind : int
 	CHEVRON_DOWN,
 	CHEVRON_RIGHT,
 	GIT,
+	ARROWS,
 	COUNT,
 }
 
@@ -190,6 +191,8 @@ fn String codicon_name(IconKind icon)
 			return "chevron-right";
 		case IconKind.GIT:
 			return "source-control";
+		case IconKind.ARROWS:
+			return "references";
 		case IconKind.COUNT:
 			return "";
 	}
@@ -474,6 +477,13 @@ fn void draw(IconKind icon, Rect b, RLColor color)
 			rl::draw_circle_lines_v({ b.x + b.width * 0.25f, b.y + b.height * 0.35f }, b.width * 0.12f, color);
 			rl::draw_circle_lines_v({ b.x + b.width * 0.75f, b.y + b.height * 0.65f }, b.width * 0.12f, color);
 			seg(b, 0.34f, 0.42f, 0.66f, 0.58f, stroke, color);
+		case IconKind.ARROWS:
+			seg(b, 0.2f, 0.25f, 0.8f, 0.25f, stroke, color);
+			seg(b, 0.2f, 0.5f, 0.65f, 0.5f, stroke, color);
+			seg(b, 0.2f, 0.75f, 0.5f, 0.75f, stroke, color);
+			rl::draw_circle_v({ b.x + b.width * 0.86f, b.y + b.height * 0.25f }, stroke * 0.7f, color);
+			rl::draw_circle_v({ b.x + b.width * 0.71f, b.y + b.height * 0.5f }, stroke * 0.7f, color);
+			rl::draw_circle_v({ b.x + b.width * 0.56f, b.y + b.height * 0.75f }, stroke * 0.7f, color);
 		case IconKind.QUIT:
 			rl::draw_ring_lines(
 				{ b.x + b.width * 0.5f, b.y + b.height * 0.52f },

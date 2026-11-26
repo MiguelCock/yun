@@ -16,8 +16,11 @@ import yun::commands;
 import yun::editor;
 import yun::find;
 import yun::keymap;
+import yun::lsp;
+import yun::markdown;
 import yun::project;
 import yun::theme;
+import yun::topbar;
 import yun::ui;
 
 const int MAX_MATCHES_PER_FILE = 200;
@@ -99,6 +102,12 @@ struct Search
 	bool open;
 	char[QUERY_MAX] query;
 	usz query_len;
+	char[QUERY_MAX] replacement;
+	usz replace_len;
+	bool replace_open;
+	int field;
+	bool pending_replace;
+	bool pending_replace_all;
 	bool case_sensitive;
 	bool whole_word;
 	List{SearchGroup} groups;
@@ -303,6 +312,12 @@ fn void Search.init(&self, Allocator allocator)
 	self.open = false;
 	self.query_len = 0;
 	self.query[0] = 0;
+	self.replace_len = 0;
+	self.replacement[0] = 0;
+	self.replace_open = false;
+	self.field = 0;
+	self.pending_replace = false;
+	self.pending_replace_all = false;
 	self.case_sensitive = false;
 	self.whole_word = false;
 	self.groups.init(allocator);
@@ -332,7 +347,7 @@ fn void Search.clear_results(&self)
 	{
 		for (sz m = 0; m < self.groups[i].matches.len(); m++)
 		{
-			self.groups[i].matches[m].preview.free(self.allocator);
+			if (self.groups[i].matches[m].preview.len) self.groups[i].matches[m].preview.free(self.allocator);
 		}
 		self.groups[i].matches.free();
 		self.groups[i].path.free(self.allocator);
@@ -396,12 +411,30 @@ fn void Search.show(&self)
 	self.open = true;
 	self.query_len = 0;
 	self.query[0] = 0;
+	self.replace_len = 0;
+	self.replacement[0] = 0;
+	self.replace_open = false;
+	self.field = 0;
+	self.pending_replace = false;
+	self.pending_replace_all = false;
 	self.case_sensitive = false;
 	self.whole_word = false;
 	self.restart_pending = false;
 	self.hold_dir = 0;
 	self.cancel_run();
 	self.clear_results();
+}
+
+fn void Search.show_replace(&self)
+{
+	self.show();
+	self.replace_open = true;
+	self.field = 0;
+}
+
+fn String Search.replacement_view(&self)
+{
+	return (String)self.replacement[0:self.replace_len];
 }
 
 fn void Search.close(&self)
@@ -503,6 +536,130 @@ fn void Search.merge_batch(&self, SearchBatch* batch)
 		return;
 	}
 	free_batch(self.allocator, batch);
+}
+
+fn bool search_apply_file(
+	Search* self,
+	project::Project* project,
+	String path,
+	List{SearchMatch}* matches,
+	String replacement,
+	double now,
+	String* error,
+	int* replaced
+)
+{
+	int index = project.find_card(path);
+	if (index < 0)
+	{
+		*error = "File is no longer in the project";
+		return false;
+	}
+	FileCard* card = &project.cards[index];
+	bool was_open  = card.buffer != null;
+	editor::ensure_buffer(card, project.allocator);
+	if (!card.buffer || !card.history)
+	{
+		*error = "Could not load a matched file";
+		return false;
+	}
+	String query = self.query_view();
+	int changed  = 0;
+	for (sz i = matches.len(); i > 0; i--)
+	{
+		SearchMatch match = matches.get(i - 1);
+		usz line_start    = card.buffer.line_start(match.line);
+		usz start         = line_start + match.column;
+		if (start > card.buffer.length()) continue;
+		if (!find::match_at(card.buffer, start, query, self.case_sensitive, self.whole_word)) continue;
+		card.cursor = card.history.replace(card.buffer, start, query.len, replacement, now);
+		changed++;
+	}
+	if (changed == 0) return true;
+	if (card.cursor > card.buffer.length()) card.cursor = card.buffer.length();
+	card.selection_anchor = card.cursor;
+	card.dirty = true;
+	if (card.highlight) card.highlight.mark_dirty();
+	if (card.view) markdown::view_mark_dirty(card.view);
+	lsp::lsp_did_change((String)card.path, card.buffer);
+	if (!was_open)
+	{
+		if (!editor::save_buffer(card, project.allocator))
+		{
+			*error = "Could not write a closed matched file";
+			return false;
+		}
+		(void)editor::unload_buffer(card, project.allocator);
+	}
+	*replaced += changed;
+	return true;
+}
+
+fn bool Search.replace_current(&self, project::Project* project, double now, String* error)
+{
+	if (self.query_len == 0)
+	{
+		*error = "Type a search query first";
+		return false;
+	}
+	if (self.scanning)
+	{
+		*error = "Wait for the search to finish";
+		return false;
+	}
+	String path;
+	usz line;
+	usz column;
+	if (!self.match_at_index(self.selected, &path, &line, &column))
+	{
+		*error = "No search match selected";
+		return false;
+	}
+	int*? group_index = self.group_index.get_ref(path);
+	if (catch excuse = group_index) return false;
+	SearchGroup* group = &self.groups[*group_index];
+	for (sz m = 0; m < group.matches.len(); m++)
+	{
+		SearchMatch match = group.matches[m];
+		if (match.line != line || match.column != column) continue;
+		List{SearchMatch} one;
+		one.init(self.allocator);
+		one.push(match);
+		int replaced = 0;
+		bool ok      = search_apply_file(self, project, path, &one, self.replacement_view(), now, error, &replaced);
+		one.free();
+		if (ok) self.schedule_restart(now);
+		return ok;
+	}
+	return false;
+}
+
+fn int Search.replace_all_matches(&self, project::Project* project, double now, String* error, int* files)
+{
+	int replaced = 0;
+	*files = 0;
+	for (sz g = 0; g < self.groups.len(); g++)
+	{
+		SearchGroup* group = &self.groups[g];
+		if (group.matches.len() == 0) continue;
+		int before = replaced;
+		if (!search_apply_file(
+			self,
+			project,
+			group.path,
+			&group.matches,
+			self.replacement_view(),
+			now,
+			error,
+			&replaced
+		))
+		{
+			return replaced;
+		}
+		if (replaced > before) (*files)++;
+	}
+	if (replaced > 0) self.schedule_restart(now);
+	return replaced;
 }
 
 fn void Search.pump(&self, project::Project* project, double now)
@@ -685,14 +842,18 @@ fn SearchTarget Search.activate(&self)
 fn Rect Search.panel_rect(&self)
 {
 	float s      = ui::scale();
-	int screen_w = rl::get_screen_width();
-	int screen_h = rl::get_screen_height();
+	Rect content = topbar::content_rect();
 	float width  = 780.0f * s;
-	if (width > (float)screen_w - 24.0f) width = (float)screen_w - 24.0f;
+	if (width > content.width - 24.0f) width = content.width - 24.0f;
 	float height = 460.0f * s;
-	if (height > (float)screen_h - TOP_MARGIN - 24.0f) height = (float)screen_h - TOP_MARGIN - 24.0f;
+	if (height > content.height - TOP_MARGIN - 24.0f) height = content.height - TOP_MARGIN - 24.0f;
 	if (height < 120.0f) height = 120.0f;
-	return { .x = ((float)screen_w - width) / 2.0f, .y = TOP_MARGIN, .width = width, .height = height };
+	return {
+		.x = content.x + (content.width - width) / 2.0f,
+		.y = content.y + TOP_MARGIN,
+		.width = width,
+		.height = height
+	};
 }
 
 fn void Search.chip_rects(&self, Rect* case_rect, Rect* word_rect)
@@ -701,10 +862,24 @@ fn void Search.chip_rects(&self, Rect* case_rect, Rect* word_rect)
 	Rect panel = self.panel_rect();
 	float pad  = 10.0f * s;
 	float y    = panel.y + pad + 30.0f * s + 8.0f * s;
-	float h    = 22.0f * s;
-	float w    = 58.0f * s;
+	if (self.replace_open) y += 30.0f * s + 6.0f * s;
+	float h = 22.0f * s;
+	float w = 58.0f * s;
 	*case_rect = { .x = panel.x + pad, .y = y, .width = w, .height = h };
 	*word_rect = { .x = panel.x + pad + w + 6.0f * s, .y = y, .width = w, .height = h };
+}
+
+fn Rect Search.replace_rect(&self)
+{
+	float s    = ui::scale();
+	Rect panel = self.panel_rect();
+	float pad  = 10.0f * s;
+	return {
+		.x = panel.x + pad,
+		.y = panel.y + pad + 30.0f * s + 6.0f * s,
+		.width = panel.width - pad * 2.0f,
+		.height = 30.0f * s,
+	};
 }
 
 fn SearchTarget Search.update(&self, keymap::Keymap* keymap, project::Project* project, double now)
@@ -719,10 +894,38 @@ fn SearchTarget Search.update(&self, keymap::Keymap* keymap, project::Project* p
 		self.close();
 		return target;
 	}
+	if (keymap.pressed((int)commands::CommandId.SEARCH_REPLACE, commands::CTX_SEARCH))
+	{
+		self.consumed = true;
+		self.pending_replace = true;
+		return target;
+	}
+	if (keymap.pressed((int)commands::CommandId.SEARCH_REPLACE_ALL, commands::CTX_SEARCH))
+	{
+		self.consumed = true;
+		self.pending_replace_all = true;
+		return target;
+	}
+	if (rl::is_key_pressed(rl::RLKeyboardKey.TAB))
+	{
+		self.consumed = true;
+		if (!self.replace_open)
+		{
+			self.replace_open = true;
+			self.field = 1;
+		}
+		else
+		{
+			self.field = self.field == 0 ? 1 : 0;
+		}
+		return target;
+	}
 	if (keymap.pressed_repeat((int)commands::CommandId.LIST_ACCEPT, commands::CTX_SEARCH))
 	{
 		self.consumed = true;
-		return self.activate();
+		if (self.field == 0) return self.activate();
+		self.pending_replace = true;
+		return target;
 	}
 
 	int visible    = self.visible_rows();
@@ -772,29 +975,52 @@ fn SearchTarget Search.update(&self, keymap::Keymap* keymap, project::Project* p
 
 	if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))
 	{
-		if (self.query_len > 0)
+		if (self.field == 0)
 		{
-			self.query_len--;
-			self.query[self.query_len] = 0;
-			self.schedule_restart(now);
+			if (self.query_len > 0)
+			{
+				self.query_len--;
+				self.query[self.query_len] = 0;
+				self.schedule_restart(now);
+			}
+		}
+		else if (self.replace_len > 0)
+		{
+			self.replace_len--;
+			self.replacement[self.replace_len] = 0;
 		}
 	}
 
 	int codepoint = rl::get_char_pressed();
 	while (codepoint != 0)
 	{
-		if (codepoint >= 32 && codepoint <= 126 && self.query_len < QUERY_MAX)
+		if (codepoint >= 32 && codepoint <= 126)
 		{
-			self.query[self.query_len] = (char)codepoint;
-			self.query_len++;
-			self.query[self.query_len] = 0;
-			self.schedule_restart(now);
+			if (self.field == 0 && self.query_len < QUERY_MAX)
+			{
+				self.query[self.query_len] = (char)codepoint;
+				self.query_len++;
+				self.query[self.query_len] = 0;
+				self.schedule_restart(now);
+			}
+			else if (self.field == 1 && self.replace_len < QUERY_MAX)
+			{
+				self.replacement[self.replace_len] = (char)codepoint;
+				self.replace_len++;
+				self.replacement[self.replace_len] = 0;
+			}
 		}
 		codepoint = rl::get_char_pressed();
 	}
 
-	// Mouse: chips.
+	// Mouse: fields and chips.
 	RLVector2 mouse = rl::get_mouse_position();
+	float s_mouse   = ui::scale();
+	Rect query_rect = {
+		.x = self.panel_rect()
+		.x + 10.0f * s_mouse, .y = self.panel_rect()
+			.y + 10.0f * s_mouse, .width = self.panel_rect().width - 20.0f * s_mouse, .height = 30.0f * s_mouse, };
+	Rect replace_rect = self.replace_rect();
 	Rect case_rect;
 	Rect word_rect;
 	self.chip_rects(&case_rect, &word_rect);
@@ -802,6 +1028,16 @@ fn SearchTarget Search.update(&self, keymap::Keymap* keymap, project::Project* p
 	bool word_over = rect_contains(word_rect, mouse);
 	if (rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
 	{
+		if (rect_contains(query_rect, mouse))
+		{
+			self.field = 0;
+			return target;
+		}
+		if (self.replace_open && rect_contains(replace_rect, mouse))
+		{
+			self.field = 1;
+			return target;
+		}
 		if (case_over)
 		{
 			self.case_sensitive = !self.case_sensitive;
@@ -857,13 +1093,14 @@ fn void Search.draw(&self, RLFont font)
 	float s    = ui::scale();
 	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
-	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
+	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	float pad     = 10.0f * s;
 	float field_h = 30.0f * s;
 	Rect field    = { .x = panel.x + pad, .y = panel.y + pad, .width = panel.width - pad * 2.0f, .height = field_h };
 	ui::rounded_rect(field, ui::row_radius(), theme::current().panel_field);
-	ui::rounded_rect_lines(field, ui::row_radius(), 1.0f, theme::current().panel_border);
+	ui::rounded_rect_lines(field, ui::row_radius(), self.field == 0 ? 2.0f : 1.0f, self.field == 0 ? theme::current()
+		.topbar_hover : theme::current().panel_border);
 
 	String query  = self.query_view();
 	float query_w = text_width(font, query, 15.0f * ts);
@@ -873,7 +1110,7 @@ fn void Search.draw(&self, RLFont font)
 		draw_text(font, "Search in project...", field.x + 6.0f * s, field.y + 7.0f * s, 15.0f * ts, theme::current()
 			.panel_dim);
 	}
-	else
+	else if (self.field == 0)
 	{
 		rl::draw_rectangle(
 			(int)(field.x + 6.0f * s + query_w + 1.0f),
@@ -882,6 +1119,37 @@ fn void Search.draw(&self, RLFont font)
 			(int)(16.0f * s),
 			theme::current()
 			.panel_caret);
+	}
+
+	if (self.replace_open)
+	{
+		Rect replace = self.replace_rect();
+		ui::rounded_rect(replace, ui::row_radius(), theme::current().panel_field);
+		ui::rounded_rect_lines(
+			replace,
+			ui::row_radius(),
+			self.field == 1 ? 2.0f : 1.0f,
+			self.field == 1 ? theme::current()
+			.topbar_hover : theme::current().panel_border);
+		String replacement    = self.replacement_view();
+		RLColor replace_color = self.field == 1 ? theme::current().panel_text : theme::current().panel_dim;
+		draw_text(font, replacement, replace.x + 6.0f * s, replace.y + 7.0f * s, 15.0f * ts, replace_color);
+		if (replacement.len == 0)
+		{
+			draw_text(font, "Replace with...", replace.x + 6.0f * s, replace.y + 7.0f * s, 15.0f * ts, theme::current()
+				.panel_dim);
+		}
+		if (self.field == 1)
+		{
+			float rw = text_width(font, replacement, 15.0f * ts);
+			rl::draw_rectangle(
+				(int)(replace.x + 6.0f * s + rw + 1.0f),
+				(int)(replace.y + 6.0f * s),
+				2,
+				(int)(16.0f * s),
+				theme::current()
+				.panel_caret);
+		}
 	}
 
 	Rect case_rect;
@@ -915,10 +1183,14 @@ fn void Search.draw(&self, RLFont font)
 	};
 
 	float list_y = self.list_y();
+	ui::separator_h({ .x = panel.x + 2.0f, .y = list_y - 1.0f, .width = panel.width - 4.0f, .height = 1.0f });
 	float list_h = panel.y + panel.height - list_y - pad;
 	if (list_h < 0.0f) list_h = 0.0f;
-	float row_h    = 20.0f * s;
-	float header_h = 22.0f * s;
+	float row_h     = 20.0f * s;
+	float header_h  = 22.0f * s;
+	RLVector2 mouse = rl::get_mouse_position();
+	int hover_row   = self.row_at_mouse(mouse);
+	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 
 	int ordinal = 0;
 	int flat    = 0;
@@ -958,6 +1230,18 @@ fn void Search.draw(&self, RLFont font)
 						theme::current()
 						.panel_selected);
 				}
+				else if (flat == hover_row)
+				{
+					ui::row(
+						{
+							.x = panel.x + 2.0f,
+							.y = y,
+							.width = panel.width - 4.0f,
+							.height = row_h,
+						},
+						pressed ? theme::current()
+						.panel_selected : theme::current().panel_bg_alt);
+				}
 				@pool()
 				{
 					String label = string::format(
@@ -982,6 +1266,33 @@ fn void Search.draw(&self, RLFont font)
 		}
 	}
 	rl::end_scissor_mode();
+	if (query.len > 0 && self.total_matches == 0 && !self.scanning)
+	{
+		ui::empty_state(
+			font,
+			{ .x = panel.x + 2.0f, .y = list_y, .width = panel.width - 4.0f, .height = list_h },
+			"No matches",
+			"Try a different query or toggle Case/Word"
+		);
+	}
+	int visible_rows = self.visible_rows();
+	if ((int)self.total_matches > visible_rows)
+	{
+		Rect track = {
+			.x = panel.x + panel.width - (float)ui::px(5),
+			.y = list_y,
+			.width = (float)ui::px(3),
+			.height = list_h,
+		};
+		ui::draw_scrollbar(
+			track,
+			(float)self.total_matches,
+			(float)visible_rows,
+			(float)self.scroll,
+			false,
+			theme::current()
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
+	}
 }
 
 fn void draw_chip(RLFont font, Rect r, String label, bool on, float s)

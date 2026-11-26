@@ -71,3 +71,33 @@ fn void test_research_and_navigation()
 		t.destroy();
 	};
 }
+fn void test_backward_and_repeat()
+{
+	@pool()
+	{
+		PieceTable t;
+		t.init_from_buffer(tmem, "aXbXcX");
+
+		FindBar b;
+		b.init(tmem);
+		b.open_for_direction(find::FindField.QUERY, true);
+		b.append_codepoint('X');
+		b.research(&t);
+		assert(b.backward);
+		assert(b.vim_search);
+		assert(b.total == 3);
+		assert(b.current == 2);
+		assert(b.current_start() == 5);
+
+		usz start = 0;
+		assert(b.repeat(&t, 5, false, &start));
+		assert(start == 3);
+		assert(b.repeat(&t, 1, false, &start));
+		assert(start == 5);
+		assert(b.repeat(&t, 1, true, &start));
+		assert(start == 3);
+
+		b.destroy();
+		t.destroy();
+	};
+}

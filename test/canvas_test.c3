@@ -375,3 +375,74 @@ fn void test_snap_value()
 	assert(snap_value(-9.0f, 16.0f) == -16.0f);
 	assert(snap_value(10.0f, 0.0f) == 10.0f);
 }
+fn void test_usable_rect_with_insets()
+{
+	Rect r = usable_rect_for(1000.0f, 800.0f, 34.0f, 20.0f, 120.0f, 40.0f);
+	assert(r.x == 120.0f && r.y == 34.0f);
+	assert(r.width == 840.0f && r.height == 746.0f);
+
+	Rect clamped = usable_rect_for(100.0f, 80.0f, 60.0f, 60.0f, 60.0f, 60.0f);
+	assert(clamped.width == 0.0f && clamped.height == 0.0f);
+}
+
+fn void test_edge_pan_respects_insets()
+{
+	RLVector2 inside = { 500.0f, 400.0f };
+	RLVector2 d      = edge_pan_delta(inside, 1000.0f, 800.0f, 34.0f, 48.0f, 900.0f, 1.0f, 0.1f, 20.0f, 120.0f, 40.0f);
+	assert(d[0] == 0.0f && d[1] == 0.0f);
+
+	d = edge_pan_delta({ 130.0f, 400.0f }, 1000.0f, 800.0f, 34.0f, 48.0f, 900.0f, 1.0f, 0.1f, 20.0f, 120.0f, 40.0f);
+	assert(d[0] < 0.0f);
+	d = edge_pan_delta({ 970.0f, 400.0f }, 1000.0f, 800.0f, 34.0f, 48.0f, 900.0f, 1.0f, 0.1f, 20.0f, 120.0f, 40.0f);
+	assert(d[0] > 0.0f);
+	d = edge_pan_delta({ 500.0f, 40.0f }, 1000.0f, 800.0f, 34.0f, 48.0f, 900.0f, 1.0f, 0.1f, 20.0f, 120.0f, 40.0f);
+	assert(d[1] < 0.0f);
+	d = edge_pan_delta({ 500.0f, 770.0f }, 1000.0f, 800.0f, 34.0f, 48.0f, 900.0f, 1.0f, 0.1f, 20.0f, 120.0f, 40.0f);
+	assert(d[1] > 0.0f);
+}
+
+fn void test_fit_zoom_uses_all_insets()
+{
+	Canvas c;
+	c.top_inset = 34.0f;
+	c.bottom_inset = 20.0f;
+	c.left_inset = 120.0f;
+	c.right_inset = 40.0f;
+	Rect content = { .x = 0.0f, .y = 0.0f, .width = 1000.0f, .height = 800.0f };
+	c.fit_zoom(content, 1200, 900);
+	Rect usable         = usable_rect_for(1200.0f, 900.0f, 34.0f, 20.0f, 120.0f, 40.0f);
+	float expected_x    = (usable.width - 80.0f) / content.width;
+	float expected_y    = (usable.height - 80.0f) / content.height;
+	float expected_zoom = math::min(expected_x, expected_y);
+	if (expected_zoom > FIT_MAX_ZOOM) expected_zoom = FIT_MAX_ZOOM;
+	assert(math::is_approx(c.target.zoom, expected_zoom, 0.001f));
+}
+fn void test_zoom_at_uses_target_camera_anchor()
+{
+	Canvas c = { };
+	c.camera = {
+		.offset = { 500.0f, 400.0f },
+		.target = { 0.0f, 0.0f },
+		.rotation = 0.0f,
+		.zoom = 1.0f,
+	};
+	c.target = c.camera;
+	RLVector2 anchor = { 600.0f, 400.0f };
+	RLVector2 before = screen_to_world_camera(c.target, anchor);
+	c.zoom_at(1.0f, anchor);
+	RLVector2 after = screen_to_world_camera(c.target, anchor);
+	assert(math::is_approx(before[0], after[0], 0.001f));
+	assert(math::is_approx(before[1], after[1], 0.001f));
+	assert(!c.following);
+}
+
+fn void test_follow_center_and_unfollow()
+{
+	Canvas c = { };
+	c.target.target = { 0.0f, 0.0f };
+	c.follow({ 120.0f, 80.0f });
+	assert(c.following);
+	assert(c.target.target[0] == 120.0f && c.target.target[1] == 80.0f);
+	c.key_pan({ 10.0f, 0.0f });
+	assert(!c.following);
+}

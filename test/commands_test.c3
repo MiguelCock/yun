@@ -2,7 +2,7 @@ module yun::commands @test;
 
 fn void test_command_defs()
 {
-	assert(command_count() == 121);
+	assert(command_count() == 127);
 
 	CommandDef new_file = command_def(CommandId.NEW_FILE);
 	assert(new_file.label.compare_to("New") == 0);
@@ -153,13 +153,15 @@ fn void test_command_from_name()
 
 fn void test_bar_commands()
 {
-	assert(bar_command_count() == 6);
+	assert(bar_command_count() == 8);
 	assert(bar_command(0).id == CommandId.NEW_FILE);
 	assert(bar_command(1).id == CommandId.OPEN);
 	assert(bar_command(2).id == CommandId.SAVE);
-	assert(bar_command(3).id == CommandId.TOGGLE_SCM);
-	assert(bar_command(4).id == CommandId.TOGGLE_CONSOLE);
-	assert(bar_command(5).id == CommandId.TOGGLE_SETTINGS);
+	assert(bar_command(3).id == CommandId.SEARCH_REPLACE_PROJECT);
+	assert(bar_command(4).id == CommandId.TOGGLE_SCM);
+	assert(bar_command(5).id == CommandId.TOGGLE_CONSOLE);
+	assert(bar_command(6).id == CommandId.TOGGLE_ARROWS_OVERLAY);
+	assert(bar_command(7).id == CommandId.TOGGLE_SETTINGS);
 }
 
 fn void test_command_enabled()

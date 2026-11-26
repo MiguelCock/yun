@@ -79,6 +79,16 @@ jobs:
         shell: pwsh
         run: scripts/build-tree-sitter-windows.ps1 -Target "${{ matrix.target }}"
 
+      - name: Build Lua (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ "${{ matrix.target }}" = "linux-x64" ]; then
+            CC=cc scripts/build-lua.sh "${{ matrix.target }}"
+          else
+            CC=clang scripts/build-lua.sh "${{ matrix.target }}"
+          fi
+
       - name: Build yun
         shell: bash
         run: '"$C3C" build -O2'
@@ -137,6 +147,7 @@ jobs:
             $libs = Join-Path $_.FullName "linked-libs/$target/*.dll"
             if (Test-Path $libs) { Copy-Item $libs $grammarDest }
           }
+          Copy-Item "lib/lua54.c3l/linked-libs/$target/lua54.dll" "$dist/lua54.dll"
           Copy-Item "LICENSE", "README.md" $dist
           Compress-Archive -Path $dist -DestinationPath "$name.zip" -Force
           $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
@@ -179,6 +190,21 @@ jobs:
       - name: Combine checksums
         run: cat artifacts/*.sha256 > checksums.txt
 
+      - name: Select release notes
+        run: |
+          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then
+            cp "$notes" release-body.md
+          else
+            {
+              echo "Prebuilt Yun binaries for ${GITHUB_REF_NAME}."
+              echo
+              echo "Download and extract the archive for your platform, then run yun"
+              echo "(yun.exe on Windows) from the extracted folder."
+              echo "Checksums are in checksums.txt."
+            } > release-body.md
+          fi
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -187,11 +213,4 @@ jobs:
             artifacts/*.tar.gz
             artifacts/*.zip
             checksums.txt
-          body: |
-            Prebuilt Yun binaries for ${{ github.ref_name }}.
-
-            Download and extract the archive for your platform, then run `yun`
-            (`yun.exe` on Windows) from the extracted folder.
-
-            Note: Lua mods (#33) are not wired up yet; when they are, they will
-            require a system Lua 5.4.
+          body_path: release-body.md

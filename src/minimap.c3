@@ -8,6 +8,7 @@ import yun::editor;
 import yun::project;
 import yun::text;
 import yun::theme;
+import yun::topbar;
 import yun::ui;
 
 const int MINIMAP_WIDTH            = 220;
@@ -44,11 +45,12 @@ fn void set_settings(MinimapSettings value)
 
 fn Rect minimap_panel(int screen_w, int screen_h)
 {
-	int width  = (int)math::round((float)MINIMAP_WIDTH * g_minimap_settings.size);
-	int height = (int)math::round((float)MINIMAP_HEIGHT * g_minimap_settings.size);
+	int width    = (int)math::round((float)MINIMAP_WIDTH * g_minimap_settings.size);
+	int height   = (int)math::round((float)MINIMAP_HEIGHT * g_minimap_settings.size);
+	Rect content = topbar::content_rect();
 	return {
-		.x = (float)(screen_w - width - MINIMAP_MARGIN),
-		.y = (float)(screen_h - height - MINIMAP_MARGIN),
+		.x = content.x + content.width - width - MINIMAP_MARGIN,
+		.y = content.y + content.height - height - MINIMAP_MARGIN,
 		.width = (float)width,
 		.height = (float)height,
 	};

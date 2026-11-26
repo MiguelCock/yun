@@ -1,8 +1,10 @@
 module yun::notify;
 
 import raylib6::rl;
+import std::math::geometry;
 import std::collections::list;
 import yun::theme;
+import yun::topbar;
 import yun::ui;
 
 const float NOTICE_TTL  = 4.0f;
@@ -74,18 +76,19 @@ fn void Notifier.update(&self, float dt)
 
 fn void Notifier.draw(&self)
 {
-	int height  = ui::px(NOTICE_HEIGHT);
-	int margin  = ui::px(10);
-	bool right  = self.position == 1 || self.position == 3;
-	bool bottom = self.position >= 2;
-	float y     = bottom ? (float)(rl::get_screen_height() - height - margin) : (float)margin;
+	int height   = ui::px(NOTICE_HEIGHT);
+	int margin   = ui::px(10);
+	bool right   = self.position == 1 || self.position == 3;
+	bool bottom  = self.position >= 2;
+	Rect content = topbar::content_rect();
+	float y      = bottom ? content.y + content.height - (float)height - (float)margin : content.y + (float)margin;
 	foreach (Notice notice : self.items)
 	{
 		@pool()
 		{
 			float size  = (float)ui::tpx(NOTICE_HEIGHT - 8);
 			float width = rl::measure_text_ex(ui::font(), notice.text.zstr_tcopy(), size, 0.0f)[0] + (float)ui::px(16);
-			float x     = right ? (float)rl::get_screen_width() - width - (float)margin : (float)margin;
+			float x     = right ? content.x + content.width - width - (float)margin : content.x + (float)margin;
 			ui::rounded_rect(
 				{ .x = x, .y = y, .width = width, .height = (float)height },
 				ui::corner_radius(),

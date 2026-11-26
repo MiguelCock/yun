@@ -4,20 +4,26 @@ import raylib6::rl;
 import std::atomic::types;
 import std::collections::list;
 import std::collections::map;
+import std::core::dstring;
 import std::core::mem::alloc;
 import std::io::file;
+import std::io::path;
 import std::math::geometry;
 import std::os;
 import std::thread;
 import std::thread::channel;
+import std::time;
 import tree_sitter;
+import yun::card;
 import yun::commands;
 import yun::editor;
+import yun::index_cache;
 import yun::language;
 import yun::lsp;
 import yun::keymap;
 import yun::project;
 import yun::theme;
+import yun::topbar;
 import yun::ui;
 
 enum SymbolKind : int
@@ -109,6 +115,10 @@ struct Symbols
 	int selected;
 	int scroll;
 	bool consumed;
+	bool auto_scan;
+	bool cache_dirty;
+	double cache_dirty_at;
+	ui::Motion motion;
 }
 
 fn TSQuery* make_query(language::Language language, String text)
@@ -275,6 +285,13 @@ fn void symbol_worker(void* arg)
 	alloc::free(symbols.allocator, work);
 }
 
+fn CardSymbols* Symbols.file_for_path(&self, String path)
+{
+	int*? entry = self.file_index.get_ref(path);
+	if (catch excuse = entry) return null;
+	return &self.files[*entry];
+}
+
 fn void Symbols.clear_files(&self)
 {
 	for (sz i = 0; i < self.files.len(); i++)
@@ -342,6 +359,9 @@ fn void Symbols.init(&self, Allocator allocator)
 	self.selected = 0;
 	self.scroll = 0;
 	self.consumed = false;
+	self.auto_scan = false;
+	self.cache_dirty = false;
+	self.cache_dirty_at = 0.0;
 	self.results = null;
 	self.pool_ready = false;
 	self.init_pool();
@@ -396,6 +416,262 @@ fn void Symbols.set_root(&self, String root)
 	self.root = root.copy(self.allocator);
 }
 
+const String SYMBOLS_CACHE_MAGIC = "YUNSYMT1";
+
+fn String cache_abs_path(Allocator allocator, String root, String relative)
+{
+	if (relative.len == 0) return "";
+	Path? appended = ((Path)root).append(allocator, relative);
+	if (catch excuse = appended) return "";
+	return (String)appended;
+}
+
+fn String cache_rel_path(Allocator allocator, String root, String absolute)
+{
+	if (!project::path_is_inside(root, absolute) || absolute.len <= root.len) return "";
+	return absolute[root.len + 1..].copy(allocator);
+}
+
+fn void free_symbol_list(Allocator allocator, List{Symbol}* symbols)
+{
+	for (sz i = 0; i < symbols.len(); i++)
+	{
+		if (symbols.get_ref(i).name.len) symbols.get_ref(i).name.free(allocator);
+	}
+	symbols.clear();
+}
+
+fn bool Symbols.load_cache(&self, project::Project* project)
+{
+	HashMap{String, int} card_paths;
+	card_paths.init(tmem);
+	for (sz i = 0; i < project.cards.len(); i++)
+	{
+		card_paths.set((String)project.cards[i].path, (int)i);
+	}
+
+	index_cache::CacheFile cache;
+	@pool()
+	{
+		String dir  = string::format(tmem, "%s/.yun/cache", project.root);
+		String path = string::format(tmem, "%s/symbols.bin", dir);
+		if (!index_cache::load_file(self.allocator, path, SYMBOLS_CACHE_MAGIC, index_cache::query_stamp(), &cache))
+		{
+			card_paths.free();
+			return false;
+		}
+	};
+
+	for (uint record = 0; record < cache.records; record++)
+	{
+		String relative = "";
+		ulong mtime_cached;
+		ulong size_cached;
+		char cached_language;
+		ulong symbol_count;
+		if (!cache.reader.string(
+			self.allocator,
+			&relative
+		) || !cache.reader.read_u64(
+			&mtime_cached
+		) || !cache.reader.read_u64(
+			&size_cached
+		) || !cache.reader.u8(&cached_language) || !cache.reader.varint(&symbol_count))
+		{
+			if (relative.len) relative.free(self.allocator);
+			cache.destroy(self.allocator);
+			card_paths.free();
+			return false;
+		}
+
+		String absolute =  cache_abs_path(self.allocator, (String)project.root, relative);
+		bool valid      =  false;
+		int card_index  = -1;
+		if (absolute.len > 0)
+		{
+			int*? found = card_paths.get_ref(absolute);
+			if (try hit = found)
+			{
+				card_index = *hit;
+				valid = card_index >= 0 && card_index < (int)project.cards.len() && !project.cards[card_index].dirty
+					&& !project.cards[card_index].missing
+					&& (int)cached_language == (int)language::language_for_path(
+					absolute
+				);
+			}
+		}
+		if (valid)
+		{
+			long? size = file::get_size(absolute);
+			if (catch excuse = size)
+			{
+				valid = false;
+			}
+			else
+			{
+				Time? mtime = file::last_modified(absolute);
+				if (catch mtime_excuse = mtime)
+				{
+					valid = false;
+				}
+				else
+				{
+					valid = (ulong)mtime == mtime_cached && (ulong)size == size_cached;
+				}
+			}
+		}
+
+		List{Symbol} symbols;
+		symbols.init(self.allocator);
+		bool parsed = true;
+		for (ulong s = 0; s < symbol_count; s++)
+		{
+			String name = "";
+			char kind;
+			ulong line;
+			ulong column;
+			if (!cache.reader.string(
+				self.allocator,
+				&name
+			) || !cache.reader.u8(&kind) || !cache.reader.varint(&line) || !cache.reader.varint(&column))
+			{
+				if (name.len) name.free(self.allocator);
+				parsed = false;
+				break;
+			}
+			symbols.push(
+				{
+					.name = name,
+					.kind = (SymbolKind)kind,
+					.line = (usz)line,
+					.column = (usz)column,
+				}
+			);
+		}
+		if (!parsed)
+		{
+			free_symbol_list(self.allocator, &symbols);
+			symbols.free();
+			if (absolute.len) absolute.free(self.allocator);
+			if (relative.len) relative.free(self.allocator);
+			cache.destroy(self.allocator);
+			card_paths.free();
+			return false;
+		}
+
+		if (valid)
+		{
+			self.store(absolute, &symbols);
+		}
+		else
+		{
+			free_symbol_list(self.allocator, &symbols);
+			symbols.free();
+		}
+		if (absolute.len) absolute.free(self.allocator);
+		if (relative.len) relative.free(self.allocator);
+	}
+	cache.destroy(self.allocator);
+	card_paths.free();
+	return true;
+}
+
+fn void Symbols.save_cache(&self, project::Project* project)
+{
+	HashMap{String, int} card_paths;
+	card_paths.init(tmem);
+	for (sz i = 0; i < project.cards.len(); i++)
+	{
+		card_paths.set((String)project.cards[i].path, (int)i);
+	}
+
+	DString body;
+	body.init(self.allocator, 4096);
+	uint count = 0;
+	for (sz i = 0; i < self.files.len(); i++)
+	{
+		CardSymbols* file = &self.files[i];
+		int*? card_index  = card_paths.get_ref(file.path);
+		if (catch excuse = card_index) continue;
+		if (*card_index < 0 || *card_index >= (int)project.cards.len()) continue;
+		FileCard* card = &project.cards[*card_index];
+		if (card.dirty || card.missing) continue;
+
+		String relative = cache_rel_path(self.allocator, (String)project.root, file.path);
+		if (relative.len == 0) continue;
+		long? size = file::get_size(file.path);
+		if (catch excuse = size)
+		{
+			relative.free(self.allocator);
+			continue;
+		}
+		Time? mtime = file::last_modified(file.path);
+		if (catch mtime_excuse = mtime)
+		{
+			relative.free(self.allocator);
+			continue;
+		}
+		index_cache::write_string(&body, relative);
+		index_cache::write_u64(&body, (ulong)mtime);
+		index_cache::write_u64(&body, (ulong)size);
+		index_cache::write_u8(&body, (char)language::language_for_path(file.path));
+		index_cache::write_varint(&body, (ulong)file.symbols.len());
+		for (sz s = 0; s < file.symbols.len(); s++)
+		{
+			index_cache::write_string(&body, file.symbols[s].name);
+			index_cache::write_u8(&body, (char)file.symbols[s].kind);
+			index_cache::write_varint(&body, (ulong)file.symbols[s].line);
+			index_cache::write_varint(&body, (ulong)file.symbols[s].column);
+		}
+		relative.free(self.allocator);
+		count++;
+	}
+	if (count == 0)
+	{
+		body.free();
+		card_paths.free();
+		return;
+	}
+	@pool()
+	{
+		String dir  = string::format(tmem, "%s/.yun/cache", project.root);
+		String path = string::format(tmem, "%s/symbols.bin", dir);
+		if (catch excuse = path::mkdir((Path)dir, recursive: true))
+		{
+			body.free();
+			card_paths.free();
+			return;
+		}
+		String view = body.str_view();
+		(void)index_cache::save_file(
+			self.allocator,
+			path,
+			SYMBOLS_CACHE_MAGIC,
+			index_cache::query_stamp(),
+			count,
+			view.ptr[0:view.len]
+		);
+	};
+	body.free();
+	card_paths.free();
+}
+
+fn void Symbols.defer_project(&self, project::Project* project)
+{
+	self.clear_files();
+	self.set_root((String)project.root);
+	self.known_cards = (usz)project.cards.len();
+	self.generation++;
+	self.scanning = false;
+	self.pending = 0;
+	self.received = 0;
+	self.dirty = true;
+	self.clear_pending_edit();
+	self.auto_scan = false;
+	self.cache_dirty = false;
+	self.cache_dirty_at = 0.0;
+}
+
 fn void Symbols.start_scan(&self, project::Project* project)
 {
 	self.clear_files();
@@ -409,6 +685,11 @@ fn void Symbols.start_scan(&self, project::Project* project)
 	self.dirty = true;
 	self.clear_pending_edit();
 
+	bool cache_ok = self.load_cache(project);
+	if (!cache_ok) self.clear_files();
+	self.cache_dirty = false;
+	self.cache_dirty_at = 0.0;
+
 	if (!self.pool_ready) return;
 
 	@pool()
@@ -420,6 +701,7 @@ fn void Symbols.start_scan(&self, project::Project* project)
 			String path = (String)project.cards[i].path;
 			if (seen.has_key(path)) continue;
 			seen.set(path, 0);
+			if (self.file_index.has_key(path)) continue;
 			language::Language language = language::language_for_path(path);
 			if (language == language::Language.NONE) continue;
 
@@ -442,11 +724,13 @@ fn void Symbols.start_scan(&self, project::Project* project)
 
 fn void Symbols.sync(&self, project::Project* project)
 {
+	if (!self.auto_scan) return;
 	if (self.known_cards != (usz)project.cards.len()) self.start_scan(project);
 }
 
 fn void Symbols.note_edit(&self, String path, double now)
 {
+	if (!self.auto_scan) return;
 	if (self.pending_path.compare_to(path) != 0)
 	{
 		if (self.pending_path.len) self.pending_path.free(self.allocator);
@@ -555,12 +839,16 @@ fn void Symbols.store(&self, String path, List{Symbol}* symbols)
 		entry.symbols = *symbols;
 		self.files.push(entry);
 		self.file_index.set(entry.path, (int)(self.files.len() - 1));
+		self.cache_dirty = true;
+		self.cache_dirty_at = rl::get_time();
 		return;
 	}
 	CardSymbols* entry = &self.files[*existing];
 	for (sz i = 0; i < entry.symbols.len(); i++) entry.symbols[i].name.free(self.allocator);
 	entry.symbols.free();
 	entry.symbols = *symbols;
+	self.cache_dirty = true;
+	self.cache_dirty_at = rl::get_time();
 }
 
 fn void Symbols.flush_edits(&self, project::Project* project, double now)
@@ -594,6 +882,7 @@ fn void Symbols.free_batch(&self, SymbolBatch* batch)
 
 fn void Symbols.pump(&self, project::Project* project, double now)
 {
+	if (!self.auto_scan) return;
 	self.sync(project);
 	self.flush_edits(project, now);
 
@@ -619,6 +908,11 @@ fn void Symbols.pump(&self, project::Project* project, double now)
 		}
 	}
 	if (self.scanning && self.received >= self.pending) self.scanning = false;
+	if (self.cache_dirty && !self.scanning && now - self.cache_dirty_at >= 1.5)
+	{
+		self.save_cache(project);
+		self.cache_dirty = false;
+	}
 }
 
 fn void Symbols.refilter(&self)
@@ -669,7 +963,20 @@ fn SymbolTarget Symbols.activate(&self)
 	return target;
 }
 
-fn void Symbols.show(&self)
+fn void Symbols.ensure_index(&self, project::Project* project)
+{
+	if (!self.auto_scan)
+	{
+		self.auto_scan = true;
+		self.start_scan(project);
+	}
+	else if (!self.scanning && self.known_cards != (usz)project.cards.len())
+	{
+		self.start_scan(project);
+	}
+}
+
+fn void Symbols.show(&self, project::Project* project)
 {
 	self.open = true;
 	self.query_len = 0;
@@ -677,6 +984,15 @@ fn void Symbols.show(&self)
 	self.selected = 0;
 	self.scroll = 0;
 	self.dirty = true;
+	if (!self.auto_scan)
+	{
+		self.auto_scan = true;
+		self.start_scan(project);
+	}
+	else if (self.known_cards != (usz)project.cards.len())
+	{
+		self.start_scan(project);
+	}
 }
 
 fn void Symbols.close(&self)
@@ -705,16 +1021,20 @@ fn void Symbols.ensure_visible(&self, int visible_rows)
 fn Rect Symbols.panel_rect(&self)
 {
 	float s      = ui::scale();
-	int screen_w = rl::get_screen_width();
-	int screen_h = rl::get_screen_height();
+	Rect content = topbar::content_rect();
 	float width  = 640.0f * s;
-	if (width > (float)screen_w - 24.0f) width = (float)screen_w - 24.0f;
+	if (width > content.width - 24.0f) width = content.width - 24.0f;
 	int rows = (int)self.matches.len();
 	if (rows > MAX_VISIBLE_ROWS) rows = MAX_VISIBLE_ROWS;
 	if (rows < 1) rows = 1;
 	float height = 90.0f * s + (float)rows * 22.0f * s;
-	if (height > (float)screen_h - TOP_MARGIN - 24.0f) height = (float)screen_h - TOP_MARGIN - 24.0f;
-	return { .x = ((float)screen_w - width) / 2.0f, .y = TOP_MARGIN, .width = width, .height = height };
+	if (height > content.height - TOP_MARGIN - 24.0f) height = content.height - TOP_MARGIN - 24.0f;
+	return {
+		.x = content.x + (content.width - width) / 2.0f,
+		.y = content.y + TOP_MARGIN,
+		.width = width,
+		.height = height
+	};
 }
 
 fn int Symbols.visible_rows(&self)
@@ -722,6 +1042,7 @@ fn int Symbols.visible_rows(&self)
 	float s      = ui::scale();
 	Rect panel   = self.panel_rect();
 	float list_y = panel.y + 62.0f * s;
+	ui::separator_h({ .x = panel.x + 2.0f, .y = list_y - 1.0f, .width = panel.width - 4.0f, .height = 1.0f });
 	float list_h = panel.y + panel.height - list_y - 10.0f * s;
 	int visible  = (int)(list_h / (22.0f * s));
 	if (visible < 1) visible = 1;
@@ -845,12 +1166,18 @@ fn SymbolTarget Symbols.update(&self, keymap::Keymap* keymap, project::Project* 
 
 fn void Symbols.draw(&self, RLFont font)
 {
-	if (!self.open) return;
+	if (!self.open)
+	{
+		self.motion.update(false);
+		return;
+	}
+	self.motion.update(true);
 
 	float s    = ui::scale();
 	float ts   = ui::text_scale();
 	Rect panel = self.panel_rect();
-	ui::panel(panel, theme::current().panel_bg, theme::current().panel_border);
+	panel.y -= self.motion.offset(ui::pxf(8.0f));
+	ui::floating_panel(panel, theme::current().panel_bg, theme::current().panel_border);
 
 	float pad     = 10.0f * s;
 	float field_h = 30.0f * s;
@@ -883,9 +1210,12 @@ fn void Symbols.draw(&self, RLFont font)
 		draw_text(font, status, panel.x + pad, field.y + field_h + 6.0f * s, 13.0f * ts, theme::current().panel_dim);
 	};
 
-	float list_y = panel.y + 62.0f * s;
-	float list_h = panel.y + panel.height - list_y - 10.0f * s;
-	float row_h  = 22.0f * s;
+	float list_y    = panel.y + 62.0f * s;
+	float list_h    = panel.y + panel.height - list_y - 10.0f * s;
+	float row_h     = 22.0f * s;
+	RLVector2 mouse = rl::get_mouse_position();
+	int hover_row   = self.row_at_mouse(mouse);
+	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 	rl::begin_scissor_mode((int)panel.x + 2, (int)list_y, (int)panel.width - 4, (int)list_h);
 	int shown = self.scroll + MAX_VISIBLE_ROWS;
 	if (shown > (int)self.matches.len()) shown = (int)self.matches.len();
@@ -907,6 +1237,18 @@ fn void Symbols.draw(&self, RLFont font)
 				},
 				theme::current()
 				.panel_selected);
+		}
+		else if (i == hover_row)
+		{
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = y,
+					.width = panel.width - 4.0f,
+					.height = row_h,
+				},
+				pressed ? theme::current()
+				.panel_selected : theme::current().panel_bg_alt);
 		}
 
 		float x = panel.x + pad;
@@ -937,4 +1279,31 @@ fn void Symbols.draw(&self, RLFont font)
 		};
 	}
 	rl::end_scissor_mode();
+	if (query.len > 0 && self.matches.len() == 0)
+	{
+		ui::empty_state(
+			font,
+			{ .x = panel.x + 2.0f, .y = list_y, .width = panel.width - 4.0f, .height = list_h },
+			"No symbols",
+			"Try a different name"
+		);
+	}
+	int visible_rows = self.visible_rows();
+	if ((int)self.matches.len() > visible_rows)
+	{
+		Rect track = {
+			.x = panel.x + panel.width - (float)ui::px(5),
+			.y = list_y,
+			.width = (float)ui::px(3),
+			.height = list_h,
+		};
+		ui::draw_scrollbar(
+			track,
+			(float)self.matches.len(),
+			(float)visible_rows,
+			(float)self.scroll,
+			false,
+			theme::current()
+			.editor_scrollbar, theme::current().panel_dim, theme::current().panel_text);
+	}
 }

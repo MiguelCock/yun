@@ -45,6 +45,7 @@ enum SettingId : int
 	APP_NOTIFICATIONS_TTL,
 	APP_NOTIFICATIONS_MAX,
 	APP_NOTIFICATIONS_POSITION,
+	APP_TOPBAR_POSITION,
 	APP_ANIMATIONS,
 	APP_JUMP_HIGHLIGHT_MS,
 	APP_EXTERNAL_RELOAD,
@@ -63,10 +64,12 @@ enum SettingId : int
 	EDITOR_SCROLL_MARGIN_LINES,
 	EDITOR_WHEEL_SCROLL_LINES,
 	EDITOR_SHOW_LINE_NUMBERS,
+	EDITOR_VIM_MODE,
 	EDITOR_AUTOSAVE,
 	EDITOR_AUTOSAVE_INTERVAL,
 	EDITOR_UNDO_MB,
 	EDITOR_DIAGNOSTIC_SEGMENTS,
+	EDITOR_HIGHLIGHT_MAX_MB,
 	CANVAS_ZOOM_MIN,
 	CANVAS_ZOOM_MAX,
 	CANVAS_ZOOM_STEP,
@@ -74,6 +77,7 @@ enum SettingId : int
 	CANVAS_PAN_SMOOTHING,
 	CANVAS_ZOOM_SMOOTHING,
 	CANVAS_SMOOTHING,
+	CANVAS_FOLLOW_SELECTION,
 	CANVAS_INERTIA_FRICTION,
 	CANVAS_INERTIA_MIN_SPEED,
 	CANVAS_DRAG_THRESHOLD,
@@ -92,8 +96,8 @@ enum SettingId : int
 	MINIMAP_SIZE,
 	MINIMAP_ZOOM_THRESHOLD,
 	ARROWS_ENABLED,
-	ARROWS_SHOW_INTERNAL,
-	ARROWS_SHOW_EXTERNAL,
+	ARROWS_RELATED_ONLY,
+	ARROWS_MIN_ZOOM,
 	ARROWS_LABELS,
 	ARROWS_LINE_THICKNESS,
 	ARROWS_HOVER_THICKNESS,
@@ -102,7 +106,6 @@ enum SettingId : int
 	ARROWS_RESCAN_DEBOUNCE,
 	ARROWS_SCAN_WORKERS,
 	ARROWS_INTERNAL_STYLE,
-	ARROWS_EXTERNAL_STYLE,
 	ARROWS_DASH_LENGTH,
 	ARROWS_DASH_GAP,
 	SEARCH_MAX_FILE_MB,
@@ -125,12 +128,16 @@ enum SettingId : int
 	CONSOLE_NOTIFY,
 	CONSOLE_PERSIST_HISTORY,
 	CONSOLE_RESTORE_SESSIONS,
+	CONSOLE_PTY,
 	GIT_BINARY,
 	GIT_AUTO_REFRESH,
 	GIT_DEBOUNCE_MS,
 	GIT_CONFIRM_DISCARD,
 	GIT_DEFAULT_REMOTE,
 	LSP_ENABLED,
+	MODS_ENABLED,
+	MODS_ALLOW_RENDER,
+	MODS_ALLOW_INPUT,
 	COUNT,
 }
 
@@ -271,6 +278,15 @@ const SettingSpec[] SETTINGS = {
 		.kind = SettingKind.ENUM,
 		.fallback = { .s = "bottom_left" },
 		.options = { "top_left", "top_right", "bottom_left", "bottom_right" },
+	},
+	{
+		.section = "app",
+		.key = "topbar_position",
+		.label = "Top bar position",
+		.description = "Dock the top bar to any screen edge.",
+		.kind = SettingKind.ENUM,
+		.fallback = { .s = "top" },
+		.options = { "top", "bottom", "left", "right" },
 	},
 	{
 		.section = "app",
@@ -450,6 +466,14 @@ const SettingSpec[] SETTINGS = {
 	},
 	{
 		.section = "editor",
+		.key = "vim_mode",
+		.label = "Vim mode",
+		.description = "Enable optional Vim modal editing (Normal, Insert, Visual).",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
+	},
+	{
+		.section = "editor",
 		.key = "autosave",
 		.label = "Autosave",
 		.description = "Save dirty buffers automatically.",
@@ -488,6 +512,17 @@ const SettingSpec[] SETTINGS = {
 		.min = 64.0,
 		.max = 4096.0,
 		.step = 64.0,
+	},
+	{
+		.section = "editor",
+		.key = "highlight_max_mb",
+		.label = "Highlight max size",
+		.description = "Skip syntax highlighting for files larger than this many megabytes; 0 disables the limit.",
+		.kind = SettingKind.INT,
+		.fallback = { .i = 4 },
+		.min = 0.0,
+		.max = 1024.0,
+		.step = 1.0,
 	},
 	{
 		.section = "canvas",
@@ -560,6 +595,14 @@ const SettingSpec[] SETTINGS = {
 		.key = "smoothing",
 		.label = "Smoothing",
 		.description = "Ease camera pan and zoom instead of snapping instantly.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
+		.section = "canvas",
+		.key = "follow_selection",
+		.label = "Center selected card",
+		.description = "Keep the keyboard-selected card centered while navigating.",
 		.kind = SettingKind.BOOL,
 		.fallback = { .b = true },
 	},
@@ -748,25 +791,28 @@ const SettingSpec[] SETTINGS = {
 	},
 	{
 		.section = "arrows",
-		.key = "show_internal",
-		.label = "Internal arrows",
-		.description = "Show arrows to imports resolved inside the project.",
+		.key = "related_only",
+		.label = "Related arrows only",
+		.description = "Draw arrows only for the selected, focused, or hovered card.",
 		.kind = SettingKind.BOOL,
 		.fallback = { .b = true },
 	},
 	{
 		.section = "arrows",
-		.key = "show_external",
-		.label = "External arrows",
-		.description = "Show arrows to imports that resolve outside the project.",
-		.kind = SettingKind.BOOL,
-		.fallback = { .b = true },
+		.key = "min_zoom",
+		.label = "Minimum arrow zoom",
+		.description = "Hide import arrows below this zoom level (0.05 = 5%).",
+		.kind = SettingKind.FLOAT,
+		.fallback = { .f = 0.05 },
+		.min = 0.01,
+		.max = 0.5,
+		.step = 0.01,
 	},
 	{
 		.section = "arrows",
 		.key = "labels",
 		.label = "Arrow labels",
-		.description = "Show the import specifier label next to external arrows.",
+		.description = "Show the import specifier label next to related arrows.",
 		.kind = SettingKind.BOOL,
 		.fallback = { .b = true },
 	},
@@ -843,15 +889,6 @@ const SettingSpec[] SETTINGS = {
 		.description = "Line style for arrows to imports resolved inside the project.",
 		.kind = SettingKind.ENUM,
 		.fallback = { .s = "solid" },
-		.options = { "solid", "dashed", "dotted", "long-dash", "dash-dot" },
-	},
-	{
-		.section = "arrows",
-		.key = "external_style",
-		.label = "External style",
-		.description = "Line style for arrows to imports resolved outside the project.",
-		.kind = SettingKind.ENUM,
-		.fallback = { .s = "dashed" },
 		.options = { "solid", "dashed", "dotted", "long-dash", "dash-dot" },
 	},
 	{
@@ -1071,6 +1108,14 @@ const SettingSpec[] SETTINGS = {
 		.fallback = { .b = true },
 	},
 	{
+		.section = "console",
+		.key = "pty",
+		.label = "Interactive terminal",
+		.description = "Use a persistent PTY shell instead of one-shot command runs.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
+	},
+	{
 		.section = "git",
 		.key = "binary",
 		.label = "Git binary",
@@ -1120,6 +1165,30 @@ const SettingSpec[] SETTINGS = {
 		.description = "Start configured language servers.",
 		.kind = SettingKind.BOOL,
 		.fallback = { .b = true },
+	},
+	{
+		.section = "mods",
+		.key = "enabled",
+		.label = "Enable mods",
+		.description = "Load Lua mods from the global mods folder and the project .yun/mods folder.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = true },
+	},
+	{
+		.section = "mods",
+		.key = "allow_render",
+		.label = "Allow rendering",
+		.description = "Let mods draw overlays with the yun.draw API. Community mods should stay off.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
+	},
+	{
+		.section = "mods",
+		.key = "allow_input",
+		.label = "Allow input",
+		.description = "Let mods read keyboard and mouse input for on_update and on_input hooks.",
+		.kind = SettingKind.BOOL,
+		.fallback = { .b = false },
 	},
 };
 
@@ -1175,6 +1244,7 @@ fn SettingPage page_for(SettingId id)
 	if (s.section.compare_to("console") == 0) return SettingPage.CONSOLE;
 	if (s.section.compare_to("git") == 0) return SettingPage.INTEGRATIONS;
 	if (s.section.compare_to("lsp") == 0) return SettingPage.INTEGRATIONS;
+	if (s.section.compare_to("mods") == 0) return SettingPage.ADVANCED;
 	if (s.section.compare_to("app") == 0)
 	{
 		if (s.key.compare_to("skip_submodules") == 0) return SettingPage.GENERAL;
@@ -1261,6 +1331,7 @@ fn String group_for(SettingId id)
 	}
 	if (s.section.compare_to("git") == 0) return "Git";
 	if (s.section.compare_to("lsp") == 0) return "Language servers";
+	if (s.section.compare_to("mods") == 0) return "Mods";
 	return "General";
 }
 
@@ -1587,7 +1658,14 @@ fn void Settings.apply_section(&self, String name, Object* obj, SettingLayer lay
 
 	obj.@each_entry(; String key, Object* value)
 	{
-		if (!section_has_key(name, key))
+		bool legacy_arrow = name.compare_to(
+			"arrows"
+		) == 0 && (key.compare_to(
+			"aggregation"
+		) == 0 || key.compare_to(
+			"show_internal"
+		) == 0 || key.compare_to("show_external") == 0 || key.compare_to("external_style") == 0);
+		if (!legacy_arrow && !section_has_key(name, key))
 		{
 			self.push_warning(warnings, string::format(self.allocator, "Unknown config key: %s.%s", name, key));
 		}
