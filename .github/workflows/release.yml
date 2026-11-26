@@ -190,6 +190,21 @@ jobs:
       - name: Combine checksums
         run: cat artifacts/*.sha256 > checksums.txt
 
+      - name: Select release notes
+        run: |
+          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then
+            cp "$notes" release-body.md
+          else
+            {
+              echo "Prebuilt Yun binaries for ${GITHUB_REF_NAME}."
+              echo
+              echo "Download and extract the archive for your platform, then run yun"
+              echo "(yun.exe on Windows) from the extracted folder."
+              echo "Checksums are in checksums.txt."
+            } > release-body.md
+          fi
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -198,11 +213,4 @@ jobs:
             artifacts/*.tar.gz
             artifacts/*.zip
             checksums.txt
-          body: |
-            Prebuilt Yun binaries for ${{ github.ref_name }}.
-
-            Download and extract the archive for your platform, then run `yun`
-            (`yun.exe` on Windows) from the extracted folder.
-
-            Note: Lua mods (#33) are not wired up yet; when they are, they will
-            require a system Lua 5.4.
+          body_path: release-body.md
