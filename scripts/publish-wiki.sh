@@ -28,18 +28,18 @@ on an infinite pan/zoom canvas.
 This wiki mirrors the user guide in the repository. The canonical, versioned
 copy lives in [docs/guide](https://github.com/MiguelCock/yun/tree/main/docs/guide).
 
-- [Getting started](getting-started.md)
-- [Canvas and navigation](canvas.md)
-- [Editing](editing.md)
-- [Search and connections](search.md)
-- [Import arrows](imports.md)
-- [Git](git.md)
-- [Console](console.md)
-- [Language servers](lsp.md)
-- [Mods](mods.md)
-- [Settings and keybindings](settings.md)
-- [Troubleshooting](troubleshooting.md)
-- [Demo gallery](demos.md)
+- [Getting started](getting-started)
+- [Canvas and navigation](canvas)
+- [Editing](editing)
+- [Search and connections](search)
+- [Import arrows](imports)
+- [Git](git)
+- [Console](console)
+- [Language servers](lsp)
+- [Mods](mods)
+- [Settings and keybindings](settings)
+- [Troubleshooting](troubleshooting)
+- [Demo gallery](demos)
 EOF
 cat > _Sidebar.md <<'EOF'
 - [Home](Home)
