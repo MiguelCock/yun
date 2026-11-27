@@ -8,6 +8,7 @@ import yun::git;
 import yun::highlight;
 import yun::icons;
 import yun::markdown;
+import yun::skin;
 import yun::text;
 import yun::theme;
 import yun::ui;
@@ -146,14 +147,26 @@ fn void FileCard.draw(
 	float zoom   = camera.zoom;
 	Rect r       = self.effective_rect();
 	float radius = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
-	ui::rounded_rect(r, radius, theme::current().card_body);
+	if (!skin::draw_world(
+		skin::SurfaceId.CARD,
+		r,
+		zoom,
+		ui::corner_radius()
+	)) ui::rounded_rect(r, radius, theme::current()
+		.card_body);
 	Rect title = {
 		.x = r.x,
 		.y = r.y,
 		.width = r.width,
 		.height = ui::pxf(CARD_TITLE_HEIGHT),
 	};
-	ui::rounded_top(title, radius, theme::current().card_title);
+	if (!skin::draw_world(
+		skin::SurfaceId.CARD_TITLE,
+		title,
+		zoom,
+		ui::corner_radius()
+	)) ui::rounded_top(title, radius, theme::current()
+		.card_title);
 	if (focused)
 	{
 		ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_focus);
@@ -266,14 +279,26 @@ fn void FileCard.draw_lod_title(&self, RLFont font, float zoom)
 {
 	Rect r       = self.effective_rect();
 	float radius = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
-	ui::rounded_rect(r, radius, theme::current().card_body);
+	if (!skin::draw_world(
+		skin::SurfaceId.CARD,
+		r,
+		zoom,
+		ui::corner_radius()
+	)) ui::rounded_rect(r, radius, theme::current()
+		.card_body);
 	Rect title = {
 		.x = r.x,
 		.y = r.y,
 		.width = r.width,
 		.height = ui::pxf(CARD_TITLE_HEIGHT),
 	};
-	ui::rounded_top(title, radius, theme::current().card_title);
+	if (!skin::draw_world(
+		skin::SurfaceId.CARD_TITLE,
+		title,
+		zoom,
+		ui::corner_radius()
+	)) ui::rounded_top(title, radius, theme::current()
+		.card_title);
 	ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 	@pool()
 	{

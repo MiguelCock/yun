@@ -40,6 +40,7 @@ import yun::recovery;
 import yun::search;
 import yun::settings;
 import yun::settings_panel;
+import yun::skin;
 import yun::symbols;
 import yun::theme;
 import yun::topbar;
@@ -2712,6 +2713,9 @@ fn int main(String[] args)
 	notify::Notifier notifier;
 	notifier.init(mem);
 
+	skin::init(mem);
+	defer skin::shutdown();
+
 	config::Config config;
 	config.init(mem);
 
@@ -4923,6 +4927,16 @@ fn int main(String[] args)
 			if (focus_active)
 			{
 				rl::clear_background(theme::current().window_bg);
+				Rect screen = {
+					.x = 0.0f,
+					.y = 0.0f,
+					.width = (float)rl::get_screen_width(),
+					.height = (float)rl::get_screen_height(),
+				};
+				if (!skin::draw_screen(skin::SurfaceId.FOCUS_BACKDROP, screen, 0.0f))
+				{
+					skin::draw_screen(skin::SurfaceId.APP, screen, 0.0f);
+				}
 			}
 			else
 			{

@@ -5,6 +5,7 @@ import std::math;
 import yun::commands;
 import yun::icons;
 import yun::imports;
+import yun::skin;
 import yun::theme;
 import yun::ui;
 
@@ -683,7 +684,7 @@ fn void TopBar.draw(
 	float screen_w  = (float)rl::get_screen_width();
 	float screen_h  = (float)rl::get_screen_height();
 	bool horizontal = horizontal_position(g_position);
-	rl::draw_rectangle_rec(bar, theme::current().topbar_bg);
+	if (!skin::draw_screen(skin::SurfaceId.TOPBAR, bar, 0.0f)) rl::draw_rectangle_rec(bar, theme::current().topbar_bg);
 	if (g_position == TopBarPosition.TOP)
 	{
 		rl::draw_line(0, (int)(bar.y + bar.height), (int)screen_w, (int)(bar.y + bar.height), theme::current()

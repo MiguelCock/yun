@@ -2,6 +2,7 @@ module yun::canvas;
 
 import raylib6::rl;
 import std::math;
+import yun::skin;
 import yun::theme;
 
 const float BASE_CELL                  = 64.0f;
@@ -657,6 +658,11 @@ fn void Canvas.draw_grid(&self)
 fn void Canvas.draw(&self)
 {
 	rl::clear_background(theme::current().window_bg);
+	skin::draw_screen(
+		skin::SurfaceId.APP,
+		{ .x = 0.0f, .y = 0.0f, .width = (float)rl::get_screen_width(), .height = (float)rl::get_screen_height() },
+		0.0f
+	);
 	rl::@mode2d(self.camera)
 	{
 		self.draw_grid();

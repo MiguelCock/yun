@@ -2,6 +2,7 @@ module yun::ui;
 
 import raylib6::rl;
 import std::math;
+import yun::skin;
 import yun::theme;
 
 const int BASE_SIZE = 16;
@@ -195,7 +196,7 @@ fn float row_radius()
 
 fn void panel(Rect r, RLColor fill, RLColor border)
 {
-	rounded_rect(r, corner_radius(), fill);
+	if (!skin::draw_screen(skin::SurfaceId.PANEL, r, corner_radius())) rounded_rect(r, corner_radius(), fill);
 	rounded_rect_lines(r, corner_radius(), 1.0f, border);
 }
 

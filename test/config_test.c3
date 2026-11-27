@@ -32,12 +32,13 @@ fn void test_apply_and_layering()
 
 		assert(c.apply_json(
 			"{\"app\":{\"theme\":\"light\"},\"editor\":{\"font_size\":14}}",
+			"",
 			settings::SettingLayer.GLOBAL
 		));
 		assert(c.settings.get_string(settings::SettingId.APP_THEME).compare_to("light") == 0);
 		assert(c.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE) == 14);
 
-		assert(c.apply_json("{\"app\":{\"theme\":\"dark\"}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"app\":{\"theme\":\"dark\"}}", "", settings::SettingLayer.GLOBAL));
 		assert(c.settings.get_string(settings::SettingId.APP_THEME).compare_to("dark") == 0);
 		assert(c.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE) == 14);
 	};
@@ -50,7 +51,7 @@ fn void test_unknown_key_warns()
 		Config c;
 		c.init(tmem);
 		c.reset();
-		assert(c.apply_json("{\"nope\":1,\"editor\":{\"font_size\":12}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"nope\":1,\"editor\":{\"font_size\":12}}", "", settings::SettingLayer.GLOBAL));
 		assert(c.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE) == 12);
 		assert(c.warnings.len() == 1);
 		assert(c.warnings[0].compare_to("Unknown config key: nope") == 0);
@@ -66,6 +67,7 @@ fn void test_type_mismatch_warns()
 		c.reset();
 		assert(c.apply_json(
 			"{\"app\":{\"theme\":42},\"editor\":{\"font_size\":\"big\"}}",
+			"",
 			settings::SettingLayer.GLOBAL
 		));
 		assert(c.settings.get_string(settings::SettingId.APP_THEME).compare_to("dark") == 0);
@@ -83,6 +85,7 @@ fn void test_keymap_and_lsp_accessors()
 		c.reset();
 		assert(c.apply_json(
 			"{\"keymap\":{\"save\":\"Ctrl+Shift+S\"},\"lsp\":{\"c3\":\"c3-lsp\"}}",
+			"",
 			settings::SettingLayer.GLOBAL
 		));
 
@@ -91,7 +94,7 @@ fn void test_keymap_and_lsp_accessors()
 		assert(c.lsp_command("c3").compare_to("c3-lsp") == 0);
 		assert(c.lsp_command("python").len == 0);
 
-		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+Alt+S\"}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+Alt+S\"}}", "", settings::SettingLayer.GLOBAL));
 		assert(c.key_binding(commands::CommandId.SAVE).compare_to("Ctrl+Alt+S") == 0);
 		assert(c.keymap_global.len() == 1);
 	};
@@ -115,7 +118,7 @@ fn void test_malformed_file_warns()
 		Config c;
 		c.init(tmem);
 		c.reset();
-		assert(!c.load_path(f, settings::SettingLayer.GLOBAL));
+		assert(!c.load_path(f, "", settings::SettingLayer.GLOBAL));
 		assert(c.warnings.len() == 1);
 
 		(void)path::rmtree(dir);
@@ -145,6 +148,7 @@ fn void test_project_overrides_global()
 		c.reset();
 		assert(c.apply_json(
 			"{\"app\":{\"theme\":\"dark\"},\"editor\":{\"font_size\":14}}",
+			"",
 			settings::SettingLayer.GLOBAL
 		));
 		c.load_project((String)root);
@@ -175,7 +179,7 @@ fn void test_ensure_defaults_creates_valid_file()
 		c.reset();
 		c.ensure_defaults(dir, f);
 		assert(path::exists(f));
-		assert(c.load_path(f, settings::SettingLayer.GLOBAL));
+		assert(c.load_path(f, "", settings::SettingLayer.GLOBAL));
 		assert(c.settings.get_string(settings::SettingId.APP_THEME).compare_to("dark") == 0);
 		assert(c.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE) == 16);
 		assert(c.warnings.len() == 0);
@@ -209,7 +213,7 @@ fn void test_save_load_roundtrip()
 
 		Config loaded;
 		loaded.init(tmem);
-		assert(loaded.load_path(file, settings::SettingLayer.GLOBAL));
+		assert(loaded.load_path(file, "", settings::SettingLayer.GLOBAL));
 		assert(loaded.settings.get_string(settings::SettingId.APP_THEME).compare_to("dracula") == 0);
 		assert(loaded.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE) == 20);
 		assert(loaded.key_binding(commands::CommandId.FIND).compare_to("Ctrl+Shift+F") == 0);
@@ -244,7 +248,7 @@ fn void test_empty_chord_roundtrip()
 
 		Config loaded;
 		loaded.init(tmem);
-		assert(loaded.load_path(file, settings::SettingLayer.GLOBAL));
+		assert(loaded.load_path(file, "", settings::SettingLayer.GLOBAL));
 		assert(loaded.keymap_global.len() == 1);
 		assert(loaded.keymap_global[0].chord.len == 0);
 		assert(loaded.key_binding(commands::CommandId.SAVE).len == 0);
@@ -300,8 +304,8 @@ fn void test_keymap_scope_save()
 
 		Config loaded;
 		loaded.init(tmem);
-		assert(loaded.load_path(gf, settings::SettingLayer.GLOBAL));
-		assert(loaded.load_path(pf, settings::SettingLayer.PROJECT));
+		assert(loaded.load_path(gf, "", settings::SettingLayer.GLOBAL));
+		assert(loaded.load_path(pf, "", settings::SettingLayer.PROJECT));
 		assert(loaded.key_binding(commands::CommandId.SAVE).compare_to("Ctrl+Alt+S") == 0);
 		assert(loaded.key_binding(commands::CommandId.OPEN).compare_to("Ctrl+Alt+O") == 0);
 		assert(loaded.keymap_global.len() == 1);
@@ -321,6 +325,7 @@ fn void test_run_profiles()
 		c.reset();
 		assert(c.apply_json(
 			"{\"run\":{\"build\":{\"command\":\"c3c build\",\"cwd\":\"src\",\"env\":{\"MODE\":\"debug\"}}}}",
+			"",
 			settings::SettingLayer.GLOBAL
 		));
 		assert(c.run_profiles.len() == 1);
@@ -332,12 +337,48 @@ fn void test_run_profiles()
 		assert(c.run_profiles[0].env[0].value.compare_to("debug") == 0);
 		assert(c.warnings.len() == 0);
 
-		assert(c.apply_json("{\"run\":{\"build\":{\"command\":\"c3c test\"}}}", settings::SettingLayer.PROJECT));
+		assert(c.apply_json("{\"run\":{\"build\":{\"command\":\"c3c test\"}}}", "", settings::SettingLayer.PROJECT));
 		assert(c.run_profiles.len() == 1);
 		assert(c.run_profiles[0].command.compare_to("c3c test") == 0);
 		assert(c.run_profiles[0].cwd.compare_to(".") == 0);
 
-		assert(c.apply_json("{\"run\":{\"bad\":{}}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"run\":{\"bad\":{}}}", "", settings::SettingLayer.GLOBAL));
 		assert(c.warnings.len() == 1);
+	};
+}
+fn void test_extract_skin_json_preserves_object()
+{
+	String json = "{\n  \"app\": {\"theme\": \"dark\"},\n  \"skin\": {\"surfaces\": {\"card\": {\"image\": \"paper.png\"}}},\n  \"keymap\": {}\n}";
+	String skin = extract_skin_json(json);
+	assert(skin.len > 0);
+	assert(skin.starts_with("{\"surfaces\""));
+	assert(skin.ends_with("}}"));
+}
+fn void test_save_preserves_skin_section()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? dir = tmp.append(tmem, "yun_skin_save_test");
+		if (catch excuse = dir) return;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? input = dir.append(tmem, "config.json");
+		if (catch excuse = input) return;
+		String skin_json = "{\n  \"app\": {\"theme\": \"dark\"},\n  \"skin\": {\"surfaces\": {\"card\": {\"image\": \"paper.png\"}}},\n  \"keymap\": {}\n}";
+		if (catch excuse = file::save(input, skin_json)) return;
+		Config c;
+		c.init(tmem);
+		assert(c.load_path(input, (String)dir, settings::SettingLayer.GLOBAL));
+		c.save_path(input, settings::SettingLayer.GLOBAL);
+		char[]? saved = file::load(tmem, input);
+		if (catch excuse = saved) return;
+		String raw  = (String)saved;
+		String skin = extract_skin_json(raw);
+		assert(skin.len > 0);
+		assert(skin.contains("paper.png"));
+		c.destroy();
+		(void)path::rmtree(dir);
 	};
 }

@@ -23,6 +23,7 @@ import yun::lsp;
 import yun::markdown;
 import yun::spatial;
 import yun::text;
+import yun::skin;
 import yun::theme;
 import yun::ui;
 import yun::vim;
@@ -3577,14 +3578,26 @@ fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
 {
 	FolderCluster cluster = self.folders[index];
 	float radius          = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
-	ui::rounded_rect(bounds, radius, theme::current().cluster_body);
+	if (!skin::draw_world(
+		skin::SurfaceId.FOLDER,
+		bounds,
+		zoom,
+		ui::corner_radius()
+	)) ui::rounded_rect(bounds, radius, theme::current()
+		.cluster_body);
 	Rect title = {
 		.x = bounds.x,
 		.y = bounds.y,
 		.width = bounds.width,
 		.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
 	};
-	ui::rounded_top(title, radius, theme::current().cluster_title);
+	if (!skin::draw_world(
+		skin::SurfaceId.FOLDER_TITLE,
+		title,
+		zoom,
+		ui::corner_radius()
+	)) ui::rounded_top(title, radius, theme::current()
+		.cluster_title);
 	ui::rounded_rect_lines(bounds, radius, card::screen_thickness(1.0f, zoom), theme::current().cluster_border);
 	if ((int)index == self.current_folder)
 	{
