@@ -9,7 +9,7 @@ description: Use when adding, moving, splitting, or naming C3 files in Yun, choo
 - `project.json` sources `src/**` and `test/**`; a new folder under either tree needs no manifest change.
 - Check actual module names with `grep -rn '^module ' src test` before inventing a folder.
 - Existing domain folders set the pattern: `src/console/*.c3` -> `module yun::console;`, `src/git/*.c3` -> `yun::git`, `src/lsp/*.c3` -> `yun::lsp`, `src/text/*.c3` -> `yun::text`. `src/main.c3` is `module yun;`.
-- Intended future split (not done): `src/project/*.c3` -> `module yun::project;` (currently `src/project.c3`) and `src/app/*.c3` -> `module yun;` (currently `src/main.c3`). Do not create empty folders or claim the split is complete.
+- `src/project/` is the first split project folder: `project.c3`, `paths.c3`, and `clusters.c3` all use `module yun::project;`. Further project files and `src/app/*.c3` (`module yun;`) are planned; do not claim they exist before they do.
 
 ## Folder and module rules
 - One module per domain folder. Every `.c3` file in a folder repeats the same module declaration; the folder is the namespace.
