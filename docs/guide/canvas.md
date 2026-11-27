@@ -57,9 +57,12 @@ running session. The layout is saved with the workspace.
 
 ## Folder clusters
 
-A freshly opened project starts with every folder collapsed. Opening a folder
-reveals its files and child folders in place. Expanding or collapsing changes
-what is visible without throwing away the saved layout.
+A freshly opened project starts with every folder collapsed. A collapsed folder
+keeps a compact folder body with its name, file count, and a preview, so it stays
+visible and grouped with the cards. Opening a folder reveals its files and child
+folders in place; the expanded content uses the folder's content bounds. Folder
+bodies are saved in the workspace, and older workspaces are re-laid out once when
+upgraded.
 
 The camera fits visible content on first open, with a floor controlled by
 `canvas.fit_min_zoom`.
