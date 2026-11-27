@@ -340,3 +340,18 @@ fn int Project.folder_at(&self, RLVector2 world)
 	}
 	return best;
 }
+fn void Project.collapse_descendants(&self, int index)
+{
+	if (index < 0 || index >= (int)self.folders.len()) return;
+	String root = (String)self.folders[index].path;
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		if ((int)i == index) continue;
+		if (!path_is_inside(root, (String)self.folders[i].path)) continue;
+		if (self.folders[i].collapsed) continue;
+		Rect full = self.cluster_bounds((int)i);
+		self.folders[i].body.x = full.x;
+		self.folders[i].body.y = full.y;
+		self.folders[i].collapsed = true;
+	}
+}

@@ -206,8 +206,8 @@ fn void test_layout_packs_clusters()
 
 		p.layout();
 
-		// each level packs folders as chips, so expanded boxes overlap
-		assert(rect_intersects(p.cluster_bounds(a), p.cluster_bounds(b)));
+		// expanded folders reserve their content bounds, so sibling boxes never overlap
+		assert(!rect_intersects(p.cluster_bounds(a), p.cluster_bounds(b)));
 
 		// collapsed chips are packed tightly and never overlap
 		p.folders[a].collapsed = true;
@@ -1169,9 +1169,9 @@ fn void test_layout_compact_square()
 		assert(rd.x + rd.width <= ra.x + ra.width + 0.01f);
 		assert(rd.y + rd.height <= ra.y + ra.height + 0.01f);
 
-		// top-level siblings overlap because each level packs only chip footprints
+		// top-level siblings reserve their full expanded footprints and never overlap
 		Rect rb = p.cluster_bounds(b);
-		assert(rect_intersects(ra, rb));
+		assert(!rect_intersects(ra, rb));
 
 		// the overall footprint is roughly square
 		Rect out;
@@ -1849,5 +1849,123 @@ fn void test_collapsed_bodies_group_with_cards()
 		assert(ra.x >= all.x && ra.y >= all.y && ra.x + ra.width <= all.x + all.width
 			&& ra.y + ra.height <= all.y + all.height);
 		p.destroy();
+	};
+}
+fn void test_opening_folder_collapses_descendants()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int b = p.add_folder("/root/a/b", a);
+		p.folders[a].collapsed = true;
+		p.folders[b].collapsed = false;
+		p.enter_folder(a);
+		assert(!p.folders[a].collapsed);
+		assert(p.folders[b].collapsed);
+		p.destroy();
+	};
+}
+
+fn void test_title_expansion_collapses_descendants()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int b = p.add_folder("/root/a/b", a);
+		p.folders[a].collapsed = true;
+		p.folders[b].collapsed = false;
+		p.toggle_collapse(a);
+		assert(!p.folders[a].collapsed);
+		assert(p.folders[b].collapsed);
+		p.destroy();
+	};
+}
+
+fn void test_layout_expanded_cluster_does_not_overlap_root_cards()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		for (int k = 0; k < 8; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/f%d.c3", k)
+				.copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
+		int root_card = (int)p.cards.len();
+		p.cards.push(
+			{
+				.path = (Path)"/root/root.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .width = 1.0f, .height = 1.0f },
+			}
+		);
+		p.layout();
+		assert(!rect_intersects(p.cluster_bounds(a), p.cards[root_card].rect));
+	};
+}
+
+fn void test_layout_expanded_child_does_not_overlap_sibling()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a      = p.add_folder("/root/a", ROOT_FOLDER);
+		int open   = p.add_folder("/root/a/open", a);
+		int closed = p.add_folder("/root/a/closed", a);
+		for (int k = 0; k < 8; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/open/f%d.c3", k)
+				.copy(tmem), .folder = open, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
+		p.folders[a].collapsed = false;
+		p.folders[open].collapsed = false;
+		p.folders[closed].collapsed = true;
+		p.layout();
+		assert(!rect_intersects(p.cluster_bounds(open), p.cluster_visual_bounds(closed)));
+	};
+}
+fn void test_enter_folder_relayouts_expanded_content()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		for (int k = 0; k < 8; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/f%d.c3", k)
+				.copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
+		int root_card = (int)p.cards.len();
+		p.cards.push(
+			{
+				.path = (Path)"/root/root.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .width = 1.0f, .height = 1.0f },
+			}
+		);
+		p.folders[a].collapsed = true;
+		p.layout();
+		p.enter_folder(a);
+		assert(!p.folders[a].collapsed);
+		assert(!rect_intersects(p.cluster_bounds(a), p.cards[root_card].rect));
 	};
 }

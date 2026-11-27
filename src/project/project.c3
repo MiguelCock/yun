@@ -710,7 +710,68 @@ fn RLVector2 Project.chip_size(&self)
 	return { ui::pxf(CLUSTER_COLLAPSED_WIDTH), ui::pxf(CLUSTER_COLLAPSED_BODY) };
 }
 
-fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* cards_by, List{int}[]* children_by)
+fn RLVector2 Project.visual_size(&self, int index, RLVector2[] full_sizes)
+{
+	if (self.folders[index].collapsed) return self.chip_size();
+	return full_sizes[(usz)index];
+}
+
+fn RLVector2 Project.measure_level(
+	&self,
+	int index,
+	List{int}[]* cards_by,
+	List{int}[]* children_by,
+	RLVector2[] full_sizes,
+	float cw,
+	float ch,
+	float cg,
+	float gap
+)
+{
+	if (full_sizes[(usz)index][0] > 0.0f) return full_sizes[(usz)index];
+
+	List{int} folder_cards = (*cards_by)[(usz)(index + 1)];
+	List{int} folder_kids  = (*children_by)[(usz)index];
+	RLVector2 chip         = self.chip_size();
+	if (folder_cards.len() == 0 && folder_kids.len() == 0)
+	{
+		full_sizes[(usz)index] = chip;
+		return chip;
+	}
+
+	for (sz i = 0; i < folder_kids.len(); i++)
+	{
+		self.measure_level(folder_kids[i], cards_by, children_by, full_sizes, cw, ch, cg, gap);
+	}
+	List{RLVector2} items;
+	items.init(tmem);
+	for (sz i = 0; i < folder_kids.len(); i++) items.push(self.visual_size(folder_kids[i], full_sizes));
+	if (folder_cards.len() > 0) items.push(self.card_block_size((int)folder_cards.len(), cw, ch, cg));
+
+	RLVector2[] positions = alloc::new_array(tmem, RLVector2, items.len());
+	float area            = 0.0f;
+	for (sz i = 0; i < items.len(); i++) area += items[i][0] * items[i][1];
+	RLVector2 content = self.flow_pack(&items, gap, math::sqrt(area), positions);
+	items.free();
+
+	float pad   = ui::pxf(CLUSTER_PADDING);
+	float title = ui::pxf(CLUSTER_TITLE_HEIGHT);
+	RLVector2 size = {
+		.x = math::max(chip[0], content[0] + pad * 2.0f),
+		.y = math::max(chip[1], title + content[1] + pad * 2.0f),
+	};
+	full_sizes[(usz)index] = size;
+	return size;
+}
+
+fn void Project.place_level(
+	&self,
+	int index,
+	RLVector2 origin,
+	List{int}[]* cards_by,
+	List{int}[]* children_by,
+	RLVector2[] full_sizes
+)
 {
 	RLVector2 body_size = self.chip_size();
 	self.folders[index].body = {
@@ -726,18 +787,17 @@ fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* car
 	float ch            = card_size[1];
 	float cg            = ui::pxf((float)CARD_GAP);
 	float gap           = ui::pxf(CLUSTER_GAP);
-	RLVector2 chip      = self.chip_size();
 
 	float content_x = origin[0] + pad;
 	float content_y = origin[1] + title + pad;
 
-	List{int} cards = (*cards_by)[(usz)(index + 1)];
-	List{int} kids  = (*children_by)[(usz)index];
+	List{int} folder_cards = (*cards_by)[(usz)(index + 1)];
+	List{int} folder_kids  = (*children_by)[(usz)index];
 
 	List{RLVector2} items;
 	items.init(tmem);
-	for (sz i = 0; i < kids.len(); i++) items.push(chip);
-	if (cards.len() > 0) items.push(self.card_block_size((int)cards.len(), cw, ch, cg));
+	for (sz i = 0; i < folder_kids.len(); i++) items.push(self.visual_size(folder_kids[i], full_sizes));
+	if (folder_cards.len() > 0) items.push(self.card_block_size((int)folder_cards.len(), cw, ch, cg));
 
 	RLVector2[] positions = alloc::new_array(tmem, RLVector2, (usz)(items.len() == 0 ? 1 : items.len()));
 	float area            = 0.0f;
@@ -745,20 +805,20 @@ fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* car
 	self.flow_pack(&items, gap, math::sqrt(area), positions);
 	items.free();
 
-	for (sz i = 0; i < kids.len(); i++)
+	for (sz i = 0; i < folder_kids.len(); i++)
 	{
 		RLVector2 p = positions[i];
-		self.place_level(kids[i], { content_x + p[0], content_y + p[1] }, cards_by, children_by);
+		self.place_level(folder_kids[i], { content_x + p[0], content_y + p[1] }, cards_by, children_by, full_sizes);
 	}
-	if (cards.len() > 0)
+	if (folder_cards.len() > 0)
 	{
-		RLVector2 p = positions[kids.len()];
-		self.place_cards_block(&cards, content_x + p[0], content_y + p[1], cw, ch, cg);
+		RLVector2 p = positions[folder_kids.len()];
+		self.place_cards_block(&folder_cards, content_x + p[0], content_y + p[1], cw, ch, cg);
 	}
 
-	if (cards.len() == 0 && kids.len() == 0)
+	if (folder_cards.len() == 0 && folder_kids.len() == 0)
 	{
-		self.folders[index].bounds = { .x = origin[0], .y = origin[1], .width = chip[0], .height = chip[1] };
+		self.folders[index].bounds = { .x = origin[0], .y = origin[1], .width = body_size[0], .height = body_size[1] };
 		self.folders[index].bounds_valid = true;
 	}
 	else
@@ -775,7 +835,6 @@ fn void Project.layout(&self)
 	float ch            = card_size[1];
 	float cg            = ui::pxf((float)CARD_GAP);
 	float gap           = ui::pxf(CLUSTER_GAP);
-	RLVector2 chip      = self.chip_size();
 
 	@pool()
 	{
@@ -809,9 +868,15 @@ fn void Project.layout(&self)
 			if (self.folders[i].parent == ROOT_FOLDER) tops.push((int)i);
 		}
 
+		RLVector2[] full_sizes = alloc::new_array(tmem, RLVector2, (usz)(nf == 0 ? 1 : nf));
+		for (int i = 0; i < nf; i++)
+		{
+			self.measure_level(i, &cards_by, &children_by, full_sizes, cw, ch, cg, gap);
+		}
+
 		List{RLVector2} items;
 		items.init(tmem);
-		for (sz i = 0; i < tops.len(); i++) items.push(chip);
+		for (sz i = 0; i < tops.len(); i++) items.push(self.visual_size(tops[i], full_sizes));
 		if (root_cards.len() > 0) items.push(self.card_block_size((int)root_cards.len(), cw, ch, cg));
 
 		if (items.len() > 0)
@@ -821,7 +886,10 @@ fn void Project.layout(&self)
 			for (sz i = 0; i < items.len(); i++) area += items[i][0] * items[i][1];
 			self.flow_pack(&items, gap, math::sqrt(area), positions);
 
-			for (sz i = 0; i < tops.len(); i++) self.place_level(tops[i], positions[i], &cards_by, &children_by);
+			for (sz i = 0; i < tops.len(); i++)
+			{
+				self.place_level(tops[i], positions[i], &cards_by, &children_by, full_sizes);
+			}
 			if (root_cards.len() > 0)
 			{
 				RLVector2 p = positions[tops.len()];
@@ -1545,7 +1613,9 @@ fn bool Project.cycle_nav_item(&self, int dir, NavItem* out)
 fn void Project.enter_folder(&self, int index)
 {
 	if (index < 0 || index >= (int)self.folders.len()) return;
+	bool was_collapsed = self.folders[index].collapsed;
 	self.folders[index].collapsed = false;
+	self.collapse_descendants(index);
 	self.current_folder = index;
 	self.grabbing = false;
 	self.selected = -1;
@@ -1557,7 +1627,14 @@ fn void Project.enter_folder(&self, int index)
 		self.nav_items(&items);
 		if (items.len() > 0) self.select_nav_item(items[0]);
 	};
-	self.invalidate_bounds();
+	if (was_collapsed)
+	{
+		self.layout();
+	}
+	else
+	{
+		self.invalidate_bounds();
+	}
 }
 
 fn bool Project.leave_folder(&self)
@@ -1940,7 +2017,9 @@ fn void Project.toggle_collapse(&self, int index)
 		self.folders[index].body.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH);
 		self.folders[index].body.height = ui::pxf(CLUSTER_COLLAPSED_BODY);
 	}
+	bool expanding = self.folders[index].collapsed;
 	self.folders[index].collapsed = !self.folders[index].collapsed;
+	if (expanding) self.collapse_descendants(index);
 	self.invalidate_bounds();
 }
 
