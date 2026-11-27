@@ -53,7 +53,14 @@ need them preserved verbatim.
 ```
 
 Relative image paths are resolved from the directory containing the config file.
-Absolute paths are also accepted. PNG, JPG, and GIF files are supported.
+Absolute paths are also accepted. PNG, JPG, GIF, and BMP files are supported.
+On the Skin page, type or paste a path (`Ctrl+V` or `Shift+Insert`), drag a file
+onto the field, or use **Browse for image…** to pick one. The browser starts at the
+current image's folder (or the config folder), lists folders first, and filters
+to supported extensions; `Up`/`Down` move, `Enter` or a click opens or selects,
+`Backspace` goes up, and `Esc` cancels. GIFs are decoded into individual frames,
+so each frame fills the surface at its full size and animates using `speed` and
+`fps`.
 
 ## Surface fields
 
@@ -65,7 +72,7 @@ Absolute paths are also accepted. PNG, JPG, and GIF files are supported.
 | `tint` | `#rrggbb` / `#rrggbbaa` | Multiplies the image colour |
 | `scrim` | `#rrggbbaa` | Readability overlay drawn over the image |
 | `speed` | number | GIF playback speed multiplier |
-| `fps` | number | GIF frame rate when the file format does not provide one |
+| `fps` | number | GIF playback frame rate |
 
 ## Surfaces
 

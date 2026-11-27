@@ -5,6 +5,7 @@ import std::io::path;
 import std::math;
 import yun::commands;
 import yun::config;
+import yun::image_picker;
 import yun::keymap;
 import yun::settings;
 import yun::skin;
@@ -404,6 +405,7 @@ fn void test_skin_page_registered()
 		assert(p.skin_row(SkinItem.CARD_LAYOUT) >= 0);
 		assert(p.skin_row(SkinItem.SURFACE) >= 0);
 		assert(p.skin_row(SkinItem.IMAGE) >= 0);
+		assert(p.skin_row(SkinItem.BROWSE) >= 0);
 		assert(p.skin_row(SkinItem.FIT) >= 0);
 		assert(p.skin_row(SkinItem.OPACITY) >= 0);
 		assert(p.skin_row(SkinItem.TINT) >= 0);
@@ -535,6 +537,13 @@ fn void test_skin_page_text_edit_validation()
 
 		p.selected = p.skin_row(SkinItem.IMAGE);
 		p.start_skin_edit(&cfg);
+		String unsupported = "notes.txt";
+		p.skin_edit_len = (int)unsupported.len;
+		for (usz i = 0; i < unsupported.len; i++) p.skin_edit_buf[i] = unsupported[i];
+		p.skin_edit_buf[p.skin_edit_len] = 0;
+		assert(!p.commit_skin_edit(&cfg, true, (String)root, null));
+		assert(p.skin_editing);
+
 		String image = "pics/card.png";
 		p.skin_edit_len = (int)image.len;
 		for (usz i = 0; i < image.len; i++) p.skin_edit_buf[i] = image[i];
@@ -543,6 +552,99 @@ fn void test_skin_page_text_edit_validation()
 		assert(skin::surface(skin::SurfaceId.APP).image.compare_to("pics/card.png") == 0);
 		String expected = string::format(tmem, "%s/.yun/pics/card.png", (String)root);
 		assert(skin::surface(skin::SurfaceId.APP).path.compare_to(expected) == 0);
+
+		p.destroy();
+		cfg.destroy();
+		(void)path::rmtree(root);
+	};
+}
+
+fn void test_skin_image_filter_and_paste()
+{
+	assert(image_path_supported("card.png"));
+	assert(image_path_supported("card.PNG"));
+	assert(!image_path_supported("card.txt"));
+	assert(!image_path_supported("card"));
+
+	char[SKIN_EDIT_MAX + 1] buf;
+	buf[0] = 0;
+	int len = skin_paste_text(&buf[0], 0, "  #112233\n");
+	assert(len == 7);
+	assert(((String)buf[0:len]).compare_to("#112233") == 0);
+	assert(buf[len] == 0);
+
+	len = skin_paste_text(&buf[0], len, " #445566\n");
+	assert(((String)buf[0:len]).compare_to("#112233#445566") == 0);
+	assert(buf[len] == 0);
+
+	char[SKIN_EDIT_MAX + 1] control;
+	control[0] = 0;
+	int control_len = skin_paste_text(&control[0], 0, "a\tb\nc");
+	assert(control_len == 3);
+	assert(((String)control[0:control_len]).compare_to("abc") == 0);
+
+	char[600] long_text;
+	for (usz i = 0; i < 600; i++) long_text[i] = 'x';
+	char[SKIN_EDIT_MAX + 1] limited;
+	limited[0] = 0;
+	int limited_len = skin_paste_text(&limited[0], 0, (String)long_text[0:600]);
+	assert(limited_len == SKIN_EDIT_MAX);
+	assert(limited[SKIN_EDIT_MAX] == 0);
+}
+
+fn void test_skin_browse_row_opens_picker()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? dir = tmp.append(tmem, "yun_skin_panel_browse_test");
+		if (catch excuse = dir) return;
+		Path root = dir;
+		(void)path::rmtree(root);
+		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		Path? yun = root.append(tmem, ".yun");
+		if (catch excuse = yun) return;
+		if (catch excuse = path::mkdir(yun, recursive: true)) return;
+		char[] content = { 'x' };
+		Path? image    = root.append(tmem, "card.png");
+		if (catch excuse = image) return;
+		if (catch excuse = file::save(image, content)) return;
+
+		skin::init_headless(tmem);
+		config::Config cfg;
+		cfg.init(tmem);
+		cfg.reset();
+		skin::set_base(string::format(tmem, "%s/.yun", (String)root), settings::SettingLayer.PROJECT);
+		skin::set_surface_image(skin::SurfaceId.APP, (String)image, settings::SettingLayer.PROJECT);
+
+		Panel p;
+		p.init(tmem);
+		p.show();
+		p.set_page(settings::SettingPage.SKIN);
+		p.scope = settings::SettingLayer.PROJECT;
+		p.selected = p.skin_row(SkinItem.BROWSE);
+		assert(p.selected >= 0);
+
+		p.open_image_picker(true);
+		assert(p.image_picker.open);
+		assert(p.image_picker.dir.compare_to((String)root) == 0);
+		int image_index = -1;
+		for (sz i = 0; i < p.image_picker.entries.len(); i++)
+		{
+			if (p.image_picker.entries[i].path.compare_to((String)image) == 0) image_index = (int)i;
+		}
+		assert(image_index >= 0);
+		p.image_picker.selected = image_index;
+		assert(p.image_picker.activate_selected() == image_picker::PickerAction.SELECTED);
+		p.accept_image_picker(&cfg, true, (String)root, null);
+		assert(skin::surface(skin::SurfaceId.APP).image.compare_to((String)image) == 0);
+
+		skin::set_surface_image(skin::SurfaceId.APP, "", settings::SettingLayer.PROJECT);
+		p.open_image_picker(true);
+		assert(p.image_picker.open);
+		assert(p.image_picker.dir.compare_to((String)yun) == 0);
+		p.image_picker.cancel();
 
 		p.destroy();
 		cfg.destroy();

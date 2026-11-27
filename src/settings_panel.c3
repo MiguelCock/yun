@@ -3,9 +3,11 @@ module yun::settings_panel;
 import raylib6::rl;
 import std::collections::list;
 import std::core::dstring;
+import std::io::path;
 import std::math;
 import yun::commands;
 import yun::config;
+import yun::image_picker;
 import yun::keymap;
 import yun::notify;
 import yun::settings;
@@ -57,6 +59,7 @@ enum SkinItem : int
 	CARD_LAYOUT,
 	SURFACE,
 	IMAGE,
+	BROWSE,
 	FIT,
 	OPACITY,
 	TINT,
@@ -80,6 +83,7 @@ const SkinItem[] SKIN_STYLE_ITEMS = {
 const SkinItem[] SKIN_SURFACE_ITEMS = {
 	SkinItem.SURFACE,
 	SkinItem.IMAGE,
+	SkinItem.BROWSE,
 	SkinItem.FIT,
 	SkinItem.OPACITY,
 	SkinItem.TINT,
@@ -150,6 +154,7 @@ struct Panel
 	char[SKIN_EDIT_MAX + 1] skin_edit_buf;
 	int skin_edit_len;
 	SkinItem skin_edit_item;
+	image_picker::ImagePicker image_picker;
 }
 
 fn bool matches(String section, String label, String key, String description, String query)
@@ -255,10 +260,12 @@ fn void Panel.init(&self, Allocator allocator)
 	self.skin_edit_len = 0;
 	self.skin_edit_buf[0] = 0;
 	self.skin_edit_item = SkinItem.PRESET;
+	self.image_picker.init(allocator);
 }
 
 fn void Panel.destroy(&self)
 {
+	self.image_picker.destroy();
 	self.rows.free();
 }
 
@@ -286,6 +293,7 @@ fn void Panel.show(&self)
 	self.skin_editing = false;
 	self.skin_edit_len = 0;
 	self.skin_edit_buf[0] = 0;
+	self.image_picker.cancel();
 	self.rebuild();
 	if (self.selected_row() < 0) self.move_selection(1);
 }
@@ -302,6 +310,7 @@ fn void Panel.close(&self)
 	self.editing = false;
 	self.capturing = false;
 	self.skin_editing = false;
+	self.image_picker.cancel();
 }
 
 fn String Panel.query_view(&self)
@@ -312,6 +321,32 @@ fn String Panel.query_view(&self)
 fn String Panel.edit_view(&self)
 {
 	return (String)self.edit_buf[0:self.edit_len];
+}
+
+fn bool ctrl_down()
+{
+	return rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
+}
+
+fn bool shift_down()
+{
+	return rl::is_key_down(rl::RLKeyboardKey.LEFT_SHIFT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_SHIFT);
+}
+
+fn int skin_paste_text(char* buffer, int len, String text)
+{
+	if (len < 0) len = 0;
+	if (len > SKIN_EDIT_MAX) len = SKIN_EDIT_MAX;
+	String trimmed = text.trim();
+	for (usz i = 0; i < trimmed.len && len < SKIN_EDIT_MAX; i++)
+	{
+		char c = trimmed[i];
+		if (c < 32 || c == 127) continue;
+		buffer[len] = c;
+		len++;
+	}
+	buffer[len] = 0;
+	return len;
 }
 
 fn bool Panel.append_query(&self, int codepoint)
@@ -511,6 +546,8 @@ fn String skin_item_label(SkinItem item)
 			return "Surface";
 		case SkinItem.IMAGE:
 			return "Image";
+		case SkinItem.BROWSE:
+			return "Browse for image…";
 		case SkinItem.FIT:
 			return "Fit";
 		case SkinItem.OPACITY:
@@ -552,6 +589,8 @@ fn String skin_item_key(SkinItem item)
 			return "skin_surface";
 		case SkinItem.IMAGE:
 			return "skin_surface_image";
+		case SkinItem.BROWSE:
+			return "skin_surface_browse";
 		case SkinItem.FIT:
 			return "skin_surface_fit";
 		case SkinItem.OPACITY:
@@ -593,6 +632,8 @@ fn String skin_item_description(SkinItem item)
 			return "Choose which UI surface the fields below edit.";
 		case SkinItem.IMAGE:
 			return "Relative paths resolve from the config folder. Drop a PNG, JPG, GIF, or BMP here.";
+		case SkinItem.BROWSE:
+			return "Pick a PNG, JPG, GIF, or BMP image from disk.";
 		case SkinItem.FIT:
 			return "How the image fills the surface: cover, contain, stretch, or tile.";
 		case SkinItem.OPACITY:
@@ -621,25 +662,7 @@ fn bool skin_item_is_text(SkinItem item)
 
 fn bool image_path_supported(String path)
 {
-	usz dot  = 0;
-	bool has = false;
-	for (usz i = 0; i < path.len; i++)
-	{
-		if (path[i] == '.')
-		{
-			dot = i;
-			has = true;
-		}
-	}
-	if (!has) return false;
-	String ext = path[dot:path.len - dot];
-	return ext.compare_to_ignore_case(
-		".png"
-	) == 0 || ext.compare_to_ignore_case(
-		".jpg"
-	) == 0 || ext.compare_to_ignore_case(
-		".jpeg"
-	) == 0 || ext.compare_to_ignore_case(".gif") == 0 || ext.compare_to_ignore_case(".bmp") == 0;
+	return image_picker::image_path_supported(path);
 }
 
 fn int skin_field_for(SkinItem item)
@@ -845,6 +868,8 @@ fn settings::SettingLayer Panel.skin_source(&self, SkinItem item, config::Config
 			return config.settings.source(settings::SettingId.CANVAS_CARD_LAYOUT);
 		case SkinItem.SURFACE:
 			return skin::surface_source_any(self.skin_surface);
+		case SkinItem.BROWSE:
+			return settings::SettingLayer.DEFAULT;
 		case SkinItem.IMAGE:
 		case SkinItem.FIT:
 		case SkinItem.OPACITY:
@@ -893,6 +918,8 @@ fn void Panel.skin_value_text(&self, DString* out, SkinItem item, config::Config
 			{
 				out.append_string("(none)");
 			}
+		case SkinItem.BROWSE:
+			out.append_string("Enter");
 		case SkinItem.FIT:
 			out.append_string(skin::fit_name(surface.fit));
 		case SkinItem.OPACITY:
@@ -954,6 +981,11 @@ fn bool Panel.commit_skin_edit(
 	if (!project_open) layer = settings::SettingLayer.GLOBAL;
 	if (item == SkinItem.IMAGE)
 	{
+		if (value.len > 0 && !image_path_supported(value))
+		{
+			if (notifier != null) notifier.push("Use a PNG, JPG, GIF, or BMP image");
+			return false;
+		}
 		skin::set_surface_image(self.skin_surface, value, layer);
 	}
 	else if (item == SkinItem.TINT || item == SkinItem.SCRIM)
@@ -1058,6 +1090,9 @@ fn void Panel.change_skin(
 		case SkinItem.SCRIM:
 			self.start_skin_edit(config);
 			return;
+		case SkinItem.BROWSE:
+			self.open_image_picker(project_open);
+			return;
 		case SkinItem.FIT:
 
 			{
@@ -1136,6 +1171,45 @@ fn void Panel.activate_skin(
 	self.change_skin(config, 1, project_open, project_root, notifier);
 }
 
+fn void Panel.open_image_picker(&self, bool project_open)
+{
+	settings::SettingLayer layer = self.scope;
+	if (!project_open) layer = settings::SettingLayer.GLOBAL;
+	String start = skin::layer_base(layer);
+	if (start.len == 0) start = ".";
+	String current = skin::surface(self.skin_surface).path;
+	if (current.len > 0)
+	{
+		if (path::is_dir((Path)current))
+		{
+			start = current;
+		}
+		else if (try parent = ((Path)current).parent())
+		{
+			if (path::is_dir(parent)) start = (String)parent;
+		}
+	}
+	(void)self.image_picker.open_at(start);
+}
+
+fn void Panel.accept_image_picker(
+	&self,
+	config::Config* config,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
+{
+	String selected = self.image_picker.result_view();
+	if (selected.len == 0) return;
+	settings::SettingLayer layer = self.scope;
+	if (!project_open) layer = settings::SettingLayer.GLOBAL;
+	skin::set_surface_image(self.skin_surface, selected, layer);
+	self.persist(config, project_open, project_root);
+	if (notifier != null) notifier.push("Skin image updated");
+	self.image_picker.cancel();
+}
+
 fn void Panel.reset_skin_selected(
 	&self,
 	config::Config* config,
@@ -1166,6 +1240,8 @@ fn void Panel.reset_skin_selected(
 			config.settings.clear(settings::SettingId.CANVAS_CARD_LAYOUT, layer);
 		case SkinItem.SURFACE:
 			skin::clear_surface(self.skin_surface, layer);
+		case SkinItem.BROWSE:
+			return;
 		case SkinItem.IMAGE:
 		case SkinItem.FIT:
 		case SkinItem.OPACITY:
@@ -1865,6 +1941,17 @@ fn void Panel.update(
 
 	if (!project_open && self.scope == settings::SettingLayer.PROJECT) self.scope = settings::SettingLayer.GLOBAL;
 
+	if (self.image_picker.open)
+	{
+		image_picker::PickerAction action = self.image_picker.update();
+		self.consumed = true;
+		if (action == image_picker::PickerAction.SELECTED)
+		{
+			self.accept_image_picker(config, project_open, project_root, notifier);
+		}
+		return;
+	}
+
 	if (self.capturing)
 	{
 		self.consumed = true;
@@ -1892,6 +1979,19 @@ fn void Panel.update(
 		{
 			self.skin_editing = false;
 			return;
+		}
+		bool paste = (ctrl_down() && rl::is_key_pressed(
+			rl::RLKeyboardKey.V
+		)) || (shift_down() && rl::is_key_pressed(rl::RLKeyboardKey.INSERT));
+		if (paste)
+		{
+			String clip = rl::get_clipboard_text().str_view();
+			if (clip.len > 0)
+			{
+				self.skin_edit_len = 0;
+				self.skin_edit_buf[0] = 0;
+				self.skin_edit_len = skin_paste_text(&self.skin_edit_buf[0], 0, clip);
+			}
 		}
 		if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER))
 		{
@@ -2632,7 +2732,7 @@ fn void Panel.draw_skin_row(&self, RLFont font, Rect panel, Row row, bool select
 		theme::current()
 		.panel_dim);
 
-	bool action = item == SkinItem.RELOAD || item == SkinItem.RESET;
+	bool action = item == SkinItem.RELOAD || item == SkinItem.RESET || item == SkinItem.BROWSE;
 	if (!action)
 	{
 		settings::SettingLayer source = self.skin_source(item, config);
@@ -3098,6 +3198,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		(float)ui::tpx(15),
 		theme::current()
 		.panel_dim);
+	self.image_picker.draw();
 }
 
 fn void Panel.draw_setting_row(&self, RLFont font, Rect panel, Row row, bool selected, float y, config::Config* config)
