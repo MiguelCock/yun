@@ -53,12 +53,14 @@ need them preserved verbatim.
 ```
 
 Relative image paths are resolved from the directory containing the config file.
-Absolute paths are also accepted. PNG, JPG, GIF, and BMP files are supported.
+Absolute paths are also accepted. PNG, JPG, JPEG, JFIF, GIF, and BMP files are supported.
 On the Skin page, type or paste a path (`Ctrl+V` or `Shift+Insert`), drag a file
 onto the field, or use **Browse for image…** to pick one. The browser starts at the
 current image's folder (or the config folder), lists folders first, and filters
-to supported extensions; `Up`/`Down` move, `Enter` or a click opens or selects,
-`Backspace` goes up, and `Esc` cancels. GIFs are decoded into individual frames,
+to supported extensions. `Up`/`Down` move, `Enter` or a double-click selects,
+`Backspace` or the `..` row goes up, and `Esc` cancels. The preview pane shows
+the selected image after a short delay, with its filename and dimensions. GIF
+previews show the first frame. GIFs are decoded into individual frames,
 so each frame fills the surface at its full size and animates using `speed` and
 `fps`.
 

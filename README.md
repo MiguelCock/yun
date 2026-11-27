@@ -56,7 +56,7 @@ editor all restyle together. Skins can add an image or GIF to each surface
 separately, from the app background to card, folder, panel, and top-bar chrome.
 Open **Settings > Skin** (`Ctrl+,`, then `Ctrl+9`) to edit presets, styles,
 surfaces, colours, and GIF playback in-app. Paste or type a path, drop a file,
-or use **Browse for image…** to pick one.
+or use **Browse for image…** to pick one and preview it.
 
 ### Review with context
 

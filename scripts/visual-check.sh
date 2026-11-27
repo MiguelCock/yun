@@ -61,6 +61,7 @@ cat > "$project/README.md" <<'MD'
 This project exists only for deterministic UI screenshots.
 MD
 printf '{\n  "name": "visual-fixture"\n}\n' > "$project/package.json"
+cp "$root/docs/screenshots/canvas.png" "$project/preview.png"
 git -C "$project" init -q
 
 (cd "$root" && c3c build)
@@ -89,6 +90,7 @@ expected=(
 	imports
 	imports-far
 	skin
+	image-picker
 )
 
 for name in "${expected[@]}"; do

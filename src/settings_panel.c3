@@ -631,9 +631,9 @@ fn String skin_item_description(SkinItem item)
 		case SkinItem.SURFACE:
 			return "Choose which UI surface the fields below edit.";
 		case SkinItem.IMAGE:
-			return "Relative paths resolve from the config folder. Drop a PNG, JPG, GIF, or BMP here.";
+			return "Relative paths resolve from the config folder. Drop a PNG, JPG, JPEG, GIF, or BMP here.";
 		case SkinItem.BROWSE:
-			return "Pick a PNG, JPG, GIF, or BMP image from disk.";
+			return "Pick a PNG, JPG, JPEG, GIF, or BMP image from disk.";
 		case SkinItem.FIT:
 			return "How the image fills the surface: cover, contain, stretch, or tile.";
 		case SkinItem.OPACITY:
@@ -983,7 +983,7 @@ fn bool Panel.commit_skin_edit(
 	{
 		if (value.len > 0 && !image_path_supported(value))
 		{
-			if (notifier != null) notifier.push("Use a PNG, JPG, GIF, or BMP image");
+			if (notifier != null) notifier.push("Use a PNG, JPG, JPEG, GIF, or BMP image");
 			return false;
 		}
 		skin::set_surface_image(self.skin_surface, value, layer);

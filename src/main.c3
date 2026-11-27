@@ -899,6 +899,7 @@ const String[] VISUAL_STATE_NAMES = {
 	"imports",
 	"imports-far",
 	"skin",
+	"image-picker",
 };
 
 const int VISUAL_STATE_COUNT = (int)VISUAL_STATE_NAMES.len;
@@ -1074,6 +1075,17 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 			app.canvas.target.zoom = 0.05f;
 		case 20:
 			app.settings_panel.show_page(settings::SettingPage.SKIN);
+		case 21:
+			@pool()
+			{
+				String image_path = string::format(tmem, "%s/preview.png", (String)project.root);
+				skin::set_surface_image(skin::SurfaceId.APP, image_path, settings::SettingLayer.PROJECT);
+				app.settings_panel.scope = settings::SettingLayer.PROJECT;
+				app.settings_panel.skin_surface = skin::SurfaceId.APP;
+				app.settings_panel.show_page(settings::SettingPage.SKIN);
+				app.settings_panel.open_image_picker(true);
+				app.settings_panel.image_picker.select_path(image_path);
+			};
 	}
 }
 
