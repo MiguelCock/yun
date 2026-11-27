@@ -49,7 +49,7 @@ Submodules include `lib/lua54.c3l` and the tree-sitter `upstream/` sources under
 - The runtime static library is committed, but grammar libraries are not: build
   them once after cloning with `scripts/build-tree-sitter.sh linux-x64` (they are
   loaded lazily at runtime, so `c3c test` needs them). See [`docs/tree-sitter.md`](docs/tree-sitter.md).
-- Lua mods (#33+) will additionally require a system Lua 5.4 (e.g. `liblua5.4-dev`).
+- Lua 5.4 is linked through `lib/lua54.c3l`; build it with `scripts/build-lua.sh` (the Linux archive is committed, Windows ships a prebuilt DLL).
 
 ## Ground rules
 - Do not hand-edit vendored libraries (`lib/*.c3l`, `lib/lua54.c3l`); they are packed or submodules. The exception is the hand-maintained runtime binding `lib/tree_sitter.c3l/tree-sitter.c3i`, which may be extended when the runtime API is needed.
