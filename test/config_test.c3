@@ -487,6 +487,7 @@ fn void test_reload_skin()
 		assert(c.key_binding(commands::CommandId.SAVE).compare_to("Ctrl+Alt+S") == 0);
 		assert(c.lsp_command("c3").compare_to("c3-lsp") == 0);
 
+		skin::shutdown();
 		c.destroy();
 		(void)path::rmtree(root);
 	};

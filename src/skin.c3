@@ -140,9 +140,7 @@ struct SkinLayer
 struct Asset
 {
 	String path;
-	RLTexture2D texture;
-	int frame_count;
-	int frame_height;
+	List{RLTexture2D} frames;
 	bool ok;
 }
 
@@ -256,7 +254,12 @@ fn void clear_assets()
 	for (sz i = 0; i < g_assets.len(); i++)
 	{
 		Asset* entry = &g_assets[i];
-		if (g_graphics_ready && entry.texture.is_valid()) rl::unload_texture(entry.texture);
+		for (sz f = 0; f < entry.frames.len(); f++)
+		{
+			RLTexture2D tex = entry.frames[f];
+			if (g_graphics_ready && tex.is_valid()) rl::unload_texture(tex);
+		}
+		entry.frames.free();
 		if (entry.path.len) entry.path.free(g_allocator);
 	}
 	g_assets.clear();
@@ -282,6 +285,7 @@ fn int layer_index(settings::SettingLayer layer)
 
 fn SkinLayer* layer_for(settings::SettingLayer layer)
 {
+	if (!g_state_ready) return null;
 	int index = layer_index(layer);
 	if (index < 0) return null;
 	return &g_layers[index];
@@ -387,6 +391,8 @@ fn void shutdown()
 	g_clip_valid = false;
 	g_graphics_ready = false;
 	g_state_ready = false;
+	for (int i = 0; i < 2; i++) g_layers[i] = { };
+	g_skin = { };
 }
 
 fn String surface_name(SurfaceId id)
@@ -557,6 +563,12 @@ fn void set_layer_base(SkinLayer* layer, String base)
 {
 	if (layer.base.len) layer.base.free(g_allocator);
 	layer.base = base.len > 0 ? base.copy(g_allocator) : "";
+}
+
+fn String layer_base(settings::SettingLayer layer)
+{
+	SkinLayer* target = layer_for(layer);
+	return target != null ? target.base : "";
 }
 
 fn void set_base(String base, settings::SettingLayer layer)
@@ -1311,19 +1323,26 @@ fn bool language_colors()
 	return g_skin.language_colors;
 }
 
+fn RLImage frame_view(RLImage image, int index)
+{
+	int frame_bytes = rl::get_pixel_data_size(image.width, image.height, image.format);
+	return {
+		.data = (char*)image.data + (usz)index * (usz)frame_bytes,
+		.width = image.width,
+		.height = image.height,
+		.mipmaps = 1,
+		.format = image.format,
+	};
+}
+
 fn Asset*? asset_for(String path)
 {
 	for (sz i = 0; i < g_assets.len(); i++)
 	{
 		if (g_assets[i].path.compare_to(path) == 0) return &g_assets[i];
 	}
-	Asset entry = {
-		.path = path.copy(g_allocator),
-		.texture = { },
-		.frame_count = 1,
-		.frame_height = 0,
-		.ok = false,
-	};
+	Asset entry = { .path = path.copy(g_allocator), .frames = { }, .ok = false };
+	entry.frames.init(g_allocator);
 	int frames    = 0;
 	RLImage image = rl::load_image_anim(path.zstr_tcopy(), &frames);
 	if (!image.is_valid())
@@ -1334,22 +1353,41 @@ fn Asset*? asset_for(String path)
 	if (image.is_valid())
 	{
 		if (frames < 1) frames = 1;
-		if (image.width > MAX_GIF_DIM || image.height > 8192)
+		if (frames > MAX_GIF_FRAMES) frames = MAX_GIF_FRAMES;
+		for (int f = 0; f < frames; f++)
 		{
-			float scale = math::min((float)MAX_GIF_DIM / (float)image.width, 8192.0f / (float)image.height);
-			rl::image_resize(&image, (int)((float)image.width * scale), (int)((float)image.height * scale));
-		}
-		RLTexture2D texture = rl::load_texture_from_image(image);
-		if (texture.is_valid())
-		{
-			texture.set_filter(rl::RLTextureFilter.BILINEAR);
-			entry.texture = texture;
-			entry.frame_count = frames;
-			entry.frame_height = image.height / frames;
-			entry.ok = entry.frame_height > 0;
+			RLImage frame = frame_view(image, f);
+			bool copied   = false;
+			if (frame.format != rl::RLPixelFormat.UNCOMPRESSED_R8G8B8A8)
+			{
+				frame = rl::image_copy(frame);
+				copied = true;
+				rl::image_format(&frame, rl::RLPixelFormat.UNCOMPRESSED_R8G8B8A8);
+			}
+			if (frame.width > MAX_GIF_DIM || frame.height > MAX_GIF_DIM)
+			{
+				if (!copied)
+				{
+					frame = rl::image_copy(frame);
+					copied = true;
+				}
+				float scale = math::min(
+					(float)MAX_GIF_DIM / (float)frame.width,
+					(float)MAX_GIF_DIM / (float)frame.height
+				);
+				rl::image_resize(&frame, (int)((float)frame.width * scale), (int)((float)frame.height * scale));
+			}
+			RLTexture2D texture = rl::load_texture_from_image(frame);
+			if (texture.is_valid())
+			{
+				texture.set_filter(rl::RLTextureFilter.BILINEAR);
+				entry.frames.push(texture);
+			}
+			if (copied) rl::unload_image(frame);
 		}
 		rl::unload_image(image);
 	}
+	entry.ok = entry.frames.len() > 0;
 	g_assets.push(entry);
 	return &g_assets[g_assets.len() - 1];
 }
@@ -1394,24 +1432,24 @@ fn bool draw_surface(SurfaceId id, Rect dest, float radius)
 
 fn bool draw_asset(SurfaceConfig cfg, Asset* entry, Rect dest, float radius)
 {
-	if (!entry.ok || !entry.texture.is_valid()) return false;
+	if (!entry.ok || entry.frames.len() == 0) return false;
 	int frame = 0;
-	if (entry.frame_count > 1 && cfg.fps > 0.0f && cfg.speed > 0.0f)
+	if (entry.frames.len() > 1 && cfg.fps > 0.0f && cfg.speed > 0.0f)
 	{
 		double t = rl::get_time() * (double)cfg.fps * (double)cfg.speed;
-		frame = (int)(t) % entry.frame_count;
+		frame = (int)(t) % (int)entry.frames.len();
 		if (frame < 0) frame = 0;
 	}
-	RLTexture2D tex  = entry.texture;
-	int frame_height = entry.frame_height > 0 ? entry.frame_height : tex.height;
+	RLTexture2D tex  = entry.frames[frame];
+	int frame_height = tex.height;
 	RLColor tint     = cfg.tint;
 	tint.a = (char)((float)((int)tint.a & 0xFF) * cfg.opacity);
-	Rect source = { 0.0f, (float)(frame * frame_height), (float)tex.width, (float)frame_height };
+	Rect source = { 0.0f, 0.0f, (float)tex.width, (float)frame_height };
 	Rect draw   = dest;
 	if (cfg.fit == SurfaceFit.COVER)
 	{
 		Rect crop = cover_source(tex.width, frame_height, dest);
-		source = { crop.x, (float)(frame * frame_height) + crop.y, crop.width, crop.height };
+		source = { crop.x, crop.y, crop.width, crop.height };
 	}
 	else if (cfg.fit == SurfaceFit.CONTAIN)
 	{

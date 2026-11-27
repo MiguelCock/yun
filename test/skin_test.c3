@@ -301,3 +301,36 @@ fn void test_language_colors()
 	assert(c3[0] != md[0] || c3[1] != md[1] || c3[2] != md[2]);
 	assert(unknown[3] == 255);
 }
+fn void test_frame_view_uses_full_frame_height()
+{
+	char[64] data;
+	RLImage image = {
+		.data = (char*)&data,
+		.width = 2,
+		.height = 2,
+		.mipmaps = 1,
+		.format = rl::RLPixelFormat.UNCOMPRESSED_R8G8B8,
+	};
+	int frame_bytes = rl::get_pixel_data_size(2, 2, image.format);
+	assert(frame_bytes == 12);
+	for (int i = 0; i < 3; i++)
+	{
+		RLImage frame = frame_view(image, i);
+		assert(frame.width == 2);
+		assert(frame.height == 2);
+		assert(frame.format == image.format);
+		assert((char*)frame.data == (char*)&data + i * frame_bytes);
+	}
+	RLImage rgba = {
+		.data = (char*)&data,
+		.width = 3,
+		.height = 5,
+		.mipmaps = 1,
+		.format = rl::RLPixelFormat.UNCOMPRESSED_R8G8B8A8,
+	};
+	assert(rl::get_pixel_data_size(3, 5, rgba.format) == 60);
+	RLImage second = frame_view(rgba, 1);
+	assert(second.width == 3);
+	assert(second.height == 5);
+	assert((char*)second.data == (char*)&data + 60);
+}
