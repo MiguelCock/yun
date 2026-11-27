@@ -5,6 +5,7 @@ import std::collections::list;
 import std::math;
 import yun::commands;
 import yun::keymap;
+import yun::skin;
 import yun::theme;
 import yun::ui;
 
@@ -218,6 +219,8 @@ fn void Menu.draw(&self)
 
 	Rect panel = self.panel_rect();
 	ui::panel(panel, theme::current().panel_bg_alt, theme::current().panel_border);
+	skin::draw_screen(skin::SurfaceId.MENU, panel, ui::corner_radius());
+	ui::rounded_rect_lines(panel, ui::corner_radius(), 1.0f, theme::current().panel_border);
 	for (int i = 0; i < self.rows(); i++)
 	{
 		float row_y = panel.y + (float)ui::px(MENU_PADDING_Y) + (float)(i * ui::px(MENU_ROW_HEIGHT));
