@@ -1627,14 +1627,8 @@ fn void Project.enter_folder(&self, int index)
 		self.nav_items(&items);
 		if (items.len() > 0) self.select_nav_item(items[0]);
 	};
-	if (was_collapsed)
-	{
-		self.layout();
-	}
-	else
-	{
-		self.invalidate_bounds();
-	}
+	self.invalidate_bounds();
+	if (was_collapsed && self.layout_conflict(index)) self.layout();
 }
 
 fn bool Project.leave_folder(&self)
@@ -2003,6 +1997,27 @@ fn int Project.hit_test(&self, RLVector2 world)
 	return best;
 }
 
+fn bool Project.layout_conflict(&self, int index)
+{
+	Rect area   = self.cluster_bounds(index);
+	String root = (String)self.folders[index].path;
+	for (sz i = 0; i < self.cards.len(); i++)
+	{
+		if (!self.card_visible((int)i)) continue;
+		if (path_is_inside(root, (String)self.cards[i].path)) continue;
+		if (rect_intersects(area, self.cards[i].rect)) return true;
+	}
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		if ((int)i == index) continue;
+		String path = (String)self.folders[i].path;
+		if (path_is_inside(root, path) || path_is_inside(path, root)) continue;
+		if (!self.cluster_visible((int)i)) continue;
+		if (rect_intersects(area, self.cluster_visual_bounds((int)i))) return true;
+	}
+	return false;
+}
+
 fn void Project.toggle_collapse(&self, int index)
 {
 	if (index < 0 || index >= (int)self.folders.len()) return;
@@ -2021,6 +2036,7 @@ fn void Project.toggle_collapse(&self, int index)
 	self.folders[index].collapsed = !self.folders[index].collapsed;
 	if (expanding) self.collapse_descendants(index);
 	self.invalidate_bounds();
+	if (expanding && self.layout_conflict(index)) self.layout();
 }
 
 fn void Project.move_cluster(&self, int index, RLVector2 delta)

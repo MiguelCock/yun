@@ -1969,3 +1969,41 @@ fn void test_enter_folder_relayouts_expanded_content()
 		assert(!rect_intersects(p.cluster_bounds(a), p.cards[root_card].rect));
 	};
 }
+fn void test_title_expansion_relayouts_when_content_overlaps()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		for (int k = 0; k < 8; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/f%d.c3", k)
+				.copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
+		int root_card = (int)p.cards.len();
+		p.cards.push(
+			{
+				.path = (Path)"/root/root.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .width = 1.0f, .height = 1.0f },
+			}
+		);
+		p.layout();
+		Rect expanded = p.cluster_bounds(a);
+		p.cards[root_card].rect = {
+			.x = expanded.x + expanded.width * 0.5f,
+			.y = expanded.y + expanded.height * 0.5f,
+			.width = 100.0f,
+			.height = 100.0f,
+		};
+		p.toggle_collapse(a);
+		assert(p.folders[a].collapsed);
+		p.toggle_collapse(a);
+		assert(!p.folders[a].collapsed);
+		assert(!rect_intersects(p.cluster_bounds(a), p.cards[root_card].rect));
+	};
+}

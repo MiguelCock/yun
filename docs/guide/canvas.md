@@ -62,9 +62,9 @@ A freshly opened project starts with every folder collapsed. A collapsed folder
 keeps a compact folder body with its name, file count, and a preview, so it stays
 visible and grouped before the cards. Entering a folder (`Enter` or a
 double-click) reveals its files and child folders, collapses every descendant
-folder, and re-flows the canvas so the expanded content keeps its space. The
-`+` tab expands or collapses a folder in place. The expanded content uses the
-folder's content bounds. Folder bodies are saved in the workspace, and older
+folder, and re-flows the canvas when the expanded content would overlap its
+neighbours. The `+` tab expands or collapses a folder in place unless it needs
+space. The expanded content uses the folder's content bounds. Folder bodies are saved in the workspace, and older
 workspaces are re-laid out once when upgraded.
 
 The camera fits visible content on first open, with a floor controlled by
