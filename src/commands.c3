@@ -126,6 +126,7 @@ enum CommandId
 	MINIMAP_FOCUS,
 	ZOOM_RESET,
 	ZOOM_FIT,
+	RELAYOUT,
 	TOGGLE_PREVIEW,
 	LEAVE_FOLDER,
 	CYCLE_FOCUS,
@@ -968,6 +969,14 @@ const CommandDef[] COMMAND_DEFS = {
 		.contexts = CTX_MOVE
 	},
 	{
+		.id = CommandId.RELAYOUT,
+		.description = "Re-arrange cards using the current card layout.",
+		.label = "Relayout Canvas",
+		.shortcut = "Ctrl+Alt+L",
+		.in_top_bar = false,
+		.contexts = CTX_MOVE | CTX_GLOBAL,
+	},
+	{
 		.id = CommandId.TOGGLE_PREVIEW,
 		.description = "Show or hide the Markdown preview.",
 		.label = "Toggle Preview",
@@ -1486,6 +1495,8 @@ fn String command_name(CommandId id)
 			return "zoom_reset";
 		case CommandId.ZOOM_FIT:
 			return "zoom_fit";
+		case CommandId.RELAYOUT:
+			return "relayout";
 		case CommandId.TOGGLE_PREVIEW:
 			return "toggle_preview";
 		case CommandId.LEAVE_FOLDER:
@@ -1680,6 +1691,7 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.CYCLE_PREV:
 		case CommandId.ZOOM_IN:
 		case CommandId.ZOOM_OUT:
+		case CommandId.RELAYOUT:
 		case CommandId.FOCUS_EDITOR:
 		case CommandId.LEAVE_FOLDER:
 		case CommandId.CYCLE_FOCUS:

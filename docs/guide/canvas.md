@@ -11,7 +11,8 @@ cluster, and arranging cards is part of arranging the project.
 - **Cluster** — a folder and its contents. Folders can collapse to a compact
   header and expand in place.
 - **Workspace** — card positions, folder state, camera, and console sessions
-  saved in `.yun/workspace.json`.
+  saved in `.yun/workspace.json`. Run **Project Data** from the palette to open
+  `.yun` or reset it.
 
 ## Modes
 
@@ -41,6 +42,18 @@ The top bar shows the current mode:
 Mouse panning, wheel zoom, dragging, resizing, and title buttons work too. Grid
 snapping applies after intentional movement; selecting or cancelling a grab
 does not move the card.
+
+## Card layouts
+
+`canvas.card_layout` controls how cards are arranged inside folders:
+
+- `grid` — the original multi-column grid.
+- `deck` — overlapping vertical stacks; each title stays exposed.
+- `fan` — like `deck`, with a sideways offset.
+
+The selected card is promoted to the bottom of its stack and expands for
+editing. Use **Relayout Canvas** (`Ctrl+Alt+L`) after changing the setting in a
+running session. The layout is saved with the workspace.
 
 ## Folder clusters
 

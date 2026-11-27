@@ -153,6 +153,7 @@ fn void finish_open(
 )
 {
 	config.load((String)project.root);
+	apply_card_layout(project, config);
 	set_console_settings(config);
 	set_git_settings(config);
 	ui::set_ui_scale((float)config.settings.get_float(settings::SettingId.APP_UI_SCALE));
@@ -203,6 +204,11 @@ fn void apply_chrome_insets(canvas::Canvas* canvas, git::Panel* git_panel, bool 
 	}
 }
 
+fn void apply_card_layout(project::Project* project, config::Config* config)
+{
+	apply_card_layout(project, config);
+}
+
 fn void apply_settings(
 	config::Config* config,
 	fonts::Fonts* fonts,
@@ -218,6 +224,7 @@ fn void apply_settings(
 	mods::Mods* mods
 )
 {
+	apply_card_layout(project, config);
 	if (mods)
 	{
 		mods.apply_settings(
@@ -914,6 +921,7 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 				int index = project.focus(0);
 				project.selected = index;
 				editor::ensure_buffer(&project.cards[index], project.allocator);
+				project.refresh_stack_layout();
 			}
 		case 1:
 			app.settings_panel.show();
@@ -2244,6 +2252,15 @@ fn void run_command(commands::CommandId id, App* app)
 				{
 					app.canvas.fit_zoom(bounds, rl::get_screen_width(), rl::get_screen_height());
 				}
+				return;
+			}
+		case commands::CommandId.RELAYOUT:
+
+			{
+				project.layout();
+				project.invalidate_bounds();
+				project.clear_selection();
+				app.notifier.push("Canvas relaid out");
 				return;
 			}
 		default:
@@ -4527,6 +4544,12 @@ fn int main(String[] args)
 				|| vim_cmd.open;
 			double update_t0         = rl::get_time();
 			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
+			bool stack_selection_changed = project.selected != last_follow_selection
+				|| project.selected_cluster != last_follow_cluster;
+			if (stack_selection_changed && last_follow_selection != -2
+				&& project.card_layout != project::CardLayout.GRID
+				&& project.focus_card < 0
+				&& !project.grabbing) project.layout();
 			if (canvas::settings()
 				.follow_selection && ui_mode
 					== UiMode.MOVE && project.focus_card < 0 && !project.grabbing && (project.selected

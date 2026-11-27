@@ -38,16 +38,26 @@ const float CARD_GAP                =  16.0f;
 const int CLUSTER_COLUMNS           =  3;
 const String[] IGNORED_NAMES        =  { ".git", ".gitmodules", ".yun", "build", "out", "node_modules" };
 const float DRAW_CULL_MARGIN        =  64.0f;
-const float CARD_MIN_DRAW_PX        =  3.0f;
-const float CARD_LOD_MIN_PX         =  48.0f;
-const float CARD_DETAIL_MIN_PX      =  180.0f;
-const float CLUSTER_TEXT_MIN_ZOOM   =  0.45f;
-const double DOUBLE_CLICK_SECONDS   =  0.35;
-const float DOUBLE_CLICK_DIST       =  6.0f;
-const usz OPEN_SCAN_BUDGET          =  64;
-const usz OPEN_BUILD_BUDGET         =  4096;
-const double JUMP_HIGHLIGHT_SECONDS =  1.0;
-const int JUMP_HIGHLIGHT_ALPHA      =  80;
+const int STACK_CARDS               =  10;
+const float STACK_GAP               =  6.0f;
+const float STACK_FAN_X             =  26.0f;
+
+enum CardLayout : int
+{
+	GRID,
+	DECK,
+	FAN,
+}
+const float CARD_MIN_DRAW_PX        = 3.0f;
+const float CARD_LOD_MIN_PX         = 48.0f;
+const float CARD_DETAIL_MIN_PX      = 180.0f;
+const float CLUSTER_TEXT_MIN_ZOOM   = 0.45f;
+const double DOUBLE_CLICK_SECONDS   = 0.35;
+const float DOUBLE_CLICK_DIST       = 6.0f;
+const usz OPEN_SCAN_BUDGET          = 64;
+const usz OPEN_BUILD_BUDGET         = 4096;
+const double JUMP_HIGHLIGHT_SECONDS = 1.0;
+const int JUMP_HIGHLIGHT_ALPHA      = 80;
 
 enum OpenPhase : int
 {
@@ -159,6 +169,7 @@ struct Project
 	int cards_revision;
 	int order_revision;
 	bool skip_nested_repos;
+	CardLayout card_layout;
 	int focus_card;
 	int focus_saved_focused;
 	Rect focus_saved_rect;
@@ -221,6 +232,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.cards_revision = 0;
 	self.order_revision = 0;
 	self.skip_nested_repos = true;
+	self.card_layout = CardLayout.DECK;
 	self.focus_card = -1;
 	self.focus_saved_focused = -1;
 	self.focus_screen_w = 0.0f;
@@ -1015,11 +1027,56 @@ fn void Project.place_cards_grid(&self, List{int}* cards, float base_x, float ba
 	}
 }
 
+
+fn void Project.place_cards_block(&self, List{int}* cards, float base_x, float base_y, float cw, float ch, float cg)
+{
+	if (self.card_layout == CardLayout.GRID)
+	{
+		self.place_cards_grid(cards, base_x, base_y, cw, ch, cg);
+		return;
+	}
+	int count = (int)cards.len();
+	int per   = math::min(count, STACK_CARDS);
+	if (per < 1) return;
+	float step_y  = ui::pxf(card::CARD_TITLE_HEIGHT) + ui::pxf(STACK_GAP);
+	float fan_x   = self.card_layout == CardLayout.FAN ? ui::pxf(STACK_FAN_X) : 0.0f;
+	float stack_w = cw + (float)(per - 1) * fan_x;
+	for (int k = 0; k < count; k++)
+	{
+		int stack = k / per;
+		int pos   = k % per;
+		self.cards[(*cards)[k]].rect = {
+			.x = base_x + (float)stack * (stack_w + cg) + (float)pos * fan_x,
+			.y = base_y + (float)pos * step_y,
+			.width = cw,
+			.height = ch,
+		};
+	}
+}
+
+fn void Project.set_card_layout(&self, CardLayout layout)
+{
+	if ((int)layout < (int)CardLayout.GRID || (int)layout > (int)CardLayout.FAN) return;
+	if (self.card_layout == layout) return;
+	self.card_layout = layout;
+	self.layout();
+}
 fn RLVector2 Project.card_block_size(&self, int count, float cw, float ch, float cg)
 {
-	int cols = count < CLUSTER_COLUMNS ? (count < 1 ? 1 : count) : CLUSTER_COLUMNS;
-	int rows = count == 0 ? 0 : (count + cols - 1) / cols;
-	return { count == 0 ? 0.0f : (float)cols * (cw + cg) - cg, rows == 0 ? 0.0f : (float)rows * (ch + cg) - cg };
+	if (count == 0) return { 0.0f, 0.0f };
+	if (self.card_layout == CardLayout.GRID)
+	{
+		int cols = count < CLUSTER_COLUMNS ? count : CLUSTER_COLUMNS;
+		int rows = (count + cols - 1) / cols;
+		return { (float)cols * (cw + cg) - cg, (float)rows * (ch + cg) - cg };
+	}
+	int per       = math::min(count, STACK_CARDS);
+	int stacks    = (count + per - 1) / per;
+	float step_y  = ui::pxf(card::CARD_TITLE_HEIGHT) + ui::pxf(STACK_GAP);
+	float fan_x   = self.card_layout == CardLayout.FAN ? ui::pxf(STACK_FAN_X) : 0.0f;
+	float stack_w = cw + (float)(per - 1) * fan_x;
+	float stack_h = ch + (float)(per - 1) * step_y;
+	return { (float)stacks * (stack_w + cg) - cg, stack_h };
 }
 
 fn RLVector2 Project.flow_pack(&self, List{RLVector2}* items, float gap, float target_w, RLVector2[] positions)
@@ -1080,7 +1137,7 @@ fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* car
 	int base = cards.len() > 0 ? 1 : 0;
 	if (cards.len() > 0)
 	{
-		self.place_cards_grid(&cards, content_x + positions[0][0], content_y + positions[0][1], cw, ch, cg);
+		self.place_cards_block(&cards, content_x + positions[0][0], content_y + positions[0][1], cw, ch, cg);
 	}
 	for (sz i = 0; i < kids.len(); i++)
 	{
@@ -1114,6 +1171,24 @@ fn void Project.layout(&self)
 		List{int}[] cards_by = alloc::new_array(tmem, List{int}, (usz)(nf + 1));
 		for (usz i = 0; i < cards_by.len; i++) cards_by[i].init(tmem);
 		for (sz i = 0; i < self.cards.len(); i++) cards_by[(usz)(self.cards[i].folder + 1)].push((int)i);
+		if (self.card_layout != CardLayout.GRID)
+		{
+			int promote = self.selected >= 0 ? self.selected : self.focused;
+			if (promote >= 0 && promote < (int)self.cards.len())
+			{
+				List{int}* list = &cards_by[(usz)(self.cards[promote].folder + 1)];
+				if (try at = list.index_of(promote))
+				{
+					sz group_start = ((sz)at / (sz)STACK_CARDS) * (sz)STACK_CARDS;
+					sz group_end   = math::min(group_start + (sz)STACK_CARDS - 1, (sz)list.len() - 1);
+					if ((sz)at < group_end)
+					{
+						list.remove_at(at);
+						list.insert_at(group_end, promote);
+					}
+				}
+			}
+		}
 
 		List{int}[] children_by = { };
 		if (nf > 0)
@@ -1150,7 +1225,7 @@ fn void Project.layout(&self)
 			int base = root_cards.len() > 0 ? 1 : 0;
 			if (root_cards.len() > 0)
 			{
-				self.place_cards_grid(&root_cards, positions[0][0], positions[0][1], cw, ch, cg);
+				self.place_cards_block(&root_cards, positions[0][0], positions[0][1], cw, ch, cg);
 			}
 			for (sz i = 0; i < tops.len(); i++)
 			{
@@ -1159,6 +1234,7 @@ fn void Project.layout(&self)
 			}
 		}
 	};
+	self.invalidate_bounds();
 }
 
 fn void Project.place_unrestored(&self)
@@ -1636,6 +1712,13 @@ fn bool Project.delete_card_file(&self, int index)
 	if (catch excuse = path::delete(path)) return false;
 	self.remove_card(index);
 	return true;
+}
+
+fn void Project.refresh_stack_layout(&self)
+{
+	if (self.card_layout == CardLayout.GRID) return;
+	if (self.focus_card >= 0 || self.grabbing || self.drag_card || self.resizing) return;
+	self.layout();
 }
 
 fn int Project.focus(&self, int index)
@@ -3578,6 +3661,16 @@ fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
 {
 	FolderCluster cluster = self.folders[index];
 	float radius          = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
+	bool explorer         = skin::folder_style() == skin::FolderStyle.EXPLORER;
+	if (explorer)
+	{
+		float offset = zoom > 0.0f ? 2.0f / zoom : 2.0f;
+		ui::rounded_rect(
+			{ .x = bounds.x + offset, .y = bounds.y + offset, .width = bounds.width, .height = bounds.height },
+			radius,
+			{ 0, 0, 0, 40 }
+		);
+	}
 	if (!skin::draw_world(
 		skin::SurfaceId.FOLDER,
 		bounds,
@@ -3591,17 +3684,23 @@ fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
 		.width = bounds.width,
 		.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
 	};
+	Rect tab = title;
+	if (explorer)
+	{
+		tab.width = math::min(bounds.width - (float)ui::px(16), (float)ui::px(220));
+		if (tab.width < (float)ui::px(60)) tab.width = bounds.width;
+	}
 	if (!skin::draw_world(
 		skin::SurfaceId.FOLDER_TITLE,
-		title,
+		tab,
 		zoom,
 		ui::corner_radius()
-	)) ui::rounded_top(title, radius, theme::current()
+	)) ui::rounded_top(tab, radius, theme::current()
 		.cluster_title);
 	ui::rounded_rect_lines(bounds, radius, card::screen_thickness(1.0f, zoom), theme::current().cluster_border);
 	if ((int)index == self.current_folder)
 	{
-		ui::rounded_rect_lines(title, radius, card::screen_thickness(1.0f, zoom), theme::current().card_focus);
+		ui::rounded_rect_lines(tab, radius, card::screen_thickness(1.0f, zoom), theme::current().card_focus);
 	}
 	if ((int)index == self.selected_cluster)
 	{
@@ -3835,6 +3934,7 @@ fn void Project.draw_cards(
 			{
 				editor::ensure_buffer(card, self.allocator);
 				Rect area = editor::inner_rect(card.rect, metrics);
+				skin::draw_world(skin::SurfaceId.CARD_EDITOR, area, camera.zoom, 0.0f);
 				float max = 0.0f;
 				if (card.buffer && card.view)
 				{
@@ -3860,14 +3960,16 @@ fn void Project.draw_cards(
 
 			if (!card.buffer)
 			{
-				editor::draw_placeholder(editor::inner_rect(card.rect, metrics), metrics, camera, theme::current()
-					.editor_placeholder);
+				Rect area = editor::inner_rect(card.rect, metrics);
+				skin::draw_world(skin::SurfaceId.CARD_EDITOR, area, camera.zoom, 0.0f);
+				editor::draw_placeholder(area, metrics, camera, theme::current().editor_placeholder);
 				continue;
 			}
 
 			usz line_count = card.buffer.line_count();
-			Rect gutter    = editor::gutter_rect(card.rect, metrics, line_count);
-			Rect text      = editor::text_rect(card.rect, metrics, line_count);
+			skin::draw_world(skin::SurfaceId.CARD_EDITOR, editor::inner_rect(card.rect, metrics), camera.zoom, 0.0f);
+			Rect gutter = editor::gutter_rect(card.rect, metrics, line_count);
+			Rect text   = editor::text_rect(card.rect, metrics, line_count);
 
 			if (self.jump_path.len > 0 && self.jump_path.compare_to((String)card.path) == 0)
 			{

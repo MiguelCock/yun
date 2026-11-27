@@ -1612,3 +1612,37 @@ fn void test_sticky_folder_hint_inside_collapsed_area()
 		assert(p.cluster_title_hit(f, hit));
 	};
 }
+fn void test_stack_card_layout_positions()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.card_layout = CardLayout.DECK;
+		List{int} ids;
+		ids.init(tmem);
+		for (int i = 0; i < 12; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/%d.c3", i),
+					.name = string::format(tmem, "%d.c3", i),
+					.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+					.folder = ROOT_FOLDER,
+				}
+			);
+			ids.push(i);
+		}
+		p.place_cards_block(&ids, 0.0f, 0.0f, 100.0f, 50.0f, 10.0f);
+		assert(p.cards[0].rect.x == 0.0f && p.cards[0].rect.y == 0.0f);
+		assert(p.cards[1].rect.x == 0.0f && p.cards[1].rect.y > 0.0f);
+		assert(p.cards[10].rect.x > p.cards[0].rect.x);
+		assert(p.cards[10].rect.y == 0.0f);
+
+		p.card_layout = CardLayout.FAN;
+		p.place_cards_block(&ids, 0.0f, 0.0f, 100.0f, 50.0f, 10.0f);
+		assert(p.cards[1].rect.x > p.cards[0].rect.x);
+		p.destroy();
+		ids.free();
+	};
+}

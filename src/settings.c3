@@ -92,6 +92,7 @@ enum SettingId : int
 	CANVAS_JUMP_ZOOM_TARGET,
 	CANVAS_FIT_ON_OPEN,
 	CANVAS_FIT_MIN_ZOOM,
+	CANVAS_CARD_LAYOUT,
 	MINIMAP_ENABLED,
 	MINIMAP_SIZE,
 	MINIMAP_ZOOM_THRESHOLD,
@@ -750,6 +751,15 @@ const SettingSpec[] SETTINGS = {
 		.min = 0.02,
 		.max = 4.0,
 		.step = 0.05,
+	},
+	{
+		.section = "canvas",
+		.key = "card_layout",
+		.label = "Card layout",
+		.description = "Arrange cards as a grid, a cascading deck, or a fanned deck.",
+		.kind = SettingKind.ENUM,
+		.fallback = { .s = "deck" },
+		.options = { "grid", "deck", "fan" },
 	},
 	{
 		.section = "minimap",

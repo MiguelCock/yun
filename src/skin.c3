@@ -5,6 +5,7 @@ import std::collections::list;
 import std::collections::object;
 import std::io::path;
 import std::math;
+import yun::language;
 import yun::settings;
 import yun::theme;
 
@@ -364,6 +365,116 @@ fn void apply_object(Object* obj, String base, settings::SettingLayer layer)
 	if (layer == settings::SettingLayer.PROJECT) clear_assets();
 }
 
+
+fn RLColor adjust_language_color(RLColor c)
+{
+	RLColor bg = theme::current().window_bg;
+	float lum  = (0.2126f * (float)(int)bg[0] + 0.7152f * (float)(int)bg[1] + 0.0722f * (float)(int)bg[2]) / 255.0f;
+	if (lum > 0.5f)
+	{
+		c[0] = (char)((int)c[0] * 55 / 100);
+		c[1] = (char)((int)c[1] * 55 / 100);
+		c[2] = (char)((int)c[2] * 55 / 100);
+	}
+	return c;
+}
+
+fn RLColor language_color(String path)
+{
+	RLColor c = { 138, 143, 152, 255 };
+	switch (language::language_for_path(path))
+	{
+		case language::Language.C3:
+			c = { 108, 182, 255, 255 };
+		case language::Language.C:
+		case language::Language.CPP:
+			c = { 122, 162, 247, 255 };
+		case language::Language.PYTHON:
+			c = { 247, 201, 72, 255 };
+		case language::Language.JAVASCRIPT:
+			c = { 247, 223, 30, 255 };
+		case language::Language.TYPESCRIPT:
+		case language::Language.TSX:
+			c = { 74, 163, 255, 255 };
+		case language::Language.GO:
+			c = { 0, 173, 216, 255 };
+		case language::Language.RUST:
+			c = { 222, 165, 132, 255 };
+		case language::Language.ZIG:
+			c = { 247, 164, 29, 255 };
+		case language::Language.ODIN:
+			c = { 199, 125, 255, 255 };
+		case language::Language.V:
+			c = { 93, 156, 236, 255 };
+		case language::Language.NIM:
+			c = { 255, 230, 102, 255 };
+		case language::Language.JAVA:
+			c = { 231, 111, 0, 255 };
+		case language::Language.KOTLIN:
+			c = { 169, 123, 255, 255 };
+		case language::Language.SCALA:
+			c = { 194, 45, 64, 255 };
+		case language::Language.C_SHARP:
+			c = { 81, 43, 212, 255 };
+		case language::Language.CSS:
+		case language::Language.SCSS:
+		case language::Language.SASS:
+		case language::Language.LESS:
+			c = { 86, 61, 124, 255 };
+		case language::Language.HTML:
+		case language::Language.XML:
+		case language::Language.VUE:
+			c = { 227, 76, 38, 255 };
+		case language::Language.LUA:
+			c = { 81, 160, 255, 255 };
+		case language::Language.PHP:
+			c = { 119, 123, 180, 255 };
+		case language::Language.RUBY:
+			c = { 204, 52, 45, 255 };
+		case language::Language.R:
+			c = { 39, 109, 195, 255 };
+		case language::Language.JULIA:
+			c = { 149, 88, 178, 255 };
+		case language::Language.HASKELL:
+			c = { 93, 79, 133, 255 };
+		case language::Language.GLEAM:
+			c = { 255, 175, 189, 255 };
+		case language::Language.ERLANG:
+			c = { 169, 5, 51, 255 };
+		case language::Language.ELIXIR:
+			c = { 110, 74, 126, 255 };
+		case language::Language.DART:
+			c = { 0, 180, 171, 255 };
+		case language::Language.MARKDOWN:
+		case language::Language.MARKDOWN_INLINE:
+			c = { 138, 180, 248, 255 };
+		case language::Language.SOL:
+			c = { 240, 160, 80, 255 };
+		case language::Language.JSON:
+			c = { 203, 203, 65, 255 };
+		case language::Language.YAML:
+			c = { 203, 23, 30, 255 };
+		case language::Language.TOML:
+			c = { 156, 66, 33, 255 };
+		case language::Language.SQL:
+			c = { 227, 140, 0, 255 };
+		case language::Language.BASH:
+		case language::Language.DOCKERFILE:
+			c = { 137, 224, 81, 255 };
+		case language::Language.NIX:
+			c = { 126, 211, 247, 255 };
+		case language::Language.GRAPHQL:
+			c = { 225, 0, 152, 255 };
+		case language::Language.LATEX:
+			c = { 0, 128, 0, 255 };
+		case language::Language.DIFF:
+			c = { 100, 200, 140, 255 };
+		default:
+			break;
+	}
+	return adjust_language_color(c);
+}
+
 fn SurfaceConfig surface(SurfaceId id)
 {
 	return g_skin.surfaces[(int)id];
@@ -381,7 +492,7 @@ fn FolderStyle folder_style()
 
 fn float closed_height()
 {
-	return g_skin.closed_height;
+	return g_skin.closed_height > 0.0f ? g_skin.closed_height : 96.0f;
 }
 
 fn bool language_colors()

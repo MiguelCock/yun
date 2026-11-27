@@ -20,3 +20,13 @@ fn void test_parse_color()
 	RLColor bad      = parse_color("nope", fallback);
 	assert(bad[0] == 1 && bad[3] == 4);
 }
+fn void test_language_colors()
+{
+	RLColor c3      = language_color("a.c3");
+	RLColor md      = language_color("a.md");
+	RLColor unknown = language_color("a.unknown");
+	assert(c3[2] > c3[0]);
+	assert(md[2] > md[0]);
+	assert(c3[0] != md[0] || c3[1] != md[1] || c3[2] != md[2]);
+	assert(unknown[3] == 255);
+}

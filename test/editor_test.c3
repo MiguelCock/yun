@@ -260,7 +260,7 @@ fn void test_effective_rect_and_marker()
 	assert(card.minimize_marker_hit({ 230.0f, 10.0f }));
 
 	card.open = false;
-	assert(card.effective_rect().height == card::CARD_TITLE_HEIGHT);
+	assert(card.effective_rect().height > card::CARD_TITLE_HEIGHT);
 	assert(!card.contains({ 50.0f, 100.0f }));
 	assert(card.contains({ 50.0f, 10.0f }));
 }
@@ -668,7 +668,7 @@ fn void test_region_at()
 	assert(region_at(&card, { 400.0f, 400.0f }, metrics, camera) == CardRegion.NONE);
 
 	card.open = false;
-	assert(region_at(&card, { 100.0f, 80.0f }, metrics, camera) == CardRegion.NONE);
+	assert(region_at(&card, { 100.0f, 120.0f }, metrics, camera) == CardRegion.NONE);
 	assert(region_at(&card, { 100.0f, 10.0f }, metrics, camera) == CardRegion.TITLE);
 }
 fn void test_diagnostic_offsets()
