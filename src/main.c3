@@ -206,7 +206,19 @@ fn void apply_chrome_insets(canvas::Canvas* canvas, git::Panel* git_panel, bool 
 
 fn void apply_card_layout(project::Project* project, config::Config* config)
 {
-	apply_card_layout(project, config);
+	String card_layout = config.settings.get_string(settings::SettingId.CANVAS_CARD_LAYOUT);
+	if (card_layout.compare_to("grid") == 0)
+	{
+		project.card_layout = project::CardLayout.GRID;
+	}
+	else if (card_layout.compare_to("fan") == 0)
+	{
+		project.card_layout = project::CardLayout.FAN;
+	}
+	else
+	{
+		project.card_layout = project::CardLayout.DECK;
+	}
 }
 
 fn void apply_settings(

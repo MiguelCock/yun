@@ -183,7 +183,7 @@ fn void reset()
 	g_skin.closed_height = 96.0f;
 	g_skin.language_colors = true;
 	if (g_skin.preset.len) g_skin.preset.free(g_allocator);
-	g_skin.preset = "classic".copy(g_allocator);
+	g_skin.preset = g_ready ? "classic".copy(g_allocator) : "";
 	clear_assets();
 }
 
