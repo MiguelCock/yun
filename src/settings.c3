@@ -30,6 +30,7 @@ enum SettingPage : int
 	KEYS,
 	CONSOLE,
 	ADVANCED,
+	SKIN,
 	COUNT,
 }
 
@@ -1288,6 +1289,8 @@ fn String page_label(SettingPage page)
 			return "Console";
 		case SettingPage.ADVANCED:
 			return "Advanced";
+		case SettingPage.SKIN:
+			return "Skin";
 		case SettingPage.COUNT:
 			return "";
 	}

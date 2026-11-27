@@ -45,6 +45,22 @@ struct FileCard
 	markdown::View* view;
 }
 
+fn RLColor card_body_fill()
+{
+	RLColor base = theme::current().card_body;
+	if (skin::card_style() == skin::CardStyle.PAPER) return theme::mix(base, { 84, 68, 50, 255 }, 0.45f);
+	if (skin::card_style() == skin::CardStyle.GLASS) return theme::with_alpha(base, 210);
+	return base;
+}
+
+fn RLColor card_title_fill()
+{
+	RLColor base = theme::current().card_title;
+	if (skin::card_style() == skin::CardStyle.PAPER) return theme::mix(base, { 105, 82, 56, 255 }, 0.55f);
+	if (skin::card_style() == skin::CardStyle.GLASS) return theme::with_alpha(base, 220);
+	return base;
+}
+
 fn Rect FileCard.effective_rect(&self)
 {
 	Rect r = self.rect;
@@ -152,8 +168,7 @@ fn void FileCard.draw(
 		r,
 		zoom,
 		ui::corner_radius()
-	)) ui::rounded_rect(r, radius, theme::current()
-		.card_body);
+	)) ui::rounded_rect(r, radius, card_body_fill());
 	Rect title = {
 		.x = r.x,
 		.y = r.y,
@@ -165,8 +180,7 @@ fn void FileCard.draw(
 		title,
 		zoom,
 		ui::corner_radius()
-	)) ui::rounded_top(title, radius, theme::current()
-		.card_title);
+	)) ui::rounded_top(title, radius, card_title_fill());
 	if (focused)
 	{
 		ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_focus);
@@ -248,8 +262,8 @@ fn void FileCard.draw(
 			{ r.x + r.width - ear, r.y + r.height },
 			{ r.x + r.width, r.y + r.height - ear },
 			{ r.x + r.width, r.y + r.height },
-			theme::current()
-			.card_title);
+			card_title_fill()
+		);
 	}
 	bool pressed         = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 	Rect preview_button  = self.title_button_rect(0);
@@ -323,7 +337,7 @@ fn void FileCard.draw_lod(&self, float zoom)
 {
 	Rect r       = self.effective_rect();
 	float radius = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
-	ui::rounded_rect(r, radius, theme::current().card_body);
+	ui::rounded_rect(r, radius, card_body_fill());
 	ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 }
 
@@ -336,8 +350,7 @@ fn void FileCard.draw_lod_title(&self, RLFont font, float zoom)
 		r,
 		zoom,
 		ui::corner_radius()
-	)) ui::rounded_rect(r, radius, theme::current()
-		.card_body);
+	)) ui::rounded_rect(r, radius, card_body_fill());
 	Rect title = {
 		.x = r.x,
 		.y = r.y,
@@ -349,8 +362,7 @@ fn void FileCard.draw_lod_title(&self, RLFont font, float zoom)
 		title,
 		zoom,
 		ui::corner_radius()
-	)) ui::rounded_top(title, radius, theme::current()
-		.card_title);
+	)) ui::rounded_top(title, radius, card_title_fill());
 	ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 	if (skin::language_colors())
 	{

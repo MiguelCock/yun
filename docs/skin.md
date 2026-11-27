@@ -3,7 +3,14 @@
 Yun reads an optional `skin` section from `config.json`. The global file lives at
 `~/.config/yun/config.json`; a project can override it with `.yun/config.json`.
 
-Settings changes made in the app preserve the `skin` section.
+Use the **Skin** page in Settings (`Ctrl+,`, then `Ctrl+9`) to edit presets,
+card/folder styles, title sizes, and each surface without editing JSON. Image
+paths support typing and drag-and-drop; relative paths resolve from the global
+config folder or `<project>/.yun`.
+
+Saving settings now writes the explicit skin overrides for the selected scope.
+Unknown skin keys and comments are normalized away; keep a separate copy if you
+need them preserved verbatim.
 
 ## Example
 
@@ -83,7 +90,8 @@ Images are not bundled; choose your own files.
 
 `cards.style` accepts `flat`, `paper`, or `glass`. `folders.style` accepts
 `classic`, `explorer`, or `tray`. Explorer folders draw a folder tab and a
-body; closed cards draw a taller ruled page (`cards.closed_height`).
+body; closed folders keep a compact body with a file count and preview lines.
+Closed cards draw a taller ruled page (`cards.closed_height`).
 
 `cards.language_colors` controls the language accent on title bars, file icons,
 and closed-page spines.
@@ -93,9 +101,10 @@ and closed-page spines.
 `canvas.card_layout` is global:
 
 - `grid` — the original three-column grid.
-- `deck` — overlapping stacks of up to 10 cards, with every title exposed.
-- `fan` — like `deck`, with a sideways fan.
+- `deck` — diagonal stacks of up to 10 cards, with every title exposed.
+- `fan` — like `deck`, with a wider sideways fan.
 
-The selected card is promoted to the bottom of its stack and expands, so its
-body is editable while the titles above stay readable. Use **Relayout Canvas**
-(`Ctrl+Alt+L`) after changing the setting in a running session.
+Selected cards keep their stable slot; the focused/editing, dragged, and grabbed
+card is raised so it stays visible without reshuffling the stack. Use
+**Relayout Canvas** (`Ctrl+Alt+L`) after changing the setting in a running
+session. Old workspace versions are relaid out once when upgraded.

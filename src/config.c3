@@ -484,6 +484,79 @@ fn bool Config.load_path(&self, Path path, String base, settings::SettingLayer l
 	return ok;
 }
 
+fn bool Config.apply_skin_json(&self, String json_text, String base, settings::SettingLayer layer)
+{
+	Object*? parsed = json::parse(self.allocator, json_text);
+	if (catch excuse = parsed) return false;
+	Object* obj       = parsed;
+	Object*? skin_obj = obj.get("skin");
+	if (try value = skin_obj)
+	{
+		if (value.is_map()) skin::apply_object(value, base, layer);
+	}
+	obj.free();
+	return true;
+}
+
+fn bool Config.load_skin_path(&self, Path path, String base, settings::SettingLayer layer)
+{
+	if (!path::exists(path)) return false;
+	bool ok = false;
+	@pool()
+	{
+		char[]? data = file::load(tmem, path);
+		if (catch excuse = data)
+		{
+			ok = false;
+		}
+		else
+		{
+			ok = self.apply_skin_json((String)data, base, layer);
+		}
+	};
+	if (!ok) self.add_warning(string::format(self.allocator, "Malformed config: %s", (String)path));
+	return ok;
+}
+
+fn void Config.reload_skin(&self, String project_root)
+{
+	if (!skin::is_ready()) skin::init_headless(self.allocator);
+	skin::reset();
+	@pool()
+	{
+		Path? config_dir = env::get_config_dir(tmem);
+		if (catch excuse = config_dir)
+		{
+		}
+		else
+		{
+			Path? dir = config_dir.append(tmem, CONFIG_DIR);
+			if (try global_dir = dir)
+			{
+				skin::set_base((String)global_dir, settings::SettingLayer.GLOBAL);
+				Path? file = global_dir.append(tmem, CONFIG_FILE);
+				if (try global_file = file)
+				{
+					self.load_skin_path(global_file, (String)global_dir, settings::SettingLayer.GLOBAL);
+				}
+			}
+		}
+		if (project_root.len > 0)
+		{
+			Path? dir = ((Path)project_root).append(tmem, PROJECT_DIR);
+			if (try project_dir = dir)
+			{
+				skin::set_base((String)project_dir, settings::SettingLayer.PROJECT);
+				Path? file = project_dir.append(tmem, CONFIG_FILE);
+				if (try project_file = file)
+				{
+					self.load_skin_path(project_file, (String)project_dir, settings::SettingLayer.PROJECT);
+				}
+			}
+		}
+	};
+}
+
 fn void Config.ensure_defaults(&self, Path dir, Path file)
 {
 	if (path::exists(file)) return;
@@ -513,6 +586,7 @@ fn void Config.load_global(&self)
 			self.add_warning("Could not resolve config path");
 			return;
 		}
+		skin::set_base((String)dir, settings::SettingLayer.GLOBAL);
 		self.ensure_defaults(dir, file);
 		self.load_path(file, (String)dir, settings::SettingLayer.GLOBAL);
 	};
@@ -527,6 +601,7 @@ fn void Config.load_project(&self, String project_root)
 		if (catch excuse = dir) return;
 		Path? file = dir.append(tmem, CONFIG_FILE);
 		if (catch excuse = file) return;
+		skin::set_base((String)dir, settings::SettingLayer.PROJECT);
 		self.load_path(file, (String)dir, settings::SettingLayer.PROJECT);
 	};
 }
@@ -571,117 +646,10 @@ fn void append_json_string(DString* out, String s)
 	out.append_char('"');
 }
 
-fn String extract_skin_json(String json)
-{
-	usz depth   = 0;
-	bool string = false;
-	bool escape = false;
-	for (usz i = 0; i < json.len; i++)
-	{
-		char c = json[i];
-		if (string)
-		{
-			if (escape)
-			{
-				escape = false;
-			}
-			else if (c == '\\')
-			{
-				escape = true;
-			}
-			else if (c == '"')
-			{
-				string = false;
-			}
-			continue;
-		}
-		if (c == '"')
-		{
-			if (depth == 1 && i + 6 < json.len && json[i + 1] == 's' && json[i + 2] == 'k' && json[i + 3] == 'i'
-				&& json[i + 4] == 'n'
-				&& json[i + 5] == '"')
-			{
-				usz j = i + 6;
-				while (j < json.len && (json[j] == ' ' || json[j] == '\t' || json[j] == '\r' || json[j] == '\n')) j++;
-				if (j < json.len && json[j] == ':')
-				{
-					j++;
-					while (j < json.len
-						&& (json[j] == ' ' || json[j] == '\t' || json[j] == '\r' || json[j] == '\n')) j++;
-					if (j < json.len && json[j] == '{')
-					{
-						usz start         = j;
-						int braces        = 0;
-						bool inner_string = false;
-						bool inner_escape = false;
-						for (; j < json.len; j++)
-						{
-							char v = json[j];
-							if (inner_string)
-							{
-								if (inner_escape)
-								{
-									inner_escape = false;
-								}
-								else if (v == '\\')
-								{
-									inner_escape = true;
-								}
-								else if (v == '"')
-								{
-									inner_string = false;
-								}
-								continue;
-							}
-							if (v == '"')
-							{
-								inner_string = true;
-							}
-							else if (v == '{')
-							{
-								braces++;
-							}
-							else if (v == '}')
-							{
-								braces--;
-								if (braces == 0)
-								{
-									return json[start:j + 1 - start];
-								}
-							}
-						}
-					}
-				}
-			}
-			string = true;
-			continue;
-		}
-		if (c == '{' || c == '[')
-		{
-			depth++;
-		}
-		else if (c == '}' || c == ']')
-		{
-			depth--;
-		}
-	}
-	return "";
-}
-
 fn void Config.save_path(&self, Path path, settings::SettingLayer scope)
 {
 	@pool()
 	{
-		String skin      = "";
-		char[]? existing = file::load(tmem, path);
-		if (catch excuse = existing)
-		{
-			skin = "";
-		}
-		else
-		{
-			skin = extract_skin_json((String)existing);
-		}
 		DString out;
 		out.init(tmem, 256);
 		out.append_string("{\n");
@@ -708,10 +676,10 @@ fn void Config.save_path(&self, Path path, settings::SettingLayer scope)
 			append_json_string(&out, self.lsp[i].command);
 		}
 		out.append_string("}");
-		if (skin.len > 0)
+		if (skin::has_output(scope))
 		{
 			out.append_string(",\n  \"skin\": ");
-			out.append_string(skin);
+			skin::write_json(&out, scope);
 		}
 		out.append_string("\n}\n");
 		(void)file::save(path, out.str_view());

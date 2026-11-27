@@ -2,8 +2,10 @@ module yun::config @test;
 
 import std::io::file;
 import std::io::path;
+import std::math;
 import yun::commands;
 import yun::settings;
+import yun::skin;
 
 fn void test_defaults()
 {
@@ -346,15 +348,7 @@ fn void test_run_profiles()
 		assert(c.warnings.len() == 1);
 	};
 }
-fn void test_extract_skin_json_preserves_object()
-{
-	String json = "{\n  \"app\": {\"theme\": \"dark\"},\n  \"skin\": {\"surfaces\": {\"card\": {\"image\": \"paper.png\"}}},\n  \"keymap\": {}\n}";
-	String skin = extract_skin_json(json);
-	assert(skin.len > 0);
-	assert(skin.starts_with("{\"surfaces\""));
-	assert(skin.ends_with("}}"));
-}
-fn void test_save_preserves_skin_section()
+fn void test_save_serializes_skin_overrides()
 {
 	@pool()
 	{
@@ -366,19 +360,134 @@ fn void test_save_preserves_skin_section()
 		if (catch excuse = path::mkdir(dir, recursive: true)) return;
 		Path? input = dir.append(tmem, "config.json");
 		if (catch excuse = input) return;
-		String skin_json = "{\n  \"app\": {\"theme\": \"dark\"},\n  \"skin\": {\"surfaces\": {\"card\": {\"image\": \"paper.png\"}}},\n  \"keymap\": {}\n}";
+		String skin_json = "{\n  \"app\": {\"theme\": \"dark\"},\n  \"skin\": {\"surfaces\": {\"card\": {\"image\": \"paper.png\"}}, \"legacy\": true},\n  \"keymap\": {}\n}";
 		if (catch excuse = file::save(input, skin_json)) return;
+		skin::init_headless(tmem);
 		Config c;
 		c.init(tmem);
 		assert(c.load_path(input, (String)dir, settings::SettingLayer.GLOBAL));
+		assert(c.warnings.len() == 0);
+		skin::set_surface_fit(skin::SurfaceId.CARD, skin::SurfaceFit.TILE, settings::SettingLayer.GLOBAL);
 		c.save_path(input, settings::SettingLayer.GLOBAL);
 		char[]? saved = file::load(tmem, input);
 		if (catch excuse = saved) return;
-		String raw  = (String)saved;
-		String skin = extract_skin_json(raw);
-		assert(skin.len > 0);
-		assert(skin.contains("paper.png"));
+		String raw = (String)saved;
+		assert(raw.contains("\"skin\""));
+		assert(raw.contains("\"image\":\"paper.png\""));
+		assert(raw.contains("\"fit\":\"tile\""));
+		assert(!raw.contains("legacy"));
 		c.destroy();
 		(void)path::rmtree(dir);
+	};
+}
+
+fn void test_save_omits_empty_skin()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? dir = tmp.append(tmem, "yun_skin_empty_test");
+		if (catch excuse = dir) return;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? input = dir.append(tmem, "config.json");
+		if (catch excuse = input) return;
+		skin::init_headless(tmem);
+		Config c;
+		c.init(tmem);
+		c.save_path(input, settings::SettingLayer.GLOBAL);
+		char[]? saved = file::load(tmem, input);
+		if (catch excuse = saved) return;
+		assert(!((String)saved).contains("\"skin\""));
+		c.destroy();
+		(void)path::rmtree(dir);
+	};
+}
+
+fn void test_project_save_contains_only_project_skin()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? dir = tmp.append(tmem, "yun_skin_layers_test");
+		if (catch excuse = dir) return;
+		(void)path::rmtree(dir);
+		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		Path? gf = dir.append(tmem, "global.json");
+		if (catch excuse = gf) return;
+		Path? pf = dir.append(tmem, "project.json");
+		if (catch excuse = pf) return;
+
+		skin::init_headless(tmem);
+		Config c;
+		c.init(tmem);
+		skin::set_preset("paper", settings::SettingLayer.GLOBAL);
+		skin::set_card_style(skin::CardStyle.FLAT, settings::SettingLayer.PROJECT);
+		c.save_path(gf, settings::SettingLayer.GLOBAL);
+		c.save_path(pf, settings::SettingLayer.PROJECT);
+
+		char[]? saved_global = file::load(tmem, gf);
+		if (catch excuse = saved_global) return;
+		String global_raw = (String)saved_global;
+		assert(global_raw.contains("\"skin\""));
+		assert(global_raw.contains("\"preset\":\"paper\""));
+		assert(!global_raw.contains("\"cards\""));
+
+		char[]? saved_project = file::load(tmem, pf);
+		if (catch excuse = saved_project) return;
+		String project_raw = (String)saved_project;
+		assert(project_raw.contains("\"skin\""));
+		assert(project_raw.contains("\"cards\":{\"style\":\"flat\"}"));
+		assert(!project_raw.contains("\"preset\""));
+
+		c.destroy();
+		(void)path::rmtree(dir);
+	};
+}
+
+fn void test_reload_skin()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? root_opt = tmp.append(tmem, "yun_skin_reload_test");
+		if (catch excuse = root_opt) return;
+		Path root = root_opt;
+		(void)path::rmtree(root);
+		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		Path? yun_opt = root.append(tmem, ".yun");
+		if (catch excuse = yun_opt) return;
+		Path yun = yun_opt;
+		if (catch excuse = path::mkdir(yun, recursive: true)) return;
+		Path? cfg_opt = yun.append(tmem, "config.json");
+		if (catch excuse = cfg_opt) return;
+		Path cfg = cfg_opt;
+		if (catch excuse = file::save(
+			cfg,
+			"{\"app\":{\"theme\":\"light\"},\"skin\":{\"preset\":\"glass\",\"surfaces\":{\"card\":{\"image\":\"/tmp/project-card.png\",\"opacity\":0.6}}}}"
+		)) return;
+
+		skin::init_headless(tmem);
+		Config c;
+		c.init(tmem);
+		c.reset();
+		c.settings.set_string(settings::SettingId.APP_THEME, "dracula", settings::SettingLayer.GLOBAL);
+		c.set_key_binding("save", "Ctrl+Alt+S", settings::SettingLayer.GLOBAL);
+		c.set_lsp_command("c3", "c3-lsp");
+		c.reload_skin((String)root);
+
+		assert(skin::preset().compare_to("glass") == 0);
+		assert(skin::surface(skin::SurfaceId.CARD).image.compare_to("/tmp/project-card.png") == 0);
+		assert(skin::surface(skin::SurfaceId.CARD).path.compare_to("/tmp/project-card.png") == 0);
+		assert(math::abs(skin::surface(skin::SurfaceId.CARD).opacity - 0.6f) < 0.0001f);
+		assert(c.settings.get_string(settings::SettingId.APP_THEME).compare_to("dracula") == 0);
+		assert(c.key_binding(commands::CommandId.SAVE).compare_to("Ctrl+Alt+S") == 0);
+		assert(c.lsp_command("c3").compare_to("c3-lsp") == 0);
+
+		c.destroy();
+		(void)path::rmtree(root);
 	};
 }

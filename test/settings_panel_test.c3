@@ -1,9 +1,13 @@
 module yun::settings_panel @test;
 
+import std::io::file;
+import std::io::path;
+import std::math;
 import yun::commands;
 import yun::config;
 import yun::keymap;
 import yun::settings;
+import yun::skin;
 
 fn void test_command_descriptions()
 {
@@ -380,5 +384,218 @@ fn void test_cross_page_search()
 		}
 		assert(found_advanced);
 		p.destroy();
+	};
+}
+
+fn void test_skin_page_registered()
+{
+	assert(settings::page_label(settings::SettingPage.SKIN).compare_to("Skin") == 0);
+	@pool()
+	{
+		Panel p;
+		p.init(tmem);
+		p.show();
+		p.set_page(settings::SettingPage.SKIN);
+		assert(p.skin_row(SkinItem.PRESET) >= 0);
+		assert(p.skin_row(SkinItem.CARD_STYLE) >= 0);
+		assert(p.skin_row(SkinItem.FOLDER_STYLE) >= 0);
+		assert(p.skin_row(SkinItem.CLOSED_HEIGHT) >= 0);
+		assert(p.skin_row(SkinItem.LANGUAGE_COLORS) >= 0);
+		assert(p.skin_row(SkinItem.CARD_LAYOUT) >= 0);
+		assert(p.skin_row(SkinItem.SURFACE) >= 0);
+		assert(p.skin_row(SkinItem.IMAGE) >= 0);
+		assert(p.skin_row(SkinItem.FIT) >= 0);
+		assert(p.skin_row(SkinItem.OPACITY) >= 0);
+		assert(p.skin_row(SkinItem.TINT) >= 0);
+		assert(p.skin_row(SkinItem.SCRIM) >= 0);
+		assert(p.skin_row(SkinItem.SPEED) >= 0);
+		assert(p.skin_row(SkinItem.FPS) >= 0);
+		assert(p.skin_row(SkinItem.RELOAD) >= 0);
+		assert(p.skin_row(SkinItem.RESET) >= 0);
+		bool found_style   = false;
+		bool found_surface = false;
+		bool found_actions = false;
+		for (sz i = 0; i < p.rows.len(); i++)
+		{
+			if (p.rows[i].kind != RowKind.HEADER) continue;
+			if (p.rows[i].section.compare_to("Style") == 0) found_style = true;
+			if (p.rows[i].section.compare_to("Surface") == 0) found_surface = true;
+			if (p.rows[i].section.compare_to("Actions") == 0) found_actions = true;
+		}
+		assert(found_style && found_surface && found_actions);
+		p.destroy();
+	};
+}
+
+fn void test_skin_page_steps_and_persists()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? dir = tmp.append(tmem, "yun_skin_panel_test");
+		if (catch excuse = dir) return;
+		Path root = dir;
+		(void)path::rmtree(root);
+		if (catch excuse = path::mkdir(root, recursive: true)) return;
+
+		skin::init_headless(tmem);
+		config::Config cfg;
+		cfg.init(tmem);
+		cfg.reset();
+		skin::set_base(string::format(tmem, "%s/.yun", (String)root), settings::SettingLayer.PROJECT);
+
+		Panel p;
+		p.init(tmem);
+		p.show();
+		p.set_page(settings::SettingPage.SKIN);
+		p.scope = settings::SettingLayer.PROJECT;
+
+		p.selected = p.skin_row(SkinItem.PRESET);
+		assert(p.selected >= 0);
+		p.change_skin(&cfg, 1, true, (String)root, null);
+		assert(skin::preset().compare_to("paper") == 0);
+
+		Path? cfg_path = root.append(tmem, ".yun/config.json");
+		if (catch excuse = cfg_path) return;
+		assert(path::exists(cfg_path));
+		char[]? saved = file::load(tmem, cfg_path);
+		if (catch excuse = saved) return;
+		String raw = (String)saved;
+		assert(raw.contains("\"skin\""));
+		assert(raw.contains("\"preset\":\"paper\""));
+
+		p.selected = p.skin_row(SkinItem.OPACITY);
+		float before = skin::surface(skin::SurfaceId.APP).opacity;
+		p.change_skin(&cfg, -1, true, (String)root, null);
+		assert(skin::surface(skin::SurfaceId.APP).opacity < before);
+
+		p.selected = p.skin_row(SkinItem.FIT);
+		p.change_skin(&cfg, 1, true, (String)root, null);
+		assert(skin::surface(skin::SurfaceId.APP).fit == skin::SurfaceFit.CONTAIN);
+
+		p.selected = p.skin_row(SkinItem.SURFACE);
+		p.change_skin(&cfg, 1, true, (String)root, null);
+		assert(p.skin_surface == skin::SurfaceId.CARD);
+
+		p.selected = p.skin_row(SkinItem.CLOSED_HEIGHT);
+		p.change_skin(&cfg, 1, true, (String)root, null);
+		assert(skin::closed_height() > 96.0f);
+
+		p.destroy();
+		cfg.destroy();
+		(void)path::rmtree(root);
+	};
+}
+
+fn void test_skin_page_text_edit_validation()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? dir = tmp.append(tmem, "yun_skin_panel_edit_test");
+		if (catch excuse = dir) return;
+		Path root = dir;
+		(void)path::rmtree(root);
+		if (catch excuse = path::mkdir(root, recursive: true)) return;
+
+		skin::init_headless(tmem);
+		config::Config cfg;
+		cfg.init(tmem);
+		cfg.reset();
+		skin::set_base(string::format(tmem, "%s/.yun", (String)root), settings::SettingLayer.PROJECT);
+
+		Panel p;
+		p.init(tmem);
+		p.show();
+		p.set_page(settings::SettingPage.SKIN);
+		p.scope = settings::SettingLayer.PROJECT;
+
+		p.selected = p.skin_row(SkinItem.TINT);
+		p.start_skin_edit(&cfg);
+		assert(p.skin_editing);
+		String invalid = "#zzzzzz";
+		p.skin_edit_len = (int)invalid.len;
+		for (usz i = 0; i < invalid.len; i++) p.skin_edit_buf[i] = invalid[i];
+		p.skin_edit_buf[p.skin_edit_len] = 0;
+		assert(!p.commit_skin_edit(&cfg, true, (String)root, null));
+		assert(p.skin_editing);
+
+		String valid = "#11223344";
+		p.skin_edit_len = (int)valid.len;
+		for (usz i = 0; i < valid.len; i++) p.skin_edit_buf[i] = valid[i];
+		p.skin_edit_buf[p.skin_edit_len] = 0;
+		assert(p.commit_skin_edit(&cfg, true, (String)root, null));
+		assert(!p.skin_editing);
+		assert(skin::surface(skin::SurfaceId.APP).tint[0] == 0x11);
+		assert(skin::surface(skin::SurfaceId.APP).tint[1] == 0x22);
+		assert(skin::surface(skin::SurfaceId.APP).tint[2] == 0x33);
+		assert(skin::surface(skin::SurfaceId.APP).tint[3] == 0x44);
+
+		p.selected = p.skin_row(SkinItem.IMAGE);
+		p.start_skin_edit(&cfg);
+		String image = "pics/card.png";
+		p.skin_edit_len = (int)image.len;
+		for (usz i = 0; i < image.len; i++) p.skin_edit_buf[i] = image[i];
+		p.skin_edit_buf[p.skin_edit_len] = 0;
+		assert(p.commit_skin_edit(&cfg, true, (String)root, null));
+		assert(skin::surface(skin::SurfaceId.APP).image.compare_to("pics/card.png") == 0);
+		String expected = string::format(tmem, "%s/.yun/pics/card.png", (String)root);
+		assert(skin::surface(skin::SurfaceId.APP).path.compare_to(expected) == 0);
+
+		p.destroy();
+		cfg.destroy();
+		(void)path::rmtree(root);
+	};
+}
+
+fn void test_skin_page_reload_and_reset_actions()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch excuse = tmp) return;
+		Path? dir = tmp.append(tmem, "yun_skin_panel_actions_test");
+		if (catch excuse = dir) return;
+		Path root = dir;
+		(void)path::rmtree(root);
+		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		Path? yun = root.append(tmem, ".yun");
+		if (catch excuse = yun) return;
+		if (catch excuse = path::mkdir(yun, recursive: true)) return;
+		Path? cfg_path = yun.append(tmem, "config.json");
+		if (catch excuse = cfg_path) return;
+		if (catch excuse = file::save(
+			cfg_path,
+			"{\"skin\":{\"preset\":\"glass\",\"surfaces\":{\"card\":{\"image\":\"/tmp/reload-card.png\"}}}}"
+		)) return;
+
+		skin::init_headless(tmem);
+		config::Config cfg;
+		cfg.init(tmem);
+		cfg.reset();
+
+		Panel p;
+		p.init(tmem);
+		p.show();
+		p.set_page(settings::SettingPage.SKIN);
+		p.scope = settings::SettingLayer.PROJECT;
+
+		p.selected = p.skin_row(SkinItem.RELOAD);
+		assert(p.selected >= 0);
+		p.change_skin(&cfg, 1, true, (String)root, null);
+		assert(skin::preset().compare_to("glass") == 0);
+		assert(skin::surface(skin::SurfaceId.CARD).image.compare_to("/tmp/reload-card.png") == 0);
+
+		p.selected = p.skin_row(SkinItem.RESET);
+		p.change_skin(&cfg, 1, true, (String)root, null);
+		assert(skin::preset_source() != settings::SettingLayer.PROJECT);
+		assert(skin::surface_source(skin::SurfaceId.CARD, skin::SurfaceField.IMAGE) != settings::SettingLayer.PROJECT);
+		assert(!skin::has_output(settings::SettingLayer.PROJECT));
+
+		p.destroy();
+		cfg.destroy();
+		(void)path::rmtree(root);
 	};
 }

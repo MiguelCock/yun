@@ -88,6 +88,7 @@ expected=(
 	notifications
 	imports
 	imports-far
+	skin
 )
 
 for name in "${expected[@]}"; do
