@@ -1128,3 +1128,19 @@ fn void test_draw_on_top_toggle()
 	set_draw_on_top(false);
 	assert(!draw_on_top());
 }
+fn void test_arrow_mode_cycles_off_related_all()
+{
+	ImportSettings saved = settings();
+	ImportSettings s     = saved;
+	s.enabled = false;
+	s.related_only = true;
+	set_settings(s);
+	assert(mode() == ArrowMode.OFF);
+	cycle_mode();
+	assert(mode() == ArrowMode.RELATED);
+	cycle_mode();
+	assert(mode() == ArrowMode.ALL);
+	cycle_mode();
+	assert(mode() == ArrowMode.OFF);
+	set_settings(saved);
+}

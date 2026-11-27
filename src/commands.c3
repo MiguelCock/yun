@@ -155,6 +155,7 @@ enum CommandId
 	CONSOLE_DELETE_WORD_FORWARD,
 	TOGGLE_CONNECTIONS,
 	TOGGLE_ARROWS_OVERLAY,
+	PROJECT_DATA,
 	QUIT,
 }
 
@@ -1199,11 +1200,19 @@ const CommandDef[] COMMAND_DEFS = {
 	},
 	{
 		.id = CommandId.TOGGLE_ARROWS_OVERLAY,
-		.description = "Draw import arrows on top of cards and files.",
-		.label = "Arrows on Top",
+		.description = "Cycle import connections: off, related only, or all.",
+		.label = "Cycle Connections",
 		.bar_label = "Arrows",
 		.shortcut = "Ctrl+Shift+A",
 		.in_top_bar = true,
+		.contexts = CTX_GLOBAL,
+	},
+	{
+		.id = CommandId.PROJECT_DATA,
+		.description = "Inspect or reset the .yun project data.",
+		.label = "Project Data",
+		.shortcut = "",
+		.in_top_bar = false,
 		.contexts = CTX_GLOBAL,
 	},
 	{
@@ -1535,6 +1544,8 @@ fn String command_name(CommandId id)
 			return "toggle_connections";
 		case CommandId.TOGGLE_ARROWS_OVERLAY:
 			return "toggle_arrows_overlay";
+		case CommandId.PROJECT_DATA:
+			return "project_data";
 		case CommandId.QUIT:
 			return "quit";
 	}
@@ -1675,6 +1686,7 @@ fn bool command_enabled(CommandId id, bool has_project, bool has_buffer)
 		case CommandId.MINIMIZE_CARD:
 		case CommandId.TOGGLE_FOCUS_MODE:
 		case CommandId.TOGGLE_CONNECTIONS:
+		case CommandId.PROJECT_DATA:
 			return has_project;
 		case CommandId.FOCUS_TOP_BAR:
 		case CommandId.TOPBAR_LEFT:

@@ -30,7 +30,7 @@ import yun::vim;
 const int ROOT_FOLDER               = -1;
 const double POLL_SECONDS           =  1.0;
 const float CLUSTER_PADDING         =  24.0f;
-const float CLUSTER_TITLE_HEIGHT    =  26.0f;
+const float CLUSTER_TITLE_HEIGHT    =  30.0f;
 const float CLUSTER_COLLAPSED_WIDTH =  240.0f;
 const float CLUSTER_GAP             =  16.0f;
 const float CARD_GAP                =  16.0f;
@@ -3596,7 +3596,7 @@ fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
 		ui::rounded_rect_lines(bounds, radius, thickness, theme::current().card_focus);
 	}
 	if (zoom < CLUSTER_TEXT_MIN_ZOOM) return;
-	float icon_size = (float)ui::px(16);
+	float icon_size = (float)ui::px(18);
 	bool has_icon = icons::draw_folder(
 		!cluster.collapsed,
 		{
@@ -3615,8 +3615,8 @@ fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
 		rl::draw_text_ex(
 			ui::font(),
 			name.zstr_tcopy(),
-			{ name_x, bounds.y + (float)ui::px(5) },
-			(float)ui::tpx(16),
+			{ name_x, bounds.y + (float)ui::px(6) },
+			(float)ui::tpx(18),
 			0.0f,
 			theme::current()
 			.cluster_text);
@@ -3624,8 +3624,8 @@ fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
 	rl::draw_text_ex(
 		ui::font(),
 		cluster.collapsed ? "+" : "-",
-		{ bounds.x + bounds.width - (float)ui::px(20), bounds.y + (float)ui::px(5) },
-		(float)ui::tpx(16),
+		{ bounds.x + bounds.width - (float)ui::px(22), bounds.y + (float)ui::px(6) },
+		(float)ui::tpx(18),
 		0.0f,
 		theme::current()
 		.cluster_text);

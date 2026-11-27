@@ -68,6 +68,13 @@ fn ArrowStyle parse_arrow_style(String value)
 	return ArrowStyle.SOLID;
 }
 
+enum ArrowMode : int
+{
+	OFF,
+	RELATED,
+	ALL,
+}
+
 ImportSettings g_import_settings = {
 	.enabled = true,
 	.related_only = true,
@@ -87,6 +94,41 @@ ImportSettings g_import_settings = {
 fn ImportSettings settings()
 {
 	return g_import_settings;
+}
+
+fn ArrowMode mode()
+{
+	if (!g_import_settings.enabled) return ArrowMode.OFF;
+	return g_import_settings.related_only ? ArrowMode.RELATED : ArrowMode.ALL;
+}
+
+fn String mode_name()
+{
+	switch (mode())
+	{
+		case ArrowMode.OFF:
+			return "off";
+		case ArrowMode.RELATED:
+			return "related";
+		case ArrowMode.ALL:
+			return "all";
+	}
+}
+
+fn void cycle_mode()
+{
+	switch (mode())
+	{
+		case ArrowMode.OFF:
+			g_import_settings.enabled = true;
+			g_import_settings.related_only = true;
+		case ArrowMode.RELATED:
+			g_import_settings.enabled = true;
+			g_import_settings.related_only = false;
+		case ArrowMode.ALL:
+			g_import_settings.enabled = false;
+			g_import_settings.related_only = true;
+	}
 }
 
 bool g_draw_on_top = false;

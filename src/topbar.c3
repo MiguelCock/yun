@@ -707,11 +707,13 @@ fn void TopBar.draw(
 	self.update_expansion(mouse, focused);
 	for (usz i = 0; i < commands::bar_command_count(); i++)
 	{
-		CommandDef def = commands::bar_command(i);
-		bool enabled   = commands::command_enabled(def.id, has_project, has_buffer);
-		Rect r         = self.button_rect_for(g_position, i, screen_w, screen_h);
-		bool hovered   = ui::pointer_in(r, mouse);
-		bool toggled   = def.id == commands::CommandId.TOGGLE_ARROWS_OVERLAY && imports::draw_on_top();
+		CommandDef def                = commands::bar_command(i);
+		bool enabled                  = commands::command_enabled(def.id, has_project, has_buffer);
+		Rect r                        = self.button_rect_for(g_position, i, screen_w, screen_h);
+		bool hovered                  = ui::pointer_in(r, mouse);
+		bool arrow_button             = def.id == commands::CommandId.TOGGLE_ARROWS_OVERLAY;
+		imports::ArrowMode arrow_mode = arrow_button ? imports::mode() : imports::ArrowMode.OFF;
+		bool toggled                  = arrow_button && arrow_mode != imports::ArrowMode.OFF;
 		ui::ControlState state = ui::control_state_at(
 			r,
 			mouse,
@@ -719,9 +721,17 @@ fn void TopBar.draw(
 			enabled,
 			toggled
 		);
-		ui::rounded_rect(r, ui::row_radius(), ui::control_fill(state, theme::current()
+		RLColor fill = ui::control_fill(state, theme::current()
 			.topbar_button, theme::current()
-				.topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt));
+				.topbar_hover, theme::current().panel_selected, theme::current().panel_bg_alt);
+		RLColor arrow_color = arrow_mode == imports::ArrowMode.ALL ? theme::current()
+			.topbar_warning : theme::current().card_focus;
+		if (arrow_button && arrow_mode != imports::ArrowMode.OFF
+			&& (state == ui::ControlState.NORMAL || state == ui::ControlState.FOCUSED)) fill = theme::with_alpha(
+			arrow_color,
+			38
+		);
+		ui::rounded_rect(r, ui::row_radius(), fill);
 		if (hovered && enabled) ui::request_cursor(rl::RLMouseCursor.POINTING_HAND, 5);
 
 		String label = def.bar_label.len > 0 ? def.bar_label : def.label;
@@ -729,11 +739,34 @@ fn void TopBar.draw(
 		float icon_size = icons::icon_size(16);
 		float gap = (float)ui::px(6);
 		RLColor color = ui::control_text(state, theme::current().topbar_text, theme::current().topbar_disabled);
+		if (arrow_button)
+		{
+			if (arrow_mode == imports::ArrowMode.OFF)
+			{
+				color = theme::current().topbar_disabled;
+			}
+			else
+			{
+				color = arrow_color;
+			}
+		}
+		if (arrow_button && arrow_mode != imports::ArrowMode.OFF)
+		{
+			rl::draw_circle(
+				(int)(r.x + r.width - (float)ui::px(6)),
+				(int)(r.y + (float)ui::px(6)),
+				(float)ui::px(2),
+				arrow_color
+			);
+		}
 		float expand = i < MAX_BAR_SLOTS ? ease_expand(self.expand[i]) : 0.0f;
 		if (def.icon_only || !horizontal_position(g_position))
 		{
 			icons::draw(icon_for_command(def.id), icons::icon_box(r, 16), color);
-			if (hovered) ui::tooltip_shortcut(def.label, def.shortcut);
+			if (hovered) ui::tooltip_shortcut(
+				arrow_button ? string::format(tmem, "Connections: %s", imports::mode_name()) : def.label,
+				def.shortcut
+			);
 		}
 		else
 		{

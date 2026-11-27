@@ -12,9 +12,9 @@ import yun::text;
 import yun::theme;
 import yun::ui;
 
-const float CARD_TITLE_HEIGHT     = 28.0f;
-const float CARD_TITLE_BUTTON     = 24.0f;
-const float CARD_TITLE_BUTTON_GAP = 2.0f;
+const float CARD_TITLE_HEIGHT     = 34.0f;
+const float CARD_TITLE_BUTTON     = 26.0f;
+const float CARD_TITLE_BUTTON_GAP = 3.0f;
 const float HANDLE_PX             = 10.0f;
 
 struct FileCard
@@ -162,7 +162,7 @@ fn void FileCard.draw(
 	{
 		ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 	}
-	float file_icon_size = (float)ui::px(16);
+	float file_icon_size = (float)ui::px(18);
 	bool has_file_icon = icons::draw_file(
 		(String)self.path,
 		{
@@ -180,8 +180,8 @@ fn void FileCard.draw(
 		rl::draw_text_ex(
 			ui::font(),
 			self.name.zstr_tcopy(),
-			{ name_x, r.y + (float)ui::px(7) },
-			(float)ui::tpx(16),
+			{ name_x, r.y + (float)ui::px(9) },
+			(float)ui::tpx(18),
 			0.0f,
 			theme::current()
 			.card_text);
@@ -280,8 +280,8 @@ fn void FileCard.draw_lod_title(&self, RLFont font, float zoom)
 		rl::draw_text_ex(
 			font,
 			self.name.zstr_tcopy(),
-			{ r.x + (float)ui::px(10), r.y + (float)ui::px(7) },
-			(float)ui::tpx(16),
+			{ r.x + (float)ui::px(10), r.y + (float)ui::px(9) },
+			(float)ui::tpx(18),
 			0.0f,
 			theme::current()
 			.card_text);
