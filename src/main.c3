@@ -1751,9 +1751,7 @@ fn void run_command(commands::CommandId id, App* app)
 					if (canvas::settings().follow_selection)
 					{
 						Rect item = project.selected_item_rect();
-						if (item.width > 0.0f) app.canvas.follow(
-							{ item.x + item.width / 2.0f, item.y + item.height / 2.0f }
-						);
+						if (item.width > 0.0f) app.canvas.ensure_item_visible(item, 0.12f);
 					}
 					*app.ui_mode = UiMode.TOP_BAR;
 					app.bar.clamp_selection(*app.project_open, has_focused_buffer(project));
@@ -1771,6 +1769,13 @@ fn void run_command(commands::CommandId id, App* app)
 				return;
 			}
 		case commands::CommandId.MINIMIZE_CARD:
+			if (project.focus_card >= 0)
+			{
+				project.end_focus(app.canvas);
+				*app.ui_mode = *app.focus_saved_mode;
+				project.editor_exit();
+				return;
+			}
 			project.minimize_selected(app.metrics);
 			return;
 		case commands::CommandId.TOGGLE_FOCUS_MODE:
@@ -2176,6 +2181,12 @@ fn void focus_camera_on_line(
 	usz line
 )
 {
+	if (project.focus_card >= 0)
+	{
+		if (project.focused != project.focus_card) (void)project.refocus(project.focused, canvas);
+		project.mark_jump((String)card.path, line, rl::get_time());
+		return;
+	}
 	Rect text        = editor::text_rect(card.rect, metrics, card.buffer.line_count());
 	float world_y    = text.y + editor::line_y(line, card.scroll, metrics) + metrics.line_height * 0.5f;
 	RLVector2 center = card.center();
@@ -4038,9 +4049,7 @@ fn int main(String[] args)
 						if (canvas::settings().follow_selection)
 						{
 							Rect item = project.selected_item_rect();
-							if (item.width > 0.0f) canvas.follow(
-								{ item.x + item.width / 2.0f, item.y + item.height / 2.0f }
-							);
+							if (item.width > 0.0f) canvas.ensure_item_visible(item, 0.12f);
 						}
 					}
 					else
@@ -4213,7 +4222,7 @@ fn int main(String[] args)
 						{
 							if (canvas::settings().follow_selection)
 							{
-								canvas.follow({ r.x + r.width / 2.0f, r.y + r.height / 2.0f });
+								canvas.ensure_item_visible(r, 0.12f);
 							}
 							else
 							{
@@ -4371,7 +4380,7 @@ fn int main(String[] args)
 				Rect item = project.selected_item_rect();
 				if (item.width > 0.0f && item.height > 0.0f)
 				{
-					canvas.follow({ item.x + item.width / 2.0f, item.y + item.height / 2.0f });
+					canvas.ensure_item_visible(item, 0.12f);
 				}
 			}
 			last_follow_selection = project.selected;
@@ -4466,6 +4475,7 @@ fn int main(String[] args)
 			canvas.block_pan = project.focus_card >= 0;
 			if (project.focus_card >= 0) canvas.block_zoom = true;
 			canvas.update();
+			project.update_sticky_folder(canvas.usable_world_rect(), canvas.camera.zoom);
 			hover = compute_hover(&project, &canvas, metrics);
 
 			if (arrow_hovered && rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
@@ -4778,6 +4788,7 @@ fn int main(String[] args)
 						metrics,
 						&find_bar,
 						project.focus_card,
+						ui_mode == UiMode.EDIT,
 						git_status
 					);
 				}
@@ -4785,7 +4796,17 @@ fn int main(String[] args)
 				{
 					project.draw_folders(canvas.camera);
 					if (!imports::draw_on_top()) import_index.draw(&project, canvas.camera, font);
-					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, -1, git_status);
+					project.draw_cards(
+						canvas.camera,
+						font,
+						editor_font,
+						metrics,
+						&find_bar,
+						-1,
+						ui_mode == UiMode.EDIT,
+						git_status
+					);
+					project.draw_sticky_folder(canvas.camera.zoom);
 					if (imports::draw_on_top()) import_index.draw(&project, canvas.camera, font);
 				}
 			};
@@ -4985,6 +5006,21 @@ fn int main(String[] args)
 							font,
 							counter.zstr_tcopy(),
 							{ content.x + (float)ui::px(10), content.y + (float)ui::px(54) },
+							(float)ui::tpx(14),
+							0.0f,
+							theme::current()
+							.panel_dim);
+						String cards_stat = string::format(
+							tmem,
+							"cards: %d in view / %d hidden by folder / %d culled",
+							(long)project.stat_visible_cards,
+							(long)project.stat_hidden_cards,
+							(long)project.stat_culled_cards
+						);
+						rl::draw_text_ex(
+							font,
+							cards_stat.zstr_tcopy(),
+							{ content.x + (float)ui::px(10), content.y + (float)ui::px(94) },
 							(float)ui::tpx(14),
 							0.0f,
 							theme::current()

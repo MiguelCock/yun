@@ -152,10 +152,14 @@ struct Project
 	double jump_until;
 	int awake_count;
 	int asleep_count;
+	int stat_visible_cards;
+	int stat_hidden_cards;
+	int stat_culled_cards;
 	int cards_revision;
 	int order_revision;
 	bool skip_nested_repos;
 	int focus_card;
+	int focus_saved_focused;
 	Rect focus_saved_rect;
 	RLCamera2D focus_saved_camera;
 	RLCamera2D focus_saved_target;
@@ -166,6 +170,9 @@ struct Project
 	bool content_bounds_valid;
 	Rect content_bounds_cache;
 	int hover_cluster;
+	int sticky_folder;
+	Rect sticky_rect;
+	bool sticky_valid;
 	EditorMetrics card_metrics;
 	vim::State vim_state;
 }
@@ -207,16 +214,26 @@ fn void Project.init(&self, Allocator allocator)
 	self.jump_until = 0.0;
 	self.awake_count = 0;
 	self.asleep_count = 0;
+	self.stat_visible_cards = 0;
+	self.stat_hidden_cards = 0;
+	self.stat_culled_cards = 0;
 	self.cards_revision = 0;
 	self.order_revision = 0;
 	self.skip_nested_repos = true;
 	self.focus_card = -1;
+	self.focus_saved_focused = -1;
 	self.focus_screen_w = 0.0f;
 	self.focus_screen_h = 0.0f;
 	self.grid.init(allocator, spatial::CELL_SIZE);
 	self.grid_dirty = true;
 	self.content_bounds_valid = false;
+	self.hover_card = -1;
 	self.hover_cluster = -1;
+	self.sticky_folder = -1;
+	self.sticky_rect = { .x = 0.0f, .y = 0.0f, .width = 0.0f, .height = 0.0f };
+	self.sticky_valid = false;
+	self.drag_index = -1;
+	self.resize_card = -1;
 	self.card_metrics = editor::default_metrics();
 	self.vim_state.init(allocator);
 	Path? cwd = path::cwd(allocator);
@@ -278,6 +295,8 @@ fn void Project.reset(&self)
 	self.selected = -1;
 	self.selected_cluster = -1;
 	self.current_folder = ROOT_FOLDER;
+	self.focus_card = -1;
+	self.focus_saved_focused = -1;
 	self.grabbing = false;
 	self.grab_accum_valid = false;
 	self.grab_moved = false;
@@ -288,6 +307,13 @@ fn void Project.reset(&self)
 	self.drag_cluster_title = false;
 	self.cluster_moved = false;
 	self.selecting = false;
+	self.hover_card = -1;
+	self.hover_cluster = -1;
+	self.sticky_folder = -1;
+	self.sticky_rect = { .x = 0.0f, .y = 0.0f, .width = 0.0f, .height = 0.0f };
+	self.sticky_valid = false;
+	self.drag_index = -1;
+	self.resize_card = -1;
 	self.vim_state.reset();
 	self.grid_dirty = true;
 	self.content_bounds_valid = false;
@@ -629,11 +655,13 @@ fn Rect Project.cluster_visual_bounds(&self, int index)
 {
 	Rect full = self.cluster_bounds(index);
 	if (!self.folders[index].collapsed) return full;
+	float width  = ui::pxf(CLUSTER_COLLAPSED_WIDTH);
+	float height = ui::pxf(CLUSTER_TITLE_HEIGHT);
 	return {
-		.x = full.x,
-		.y = full.y,
-		.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH),
-		.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
+		.x = full.x + (full.width - width) * 0.5f,
+		.y = full.y + (full.height - height) * 0.5f,
+		.width = width,
+		.height = height,
 	};
 }
 
@@ -648,8 +676,48 @@ fn Rect Project.cluster_title_rect(&self, int index)
 	};
 }
 
+fn void Project.update_sticky_folder(&self, Rect view, float zoom)
+{
+	self.sticky_valid = false;
+	self.sticky_folder = -1;
+	if (view.width <= 1.0f || view.height <= 1.0f) return;
+	RLVector2 center =  { view.x + view.width * 0.5f, view.y + view.height * 0.5f };
+	int best         = -1;
+	usz best_len     =  0;
+	for (sz i = 0; i < self.folders.len(); i++)
+	{
+		if (!self.folders[i].collapsed) continue;
+		if (!rect_contains(self.cluster_bounds((int)i), center)) continue;
+		String fp = (String)self.folders[i].path;
+		if (fp.len >= best_len)
+		{
+			best = (int)i;
+			best_len = fp.len;
+		}
+	}
+	if (best < 0) return;
+	Rect stable  = self.cluster_visual_bounds(best);
+	float inv    = zoom > 0.0f ? 1.0f / zoom : 1.0f;
+	float margin = ui::pxf(10.0f) * inv;
+	if (stable.x >= view.x + margin && stable.y >= view.y + margin
+		&& stable.x + stable.width <= view.x + view.width - margin
+		&& stable.y + stable.height <= view.y + view.height - margin) return;
+	float width  = math::min(ui::pxf(CLUSTER_COLLAPSED_WIDTH), view.width - margin * 2.0f);
+	float height = ui::pxf(CLUSTER_TITLE_HEIGHT);
+	if (width <= 1.0f || height <= 1.0f) return;
+	self.sticky_rect = {
+		.x = view.x + margin,
+		.y = view.y + margin,
+		.width = width,
+		.height = height,
+	};
+	self.sticky_folder = best;
+	self.sticky_valid = true;
+}
+
 fn bool Project.cluster_title_hit(&self, int index, RLVector2 world)
 {
+	if (self.sticky_valid && index == self.sticky_folder && rect_contains(self.sticky_rect, world)) return true;
 	return rect_contains(self.cluster_title_rect(index), world);
 }
 
@@ -744,6 +812,11 @@ fn int int_compare(void* a, void* b)
 fn int Project.cluster_hit(&self, RLVector2 world)
 {
 	if (self.focus_card >= 0) return ROOT_FOLDER;
+	if (self.sticky_valid && rect_contains(self.sticky_rect, world)) return self.sticky_folder;
+	int selected = self.selected_cluster;
+	if (selected >= 0 && selected < (int)self.folders.len() && self.cluster_visible(
+		selected
+	) && rect_contains(self.cluster_visual_bounds(selected), world)) return selected;
 	int best     = ROOT_FOLDER;
 	usz best_len = 0;
 	for (sz i = 0; i < self.folders.len(); i++)
@@ -763,6 +836,7 @@ fn int Project.cluster_hit(&self, RLVector2 world)
 fn int Project.folder_at(&self, RLVector2 world)
 {
 	if (self.focus_card >= 0) return ROOT_FOLDER;
+	if (self.sticky_valid && rect_contains(self.sticky_rect, world)) return self.sticky_folder;
 	int best     = ROOT_FOLDER;
 	usz best_len = 0;
 	for (sz i = 0; i < self.folders.len(); i++)
@@ -1566,22 +1640,11 @@ fn bool Project.delete_card_file(&self, int index)
 fn int Project.focus(&self, int index)
 {
 	if (index < 0 || index >= (int)self.cards.len()) return self.focused;
-	if (index == self.focused)
-	{
-		self.selected = index;
-		self.selected_cluster = -1;
-		return index;
-	}
-	FileCard card = self.cards[index];
-	self.cards.remove_at(index);
-	self.cards.push(card);
-	self.order_revision++;
-	self.grid_dirty = true;
-	self.focused = (int)(self.cards.len() - 1);
-	self.selected = self.focused;
+	self.focused = index;
+	self.selected = index;
 	self.selected_cluster = -1;
-	self.cards[self.focused].selection_anchor = self.cards[self.focused].cursor;
-	return self.focused;
+	self.cards[index].selection_anchor = self.cards[index].cursor;
+	return index;
 }
 
 fn FileCard* Project.focused_card(&self)
@@ -2086,12 +2149,22 @@ fn void Project.apply_focus_rect(&self, Canvas* canvas)
 fn bool Project.begin_focus(&self, int index, Canvas* canvas)
 {
 	if (index < 0 || index >= (int)self.cards.len()) return false;
-	int at = self.focus(index);
+	int previous_focused          = self.focused;
+	int previous_selected         = self.selected;
+	int previous_selected_cluster = self.selected_cluster;
+	int at                        = self.focus(index);
 	if (at < 0 || at >= (int)self.cards.len()) return false;
 	self.cards[at].open = true;
 	editor::ensure_buffer(&self.cards[at], self.allocator);
-	if (!self.cards[at].buffer) return false;
+	if (!self.cards[at].buffer)
+	{
+		self.focused = previous_focused;
+		self.selected = previous_selected;
+		self.selected_cluster = previous_selected_cluster;
+		return false;
+	}
 
+	self.focus_saved_focused = previous_focused;
 	self.focus_saved_rect = self.cards[at].rect;
 	self.focus_saved_camera = canvas.camera;
 	self.focus_saved_target = canvas.target;
@@ -2105,6 +2178,34 @@ fn bool Project.begin_focus(&self, int index, Canvas* canvas)
 	canvas.target.zoom = 1.0f;
 	canvas.camera.target = center;
 	canvas.camera.zoom = 1.0f;
+	self.apply_focus_rect(canvas);
+	self.invalidate_bounds();
+	return true;
+}
+
+fn bool Project.refocus(&self, int index, Canvas* canvas)
+{
+	if (self.focus_card < 0 || index < 0 || index >= (int)self.cards.len()) return false;
+	if (index == self.focus_card)
+	{
+		self.apply_focus_rect(canvas);
+		return true;
+	}
+	FileCard* card = &self.cards[index];
+	card.open = true;
+	editor::ensure_buffer(card, self.allocator);
+	if (!card.buffer) return false;
+
+	if (self.focus_card >= 0 && self.focus_card < (int)self.cards.len())
+	{
+		self.cards[self.focus_card].rect = self.focus_saved_rect;
+		if (self.focus_saved_focused == self.focus_card) self.focus_saved_focused = index;
+	}
+	self.focus_saved_rect = self.cards[index].rect;
+	self.focus_card = index;
+	self.focused = index;
+	self.selected = index;
+	self.selected_cluster = -1;
 	self.apply_focus_rect(canvas);
 	self.invalidate_bounds();
 	return true;
@@ -2129,7 +2230,11 @@ fn void Project.end_focus(&self, Canvas* canvas)
 	{
 		self.cards[self.focus_card].rect = self.focus_saved_rect;
 	}
+	int restore = self.focus_saved_focused;
+	if (restore < 0 || restore >= (int)self.cards.len()) restore = -1;
+	self.focused = restore;
 	self.focus_card = -1;
+	self.focus_saved_focused = -1;
 	canvas.camera = self.focus_saved_camera;
 	canvas.target = self.focus_saved_target;
 	self.invalidate_bounds();
@@ -2144,7 +2249,8 @@ fn int Project.hit_test(&self, RLVector2 world)
 		return self.cards[index].contains(world) ? index : -1;
 	}
 	self.ensure_grid();
-	int best = -1;
+	int best      = -1;
+	int best_rank = -1;
 	@pool()
 	{
 		List{int} candidates;
@@ -2155,7 +2261,16 @@ fn int Project.hit_test(&self, RLVector2 world)
 			int index = candidates[i];
 			if (!self.card_visible(index)) continue;
 			if (!self.cards[index].contains(world)) continue;
-			if (index > best) best = index;
+			int rank = 0;
+			if (index == self.selected) rank = 1;
+			if (index == self.focused) rank = 2;
+			if (self.drag_card && index == self.drag_index) rank = 3;
+			if (self.resizing && index == self.resize_card) rank = 4;
+			if (rank > best_rank || (rank == best_rank && index > best))
+			{
+				best = index;
+				best_rank = rank;
+			}
 		}
 	};
 	return best;
@@ -2341,6 +2456,7 @@ fn void Project.update(
 			{
 				int handle = self.cards[card_hit].resize_handle_at(world, canvas.camera);
 				self.resizing = true;
+				canvas.unfollow();
 				self.resize_card = self.focus(card_hit);
 				self.resize_handle = handle;
 				self.drag_world = world;
@@ -2450,6 +2566,7 @@ fn void Project.update(
 				if (double_click) card.open = !card.open;
 				self.drag_index = index;
 				self.drag_card = true;
+				canvas.unfollow();
 				self.drag_world = world;
 				self.drag_origin_world = world;
 				self.drag_origin_rect = card.rect;
@@ -2462,6 +2579,7 @@ fn void Project.update(
 			{
 				self.drag_cluster = true;
 				self.drag_cluster_index = cluster_hit;
+				canvas.unfollow();
 				self.drag_cluster_title = self.cluster_title_hit(cluster_hit, world);
 				self.cluster_moved = false;
 				self.drag_world = world;
@@ -2651,10 +2769,30 @@ fn RLMouseCursor cursor_for_handle(int handle)
 
 fn void Project.refresh_sleep(&self, Rect visible, float zoom)
 {
-	int awake  = 0;
-	int asleep = 0;
+	int awake         = 0;
+	int asleep        = 0;
+	int visible_cards = 0;
+	int hidden_cards  = 0;
+	int culled_cards  = 0;
 	for (sz i = 0; i < self.cards.len(); i++)
 	{
+		bool in_area  = rect_intersects(self.cards[i].rect, visible);
+		bool in_scope = self.card_visible((int)i);
+		if (in_area)
+		{
+			if (in_scope)
+			{
+				visible_cards++;
+			}
+			else
+			{
+				hidden_cards++;
+			}
+		}
+		else
+		{
+			culled_cards++;
+		}
 		if (!self.sleep_editors)
 		{
 			self.cards[i].sleeping = false;
@@ -2663,9 +2801,7 @@ fn void Project.refresh_sleep(&self, Rect visible, float zoom)
 		}
 		bool is_focused = (int)i == self.focused || (int)i == self.focus_card;
 		bool big_enough = self.cards[i].rect.width * zoom >= CARD_MIN_DRAW_PX;
-		bool on_screen  = self.card_visible(
-			(int)i
-		) && self.cards[i].open && big_enough && rect_intersects(self.cards[i].rect, visible);
+		bool on_screen  = in_scope && self.cards[i].open && big_enough && in_area;
 		bool wake       = is_focused || on_screen;
 		self.cards[i].sleeping = !wake;
 		if (wake)
@@ -2679,6 +2815,9 @@ fn void Project.refresh_sleep(&self, Rect visible, float zoom)
 	}
 	self.awake_count = awake;
 	self.asleep_count = asleep;
+	self.stat_visible_cards = visible_cards;
+	self.stat_hidden_cards = hidden_cards;
+	self.stat_culled_cards = culled_cards;
 }
 
 fn void Project.poll_external(&self, double now)
@@ -3431,11 +3570,20 @@ fn void Project.handle_keyboard(
 
 fn void Project.draw_cluster(&self, int index, float zoom)
 {
+	self.draw_cluster_at(index, self.cluster_visual_bounds(index), zoom);
+}
+
+fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
+{
 	FolderCluster cluster = self.folders[index];
-	Rect bounds           = self.cluster_visual_bounds(index);
 	float radius          = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
 	ui::rounded_rect(bounds, radius, theme::current().cluster_body);
-	Rect title = self.cluster_title_rect(index);
+	Rect title = {
+		.x = bounds.x,
+		.y = bounds.y,
+		.width = bounds.width,
+		.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
+	};
 	ui::rounded_top(title, radius, theme::current().cluster_title);
 	ui::rounded_rect_lines(bounds, radius, card::screen_thickness(1.0f, zoom), theme::current().cluster_border);
 	if ((int)index == self.current_folder)
@@ -3488,10 +3636,24 @@ fn void Project.draw_folders(&self, RLCamera2D camera)
 	Rect visible = expand_rect(visible_world_rect(camera), DRAW_CULL_MARGIN);
 	for (sz i = 0; i < self.folders.len(); i++)
 	{
+		if ((int)i == self.selected_cluster) continue;
 		if (!self.cluster_visible((int)i)) continue;
 		if (!rect_intersects(self.cluster_visual_bounds((int)i), visible)) continue;
 		self.draw_cluster((int)i, camera.zoom);
 	}
+	int selected = self.selected_cluster;
+	if (selected < 0 || selected >= (int)self.folders.len()) return;
+	if (!self.cluster_visible(selected)) return;
+	if (!rect_intersects(self.cluster_visual_bounds(selected), visible)) return;
+	self.draw_cluster(selected, camera.zoom);
+}
+
+fn void Project.draw_sticky_folder(&self, float zoom)
+{
+	if (!self.sticky_valid) return;
+	if (self.sticky_folder < 0 || self.sticky_folder >= (int)self.folders.len()) return;
+	if (!self.cluster_visible(self.sticky_folder)) return;
+	self.draw_cluster_at(self.sticky_folder, self.sticky_rect, zoom);
 }
 
 fn void Project.draw_snap_guides(&self, RLCamera2D camera)
@@ -3537,6 +3699,7 @@ fn void Project.draw_cards(
 	EditorMetrics metrics,
 	findbar::FindBar* find_bar,
 	int only_card,
+	bool editing,
 	git::GitStatus* git_status
 )
 {
@@ -3564,12 +3727,56 @@ fn void Project.draw_cards(
 		{
 			self.visible_cards(visible, &draw_list);
 		}
-		for (sz c = 0; c < draw_list.len(); c++)
+		List{int} ordered;
+		ordered.init(tmem);
+		sz draw_count = draw_list.len();
+		if (only_card < 0)
 		{
-			sz i = (sz)draw_list[c];
+			int[4] raised = {
+				self.selected,
+				self.focused,
+				self.drag_card ? self.drag_index : -1,
+				self.resizing ? self.resize_card : -1,
+			};
+			for (sz c = 0; c < draw_list.len(); c++)
+			{
+				int index = draw_list[c];
+				bool skip = false;
+				for (int r = 0; r < 4; r++)
+				{
+					if (raised[r] == index)
+					{
+						skip = true;
+						break;
+					}
+				}
+				if (!skip) ordered.push(index);
+			}
+			for (int r = 0; r < 4; r++)
+			{
+				int index = raised[r];
+				if (index < 0) continue;
+				bool duplicate = false;
+				for (int p = 0; p < r; p++)
+				{
+					if (raised[p] == index)
+					{
+						duplicate = true;
+						break;
+					}
+				}
+				if (!duplicate) ordered.push(index);
+			}
+			draw_count = ordered.len();
+		}
+		List{int}* order = only_card < 0 ? &ordered : &draw_list;
+		for (sz c = 0; c < draw_count; c++)
+		{
+			sz i = (sz)(*order)[c];
 			if (only_card < 0 && !self.card_visible((int)i)) continue;
 			FileCard* card  = &self.cards[i];
 			bool is_focused = (int)i == self.focused;
+			bool is_editing = is_focused && editing;
 			if (is_focused) editor::ensure_buffer(card, self.allocator);
 			if (!rect_intersects(card.rect, visible)) continue;
 			float on_screen_w = card.rect.width * camera.zoom;
@@ -3671,7 +3878,7 @@ fn void Project.draw_cards(
 				}
 			}
 
-			if (is_focused) editor::draw_current_line(
+			if (is_editing) editor::draw_current_line(
 				card.buffer,
 				text,
 				card.scroll,
@@ -3681,7 +3888,7 @@ fn void Project.draw_cards(
 				theme::current()
 				.editor_current_line);
 			lsp::InlayHint[] inlay_hints = lsp::lsp_inlay_hints_for((String)card.path);
-			if (is_focused && editor::has_selection(card.selection_anchor, card.cursor))
+			if (is_editing && editor::has_selection(card.selection_anchor, card.cursor))
 			{
 				usz sel_start = 0;
 				usz sel_end   = 0;
@@ -3699,7 +3906,7 @@ fn void Project.draw_cards(
 					theme::current()
 					.editor_selection);
 			}
-			if (is_focused && find_bar) find_bar.draw_matches(
+			if (is_editing && find_bar) find_bar.draw_matches(
 				card.rect,
 				card.buffer,
 				card.scroll,
@@ -3748,7 +3955,7 @@ fn void Project.draw_cards(
 					);
 				}
 			}
-			if (is_focused && caret_on)
+			if (is_editing && caret_on)
 			{
 				editor::draw_caret(
 					card.buffer,
@@ -3764,7 +3971,7 @@ fn void Project.draw_cards(
 			}
 			float content_height = (float)line_count * metrics.line_height + metrics.padding_y * 2.0f;
 			editor::draw_scrollbar(text, content_height, card.scroll, camera, theme::current().editor_scrollbar);
-			if (is_focused && find_bar) find_bar.draw(card.rect, metrics, font, null);
+			if (is_editing && find_bar) find_bar.draw(card.rect, metrics, font, null);
 			if (is_focused && self.focus_card < 0) card.draw_handles(camera, theme::current().editor_handle);
 		}
 	};

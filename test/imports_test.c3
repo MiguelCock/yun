@@ -1031,7 +1031,7 @@ macro void assert_orthogonal(route)
 	}
 }
 
-fn void test_focus_reorders_cached_edges()
+fn void test_focus_keeps_cached_edges()
 {
 	@pool()
 	{
@@ -1062,7 +1062,7 @@ fn void test_focus_reorders_cached_edges()
 		assert(index.edges[0].target_card == b);
 
 		int focused = p.focus(a);
-		assert(focused == 1);
+		assert(focused == 0);
 		index.ensure_edges(&p);
 		assert(index.edges.len() == 1);
 		assert(index.edges[0].source_card == focused);

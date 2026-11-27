@@ -408,7 +408,8 @@ fn void test_collapsed_cluster_is_compact()
 		Rect collapsed = p.cluster_visual_bounds(f);
 		assert(collapsed.height == CLUSTER_TITLE_HEIGHT);
 		assert(collapsed.width == CLUSTER_COLLAPSED_WIDTH);
-		assert(collapsed.x == expanded.x && collapsed.y == expanded.y);
+		assert(collapsed.x == expanded.x + (expanded.width - CLUSTER_COLLAPSED_WIDTH) * 0.5f);
+		assert(collapsed.y == expanded.y + (expanded.height - CLUSTER_TITLE_HEIGHT) * 0.5f);
 
 		p.toggle_collapse(f);
 		Rect again = p.cluster_visual_bounds(f);
@@ -729,7 +730,7 @@ fn void test_cluster_title_hit_only_top_bar()
 		assert(!p.cluster_title_hit(f, { 50.0f, 200.0f }));
 
 		p.toggle_collapse(f);
-		assert(p.cluster_title_hit(f, { 50.0f, 10.0f }));
+		assert(p.cluster_title_hit(f, { 50.0f, 50.0f }));
 	};
 }
 fn void test_jump_fade()
@@ -1345,11 +1346,14 @@ fn void test_focus_mode_restores_rect_and_camera()
 		Path? f        = dir.append(tmem, "a.c3");
 		if (catch excuse = f) return;
 		if (catch excuse = file::save(f, content)) return;
+		Path? f2 = dir.append(tmem, "b.c3");
+		if (catch excuse = f2) return;
+		if (catch excuse = file::save(f2, content)) return;
 
 		Project p;
 		p.init(tmem);
 		assert(p.open((String)dir));
-		assert(p.cards.len() == 1);
+		assert(p.cards.len() == 2);
 
 		Canvas canvas;
 		canvas.init();
@@ -1357,18 +1361,38 @@ fn void test_focus_mode_restores_rect_and_camera()
 		canvas.camera.target = { 40.0f, 30.0f };
 		canvas.target = canvas.camera;
 
-		Rect saved = p.cards[0].rect;
+		Rect saved  = p.cards[0].rect;
+		Rect saved2 = p.cards[1].rect;
+		assert(p.focused == -1);
 		assert(p.begin_focus(0, &canvas));
 		assert(p.focus_card == 0);
+		assert(p.focused == 0);
 		assert(p.cards[0].buffer != null);
 		assert(p.cards[0].rect.width != saved.width);
 
-		p.end_focus(&canvas);
-		assert(p.focus_card == -1);
+		assert(p.refocus(1, &canvas));
+		assert(p.focus_card == 1);
+		assert(p.focused == 1);
+		assert(p.selected == 1);
 		assert(p.cards[0].rect.x == saved.x && p.cards[0].rect.y == saved.y);
 		assert(p.cards[0].rect.width == saved.width && p.cards[0].rect.height == saved.height);
+
+		p.end_focus(&canvas);
+		assert(p.focus_card == -1);
+		assert(p.focused == -1);
+		assert(p.cards[1].rect.x == saved2.x && p.cards[1].rect.y == saved2.y);
+		assert(p.cards[1].rect.width == saved2.width && p.cards[1].rect.height == saved2.height);
 		assert(canvas.camera.zoom == 2.0f);
 		assert(canvas.camera.target[0] == 40.0f && canvas.camera.target[1] == 30.0f);
+
+		p.focused = 0;
+		p.selected = 0;
+		assert(p.begin_focus(0, &canvas));
+		assert(p.refocus(1, &canvas));
+		p.end_focus(&canvas);
+		assert(p.focused == 1);
+		assert(p.selected == 1);
+		assert(p.cards[1].rect.x == saved2.x && p.cards[1].rect.y == saved2.y);
 
 		(void)path::rmtree(dir);
 	};
@@ -1386,11 +1410,11 @@ fn void test_focus_syncs_selection()
 		p.selected_cluster = 0;
 
 		int index = p.focus(0);
-		assert(index == 1);
-		assert(p.focused == 1);
-		assert(p.selected == 1);
+		assert(index == 0);
+		assert(p.focused == 0);
+		assert(p.selected == 0);
 		assert(p.selected_cluster == -1);
-		assert(p.cards[1].name.compare_to("a.c3") == 0);
+		assert(p.cards[0].name.compare_to("a.c3") == 0);
 	};
 }
 
@@ -1555,5 +1579,36 @@ fn void test_discard_ephemeral_keeps_bounds_when_empty()
 		assert(p.folders[folder].bounds_valid);
 
 		p.destroy();
+	};
+}
+fn void test_sticky_folder_hint_inside_collapsed_area()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		int f = p.add_folder("/root/big", ROOT_FOLDER);
+		p.cards.push(
+			{
+				.path = (Path)"/root/big/x.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 1000.0f, .height = 1000.0f },
+				.folder = f,
+			}
+		);
+		p.toggle_collapse(f);
+		assert(p.folders[f].collapsed);
+		Rect view = { .x = 0.0f, .y = 0.0f, .width = 300.0f, .height = 300.0f };
+		p.update_sticky_folder(view, 1.0f);
+		assert(p.sticky_valid);
+		assert(p.sticky_folder == f);
+		assert(p.sticky_rect.x >= view.x && p.sticky_rect.y >= view.y);
+		assert(p.sticky_rect.x + p.sticky_rect.width <= view.x + view.width);
+		RLVector2 hit = {
+			p.sticky_rect.x + p.sticky_rect.width * 0.5f,
+			p.sticky_rect.y + p.sticky_rect.height * 0.5f,
+		};
+		assert(p.cluster_hit(hit) == f);
+		assert(p.folder_at(hit) == f);
+		assert(p.cluster_title_hit(f, hit));
 	};
 }
