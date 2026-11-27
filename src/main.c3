@@ -160,7 +160,15 @@ fn void finish_open(
 	bool restored = workspace::load(project, canvas, console_manager);
 	if (restored)
 	{
-		project.place_unrestored();
+		if (workspace::migrated())
+		{
+			project.layout();
+			notifier.push("Workspace upgraded; canvas relaid out");
+		}
+		else
+		{
+			project.place_unrestored();
+		}
 		project.invalidate_bounds();
 	}
 	else
@@ -890,6 +898,7 @@ const String[] VISUAL_STATE_NAMES = {
 	"notifications",
 	"imports",
 	"imports-far",
+	"skin",
 };
 
 const int VISUAL_STATE_COUNT = (int)VISUAL_STATE_NAMES.len;
@@ -933,7 +942,6 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 				int index = project.focus(0);
 				project.selected = index;
 				editor::ensure_buffer(&project.cards[index], project.allocator);
-				project.refresh_stack_layout();
 			}
 		case 1:
 			app.settings_panel.show();
@@ -1064,6 +1072,8 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 			}
 			app.canvas.camera.zoom = 0.05f;
 			app.canvas.target.zoom = 0.05f;
+		case 20:
+			app.settings_panel.show_page(settings::SettingPage.SKIN);
 	}
 }
 
@@ -2269,7 +2279,11 @@ fn void run_command(commands::CommandId id, App* app)
 		case commands::CommandId.RELAYOUT:
 
 			{
-				project.layout();
+				if (!project.layout_idle())
+				{
+					app.notifier.push("Finish the current interaction first");
+					return;
+				}
 				project.invalidate_bounds();
 				project.clear_selection();
 				app.notifier.push("Canvas relaid out");
@@ -4555,13 +4569,8 @@ fn int main(String[] args)
 			bool suppress_edit_input = (ui_mode == UiMode.EDIT && edit_grace_frames > 0) || ui_mode == UiMode.CONSOLE
 				|| vim_cmd.open;
 			double update_t0         = rl::get_time();
+			project.editing = ui_mode == UiMode.EDIT;
 			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
-			bool stack_selection_changed = project.selected != last_follow_selection
-				|| project.selected_cluster != last_follow_cluster;
-			if (stack_selection_changed && last_follow_selection != -2
-				&& project.card_layout != project::CardLayout.GRID
-				&& project.focus_card < 0
-				&& !project.grabbing) project.layout();
 			if (canvas::settings()
 				.follow_selection && ui_mode
 					== UiMode.MOVE && project.focus_card < 0 && !project.grabbing && (project.selected
@@ -4666,7 +4675,6 @@ fn int main(String[] args)
 			canvas.block_pan = project.focus_card >= 0;
 			if (project.focus_card >= 0) canvas.block_zoom = true;
 			canvas.update();
-			project.update_sticky_folder(canvas.usable_world_rect(), canvas.camera.zoom);
 			hover = compute_hover(&project, &canvas, metrics);
 
 			if (arrow_hovered && rl::is_mouse_button_pressed(rl::RLMouseButton.LEFT))
@@ -5007,7 +5015,6 @@ fn int main(String[] args)
 						ui_mode == UiMode.EDIT,
 						git_status
 					);
-					project.draw_sticky_folder(canvas.camera.zoom);
 					if (imports::draw_on_top()) import_index.draw(&project, canvas.camera, font);
 				}
 			};

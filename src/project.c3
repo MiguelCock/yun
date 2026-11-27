@@ -33,6 +33,7 @@ const double POLL_SECONDS           =  1.0;
 const float CLUSTER_PADDING         =  24.0f;
 const float CLUSTER_TITLE_HEIGHT    =  30.0f;
 const float CLUSTER_COLLAPSED_WIDTH =  240.0f;
+const float CLUSTER_COLLAPSED_BODY  =  140.0f;
 const float CLUSTER_GAP             =  16.0f;
 const float CARD_GAP                =  16.0f;
 const int CLUSTER_COLUMNS           =  3;
@@ -40,7 +41,8 @@ const String[] IGNORED_NAMES        =  { ".git", ".gitmodules", ".yun", "build",
 const float DRAW_CULL_MARGIN        =  64.0f;
 const int STACK_CARDS               =  10;
 const float STACK_GAP               =  6.0f;
-const float STACK_FAN_X             =  26.0f;
+const float STACK_DIAGONAL_X        =  22.0f;
+const float STACK_FAN_X             =  40.0f;
 
 enum CardLayout : int
 {
@@ -107,9 +109,11 @@ struct FolderCluster
 {
 	Path path;
 	Rect bounds;
+	Rect body;
 	bool collapsed;
 	int parent;
 	bool bounds_valid;
+	int card_count;
 }
 
 struct Project
@@ -170,6 +174,7 @@ struct Project
 	int order_revision;
 	bool skip_nested_repos;
 	CardLayout card_layout;
+	bool editing;
 	int focus_card;
 	int focus_saved_focused;
 	Rect focus_saved_rect;
@@ -182,9 +187,6 @@ struct Project
 	bool content_bounds_valid;
 	Rect content_bounds_cache;
 	int hover_cluster;
-	int sticky_folder;
-	Rect sticky_rect;
-	bool sticky_valid;
 	EditorMetrics card_metrics;
 	vim::State vim_state;
 }
@@ -233,6 +235,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.order_revision = 0;
 	self.skip_nested_repos = true;
 	self.card_layout = CardLayout.DECK;
+	self.editing = false;
 	self.focus_card = -1;
 	self.focus_saved_focused = -1;
 	self.focus_screen_w = 0.0f;
@@ -242,9 +245,6 @@ fn void Project.init(&self, Allocator allocator)
 	self.content_bounds_valid = false;
 	self.hover_card = -1;
 	self.hover_cluster = -1;
-	self.sticky_folder = -1;
-	self.sticky_rect = { .x = 0.0f, .y = 0.0f, .width = 0.0f, .height = 0.0f };
-	self.sticky_valid = false;
 	self.drag_index = -1;
 	self.resize_card = -1;
 	self.card_metrics = editor::default_metrics();
@@ -322,9 +322,6 @@ fn void Project.reset(&self)
 	self.selecting = false;
 	self.hover_card = -1;
 	self.hover_cluster = -1;
-	self.sticky_folder = -1;
-	self.sticky_rect = { .x = 0.0f, .y = 0.0f, .width = 0.0f, .height = 0.0f };
-	self.sticky_valid = false;
 	self.drag_index = -1;
 	self.resize_card = -1;
 	self.vim_state.reset();
@@ -586,9 +583,16 @@ fn int Project.add_folder(&self, String folder_path, int parent)
 	FolderCluster cluster = {
 		.path = (Path)folder_path.copy(self.allocator),
 		.bounds = { .x = 0.0f, .y = 0.0f, .width = ui::pxf(320.0f), .height = ui::pxf(220.0f) },
+		.body = {
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH),
+			.height = ui::pxf(CLUSTER_COLLAPSED_BODY)
+		},
 		.collapsed = false,
 		.parent = parent,
 		.bounds_valid = false,
+		.card_count = 0,
 	};
 	self.folders.push(cluster);
 	int index = (int)(self.folders.len() - 1);
@@ -666,16 +670,19 @@ fn Rect Project.compute_cluster_bounds(&self, int index)
 
 fn Rect Project.cluster_visual_bounds(&self, int index)
 {
-	Rect full = self.cluster_bounds(index);
-	if (!self.folders[index].collapsed) return full;
-	float width  = ui::pxf(CLUSTER_COLLAPSED_WIDTH);
-	float height = ui::pxf(CLUSTER_TITLE_HEIGHT);
-	return {
-		.x = full.x + (full.width - width) * 0.5f,
-		.y = full.y + (full.height - height) * 0.5f,
-		.width = width,
-		.height = height,
-	};
+	if (!self.folders[index].collapsed) return self.cluster_bounds(index);
+	Rect body = self.folders[index].body;
+	if (body.width <= 0.0f || body.height <= 0.0f)
+	{
+		Rect full = self.cluster_bounds(index);
+		return {
+			.x = full.x,
+			.y = full.y,
+			.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH),
+			.height = ui::pxf(CLUSTER_COLLAPSED_BODY),
+		};
+	}
+	return body;
 }
 
 fn Rect Project.cluster_title_rect(&self, int index)
@@ -689,48 +696,8 @@ fn Rect Project.cluster_title_rect(&self, int index)
 	};
 }
 
-fn void Project.update_sticky_folder(&self, Rect view, float zoom)
-{
-	self.sticky_valid = false;
-	self.sticky_folder = -1;
-	if (view.width <= 1.0f || view.height <= 1.0f) return;
-	RLVector2 center =  { view.x + view.width * 0.5f, view.y + view.height * 0.5f };
-	int best         = -1;
-	usz best_len     =  0;
-	for (sz i = 0; i < self.folders.len(); i++)
-	{
-		if (!self.folders[i].collapsed) continue;
-		if (!rect_contains(self.cluster_bounds((int)i), center)) continue;
-		String fp = (String)self.folders[i].path;
-		if (fp.len >= best_len)
-		{
-			best = (int)i;
-			best_len = fp.len;
-		}
-	}
-	if (best < 0) return;
-	Rect stable  = self.cluster_visual_bounds(best);
-	float inv    = zoom > 0.0f ? 1.0f / zoom : 1.0f;
-	float margin = ui::pxf(10.0f) * inv;
-	if (stable.x >= view.x + margin && stable.y >= view.y + margin
-		&& stable.x + stable.width <= view.x + view.width - margin
-		&& stable.y + stable.height <= view.y + view.height - margin) return;
-	float width  = math::min(ui::pxf(CLUSTER_COLLAPSED_WIDTH), view.width - margin * 2.0f);
-	float height = ui::pxf(CLUSTER_TITLE_HEIGHT);
-	if (width <= 1.0f || height <= 1.0f) return;
-	self.sticky_rect = {
-		.x = view.x + margin,
-		.y = view.y + margin,
-		.width = width,
-		.height = height,
-	};
-	self.sticky_folder = best;
-	self.sticky_valid = true;
-}
-
 fn bool Project.cluster_title_hit(&self, int index, RLVector2 world)
 {
-	if (self.sticky_valid && index == self.sticky_folder && rect_contains(self.sticky_rect, world)) return true;
 	return rect_contains(self.cluster_title_rect(index), world);
 }
 
@@ -825,7 +792,6 @@ fn int int_compare(void* a, void* b)
 fn int Project.cluster_hit(&self, RLVector2 world)
 {
 	if (self.focus_card >= 0) return ROOT_FOLDER;
-	if (self.sticky_valid && rect_contains(self.sticky_rect, world)) return self.sticky_folder;
 	int selected = self.selected_cluster;
 	if (selected >= 0 && selected < (int)self.folders.len() && self.cluster_visible(
 		selected
@@ -849,7 +815,6 @@ fn int Project.cluster_hit(&self, RLVector2 world)
 fn int Project.folder_at(&self, RLVector2 world)
 {
 	if (self.focus_card >= 0) return ROOT_FOLDER;
-	if (self.sticky_valid && rect_contains(self.sticky_rect, world)) return self.sticky_folder;
 	int best     = ROOT_FOLDER;
 	usz best_len = 0;
 	for (sz i = 0; i < self.folders.len(); i++)
@@ -928,6 +893,16 @@ fn RLVector2 Project.default_card_size(&self)
 	return editor::default_card_size(self.card_metrics);
 }
 
+fn void Project.adjust_folder_card_count(&self, int folder, int delta)
+{
+	int current = folder;
+	while (current >= 0 && current < (int)self.folders.len())
+	{
+		self.folders[current].card_count += delta;
+		current = self.folders[current].parent;
+	}
+}
+
 fn int Project.append_card(&self, String abs, RLVector2 world_pos)
 {
 	RLVector2 size = editor::default_card_size(self.card_metrics);
@@ -945,6 +920,7 @@ fn int Project.append_card(&self, String abs, RLVector2 world_pos)
 		}, .open = true, .dirty = false, .folder = self.folder_for(abs), };
 	self.cards.push(card);
 	int index = (int)(self.cards.len() - 1);
+	self.adjust_folder_card_count(card.folder, 1);
 	self.cards_revision++;
 	self.invalidate_bounds();
 	return index;
@@ -985,6 +961,12 @@ fn int Project.add_folder_from_disk(&self, String dir, RLVector2 world_pos)
 		.y = world_pos[1],
 		.width = ui::pxf(320.0f),
 		.height = ui::pxf(220.0f),
+	};
+	self.folders[index].body = {
+		.x = world_pos[0],
+		.y = world_pos[1],
+		.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH),
+		.height = ui::pxf(CLUSTER_COLLAPSED_BODY),
 	};
 	self.invalidate_bounds();
 
@@ -1039,14 +1021,16 @@ fn void Project.place_cards_block(&self, List{int}* cards, float base_x, float b
 	int per   = math::min(count, STACK_CARDS);
 	if (per < 1) return;
 	float step_y  = ui::pxf(card::CARD_TITLE_HEIGHT) + ui::pxf(STACK_GAP);
-	float fan_x   = self.card_layout == CardLayout.FAN ? ui::pxf(STACK_FAN_X) : 0.0f;
-	float stack_w = cw + (float)(per - 1) * fan_x;
+	float step_x  = self.card_layout == CardLayout.FAN ? ui::pxf(STACK_FAN_X)
+		: self.card_layout == CardLayout.DECK ? ui::pxf(STACK_DIAGONAL_X)
+		: 0.0f;
+	float stack_w = cw + (float)(per - 1) * step_x;
 	for (int k = 0; k < count; k++)
 	{
 		int stack = k / per;
 		int pos   = k % per;
 		self.cards[(*cards)[k]].rect = {
-			.x = base_x + (float)stack * (stack_w + cg) + (float)pos * fan_x,
+			.x = base_x + (float)stack * (stack_w + cg) + (float)pos * step_x,
 			.y = base_y + (float)pos * step_y,
 			.width = cw,
 			.height = ch,
@@ -1059,7 +1043,7 @@ fn void Project.set_card_layout(&self, CardLayout layout)
 	if ((int)layout < (int)CardLayout.GRID || (int)layout > (int)CardLayout.FAN) return;
 	if (self.card_layout == layout) return;
 	self.card_layout = layout;
-	self.layout();
+	(void)self.layout_idle();
 }
 fn RLVector2 Project.card_block_size(&self, int count, float cw, float ch, float cg)
 {
@@ -1073,8 +1057,10 @@ fn RLVector2 Project.card_block_size(&self, int count, float cw, float ch, float
 	int per       = math::min(count, STACK_CARDS);
 	int stacks    = (count + per - 1) / per;
 	float step_y  = ui::pxf(card::CARD_TITLE_HEIGHT) + ui::pxf(STACK_GAP);
-	float fan_x   = self.card_layout == CardLayout.FAN ? ui::pxf(STACK_FAN_X) : 0.0f;
-	float stack_w = cw + (float)(per - 1) * fan_x;
+	float step_x  = self.card_layout == CardLayout.FAN ? ui::pxf(STACK_FAN_X)
+		: self.card_layout == CardLayout.DECK ? ui::pxf(STACK_DIAGONAL_X)
+		: 0.0f;
+	float stack_w = cw + (float)(per - 1) * step_x;
 	float stack_h = ch + (float)(per - 1) * step_y;
 	return { (float)stacks * (stack_w + cg) - cg, stack_h };
 }
@@ -1103,11 +1089,18 @@ fn RLVector2 Project.flow_pack(&self, List{RLVector2}* items, float gap, float t
 
 fn RLVector2 Project.chip_size(&self)
 {
-	return { ui::pxf(CLUSTER_COLLAPSED_WIDTH), ui::pxf(CLUSTER_TITLE_HEIGHT) };
+	return { ui::pxf(CLUSTER_COLLAPSED_WIDTH), ui::pxf(CLUSTER_COLLAPSED_BODY) };
 }
 
 fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* cards_by, List{int}[]* children_by)
 {
+	RLVector2 body_size = self.chip_size();
+	self.folders[index].body = {
+		.x = origin[0],
+		.y = origin[1],
+		.width = body_size[0],
+		.height = body_size[1],
+	};
 	float pad           = ui::pxf(CLUSTER_PADDING);
 	float title         = ui::pxf(CLUSTER_TITLE_HEIGHT);
 	RLVector2 card_size = editor::default_card_size(self.card_metrics);
@@ -1125,8 +1118,8 @@ fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* car
 
 	List{RLVector2} items;
 	items.init(tmem);
-	if (cards.len() > 0) items.push(self.card_block_size((int)cards.len(), cw, ch, cg));
 	for (sz i = 0; i < kids.len(); i++) items.push(chip);
+	if (cards.len() > 0) items.push(self.card_block_size((int)cards.len(), cw, ch, cg));
 
 	RLVector2[] positions = alloc::new_array(tmem, RLVector2, (usz)(items.len() == 0 ? 1 : items.len()));
 	float area            = 0.0f;
@@ -1134,15 +1127,15 @@ fn void Project.place_level(&self, int index, RLVector2 origin, List{int}[]* car
 	self.flow_pack(&items, gap, math::sqrt(area), positions);
 	items.free();
 
-	int base = cards.len() > 0 ? 1 : 0;
-	if (cards.len() > 0)
-	{
-		self.place_cards_block(&cards, content_x + positions[0][0], content_y + positions[0][1], cw, ch, cg);
-	}
 	for (sz i = 0; i < kids.len(); i++)
 	{
-		RLVector2 p = positions[(usz)(base + (int)i)];
+		RLVector2 p = positions[i];
 		self.place_level(kids[i], { content_x + p[0], content_y + p[1] }, cards_by, children_by);
+	}
+	if (cards.len() > 0)
+	{
+		RLVector2 p = positions[kids.len()];
+		self.place_cards_block(&cards, content_x + p[0], content_y + p[1], cw, ch, cg);
 	}
 
 	if (cards.len() == 0 && kids.len() == 0)
@@ -1171,23 +1164,11 @@ fn void Project.layout(&self)
 		List{int}[] cards_by = alloc::new_array(tmem, List{int}, (usz)(nf + 1));
 		for (usz i = 0; i < cards_by.len; i++) cards_by[i].init(tmem);
 		for (sz i = 0; i < self.cards.len(); i++) cards_by[(usz)(self.cards[i].folder + 1)].push((int)i);
-		if (self.card_layout != CardLayout.GRID)
+		for (int i = 0; i < nf; i++) self.folders[i].card_count = (int)cards_by[(usz)(i + 1)].len();
+		for (int i = nf - 1; i >= 0; i--)
 		{
-			int promote = self.selected >= 0 ? self.selected : self.focused;
-			if (promote >= 0 && promote < (int)self.cards.len())
-			{
-				List{int}* list = &cards_by[(usz)(self.cards[promote].folder + 1)];
-				if (try at = list.index_of(promote))
-				{
-					sz group_start = ((sz)at / (sz)STACK_CARDS) * (sz)STACK_CARDS;
-					sz group_end   = math::min(group_start + (sz)STACK_CARDS - 1, (sz)list.len() - 1);
-					if ((sz)at < group_end)
-					{
-						list.remove_at(at);
-						list.insert_at(group_end, promote);
-					}
-				}
-			}
+			int parent = self.folders[i].parent;
+			if (parent >= 0 && parent < nf) self.folders[parent].card_count += self.folders[i].card_count;
 		}
 
 		List{int}[] children_by = { };
@@ -1212,8 +1193,8 @@ fn void Project.layout(&self)
 
 		List{RLVector2} items;
 		items.init(tmem);
-		if (root_cards.len() > 0) items.push(self.card_block_size((int)root_cards.len(), cw, ch, cg));
 		for (sz i = 0; i < tops.len(); i++) items.push(chip);
+		if (root_cards.len() > 0) items.push(self.card_block_size((int)root_cards.len(), cw, ch, cg));
 
 		if (items.len() > 0)
 		{
@@ -1222,15 +1203,11 @@ fn void Project.layout(&self)
 			for (sz i = 0; i < items.len(); i++) area += items[i][0] * items[i][1];
 			self.flow_pack(&items, gap, math::sqrt(area), positions);
 
-			int base = root_cards.len() > 0 ? 1 : 0;
+			for (sz i = 0; i < tops.len(); i++) self.place_level(tops[i], positions[i], &cards_by, &children_by);
 			if (root_cards.len() > 0)
 			{
-				self.place_cards_block(&root_cards, positions[0][0], positions[0][1], cw, ch, cg);
-			}
-			for (sz i = 0; i < tops.len(); i++)
-			{
-				RLVector2 p = positions[(usz)(base + (int)i)];
-				self.place_level(tops[i], p, &cards_by, &children_by);
+				RLVector2 p = positions[tops.len()];
+				self.place_cards_block(&root_cards, p[0], p[1], cw, ch, cg);
 			}
 		}
 	};
@@ -1249,7 +1226,7 @@ fn void Project.place_unrestored(&self)
 			FileCard* card = &self.cards[i];
 			if (card.restored) continue;
 			Rect anchor = { .x = 0.0f, .y = 0.0f, .width = 0.0f, .height = 0.0f };
-			if (card.folder >= 0) anchor = self.folders[card.folder].bounds;
+			if (card.folder >= 0) anchor = self.cluster_visual_bounds(card.folder);
 			int slot       = 0;
 			int*? existing = counts.get_ref(card.folder);
 			if (try v = existing) slot = *v;
@@ -1287,6 +1264,10 @@ fn void Project.scale_geometry(&self, float factor)
 		self.folders[i].bounds.y *= factor;
 		self.folders[i].bounds.width *= factor;
 		self.folders[i].bounds.height *= factor;
+		self.folders[i].body.x *= factor;
+		self.folders[i].body.y *= factor;
+		self.folders[i].body.width *= factor;
+		self.folders[i].body.height *= factor;
 		self.folders[i].bounds_valid = false;
 	}
 	self.invalidate_bounds();
@@ -1587,8 +1568,9 @@ fn int Project.create_folder_on_disk(&self, int parent_index, String name, RLVec
 		.x = world_pos[0],
 		.y = world_pos[1],
 		.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH),
-		.height = ui::pxf(CLUSTER_TITLE_HEIGHT),
+		.height = ui::pxf(CLUSTER_COLLAPSED_BODY),
 	};
+	self.folders[index].body = self.folders[index].bounds;
 	return index;
 }
 
@@ -1596,6 +1578,7 @@ fn void Project.remove_card(&self, int index)
 {
 	if (index < 0 || index >= (int)self.cards.len()) return;
 	FileCard* card = &self.cards[index];
+	self.adjust_folder_card_count(card.folder, -1);
 	editor::destroy_buffer(card, self.allocator);
 	((String)card.path).free(self.allocator);
 	card.name.free(self.allocator);
@@ -1714,11 +1697,14 @@ fn bool Project.delete_card_file(&self, int index)
 	return true;
 }
 
-fn void Project.refresh_stack_layout(&self)
+fn bool Project.layout_idle(&self)
 {
-	if (self.card_layout == CardLayout.GRID) return;
-	if (self.focus_card >= 0 || self.grabbing || self.drag_card || self.resizing) return;
+	if (self.focus_card >= 0 || self.grabbing || self.drag_card || self.drag_cluster || self.resizing || self.selecting)
+	{
+		return false;
+	}
 	self.layout();
+	return true;
 }
 
 fn int Project.focus(&self, int index)
@@ -2017,7 +2003,7 @@ fn void Project.begin_grab(&self)
 	self.grab_moved = false;
 	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
 	{
-		Rect bounds = self.cluster_bounds(self.selected_cluster);
+		Rect bounds = self.cluster_visual_bounds(self.selected_cluster);
 		self.grab_accum = { bounds.x, bounds.y };
 		self.grab_accum_valid = true;
 	}
@@ -2040,7 +2026,7 @@ fn void Project.apply_grab_delta(&self, RLVector2 delta, float step)
 	{
 		if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
 		{
-			Rect current = self.cluster_bounds(self.selected_cluster);
+			Rect current = self.cluster_visual_bounds(self.selected_cluster);
 			float sx     = canvas::snap_value(current.x, step);
 			float sy     = canvas::snap_value(current.y, step);
 			self.grab_accum = { sx, sy };
@@ -2065,7 +2051,7 @@ fn void Project.apply_grab_delta(&self, RLVector2 delta, float step)
 	float target_y = step > 0.0f ? canvas::snap_value(self.grab_accum[1], step) : self.grab_accum[1];
 	if (self.selected_cluster >= 0 && self.selected_cluster < (int)self.folders.len())
 	{
-		Rect current   = self.cluster_bounds(self.selected_cluster);
+		Rect current   = self.cluster_visual_bounds(self.selected_cluster);
 		RLVector2 move = { target_x - current.x, target_y - current.y };
 		if (move[0] != 0.0f || move[1] != 0.0f)
 		{
@@ -2333,8 +2319,10 @@ fn int Project.hit_test(&self, RLVector2 world)
 		return self.cards[index].contains(world) ? index : -1;
 	}
 	self.ensure_grid();
-	int best      = -1;
-	int best_rank = -1;
+	bool stack      =  self.card_layout != CardLayout.GRID;
+	bool focus_live =  self.editing || self.focus_card >= 0 || self.grabbing;
+	int best        = -1;
+	int best_rank   = -1;
 	@pool()
 	{
 		List{int} candidates;
@@ -2346,10 +2334,11 @@ fn int Project.hit_test(&self, RLVector2 world)
 			if (!self.card_visible(index)) continue;
 			if (!self.cards[index].contains(world)) continue;
 			int rank = 0;
-			if (index == self.selected) rank = 1;
-			if (index == self.focused) rank = 2;
-			if (self.drag_card && index == self.drag_index) rank = 3;
-			if (self.resizing && index == self.resize_card) rank = 4;
+			if (!stack && index == self.selected) rank = 1;
+			if (focus_live && index == self.focused) rank = 2;
+			if (stack && self.grabbing && index == self.selected) rank = 3;
+			if (self.drag_card && index == self.drag_index) rank = 4;
+			if (self.resizing && index == self.resize_card) rank = 5;
 			if (rank > best_rank || (rank == best_rank && index > best))
 			{
 				best = index;
@@ -2365,11 +2354,17 @@ fn void Project.toggle_collapse(&self, int index)
 	if (index < 0 || index >= (int)self.folders.len()) return;
 	if (!self.folders[index].collapsed)
 	{
-		self.folders[index].bounds = self.cluster_bounds(index);
+		Rect full = self.cluster_bounds(index);
+		self.folders[index].body.x = full.x;
+		self.folders[index].body.y = full.y;
+	}
+	if (self.folders[index].body.width <= 0.0f)
+	{
+		self.folders[index].body.width = ui::pxf(CLUSTER_COLLAPSED_WIDTH);
+		self.folders[index].body.height = ui::pxf(CLUSTER_COLLAPSED_BODY);
 	}
 	self.folders[index].collapsed = !self.folders[index].collapsed;
-	self.grid_dirty = true;
-	self.content_bounds_valid = false;
+	self.invalidate_bounds();
 }
 
 fn void Project.move_cluster(&self, int index, RLVector2 delta)
@@ -2387,6 +2382,8 @@ fn void Project.move_cluster(&self, int index, RLVector2 delta)
 		{
 			self.folders[i].bounds.x += delta[0];
 			self.folders[i].bounds.y += delta[1];
+			self.folders[i].body.x += delta[0];
+			self.folders[i].body.y += delta[1];
 		}
 	}
 	self.invalidate_bounds();
@@ -2421,9 +2418,16 @@ fn bool Project.move_card_to_folder(&self, int card_index, int folder_index)
 	}
 
 	String dest_str = (String)dest;
+	int old_folder  = self.cards[card_index].folder;
+	int new_folder  = self.folder_for(dest_str);
+	if (old_folder != new_folder)
+	{
+		self.adjust_folder_card_count(old_folder, -1);
+		self.adjust_folder_card_count(new_folder, 1);
+	}
 	self.cards[card_index].path = (Path)dest_str.copy(self.allocator);
 	self.cards[card_index].name = rl::get_file_name((ZString)dest_str.ptr).str_view().copy(self.allocator);
-	self.cards[card_index].folder = self.folder_for(dest_str);
+	self.cards[card_index].folder = new_folder;
 	self.cards_revision++;
 	self.invalidate_bounds();
 	return true;
@@ -2668,7 +2672,7 @@ fn void Project.update(
 				self.cluster_moved = false;
 				self.drag_world = world;
 				self.drag_origin_world = world;
-				self.drag_cluster_origin_bounds = self.cluster_bounds(cluster_hit);
+				self.drag_cluster_origin_bounds = self.cluster_visual_bounds(cluster_hit);
 			}
 		}
 	}
@@ -2730,7 +2734,11 @@ fn void Project.update(
 	{
 		if (!rl::is_mouse_button_down(rl::RLMouseButton.LEFT))
 		{
-			if (!self.cluster_moved && self.drag_cluster_title) self.toggle_collapse(self.drag_cluster_index);
+			if (!self.cluster_moved)
+			{
+				self.select_folder(self.drag_cluster_index);
+				if (self.drag_cluster_title) self.toggle_collapse(self.drag_cluster_index);
+			}
 			self.drag_cluster = false;
 		}
 		else
@@ -2748,7 +2756,7 @@ fn void Project.update(
 					};
 					float target_x = canvas::snap_value(self.drag_cluster_origin_bounds.x + total[0], step);
 					float target_y = canvas::snap_value(self.drag_cluster_origin_bounds.y + total[1], step);
-					Rect current   = self.folders[self.drag_cluster_index].bounds;
+					Rect current   = self.cluster_visual_bounds(self.drag_cluster_index);
 					self.move_cluster(self.drag_cluster_index, { target_x - current.x, target_y - current.y });
 				}
 				else
@@ -3336,7 +3344,7 @@ fn void Project.snap_cluster_to_grid(&self, int index, float zoom)
 	if (!canvas::settings().snap_to_grid || alt_down()) return;
 	if (index < 0 || index >= (int)self.folders.len()) return;
 	float step  = canvas::snap_step(zoom);
-	Rect bounds = self.cluster_bounds(index);
+	Rect bounds = self.cluster_visual_bounds(index);
 	float x     = canvas::snap_value(bounds.x, step);
 	float y     = canvas::snap_value(bounds.y, step);
 	self.move_cluster(index, { x - bounds.x, y - bounds.y });
@@ -3661,7 +3669,27 @@ fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
 {
 	FolderCluster cluster = self.folders[index];
 	float radius          = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
-	bool explorer         = skin::folder_style() == skin::FolderStyle.EXPLORER;
+	bool tray             = skin::folder_style() == skin::FolderStyle.TRAY;
+	bool explorer         = skin::folder_style() == skin::FolderStyle.EXPLORER || tray;
+	if (tray)
+	{
+		float off = zoom > 0.0f ? 5.0f / zoom : 5.0f;
+		ui::rounded_rect(
+			{ .x = bounds.x + off, .y = bounds.y + off, .width = bounds.width, .height = bounds.height },
+			radius,
+			{ 0, 0, 0, 35 }
+		);
+		ui::rounded_top(
+			{
+				.x = bounds.x + off,
+				.y = bounds.y + off,
+				.width = bounds.width,
+				.height = ui::pxf(CLUSTER_TITLE_HEIGHT)
+			},
+			radius,
+			theme::current()
+			.cluster_title);
+	}
 	if (explorer)
 	{
 		float offset = zoom > 0.0f ? 2.0f / zoom : 2.0f;
@@ -3706,6 +3734,45 @@ fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
 	{
 		float thickness = card::screen_thickness(self.grabbing ? 3.0f : 2.0f, zoom);
 		ui::rounded_rect_lines(bounds, radius, thickness, theme::current().card_focus);
+	}
+	if (cluster.collapsed && bounds.height > title.height)
+	{
+		float body_top = bounds.y + title.height;
+		RLColor rule   = theme::current().cluster_border;
+		rule.a = 70;
+		float line_x = bounds.x + (float)ui::px(12);
+		float line_w = bounds.width - (float)ui::px(24);
+		for (int line = 0; line < 3; line++)
+		{
+			float y = body_top + (float)ui::px(14 + line * 16);
+			if (y > bounds.y + bounds.height - (float)ui::px(28)) break;
+			rl::draw_line_ex(
+				{ line_x, y },
+				{ line_x + line_w * (line == 2 ? 0.55f : 0.9f), y },
+				1.0f / (zoom > 0.0f ? zoom : 1.0f),
+				rule
+			);
+		}
+		if (zoom >= CLUSTER_TEXT_MIN_ZOOM)
+		{
+			@pool()
+			{
+				String count = string::format(
+					tmem,
+					"%d %s",
+					cluster.card_count,
+					cluster.card_count == 1 ? "file" : "files"
+				);
+				rl::draw_text_ex(
+					ui::font(),
+					count.zstr_tcopy(),
+					{ bounds.x + (float)ui::px(12), bounds.y + bounds.height - (float)ui::px(22) },
+					(float)ui::tpx(13),
+					0.0f,
+					theme::current()
+					.cluster_text);
+			};
+		}
 	}
 	if (zoom < CLUSTER_TEXT_MIN_ZOOM) return;
 	float icon_size = (float)ui::px(18);
@@ -3758,14 +3825,6 @@ fn void Project.draw_folders(&self, RLCamera2D camera)
 	if (!self.cluster_visible(selected)) return;
 	if (!rect_intersects(self.cluster_visual_bounds(selected), visible)) return;
 	self.draw_cluster(selected, camera.zoom);
-}
-
-fn void Project.draw_sticky_folder(&self, float zoom)
-{
-	if (!self.sticky_valid) return;
-	if (self.sticky_folder < 0 || self.sticky_folder >= (int)self.folders.len()) return;
-	if (!self.cluster_visible(self.sticky_folder)) return;
-	self.draw_cluster_at(self.sticky_folder, self.sticky_rect, zoom);
 }
 
 fn void Project.draw_snap_guides(&self, RLCamera2D camera)
@@ -3844,9 +3903,11 @@ fn void Project.draw_cards(
 		sz draw_count = draw_list.len();
 		if (only_card < 0)
 		{
+			bool stack      = self.card_layout != CardLayout.GRID;
+			bool focus_live = editing || self.focus_card >= 0;
 			int[4] raised = {
-				self.selected,
-				self.focused,
+				stack ? (self.grabbing ? self.selected : -1) : self.selected,
+				focus_live ? self.focused : -1,
 				self.drag_card ? self.drag_index : -1,
 				self.resizing ? self.resize_card : -1,
 			};
@@ -3887,7 +3948,9 @@ fn void Project.draw_cards(
 			sz i = (sz)(*order)[c];
 			if (only_card < 0 && !self.card_visible((int)i)) continue;
 			FileCard* card  = &self.cards[i];
-			bool is_focused = (int)i == self.focused;
+			bool stack      = self.card_layout != CardLayout.GRID;
+			bool focus_live = editing || self.focus_card >= 0;
+			bool is_focused = (int)i == self.focused && (!stack || focus_live);
 			bool is_editing = is_focused && editing;
 			if (is_focused) editor::ensure_buffer(card, self.allocator);
 			if (!rect_intersects(card.rect, visible)) continue;

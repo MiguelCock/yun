@@ -212,6 +212,8 @@ fn void test_layout_packs_clusters()
 		// collapsed chips are packed tightly and never overlap
 		p.folders[a].collapsed = true;
 		p.folders[b].collapsed = true;
+		assert(p.cluster_visual_bounds(a).height == CLUSTER_COLLAPSED_BODY);
+		assert(p.cluster_visual_bounds(b).height == CLUSTER_COLLAPSED_BODY);
 		assert(!rect_intersects(p.cluster_visual_bounds(a), p.cluster_visual_bounds(b)));
 	};
 }
@@ -406,10 +408,10 @@ fn void test_collapsed_cluster_is_compact()
 
 		p.toggle_collapse(f);
 		Rect collapsed = p.cluster_visual_bounds(f);
-		assert(collapsed.height == CLUSTER_TITLE_HEIGHT);
+		assert(collapsed.height == CLUSTER_COLLAPSED_BODY);
 		assert(collapsed.width == CLUSTER_COLLAPSED_WIDTH);
-		assert(collapsed.x == expanded.x + (expanded.width - CLUSTER_COLLAPSED_WIDTH) * 0.5f);
-		assert(collapsed.y == expanded.y + (expanded.height - CLUSTER_TITLE_HEIGHT) * 0.5f);
+		assert(collapsed.x == expanded.x);
+		assert(collapsed.y == expanded.y);
 
 		p.toggle_collapse(f);
 		Rect again = p.cluster_visual_bounds(f);
@@ -730,7 +732,10 @@ fn void test_cluster_title_hit_only_top_bar()
 		assert(!p.cluster_title_hit(f, { 50.0f, 200.0f }));
 
 		p.toggle_collapse(f);
-		assert(p.cluster_title_hit(f, { 50.0f, 50.0f }));
+		assert(p.cluster_title_hit(f, { 50.0f, 10.0f }));
+		assert(!p.cluster_title_hit(f, { 50.0f, 50.0f }));
+		assert(p.cluster_hit({ 50.0f, 50.0f }) == f);
+		assert(p.folder_at({ 50.0f, 50.0f }) == f);
 	};
 }
 fn void test_jump_fade()
@@ -1581,37 +1586,6 @@ fn void test_discard_ephemeral_keeps_bounds_when_empty()
 		p.destroy();
 	};
 }
-fn void test_sticky_folder_hint_inside_collapsed_area()
-{
-	@pool()
-	{
-		Project p;
-		p.init(tmem);
-		int f = p.add_folder("/root/big", ROOT_FOLDER);
-		p.cards.push(
-			{
-				.path = (Path)"/root/big/x.c3".copy(tmem),
-				.rect = { .x = 0.0f, .y = 0.0f, .width = 1000.0f, .height = 1000.0f },
-				.folder = f,
-			}
-		);
-		p.toggle_collapse(f);
-		assert(p.folders[f].collapsed);
-		Rect view = { .x = 0.0f, .y = 0.0f, .width = 300.0f, .height = 300.0f };
-		p.update_sticky_folder(view, 1.0f);
-		assert(p.sticky_valid);
-		assert(p.sticky_folder == f);
-		assert(p.sticky_rect.x >= view.x && p.sticky_rect.y >= view.y);
-		assert(p.sticky_rect.x + p.sticky_rect.width <= view.x + view.width);
-		RLVector2 hit = {
-			p.sticky_rect.x + p.sticky_rect.width * 0.5f,
-			p.sticky_rect.y + p.sticky_rect.height * 0.5f,
-		};
-		assert(p.cluster_hit(hit) == f);
-		assert(p.folder_at(hit) == f);
-		assert(p.cluster_title_hit(f, hit));
-	};
-}
 fn void test_stack_card_layout_positions()
 {
 	@pool()
@@ -1635,7 +1609,7 @@ fn void test_stack_card_layout_positions()
 		}
 		p.place_cards_block(&ids, 0.0f, 0.0f, 100.0f, 50.0f, 10.0f);
 		assert(p.cards[0].rect.x == 0.0f && p.cards[0].rect.y == 0.0f);
-		assert(p.cards[1].rect.x == 0.0f && p.cards[1].rect.y > 0.0f);
+		assert(p.cards[1].rect.x > 0.0f && p.cards[1].rect.y > 0.0f);
 		assert(p.cards[10].rect.x > p.cards[0].rect.x);
 		assert(p.cards[10].rect.y == 0.0f);
 
@@ -1644,5 +1618,230 @@ fn void test_stack_card_layout_positions()
 		assert(p.cards[1].rect.x > p.cards[0].rect.x);
 		p.destroy();
 		ids.free();
+	};
+}
+fn void test_layout_is_selection_independent()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.card_layout = CardLayout.DECK;
+		for (int i = 0; i < 12; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/%d.c3", i),
+					.name = string::format(tmem, "%d.c3", i),
+					.folder = ROOT_FOLDER,
+					.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				}
+			);
+		}
+		p.layout();
+		Rect[12] before;
+		for (int i = 0; i < 12; i++) before[i] = p.cards[i].rect;
+		for (int i = 0; i < 12; i++)
+		{
+			p.select_card(i);
+			p.layout();
+			for (int k = 0; k < 12; k++)
+			{
+				assert(p.cards[k].rect.x == before[k].x);
+				assert(p.cards[k].rect.y == before[k].y);
+			}
+		}
+		p.destroy();
+	};
+}
+
+fn void test_deck_direction_nav_walks_full_stack()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.card_layout = CardLayout.DECK;
+		for (int i = 0; i < 10; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/%d.c3", i),
+					.name = string::format(tmem, "%d.c3", i),
+					.folder = ROOT_FOLDER,
+					.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				}
+			);
+		}
+		p.layout();
+		p.select_card(8);
+		NavItem item;
+		assert(p.item_in_direction(Dir.UP, &item));
+		assert(!item.folder && item.index == 7);
+		p.select_nav_item(item);
+		assert(p.item_in_direction(Dir.UP, &item));
+		assert(!item.folder && item.index == 6);
+		p.destroy();
+	};
+}
+
+fn void test_deck_hit_test_after_keyboard_selection()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.card_layout = CardLayout.DECK;
+		for (int i = 0; i < 10; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/%d.c3", i),
+					.name = string::format(tmem, "%d.c3", i),
+					.folder = ROOT_FOLDER,
+					.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				}
+			);
+		}
+		p.layout();
+		p.selected = 5;
+		p.focused = 0;
+		p.editing = false;
+		for (int i = 0; i < 10; i++)
+		{
+			RLVector2 title = { p.cards[i].rect.x + 20.0f, p.cards[i].rect.y + 10.0f };
+			assert(p.hit_test(title) == i);
+		}
+		p.destroy();
+	};
+}
+
+fn void test_layout_skips_active_interactions()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.card_layout = CardLayout.DECK;
+		for (int i = 0; i < 4; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/%d.c3", i),
+					.name = string::format(tmem, "%d.c3", i),
+					.folder = ROOT_FOLDER,
+					.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				}
+			);
+		}
+		p.layout();
+		Rect before = p.cards[0].rect;
+		p.drag_card = true;
+		p.drag_index = 0;
+		p.drag_origin_rect = before;
+		assert(!p.layout_idle());
+		assert(p.cards[0].rect.x == before.x && p.cards[0].rect.y == before.y);
+		p.drag_card = false;
+		p.resizing = true;
+		p.resize_card = 1;
+		assert(!p.layout_idle());
+		p.resizing = false;
+		p.selecting = true;
+		assert(!p.layout_idle());
+		p.selecting = false;
+		assert(p.layout_idle());
+		p.destroy();
+	};
+}
+fn void test_collapsed_body_is_stable_when_hidden_content_changes()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		int f = p.add_folder("/root/a", ROOT_FOLDER);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a/x.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 1000.0f, .height = 1000.0f },
+				.folder = f,
+			}
+		);
+		p.layout();
+		p.toggle_collapse(f);
+		Rect body = p.cluster_visual_bounds(f);
+		p.cards[0].move_by({ 400.0f, 500.0f });
+		p.invalidate_bounds_for_card(0);
+		Rect moved = p.cluster_visual_bounds(f);
+		assert(moved.x == body.x && moved.y == body.y);
+		assert(moved.width == body.width && moved.height == body.height);
+		p.destroy();
+	};
+}
+
+fn void test_no_folder_clone_at_viewport_origin()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		int f = p.add_folder("/root/a", ROOT_FOLDER);
+		p.folders[f].collapsed = true;
+		p.folders[f].body = { .x = 1000.0f, .y = 1000.0f, .width = 240.0f, .height = 140.0f };
+		assert(p.cluster_hit({ 0.0f, 0.0f }) == ROOT_FOLDER);
+		assert(p.folder_at({ 0.0f, 0.0f }) == ROOT_FOLDER);
+		p.destroy();
+	};
+}
+fn void test_collapsed_bodies_group_with_cards()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int b = p.add_folder("/root/b", ROOT_FOLDER);
+		p.cards.push(
+			{
+				.path = (Path)"/root/root.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .width = 1.0f, .height = 1.0f },
+			}
+		);
+		for (int i = 0; i < 4; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/%d.c3", i),
+					.folder = a,
+					.rect = { .width = 1.0f, .height = 1.0f },
+				}
+			);
+		}
+		for (int i = 0; i < 4; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/b/%d.c3", i),
+					.folder = b,
+					.rect = { .width = 1.0f, .height = 1.0f },
+				}
+			);
+		}
+		p.layout();
+		p.folders[a].collapsed = true;
+		p.folders[b].collapsed = true;
+		Rect ra = p.cluster_visual_bounds(a);
+		Rect rb = p.cluster_visual_bounds(b);
+		Rect rc = p.cards[0].rect;
+		assert(!rect_intersects(ra, rb));
+		assert(!rect_intersects(ra, rc));
+		assert(!rect_intersects(rb, rc));
+		Rect all;
+		assert(p.content_bounds(&all));
+		assert(ra.x >= all.x && ra.y >= all.y && ra.x + ra.width <= all.x + all.width
+			&& ra.y + ra.height <= all.y + all.height);
+		p.destroy();
 	};
 }

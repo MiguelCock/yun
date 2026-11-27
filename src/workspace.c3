@@ -10,11 +10,13 @@ import yun::canvas;
 import yun::card;
 import yun::console;
 import yun::project;
+import yun::ui;
 
-const String WORKSPACE_VERSION = "4";
+const String WORKSPACE_VERSION = "5";
 const String WORKSPACE_DIR     = ".yun";
 const String WORKSPACE_FILE    = "workspace.json";
 const String WORKSPACE_TMP     = "workspace.tmp";
+bool g_migrated;
 
 struct CameraState
 {
@@ -128,15 +130,15 @@ fn bool save_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 		folders.init(tmem);
 		for (sz i = 0; i < project.folders.len(); i++)
 		{
-			Rect bounds = project.cluster_bounds((int)i);
+			Rect body = project.folders[i].body;
 			folders.push(
 				{
 					.path = relative_path(tmem, (String)project.root, (String)project.folders[i].path),
 					.collapsed = project.folders[i].collapsed,
-					.x = bounds.x,
-					.y = bounds.y,
-					.w = bounds.width,
-					.h = bounds.height,
+					.x = body.x,
+					.y = body.y,
+					.w = body.width,
+					.h = body.height,
 				}
 			);
 		}
@@ -192,6 +194,11 @@ fn bool save_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 	return true;
 }
 
+fn bool migrated()
+{
+	return g_migrated;
+}
+
 fn bool load(project::Project* project, canvas::Canvas* canvas, console::ConsoleManager* console_manager = null)
 {
 	if (project.root.len == 0) return false;
@@ -205,6 +212,7 @@ fn bool load(project::Project* project, canvas::Canvas* canvas, console::Console
 
 fn bool load_at(project::Project* project, canvas::Canvas* canvas, console::ConsoleManager* console_manager, Path dir)
 {
+	g_migrated = false;
 	if (project.root.len == 0) return false;
 	@pool()
 	{
@@ -218,7 +226,9 @@ fn bool load_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 		WorkspaceState? parsed = json::unmarshal(tmem, (String)data, WorkspaceState);
 		if (catch excuse = parsed) return false;
 		WorkspaceState state = parsed;
-		if (state.version.compare_to("3") != 0 && state.version.compare_to(WORKSPACE_VERSION) != 0) return false;
+		if (state.version.compare_to(
+			"3"
+		) != 0 && state.version.compare_to("4") != 0 && state.version.compare_to(WORKSPACE_VERSION) != 0) return false;
 
 		for (usz i = 0; i < state.cards.len; i++)
 		{
@@ -237,6 +247,7 @@ fn bool load_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 			project.cards[index].restored = true;
 		}
 
+		bool body_version = state.version.compare_to(WORKSPACE_VERSION) == 0;
 		for (usz i = 0; i < state.folders.len; i++)
 		{
 			Path? abs = absolute_path(tmem, (String)project.root, state.folders[i].path);
@@ -245,11 +256,13 @@ fn bool load_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 			if (index >= 0)
 			{
 				project.folders[index].collapsed = state.folders[i].collapsed;
-				project.folders[index].bounds = {
+				project.folders[index].body = {
 					.x = state.folders[i].x,
 					.y = state.folders[i].y,
-					.width = state.folders[i].w,
-					.height = state.folders[i].h,
+					.width = body_version && state.folders[i].w > 0.0f ? state.folders[i].w
+						: ui::pxf(project::CLUSTER_COLLAPSED_WIDTH),
+					.height = body_version && state.folders[i].h > 0.0f ? state.folders[i].h
+						: ui::pxf(project::CLUSTER_COLLAPSED_BODY),
 				};
 				project.folders[index].bounds_valid = false;
 			}
