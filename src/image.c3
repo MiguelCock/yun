@@ -1,4 +1,4 @@
-module yun::image;
+module yun::image @link(env::WIN32, "ucrt");
 
 faultdef IMAGE_FAILED;
 
