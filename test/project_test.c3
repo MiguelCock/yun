@@ -1650,6 +1650,12 @@ fn void test_layout_is_selection_independent()
 				assert(p.cards[k].rect.x == before[k].x);
 				assert(p.cards[k].rect.y == before[k].y);
 			}
+			p.focus(i);
+			for (int k = 0; k < 12; k++)
+			{
+				assert(p.cards[k].rect.x == before[k].x);
+				assert(p.cards[k].rect.y == before[k].y);
+			}
 		}
 		p.destroy();
 	};

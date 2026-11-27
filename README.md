@@ -54,6 +54,8 @@ specifier, source line, and target card. External imports stay in Connections.
 Switch themes and change settings live. The top bar, icons, fonts, canvas, and
 editor all restyle together. Skins can add an image or GIF to each surface
 separately, from the app background to card, folder, panel, and top-bar chrome.
+Open **Settings > Skin** (`Ctrl+,`, then `Ctrl+9`) to edit presets, styles,
+surfaces, image paths, colours, and GIF playback in-app.
 
 ### Review with context
 
@@ -70,6 +72,7 @@ More clips — editing, search, console, and top-bar chrome — are in the
 
 - **Canvas** — infinite adaptive grid, pan/zoom, inertial navigation, minimap,
   fit-to-content, focus mode, low-zoom card LOD, and grid/deck/fan card layouts.
+  Folders keep compact bodies with file counts; the deck cascades diagonally.
 - **Project** — folder clusters mirror disk folders; drag cards between folders
   to move files; workspace layout and camera persist in `.yun/workspace.json`.
 - **Editor** — piece-table buffers, undo/redo, line numbers, UTF-8 input,

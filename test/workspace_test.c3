@@ -77,6 +77,7 @@ fn void test_workspace_save_load_roundtrip()
 		canvas.camera.zoom = 1.0f;
 
 		assert(load(&p, &canvas));
+		assert(!migrated());
 		assert(p.cards[card].rect.x == 10.0f && p.cards[card].rect.y == 20.0f);
 		assert(p.cards[card].rect.width == 240.0f && p.cards[card].rect.height == 160.0f);
 		assert(p.cards[card].open);
@@ -285,6 +286,7 @@ fn void test_workspace_v4_folder_body_migration()
 		canvas::Canvas canvas;
 		canvas.init();
 		assert(load(&p, &canvas));
+		assert(migrated());
 		int index = p.folder_by_path((String)sub);
 		assert(index >= 0);
 		assert(p.folders[index].collapsed);

@@ -229,6 +229,7 @@ fn bool load_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 		if (state.version.compare_to(
 			"3"
 		) != 0 && state.version.compare_to("4") != 0 && state.version.compare_to(WORKSPACE_VERSION) != 0) return false;
+		g_migrated = state.version.compare_to(WORKSPACE_VERSION) != 0;
 
 		for (usz i = 0; i < state.cards.len; i++)
 		{
