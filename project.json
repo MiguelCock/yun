@@ -24,6 +24,7 @@
   "c-include-dirs": [
     "third_party"
   ],
+  "wincrt": "dynamic",
   "test-sources": [
     "test/**"
   ],
