@@ -1,3 +1,9 @@
+#ifdef _MSC_VER
+#pragma comment(linker, "/NODEFAULTLIB:libucrt.lib")
+#pragma comment(linker, "/NODEFAULTLIB:libvcruntime.lib")
+#pragma comment(linker, "/NODEFAULTLIB:libcmt.lib")
+#endif
+
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG

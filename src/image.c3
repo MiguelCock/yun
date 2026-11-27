@@ -1,4 +1,4 @@
-module yun::image @link(env::WIN32, "ucrt");
+module yun::image @link(env::WIN32, "ucrt", "vcruntime");
 
 faultdef IMAGE_FAILED;
 
