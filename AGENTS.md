@@ -20,6 +20,7 @@
 - Inspect resolved deps/project: `c3c project view`.
 - Format: `c3fmt --in-place <file...>` (`--check` to verify only). No repo `.c3fmt` config, so defaults apply.
 - No lint/typecheck step; a successful build plus tests and the format check is the verification.
+- `third_party/yun_stb_image.c` is the one C source, compiled by `c3c` through `c-sources`; it provides the JPEG decoder that the bundled raylib build lacks.
 
 ## Layout
 - `project.json` is the single source of build truth. Dependencies are `raylib6`, `tree_sitter`, and `lua54`; grammars are loaded lazily from shared libraries (built with `scripts/build-tree-sitter.sh`, not committed).
@@ -27,6 +28,7 @@
 - Domain folders use one C3 module per folder: `src/console/*.c3` -> `yun::console`, `src/git/*.c3` -> `yun::git`, `src/lsp/*.c3` -> `yun::lsp`, `src/text/*.c3` -> `yun::text`. Other top-level `src/*.c3` files are single-module domains (e.g. `yun::canvas`, `yun::imports`, `yun::mods`); `src/main.c3` is `module yun;` (see `yun-app-shell`). New files follow `yun-module-organization`.
 - `src/project/` is now the project domain folder: `project.c3` (model/lifecycle), `paths.c3`, and `clusters.c3` (all `module yun::project;`). Further behavior-preserving splits (`layout.c3`, `open_job.c3`, `draw.c3`, `cards.c3`, `selection.c3`, `focus.c3`, `pointer.c3`, `update.c3`) are planned; do not assume they exist yet. `src/main.c3` remains `module yun;`; an `src/app/` helper split is also planned. See `yun-safe-refactor` and `yun-module-organization`.
 - `lib/*.c3l` are vendor libraries resolved via `"dependency-search-paths": ["lib"]`.
+- `src/image.c3` (`yun::image`) is the shared still-image loader and supported-extension registry. `third_party/` holds vendored C sources and their licenses.
 - `assets/fonts/` ships JetBrains Mono (SIL OFL 1.1) plus its license.
 - `lib/lua54.c3l` and the tree-sitter `upstream/` sources are git submodules; run `git submodule update --init --recursive` after cloning. The Lua 5.4 runtime is built with `scripts/build-lua.sh` (the Linux archive is committed; Windows ships a prebuilt DLL).
 
@@ -34,6 +36,7 @@
 - `lib/raylib6.c3l` is a **packed/zipped** library, not a directory. Treat it as an opaque binary blob; don't try to edit files inside it.
 - Ships prebuilt static libs for `linux-x64`, `macos-aarch64`, `windows-x64`, `windows-aarch64`, `emscripten`, `wasm-32`; there are NO `linux-aarch64` / `macos-x64` binaries.
 - API is raylib snake_case (`rl::init_window`, `rl::close_window`, `rl::window_should_close`), plus a `rl::@drawing() { ... }` block macro that wraps `begin_drawing`/`end_drawing`. raygui is also bundled (`raygui::rg`).
+- The bundled raylib static libs are compiled without JPEG decoding. Use `yun::image` when loading still images; it falls back to the vendored stb JPEG decoder. GIF playback still goes through raylib.
 
 ## Syntax highlighting (tree-sitter)
 - `src/language.c3` (`yun::language`) is the language registry: the `Language` enum plus a `LanguageSpec` table (name, extensions, library name/symbol, highlights/injections paths, import/module/symbols queries) and a `language_for_name` resolver. Adding a language is one table entry plus its grammar library.
@@ -60,4 +63,4 @@
 - Match existing `src/**` style (tab indentation). Do not add comments unless asked.
 
 ## License
-- MIT (see `LICENSE`): use freely, but any copy or fork must retain the copyright and license notice. Vendored libraries and assets keep their own licenses.
+- MIT (see `LICENSE`): use freely, but any copy or fork must retain the copyright and license notice. Vendored libraries and assets keep their own licenses. `third_party/stb_image.h` is public domain / MIT.

@@ -5,6 +5,7 @@ import std::collections::list;
 import std::collections::object;
 import std::io::path;
 import std::math;
+import yun::image;
 import yun::language;
 import yun::settings;
 import yun::theme;
@@ -1344,11 +1345,25 @@ fn Asset*? asset_for(String path)
 	Asset entry = { .path = path.copy(g_allocator), .frames = { }, .ok = false };
 	entry.frames.init(g_allocator);
 	int frames    = 0;
-	RLImage image = rl::load_image_anim(path.zstr_tcopy(), &frames);
-	if (!image.is_valid())
+	bool fallback = false;
+	RLImage image = { };
+	if (image::is_jpeg(path))
 	{
-		image = rl::load_image(path.zstr_tcopy());
-		frames = 1;
+		if (try decoded = image::load_jpeg(path))
+		{
+			image = decoded.image;
+			frames = 1;
+			fallback = true;
+		}
+	}
+	else
+	{
+		image = rl::load_image_anim(path.zstr_tcopy(), &frames);
+		if (!image.is_valid())
+		{
+			image = rl::load_image(path.zstr_tcopy());
+			frames = 1;
+		}
 	}
 	if (image.is_valid())
 	{
@@ -1385,7 +1400,14 @@ fn Asset*? asset_for(String path)
 			}
 			if (copied) rl::unload_image(frame);
 		}
-		rl::unload_image(image);
+		if (fallback)
+		{
+			image::free_stbi_data(image);
+		}
+		else
+		{
+			rl::unload_image(image);
+		}
 	}
 	entry.ok = entry.frames.len() > 0;
 	g_assets.push(entry);

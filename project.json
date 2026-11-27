@@ -18,6 +18,12 @@
   "sources": [
     "src/**"
   ],
+  "c-sources": [
+    "third_party/yun_stb_image.c"
+  ],
+  "c-include-dirs": [
+    "third_party"
+  ],
   "test-sources": [
     "test/**"
   ],
