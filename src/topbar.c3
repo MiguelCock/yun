@@ -680,11 +680,14 @@ fn void TopBar.draw(
 	bool focused
 )
 {
-	Rect bar        = bar_rect();
-	float screen_w  = (float)rl::get_screen_width();
-	float screen_h  = (float)rl::get_screen_height();
-	bool horizontal = horizontal_position(g_position);
-	if (!skin::draw_screen(skin::SurfaceId.TOPBAR, bar, 0.0f)) rl::draw_rectangle_rec(bar, theme::current().topbar_bg);
+	Rect bar            = bar_rect();
+	float screen_w      = (float)rl::get_screen_width();
+	float screen_h      = (float)rl::get_screen_height();
+	bool horizontal     = horizontal_position(g_position);
+	RLColor topbar_base = theme::current().topbar_bg;
+	if (skin::has_image(skin::SurfaceId.TOPBAR)) topbar_base.a = 255;
+	rl::draw_rectangle_rec(bar, topbar_base);
+	skin::draw_screen(skin::SurfaceId.TOPBAR, bar, 0.0f);
 	if (g_position == TopBarPosition.TOP)
 	{
 		rl::draw_line(0, (int)(bar.y + bar.height), (int)screen_w, (int)(bar.y + bar.height), theme::current()

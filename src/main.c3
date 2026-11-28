@@ -900,6 +900,7 @@ const String[] VISUAL_STATE_NAMES = {
 	"imports-far",
 	"skin",
 	"image-picker",
+	"wallpaper",
 };
 
 const int VISUAL_STATE_COUNT = (int)VISUAL_STATE_NAMES.len;
@@ -1085,6 +1086,25 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 				app.settings_panel.show_page(settings::SettingPage.SKIN);
 				app.settings_panel.open_image_picker(true);
 				app.settings_panel.image_picker.select_path(image_path);
+			};
+		case 22:
+			@pool()
+			{
+				String image_path = string::format(tmem, "%s/wallpaper.bmp", (String)project.root);
+				skin::set_surface_image(skin::SurfaceId.CARD, image_path, settings::SettingLayer.PROJECT);
+				skin::set_surface_opacity(skin::SurfaceId.CARD, 0.35f, settings::SettingLayer.PROJECT);
+				skin::set_image_scope(skin::ImageScope.ALL, settings::SettingLayer.PROJECT);
+				if (project.cards.len() > 0)
+				{
+					int index = project.focus(0);
+					project.selected = index;
+					editor::ensure_buffer(&project.cards[index], project.allocator);
+					Rect card = project.cards[index].rect;
+					app.canvas.camera.target = { card.x + card.width / 2.0f, card.y + card.height / 2.0f };
+					app.canvas.target.target = app.canvas.camera.target;
+					app.canvas.camera.zoom = 1.0f;
+					app.canvas.target.zoom = 1.0f;
+				}
 			};
 	}
 }

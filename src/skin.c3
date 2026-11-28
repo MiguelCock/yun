@@ -63,6 +63,12 @@ enum FolderStyle : int
 	TRAY,
 }
 
+enum ImageScope : int
+{
+	SELECTED,
+	ALL,
+}
+
 const int MAX_GIF_FRAMES          = 120;
 const int MAX_GIF_DIM             = 1024;
 const float DEFAULT_FPS           = 12.0f;
@@ -135,6 +141,8 @@ struct SkinLayer
 	float closed_height;
 	bool language_colors_set;
 	bool language_colors;
+	bool image_scope_set;
+	ImageScope image_scope;
 	SurfaceOverride[SurfaceId.COUNT] surfaces;
 }
 
@@ -152,6 +160,7 @@ struct Skin
 	FolderStyle folder_style;
 	float closed_height;
 	bool language_colors;
+	ImageScope image_scope;
 	String preset;
 }
 
@@ -314,6 +323,7 @@ fn Skin default_skin()
 	skin.folder_style = FolderStyle.CLASSIC;
 	skin.closed_height = DEFAULT_CLOSED_HEIGHT;
 	skin.language_colors = true;
+	skin.image_scope = ImageScope.SELECTED;
 	skin.preset = "classic".copy(g_allocator);
 	return skin;
 }
@@ -349,6 +359,7 @@ fn void apply_layer_to_skin(Skin* skin, SkinLayer* layer)
 		MAX_CLOSED_HEIGHT
 	);
 	if (layer.language_colors_set) skin.language_colors = layer.language_colors;
+	if (layer.image_scope_set) skin.image_scope = layer.image_scope;
 	for (int i = 0; i < (int)SurfaceId.COUNT; i++)
 	{
 		SurfaceOverride over = layer.surfaces[i];
@@ -473,6 +484,37 @@ fn FolderStyle folder_style_for_name(String value)
 	if (value.compare_to("explorer") == 0) return FolderStyle.EXPLORER;
 	if (value.compare_to("tray") == 0) return FolderStyle.TRAY;
 	return FolderStyle.CLASSIC;
+}
+
+const String[] IMAGE_SCOPE_NAMES = {
+	"selected",
+	"all",
+};
+
+fn String image_scope_name(ImageScope scope)
+{
+	return IMAGE_SCOPE_NAMES[(int)scope];
+}
+
+fn ImageScope image_scope_for_name(String value)
+{
+	if (value.compare_to("all") == 0) return ImageScope.ALL;
+	return ImageScope.SELECTED;
+}
+
+fn ImageScope image_scope()
+{
+	return g_skin.image_scope;
+}
+
+fn bool show_image(bool selected)
+{
+	return g_skin.image_scope == ImageScope.ALL || selected;
+}
+
+fn bool has_image(SurfaceId id)
+{
+	return g_skin.surfaces[(int)id].path.len > 0;
 }
 
 fn char hex_value(char c)
@@ -642,6 +684,11 @@ fn void apply_object(Object* obj, String base, settings::SettingLayer layer)
 		target.preset = preset.copy(g_allocator);
 		target.preset_set = true;
 	}
+	if (try scope = obj.get_string("image_scope"))
+	{
+		target.image_scope = image_scope_for_name(scope);
+		target.image_scope_set = true;
+	}
 	if (obj.has_key("surfaces"))
 	{
 		Object*? surfaces = obj.get("surfaces");
@@ -807,6 +854,13 @@ fn settings::SettingLayer language_colors_source()
 	return settings::SettingLayer.DEFAULT;
 }
 
+fn settings::SettingLayer image_scope_source()
+{
+	if (g_layers[1].image_scope_set) return settings::SettingLayer.PROJECT;
+	if (g_layers[0].image_scope_set) return settings::SettingLayer.GLOBAL;
+	return settings::SettingLayer.DEFAULT;
+}
+
 fn void set_preset(String name, settings::SettingLayer layer)
 {
 	SkinLayer* target = layer_for(layer);
@@ -892,6 +946,23 @@ fn void clear_language_colors(settings::SettingLayer layer)
 	SkinLayer* target = layer_for(layer);
 	if (target == null) return;
 	target.language_colors_set = false;
+	rebuild();
+}
+
+fn void set_image_scope(ImageScope scope, settings::SettingLayer layer)
+{
+	SkinLayer* target = layer_for(layer);
+	if (target == null) return;
+	target.image_scope = scope;
+	target.image_scope_set = true;
+	rebuild();
+}
+
+fn void clear_image_scope(settings::SettingLayer layer)
+{
+	SkinLayer* target = layer_for(layer);
+	if (target == null) return;
+	target.image_scope_set = false;
 	rebuild();
 }
 
@@ -1038,7 +1109,8 @@ fn void append_json_string(DString* out, String text)
 fn bool layer_has_output(SkinLayer* layer)
 {
 	if (layer.preset_set || layer.card_style_set || layer.folder_style_set || layer.closed_height_set
-		|| layer.language_colors_set) return true;
+		|| layer.language_colors_set
+		|| layer.image_scope_set) return true;
 	for (int i = 0; i < (int)SurfaceId.COUNT; i++)
 	{
 		if (surface_override_any(&layer.surfaces[i])) return true;
@@ -1065,6 +1137,14 @@ fn void write_json(DString* out, settings::SettingLayer layer)
 		out.append_char(':');
 		append_json_string(out, target.preset);
 		first = false;
+	}
+	if (target.image_scope_set)
+	{
+		if (!first) out.append_char(',');
+		first = false;
+		append_json_string(out, "image_scope");
+		out.append_char(':');
+		append_json_string(out, image_scope_name(target.image_scope));
 	}
 	if (target.card_style_set || target.closed_height_set || target.language_colors_set)
 	{

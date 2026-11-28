@@ -56,6 +56,7 @@ enum SkinItem : int
 	FOLDER_STYLE,
 	CLOSED_HEIGHT,
 	LANGUAGE_COLORS,
+	IMAGE_SCOPE,
 	CARD_LAYOUT,
 	SURFACE,
 	IMAGE,
@@ -77,6 +78,7 @@ const SkinItem[] SKIN_STYLE_ITEMS = {
 	SkinItem.FOLDER_STYLE,
 	SkinItem.CLOSED_HEIGHT,
 	SkinItem.LANGUAGE_COLORS,
+	SkinItem.IMAGE_SCOPE,
 	SkinItem.CARD_LAYOUT,
 };
 
@@ -540,6 +542,8 @@ fn String skin_item_label(SkinItem item)
 			return "Closed height";
 		case SkinItem.LANGUAGE_COLORS:
 			return "Language colors";
+		case SkinItem.IMAGE_SCOPE:
+			return "Wallpaper scope";
 		case SkinItem.CARD_LAYOUT:
 			return "Card layout";
 		case SkinItem.SURFACE:
@@ -583,6 +587,8 @@ fn String skin_item_key(SkinItem item)
 			return "skin_closed_height";
 		case SkinItem.LANGUAGE_COLORS:
 			return "skin_language_colors";
+		case SkinItem.IMAGE_SCOPE:
+			return "skin_image_scope";
 		case SkinItem.CARD_LAYOUT:
 			return "canvas_card_layout";
 		case SkinItem.SURFACE:
@@ -626,6 +632,8 @@ fn String skin_item_description(SkinItem item)
 			return "Height of closed file cards in pixels (40-240).";
 		case SkinItem.LANGUAGE_COLORS:
 			return "Tint card accents by the file language.";
+		case SkinItem.IMAGE_SCOPE:
+			return "Show card and folder wallpapers on the selection only, or on everything.";
 		case SkinItem.CARD_LAYOUT:
 			return "Arrange cards as a grid, a cascading deck, or a fanned deck.";
 		case SkinItem.SURFACE:
@@ -863,6 +871,8 @@ fn settings::SettingLayer Panel.skin_source(&self, SkinItem item, config::Config
 			return skin::closed_height_source();
 		case SkinItem.LANGUAGE_COLORS:
 			return skin::language_colors_source();
+		case SkinItem.IMAGE_SCOPE:
+			return skin::image_scope_source();
 		case SkinItem.CARD_LAYOUT:
 			if (config == null) return settings::SettingLayer.DEFAULT;
 			return config.settings.source(settings::SettingId.CANVAS_CARD_LAYOUT);
@@ -905,6 +915,8 @@ fn void Panel.skin_value_text(&self, DString* out, SkinItem item, config::Config
 			(void)out.appendf("%.0f", (double)skin::closed_height());
 		case SkinItem.LANGUAGE_COLORS:
 			out.append_string(skin::language_colors() ? "On" : "Off");
+		case SkinItem.IMAGE_SCOPE:
+			out.append_string(skin::image_scope_name(skin::image_scope()));
 		case SkinItem.CARD_LAYOUT:
 			if (config != null) out.append_string(config.settings.get_string(settings::SettingId.CANVAS_CARD_LAYOUT));
 		case SkinItem.SURFACE:
@@ -1066,6 +1078,13 @@ fn void Panel.change_skin(
 			);
 		case SkinItem.LANGUAGE_COLORS:
 			skin::set_language_colors(!skin::language_colors(), layer);
+		case SkinItem.IMAGE_SCOPE:
+			skin::set_image_scope(
+				skin::image_scope_for_name(
+					enum_next(skin::IMAGE_SCOPE_NAMES, skin::image_scope_name(skin::image_scope()), dir)
+				),
+				layer
+			);
 		case SkinItem.CARD_LAYOUT:
 			if (config == null) return;
 			config.settings.set_string(
@@ -1235,6 +1254,8 @@ fn void Panel.reset_skin_selected(
 			skin::clear_closed_height(layer);
 		case SkinItem.LANGUAGE_COLORS:
 			skin::clear_language_colors(layer);
+		case SkinItem.IMAGE_SCOPE:
+			skin::clear_image_scope(layer);
 		case SkinItem.CARD_LAYOUT:
 			if (config == null) return;
 			config.settings.clear(settings::SettingId.CANVAS_CARD_LAYOUT, layer);

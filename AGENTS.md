@@ -36,6 +36,7 @@
 - `lib/raylib6.c3l` is a **packed/zipped** library, not a directory. Treat it as an opaque binary blob; don't try to edit files inside it.
 - Ships prebuilt static libs for `linux-x64`, `macos-aarch64`, `windows-x64`, `windows-aarch64`, `emscripten`, `wasm-32`; there are NO `linux-aarch64` / `macos-x64` binaries.
 - API is raylib snake_case (`rl::init_window`, `rl::close_window`, `rl::window_should_close`), plus a `rl::@drawing() { ... }` block macro that wraps `begin_drawing`/`end_drawing`. raygui is also bundled (`raygui::rg`).
+- Skin images render over an opaque surface base; `skin.image_scope` defaults to `selected` so card/folder wallpapers only render on the selection unless set to `all`.
 - The bundled raylib static libs are compiled without JPEG decoding. Use `yun::image` when loading still images; it falls back to the vendored stb JPEG decoder. GIF playback still goes through raylib.
 
 ## Syntax highlighting (tree-sitter)

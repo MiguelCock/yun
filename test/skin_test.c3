@@ -110,6 +110,31 @@ fn void test_layer_precedence()
 	};
 }
 
+fn void test_image_scope_layers()
+{
+	@pool()
+	{
+		skin::init_headless(tmem);
+		assert(image_scope() == ImageScope.SELECTED);
+		assert(!show_image(false));
+		assert(show_image(true));
+		apply_text("{\"image_scope\":\"all\"}", "/global", settings::SettingLayer.GLOBAL);
+		assert(image_scope() == ImageScope.ALL);
+		assert(show_image(false));
+		assert(image_scope_source() == settings::SettingLayer.GLOBAL);
+		apply_text("{\"image_scope\":\"selected\"}", "/project", settings::SettingLayer.PROJECT);
+		assert(image_scope() == ImageScope.SELECTED);
+		assert(!show_image(false));
+		assert(image_scope_source() == settings::SettingLayer.PROJECT);
+		clear_image_scope(settings::SettingLayer.PROJECT);
+		assert(image_scope() == ImageScope.ALL);
+		assert(image_scope_source() == settings::SettingLayer.GLOBAL);
+		clear_layer(settings::SettingLayer.GLOBAL);
+		assert(image_scope() == ImageScope.SELECTED);
+		assert(image_scope_source() == settings::SettingLayer.DEFAULT);
+	};
+}
+
 fn void test_preset_override_order()
 {
 	@pool()
@@ -209,6 +234,7 @@ fn void test_setters_and_clear_layer()
 		assert(!language_colors());
 		set_surface_image(SurfaceId.CARD, "card.png", settings::SettingLayer.GLOBAL);
 		assert(surface(SurfaceId.CARD).path.compare_to("card.png") == 0);
+		assert(has_image(SurfaceId.CARD));
 		set_surface_fit(SurfaceId.CARD, SurfaceFit.STRETCH, settings::SettingLayer.PROJECT);
 		set_surface_opacity(SurfaceId.CARD, 0.25f, settings::SettingLayer.PROJECT);
 		set_surface_tint(SurfaceId.CARD, { 1, 2, 3, 255 }, settings::SettingLayer.PROJECT);
@@ -228,6 +254,7 @@ fn void test_setters_and_clear_layer()
 		assert(surface_source(SurfaceId.CARD, SurfaceField.FIT) == settings::SettingLayer.DEFAULT);
 		clear_layer(settings::SettingLayer.GLOBAL);
 		assert(surface(SurfaceId.CARD).path.len == 0);
+		assert(!has_image(SurfaceId.CARD));
 		clear_layer(settings::SettingLayer.PROJECT);
 		assert(preset().compare_to("classic") == 0);
 		assert(card_style() == CardStyle.FLAT);
@@ -241,7 +268,7 @@ fn void test_write_json_round_trip()
 	{
 		skin::init_headless(tmem);
 		apply_text(
-			"{\"preset\":\"paper\",\"cards\":{\"closed_height\":120,\"language_colors\":false},\"folders\":{\"style\":\"explorer\"},\"surfaces\":{\"card\":{\"image\":\"pics/card.png\",\"fit\":\"tile\",\"opacity\":0.5,\"tint\":\"#11223344\",\"scrim\":\"#00000080\",\"speed\":2,\"fps\":24}}}",
+			"{\"preset\":\"paper\",\"image_scope\":\"all\",\"cards\":{\"closed_height\":120,\"language_colors\":false},\"folders\":{\"style\":\"explorer\"},\"surfaces\":{\"card\":{\"image\":\"pics/card.png\",\"fit\":\"tile\",\"opacity\":0.5,\"tint\":\"#11223344\",\"scrim\":\"#00000080\",\"speed\":2,\"fps\":24}}}",
 			"/global",
 			settings::SettingLayer.GLOBAL
 		);
@@ -252,6 +279,7 @@ fn void test_write_json_round_trip()
 		write_json(&out, settings::SettingLayer.GLOBAL);
 		String text = out.str_view();
 		assert(text.starts_with("{\"preset\":\"paper\""));
+		assert(text.contains("\"image_scope\":\"all\""));
 		assert(text.contains("\"cards\":{"));
 		assert(text.contains("\"closed_height\":120.0"));
 		assert(text.contains("\"language_colors\":false"));
@@ -274,6 +302,7 @@ fn void test_write_json_round_trip()
 		skin::apply_object(obj, "/reload", settings::SettingLayer.GLOBAL);
 		obj.free();
 		assert(preset().compare_to("paper") == 0);
+		assert(image_scope() == ImageScope.ALL);
 		assert(closed_height() == 120.0f);
 		assert(!language_colors());
 		assert(folder_style() == FolderStyle.EXPLORER);

@@ -402,6 +402,7 @@ fn void test_skin_page_registered()
 		assert(p.skin_row(SkinItem.FOLDER_STYLE) >= 0);
 		assert(p.skin_row(SkinItem.CLOSED_HEIGHT) >= 0);
 		assert(p.skin_row(SkinItem.LANGUAGE_COLORS) >= 0);
+		assert(p.skin_row(SkinItem.IMAGE_SCOPE) >= 0);
 		assert(p.skin_row(SkinItem.CARD_LAYOUT) >= 0);
 		assert(p.skin_row(SkinItem.SURFACE) >= 0);
 		assert(p.skin_row(SkinItem.IMAGE) >= 0);
@@ -483,6 +484,10 @@ fn void test_skin_page_steps_and_persists()
 		p.selected = p.skin_row(SkinItem.CLOSED_HEIGHT);
 		p.change_skin(&cfg, 1, true, (String)root, null);
 		assert(skin::closed_height() > 96.0f);
+
+		p.selected = p.skin_row(SkinItem.IMAGE_SCOPE);
+		p.change_skin(&cfg, 1, true, (String)root, null);
+		assert(skin::image_scope() == skin::ImageScope.ALL);
 
 		p.destroy();
 		cfg.destroy();

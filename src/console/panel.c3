@@ -1671,8 +1671,10 @@ fn void ConsolePanel.draw(
 	Rect output     = self.output_rect();
 	Rect input      = self.input_rect();
 
-	float radius = ui::corner_radius();
-	ui::rounded_top(panel, radius, theme::current().panel_bg);
+	float radius       = ui::corner_radius();
+	RLColor panel_base = theme::current().panel_bg;
+	if (skin::has_image(skin::SurfaceId.CONSOLE)) panel_base.a = 255;
+	ui::rounded_top(panel, radius, panel_base);
 	skin::draw_screen(skin::SurfaceId.CONSOLE, panel, radius);
 	RLColor border = self.focused ? theme::current().card_focus : theme::current().panel_border;
 	rl::draw_rectangle_rec(

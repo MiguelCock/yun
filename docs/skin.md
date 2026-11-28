@@ -46,7 +46,8 @@ need them preserved verbatim.
       "closed_height": 112,
       "language_colors": true
     },
-    "folders": { "style": "explorer" }
+    "folders": { "style": "explorer" },
+    "image_scope": "selected"
   },
   "canvas": { "card_layout": "deck" }
 }
@@ -75,6 +76,13 @@ so each frame fills the surface at its full size and animates using `speed` and
 | `scrim` | `#rrggbbaa` | Readability overlay drawn over the image |
 | `speed` | number | GIF playback speed multiplier |
 | `fps` | number | GIF playback frame rate |
+
+`image_scope` controls card and folder wallpapers:
+
+- `selected` (default) — app, top-bar, panel, menu, console, and minimap images always render; card and folder images render only for the selected, focused, or current item.
+- `all` — every surface renders its wallpaper.
+
+Images are drawn over an opaque surface colour, so lowering `opacity` does not expose cards or the canvas grid underneath. The image blends with its own surface instead, and `scrim` remains an optional overlay.
 
 ## Surfaces
 

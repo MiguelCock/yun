@@ -196,7 +196,10 @@ fn float row_radius()
 
 fn void panel(Rect r, RLColor fill, RLColor border)
 {
-	if (!skin::draw_screen(skin::SurfaceId.PANEL, r, corner_radius())) rounded_rect(r, corner_radius(), fill);
+	RLColor base = fill;
+	if (skin::has_image(skin::SurfaceId.PANEL)) base.a = 255;
+	rounded_rect(r, corner_radius(), base);
+	skin::draw_screen(skin::SurfaceId.PANEL, r, corner_radius());
 	rounded_rect_lines(r, corner_radius(), 1.0f, border);
 }
 

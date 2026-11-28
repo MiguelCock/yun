@@ -3343,6 +3343,10 @@ fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
 	float radius          = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
 	bool tray             = skin::folder_style() == skin::FolderStyle.TRAY;
 	bool explorer         = skin::folder_style() == skin::FolderStyle.EXPLORER || tray;
+	bool image_selected   = (int)index == self.selected_cluster || (int)index == self.current_folder;
+	bool images           = skin::show_image(
+		image_selected
+	) && (skin::has_image(skin::SurfaceId.FOLDER) || skin::has_image(skin::SurfaceId.FOLDER_TITLE));
 	if (tray)
 	{
 		float off = zoom > 0.0f ? 5.0f / zoom : 5.0f;
@@ -3371,13 +3375,13 @@ fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
 			{ 0, 0, 0, 40 }
 		);
 	}
-	if (!skin::draw_world(
-		skin::SurfaceId.FOLDER,
-		bounds,
-		zoom,
-		ui::corner_radius()
-	)) ui::rounded_rect(bounds, radius, theme::current()
-		.cluster_body);
+	RLColor folder_body = theme::current().cluster_body;
+	if (images) folder_body.a = 255;
+	ui::rounded_rect(bounds, radius, folder_body);
+	if (skin::show_image(image_selected))
+	{
+		skin::draw_world(skin::SurfaceId.FOLDER, bounds, zoom, ui::corner_radius());
+	}
 	Rect title = {
 		.x = bounds.x,
 		.y = bounds.y,
@@ -3390,13 +3394,13 @@ fn void Project.draw_cluster_at(&self, int index, Rect bounds, float zoom)
 		tab.width = math::min(bounds.width - (float)ui::px(16), (float)ui::px(220));
 		if (tab.width < (float)ui::px(60)) tab.width = bounds.width;
 	}
-	if (!skin::draw_world(
-		skin::SurfaceId.FOLDER_TITLE,
-		tab,
-		zoom,
-		ui::corner_radius()
-	)) ui::rounded_top(tab, radius, theme::current()
-		.cluster_title);
+	RLColor folder_title = theme::current().cluster_title;
+	if (images) folder_title.a = 255;
+	ui::rounded_top(tab, radius, folder_title);
+	if (skin::show_image(image_selected))
+	{
+		skin::draw_world(skin::SurfaceId.FOLDER_TITLE, tab, zoom, ui::corner_radius());
+	}
 	ui::rounded_rect_lines(bounds, radius, card::screen_thickness(1.0f, zoom), theme::current().cluster_border);
 	if ((int)index == self.current_folder)
 	{
@@ -3619,11 +3623,12 @@ fn void Project.draw_cards(
 		{
 			sz i = (sz)(*order)[c];
 			if (only_card < 0 && !self.card_visible((int)i)) continue;
-			FileCard* card  = &self.cards[i];
-			bool stack      = self.card_layout != CardLayout.GRID;
-			bool focus_live = editing || self.focus_card >= 0;
-			bool is_focused = (int)i == self.focused && (!stack || focus_live);
-			bool is_editing = is_focused && editing;
+			FileCard* card      = &self.cards[i];
+			bool stack          = self.card_layout != CardLayout.GRID;
+			bool focus_live     = editing || self.focus_card >= 0;
+			bool is_focused     = (int)i == self.focused && (!stack || focus_live);
+			bool is_editing     = is_focused && editing;
+			bool image_selected = is_focused || (int)i == self.selected || only_card >= 0;
 			if (is_focused) editor::ensure_buffer(card, self.allocator);
 			if (!rect_intersects(card.rect, visible)) continue;
 			float on_screen_w = card.rect.width * camera.zoom;
@@ -3637,11 +3642,11 @@ fn void Project.draw_cards(
 			}
 			else if (title_lod)
 			{
-				card.draw_lod_title(font, camera.zoom);
+				card.draw_lod_title(font, camera.zoom, image_selected);
 			}
 			else
 			{
-				card.draw(is_focused, camera, mouse_world, self.focus_card >= 0, git_status);
+				card.draw(is_focused, image_selected, camera, mouse_world, self.focus_card >= 0, git_status);
 			}
 			if (!is_focused && (int)i == self.selected)
 			{
@@ -3669,7 +3674,10 @@ fn void Project.draw_cards(
 			{
 				editor::ensure_buffer(card, self.allocator);
 				Rect area = editor::inner_rect(card.rect, metrics);
-				skin::draw_world(skin::SurfaceId.CARD_EDITOR, area, camera.zoom, 0.0f);
+				if (skin::show_image(image_selected))
+				{
+					skin::draw_world(skin::SurfaceId.CARD_EDITOR, area, camera.zoom, 0.0f);
+				}
 				float max = 0.0f;
 				if (card.buffer && card.view)
 				{
@@ -3696,13 +3704,24 @@ fn void Project.draw_cards(
 			if (!card.buffer)
 			{
 				Rect area = editor::inner_rect(card.rect, metrics);
-				skin::draw_world(skin::SurfaceId.CARD_EDITOR, area, camera.zoom, 0.0f);
+				if (skin::show_image(image_selected))
+				{
+					skin::draw_world(skin::SurfaceId.CARD_EDITOR, area, camera.zoom, 0.0f);
+				}
 				editor::draw_placeholder(area, metrics, camera, theme::current().editor_placeholder);
 				continue;
 			}
 
 			usz line_count = card.buffer.line_count();
-			skin::draw_world(skin::SurfaceId.CARD_EDITOR, editor::inner_rect(card.rect, metrics), camera.zoom, 0.0f);
+			if (skin::show_image(image_selected))
+			{
+				skin::draw_world(
+					skin::SurfaceId.CARD_EDITOR,
+					editor::inner_rect(card.rect, metrics),
+					camera.zoom,
+					0.0f
+				);
+			}
 			Rect gutter = editor::gutter_rect(card.rect, metrics, line_count);
 			Rect text   = editor::text_rect(card.rect, metrics, line_count);
 
