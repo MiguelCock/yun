@@ -57,13 +57,13 @@ fn String? resolve_path(Allocator allocator, String arg)
 	if (arg[0] == '~')
 	{
 		Path? home = path::home_directory(allocator);
-		if (catch excuse = home) return RESOLVE_FAILED~;
+		if (catch err = home) return RESOLVE_FAILED~;
 		if (arg.len == 1) return (String)home;
 		return ((Path)home).append(allocator, arg[2..]);
 	}
 	if (arg[0] == '/' || (arg.len > 1 && arg[1] == ':')) return arg.copy(allocator);
 	Path? cwd = path::cwd(allocator);
-	if (catch excuse = cwd) return RESOLVE_FAILED~;
+	if (catch err = cwd) return RESOLVE_FAILED~;
 	return cwd.append(allocator, arg);
 }
 
@@ -88,7 +88,7 @@ fn bool is_nested_repo(String dir)
 	@pool()
 	{
 		Path? git = ((Path)dir).append(tmem, ".git");
-		if (catch excuse = git) return false;
+		if (catch err = git) return false;
 		return path::exists(git);
 	};
 }

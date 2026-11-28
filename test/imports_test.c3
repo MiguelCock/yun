@@ -49,18 +49,18 @@ fn void test_import_cache_roundtrip()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_import_cache");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? a = dir.append(tmem, "a.c3");
-		if (catch excuse = a) return;
+		if (catch err = a) return;
 		Path? b = dir.append(tmem, "b.c3");
-		if (catch excuse = b) return;
-		if (catch excuse = file::save(a, "module a;\nimport b;\n")) return;
-		if (catch excuse = file::save(b, "module b;\n")) return;
+		if (catch err = b) return;
+		if (catch err = file::save(a, "module a;\nimport b;\n")) return;
+		if (catch err = file::save(b, "module b;\n")) return;
 
 		project::Project p;
 		p.init(mem);
@@ -744,7 +744,7 @@ fn void test_fixture_resolution()
 			}
 
 			char[]? data = file::load(tmem, source);
-			if (catch excuse = data) continue;
+			if (catch err = data) continue;
 			String text = (String)data;
 
 			List{ImportRef} refs;

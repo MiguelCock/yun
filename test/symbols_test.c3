@@ -28,16 +28,16 @@ fn void test_extract_c3()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_sym_c3");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "a.c3");
-		if (catch excuse = f) return;
+		if (catch err = f) return;
 		String src = "module demo;\nstruct Foo { int x; }\nenum Bar { A, B }\nfn int add(int a, int b) { return a + b; }\n";
-		if (catch excuse = file::save(f, src)) return;
+		if (catch err = file::save(f, src)) return;
 
 		List{Symbol} out;
 		out.init(mem);
@@ -55,16 +55,16 @@ fn void test_extract_c()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_sym_c");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "a.c");
-		if (catch excuse = f) return;
+		if (catch err = f) return;
 		String src = "int add(int a, int b) { return a + b; }\nstruct Foo { int x; };\nenum Bar { A, B };\nint g;\n";
-		if (catch excuse = file::save(f, src)) return;
+		if (catch err = file::save(f, src)) return;
 
 		List{Symbol} out;
 		out.init(mem);
@@ -83,15 +83,15 @@ fn void test_extract_python()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_sym_py");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "a.py");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "def add(a, b):\n    return a + b\n\nclass Foo:\n    pass\n")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "def add(a, b):\n    return a + b\n\nclass Foo:\n    pass\n")) return;
 
 		List{Symbol} out;
 		out.init(mem);
@@ -108,15 +108,15 @@ fn void test_extract_javascript()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_sym_js");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "a.js");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "function add(a, b) { return a + b; }\nclass Foo {}\nconst g = 1;\n")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "function add(a, b) { return a + b; }\nclass Foo {}\nconst g = 1;\n")) return;
 
 		List{Symbol} out;
 		out.init(mem);
@@ -148,16 +148,16 @@ fn void test_symbol_cache_roundtrip()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_sym_cache");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "a.c3");
-		if (catch excuse = f) return;
+		if (catch err = f) return;
 		String src = "module demo;\nfn int add(int a, int b) { return a + b; }\n";
-		if (catch excuse = file::save(f, src)) return;
+		if (catch err = file::save(f, src)) return;
 
 		project::Project p;
 		p.init(mem);

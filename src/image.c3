@@ -78,7 +78,7 @@ fn DecodedImage? load_jpeg(String path)
 	@pool()
 	{
 		char[]? data = file::load(tmem, path);
-		if (catch excuse = data) return IMAGE_FAILED~;
+		if (catch err = data) return IMAGE_FAILED~;
 		int width    = 0;
 		int height   = 0;
 		int channels = 0;
@@ -123,7 +123,7 @@ fn void DecodedImage.free(&self)
 fn Thumbnail? load_thumbnail(String path, int max_dim)
 {
 	DecodedImage? decoded = load_still(path);
-	if (catch excuse = decoded) return IMAGE_FAILED~;
+	if (catch err = decoded) return IMAGE_FAILED~;
 	DecodedImage image = decoded;
 	if (max_dim > 0 && (image.image.width > max_dim || image.image.height > max_dim))
 	{

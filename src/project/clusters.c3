@@ -46,7 +46,7 @@ fn int int_compare(void* a, void* b)
 fn int Project.folder_by_path(&self, String path)
 {
 	int*? found = self.folder_index.get_ref(path);
-	if (catch excuse = found) return ROOT_FOLDER;
+	if (catch err = found) return ROOT_FOLDER;
 	return *found;
 }
 

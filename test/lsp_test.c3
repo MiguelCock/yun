@@ -15,7 +15,7 @@ fn void test_jsonrpc_roundtrip()
 
 		usz consumed = 0;
 		String? body = jsonrpc_try_parse(frame.ptr[0:frame.len], &consumed);
-		if (catch excuse = body)
+		if (catch err = body)
 		{
 			assert(false);
 		}
@@ -36,14 +36,14 @@ fn void test_jsonrpc_partial_and_stream()
 		usz consumed    = 0;
 		String? partial = jsonrpc_try_parse(frame.ptr[0:frame.len - 2], &consumed);
 		bool incomplete = false;
-		if (catch excuse = partial) incomplete = true;
+		if (catch err = partial) incomplete = true;
 		assert(incomplete);
 		assert(consumed == 0);
 
 		String stream = string::format(tmem, "%s%s", frame, frame);
 		usz first     = 0;
 		String? one   = jsonrpc_try_parse(stream.ptr[0:stream.len], &first);
-		if (catch excuse = one)
+		if (catch err = one)
 		{
 			assert(false);
 		}
@@ -55,7 +55,7 @@ fn void test_jsonrpc_partial_and_stream()
 
 		usz second  = 0;
 		String? two = jsonrpc_try_parse(stream.ptr[first:stream.len - first], &second);
-		if (catch excuse = two)
+		if (catch err = two)
 		{
 			assert(false);
 		}
@@ -73,7 +73,7 @@ fn void test_jsonrpc_malformed()
 	usz consumed   = 0;
 	String? result = jsonrpc_try_parse(bad.ptr[0:bad.len], &consumed);
 	bool faulted   = false;
-	if (catch excuse = result) faulted = true;
+	if (catch err = result) faulted = true;
 	assert(faulted);
 	assert(consumed > 0);
 }
@@ -125,7 +125,7 @@ fn void test_message_builders()
 		String json    = lsp_message(tmem, true, 7, "initialize", params);
 
 		Object*? parsed = json::parse(tmem, json);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -149,7 +149,7 @@ fn void test_notification_empty_params()
 		String json = lsp_message(tmem, false, 0, "initialized", null);
 
 		Object*? parsed = json::parse(tmem, json);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -176,7 +176,7 @@ fn void test_capabilities_parse()
 	{
 		String json     = "{\"capabilities\":{\"hoverProvider\":true,\"definitionProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\".\",\":\"]},\"documentFormattingProvider\":true}}";
 		Object*? parsed = json::parse(tmem, json);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -202,7 +202,7 @@ fn void test_diagnostics_parse()
 	{
 		String json     = "{\"diagnostics\":[{\"range\":{\"start\":{\"line\":1,\"character\":2},\"end\":{\"line\":1,\"character\":5}},\"severity\":1,\"message\":\"boom\"}]}";
 		Object*? parsed = json::parse(tmem, json);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -321,7 +321,7 @@ fn void test_diagnostics_store()
 			tmem,
 			"{\"uri\":\"file:///proj/a.c\",\"diagnostics\":[{\"range\":{\"start\":{\"line\":0,\"character\":1},\"end\":{\"line\":0,\"character\":3}},\"severity\":1,\"message\":\"boom\"}]}"
 		);
-		if (catch excuse = params)
+		if (catch err = params)
 		{
 			assert(false);
 		}
@@ -356,7 +356,7 @@ fn void test_normalize_hover()
 		if (try obj = markup)
 		{
 			String? text = lsp_normalize_hover(tmem, obj);
-			if (catch excuse = text)
+			if (catch err = text)
 			{
 				assert(false);
 			}
@@ -370,7 +370,7 @@ fn void test_normalize_hover()
 		if (try obj = marked)
 		{
 			String? text = lsp_normalize_hover(tmem, obj);
-			if (catch excuse = text)
+			if (catch err = text)
 			{
 				assert(false);
 			}
@@ -384,7 +384,7 @@ fn void test_normalize_hover()
 		if (try obj = array)
 		{
 			String? text = lsp_normalize_hover(tmem, obj);
-			if (catch excuse = text)
+			if (catch err = text)
 			{
 				assert(false);
 			}
@@ -399,7 +399,7 @@ fn void test_normalize_hover()
 		{
 			String? text = lsp_normalize_hover(tmem, obj);
 			bool faulted = false;
-			if (catch excuse = text) faulted = true;
+			if (catch err = text) faulted = true;
 			assert(faulted);
 		}
 
@@ -529,7 +529,7 @@ fn void test_formatting_parse()
 			tmem,
 			"[{\"newText\":\"one\",\"range\":{\"start\":{\"line\":1,\"character\":2},\"end\":{\"line\":1,\"character\":5}}},{\"newText\":\"two\",\"range\":{\"start\":{\"line\":3,\"character\":0},\"end\":{\"line\":4,\"character\":1}}}]"
 		);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -652,7 +652,7 @@ fn void test_did_open_language_id()
 	{
 		Object* params   = lsp_did_open_params(tmem, "file:///proj/a.c3", "c3", 1, "fn int main() {}");
 		Object*? doc_opt = params.get("textDocument");
-		if (catch excuse = doc_opt)
+		if (catch err = doc_opt)
 		{
 			assert(false);
 		}
@@ -715,7 +715,7 @@ fn void test_extended_capabilities_parse()
 	{
 		String json     = "{\"capabilities\":{\"documentSymbolProvider\":true,\"workspaceSymbolProvider\":true,\"referencesProvider\":true,\"renameProvider\":{\"prepareProvider\":true},\"codeActionProvider\":true,\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]},\"inlayHintProvider\":true,\"semanticTokensProvider\":{\"legend\":{\"tokenTypes\":[\"keyword\",\"type\",\"function\"]}}}}";
 		Object*? parsed = json::parse(tmem, json);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -746,7 +746,7 @@ fn void test_workspace_edit_parse()
 	{
 		String json     = "{\"changes\":{\"file:///a%20b.sol\":[{\"range\":{\"start\":{\"line\":1,\"character\":2},\"end\":{\"line\":1,\"character\":5}},\"newText\":\"next\"}]},\"documentChanges\":[{\"textDocument\":{\"uri\":\"file:///c.sol\"},\"edits\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":1}},\"newText\":\"x\"}]}]}";
 		Object*? parsed = json::parse(tmem, json);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -770,7 +770,7 @@ fn void test_code_actions_parse()
 	{
 		String json     = "[{\"title\":\"Fix alias\",\"edit\":{\"changes\":{\"file:///a.sol\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":2}},\"newText\":\"x :=\"}]}}},{\"title\":\"No edit\"}]";
 		Object*? parsed = json::parse(tmem, json);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -794,7 +794,7 @@ fn void test_document_and_workspace_symbols_parse()
 	{
 		String document = "[{\"name\":\"main\",\"detail\":\"() -> ()\",\"kind\":12,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":2,\"character\":1}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":5},\"end\":{\"line\":0,\"character\":9}}}]";
 		Object*? parsed = json::parse(tmem, document);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -837,7 +837,7 @@ fn void test_rename_and_signature_parsing()
 			tmem,
 			"{\"range\":{\"start\":{\"line\":0,\"character\":1},\"end\":{\"line\":0,\"character\":4}},\"placeholder\":\"old\"}"
 		);
-		if (catch excuse = rename)
+		if (catch err = rename)
 		{
 			assert(false);
 		}
@@ -872,7 +872,7 @@ fn void test_semantic_tokens_parse()
 	@pool()
 	{
 		Object*? parsed = json::parse(tmem, "{\"data\":[0,0,7,0,0,0,8,4,2,0,1,0,6,3,0]}");
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -1056,7 +1056,7 @@ fn void test_inlay_hints_parse()
 			tmem,
 			"[{\"position\":{\"line\":1,\"character\":2},\"label\":[{\"value\":\": \"},{\"value\":\"Io\"}],\"kind\":1},{\"position\":{\"line\":3,\"character\":4},\"label\":\": Point\",\"kind\":1}]"
 		);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}

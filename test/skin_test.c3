@@ -9,7 +9,7 @@ import yun::settings;
 macro void apply_text(String text, String base, settings::SettingLayer layer)
 {
 	Object*? parsed = json::parse(tmem, text);
-	if (catch excuse = parsed) assert(false);
+	if (catch err = parsed) assert(false);
 	Object* obj = parsed;
 	skin::apply_object(obj, base, layer);
 	obj.free();
@@ -297,7 +297,7 @@ fn void test_write_json_round_trip()
 
 		skin::reset();
 		Object*? parsed = json::parse(tmem, text);
-		if (catch excuse = parsed) assert(false);
+		if (catch err = parsed) assert(false);
 		Object* obj = parsed;
 		skin::apply_object(obj, "/reload", settings::SettingLayer.GLOBAL);
 		obj.free();

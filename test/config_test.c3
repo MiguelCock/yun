@@ -107,15 +107,15 @@ fn void test_malformed_file_warns()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_bad");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "config.json");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "{ not json")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "{ not json")) return;
 
 		Config c;
 		c.init(tmem);
@@ -132,18 +132,18 @@ fn void test_project_overrides_global()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_project");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path root = d;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 		Path? yun = root.append(tmem, ".yun");
-		if (catch excuse = yun) return;
-		if (catch excuse = path::mkdir(yun, recursive: true)) return;
+		if (catch err = yun) return;
+		if (catch err = path::mkdir(yun, recursive: true)) return;
 		Path? f = yun.append(tmem, "config.json");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "{\"app\":{\"theme\":\"light\"},\"editor\":{\"font_size\":20}}")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "{\"app\":{\"theme\":\"light\"},\"editor\":{\"font_size\":20}}")) return;
 
 		Config c;
 		c.init(tmem);
@@ -167,14 +167,14 @@ fn void test_ensure_defaults_creates_valid_file()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_defaults");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "config.json");
-		if (catch excuse = f) return;
+		if (catch err = f) return;
 
 		Config c;
 		c.init(tmem);
@@ -195,14 +195,14 @@ fn void test_save_load_roundtrip()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_save");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "config.json");
-		if (catch excuse = f) return;
+		if (catch err = f) return;
 		Path file = f;
 
 		Config c;
@@ -233,14 +233,14 @@ fn void test_empty_chord_roundtrip()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_empty_chord");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "config.json");
-		if (catch excuse = f) return;
+		if (catch err = f) return;
 		Path file = f;
 
 		Config c;
@@ -285,17 +285,17 @@ fn void test_keymap_scope_save()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_keymap_layers");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		Path? gf = dir.append(tmem, "global.json");
-		if (catch excuse = gf) return;
+		if (catch err = gf) return;
 		Path? pf = dir.append(tmem, "project.json");
-		if (catch excuse = pf) return;
+		if (catch err = pf) return;
 
 		Config c;
 		c.init(tmem);
@@ -353,15 +353,15 @@ fn void test_save_serializes_skin_overrides()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? dir = tmp.append(tmem, "yun_skin_save_test");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? input = dir.append(tmem, "config.json");
-		if (catch excuse = input) return;
+		if (catch err = input) return;
 		String skin_json = "{\n  \"app\": {\"theme\": \"dark\"},\n  \"skin\": {\"surfaces\": {\"card\": {\"image\": \"paper.png\"}}, \"legacy\": true},\n  \"keymap\": {}\n}";
-		if (catch excuse = file::save(input, skin_json)) return;
+		if (catch err = file::save(input, skin_json)) return;
 		skin::init_headless(tmem);
 		Config c;
 		c.init(tmem);
@@ -370,7 +370,7 @@ fn void test_save_serializes_skin_overrides()
 		skin::set_surface_fit(skin::SurfaceId.CARD, skin::SurfaceFit.TILE, settings::SettingLayer.GLOBAL);
 		c.save_path(input, settings::SettingLayer.GLOBAL);
 		char[]? saved = file::load(tmem, input);
-		if (catch excuse = saved) return;
+		if (catch err = saved) return;
 		String raw = (String)saved;
 		assert(raw.contains("\"skin\""));
 		assert(raw.contains("\"image\":\"paper.png\""));
@@ -386,19 +386,19 @@ fn void test_save_omits_empty_skin()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? dir = tmp.append(tmem, "yun_skin_empty_test");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? input = dir.append(tmem, "config.json");
-		if (catch excuse = input) return;
+		if (catch err = input) return;
 		skin::init_headless(tmem);
 		Config c;
 		c.init(tmem);
 		c.save_path(input, settings::SettingLayer.GLOBAL);
 		char[]? saved = file::load(tmem, input);
-		if (catch excuse = saved) return;
+		if (catch err = saved) return;
 		assert(!((String)saved).contains("\"skin\""));
 		c.destroy();
 		(void)path::rmtree(dir);
@@ -410,15 +410,15 @@ fn void test_project_save_contains_only_project_skin()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? dir = tmp.append(tmem, "yun_skin_layers_test");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? gf = dir.append(tmem, "global.json");
-		if (catch excuse = gf) return;
+		if (catch err = gf) return;
 		Path? pf = dir.append(tmem, "project.json");
-		if (catch excuse = pf) return;
+		if (catch err = pf) return;
 
 		skin::init_headless(tmem);
 		Config c;
@@ -429,14 +429,14 @@ fn void test_project_save_contains_only_project_skin()
 		c.save_path(pf, settings::SettingLayer.PROJECT);
 
 		char[]? saved_global = file::load(tmem, gf);
-		if (catch excuse = saved_global) return;
+		if (catch err = saved_global) return;
 		String global_raw = (String)saved_global;
 		assert(global_raw.contains("\"skin\""));
 		assert(global_raw.contains("\"preset\":\"paper\""));
 		assert(!global_raw.contains("\"cards\""));
 
 		char[]? saved_project = file::load(tmem, pf);
-		if (catch excuse = saved_project) return;
+		if (catch err = saved_project) return;
 		String project_raw = (String)saved_project;
 		assert(project_raw.contains("\"skin\""));
 		assert(project_raw.contains("\"cards\":{\"style\":\"flat\"}"));
@@ -452,20 +452,20 @@ fn void test_reload_skin()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? root_opt = tmp.append(tmem, "yun_skin_reload_test");
-		if (catch excuse = root_opt) return;
+		if (catch err = root_opt) return;
 		Path root = root_opt;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 		Path? yun_opt = root.append(tmem, ".yun");
-		if (catch excuse = yun_opt) return;
+		if (catch err = yun_opt) return;
 		Path yun = yun_opt;
-		if (catch excuse = path::mkdir(yun, recursive: true)) return;
+		if (catch err = path::mkdir(yun, recursive: true)) return;
 		Path? cfg_opt = yun.append(tmem, "config.json");
-		if (catch excuse = cfg_opt) return;
+		if (catch err = cfg_opt) return;
 		Path cfg = cfg_opt;
-		if (catch excuse = file::save(
+		if (catch err = file::save(
 			cfg,
 			"{\"app\":{\"theme\":\"light\"},\"skin\":{\"preset\":\"glass\",\"surfaces\":{\"card\":{\"image\":\"/tmp/project-card.png\",\"opacity\":0.6}}}}"
 		)) return;

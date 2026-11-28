@@ -250,7 +250,7 @@ fn void Project.init(&self, Allocator allocator)
 	self.card_metrics = editor::default_metrics();
 	self.vim_state.init(allocator);
 	Path? cwd = path::cwd(allocator);
-	if (catch excuse = cwd)
+	if (catch err = cwd)
 	{
 		self.root = (Path)"";
 		return;
@@ -453,7 +453,7 @@ fn String? Project.copy_into_root(&self, String abs)
 {
 	String name    = collision_name(self.allocator, file_stem(abs), file_ext(abs), 0);
 	Path? appended = self.root.append(self.allocator, name);
-	if (catch excuse = appended) return COPY_FAILED~;
+	if (catch err = appended) return COPY_FAILED~;
 	Path dest = appended;
 
 	int index = 1;
@@ -461,28 +461,28 @@ fn String? Project.copy_into_root(&self, String abs)
 	{
 		String alt = collision_name(self.allocator, file_stem(abs), file_ext(abs), index);
 		Path? next = self.root.append(self.allocator, alt);
-		if (catch excuse = next) return COPY_FAILED~;
+		if (catch err = next) return COPY_FAILED~;
 		dest = next;
 		index++;
 	}
 
 	char[]? data = file::load(self.allocator, abs);
-	if (catch excuse = data) return COPY_FAILED~;
-	if (catch excuse = file::save(dest, data)) return COPY_FAILED~;
+	if (catch err = data) return COPY_FAILED~;
+	if (catch err = file::save(dest, data)) return COPY_FAILED~;
 	return (String)dest;
 }
 
 fn String? Project.external_copy(&self, String abs)
 {
 	Path? base = self.root.append(self.allocator, ".yun");
-	if (catch excuse = base) return COPY_FAILED~;
+	if (catch err = base) return COPY_FAILED~;
 	Path? dir = base.append(self.allocator, "external");
-	if (catch excuse = dir) return COPY_FAILED~;
-	if (catch excuse = path::mkdir(dir, recursive: true)) return COPY_FAILED~;
+	if (catch err = dir) return COPY_FAILED~;
+	if (catch err = path::mkdir(dir, recursive: true)) return COPY_FAILED~;
 
 	String name    = rl::get_file_name((ZString)abs.ptr).str_view();
 	Path? appended = dir.append(self.allocator, name);
-	if (catch excuse = appended) return COPY_FAILED~;
+	if (catch err = appended) return COPY_FAILED~;
 	Path dest = appended;
 
 	int index = 1;
@@ -490,14 +490,14 @@ fn String? Project.external_copy(&self, String abs)
 	{
 		String alt = string::format(self.allocator, "%d_%s", index, name);
 		Path? next = dir.append(self.allocator, alt);
-		if (catch excuse = next) return COPY_FAILED~;
+		if (catch err = next) return COPY_FAILED~;
 		dest = next;
 		index++;
 	}
 
 	char[]? data = file::load(self.allocator, abs);
-	if (catch excuse = data) return COPY_FAILED~;
-	if (catch excuse = file::save((String)dest, data)) return COPY_FAILED~;
+	if (catch err = data) return COPY_FAILED~;
+	if (catch err = file::save((String)dest, data)) return COPY_FAILED~;
 	return (String)dest;
 }
 
@@ -559,7 +559,7 @@ fn int Project.add_card(&self, String abs, RLVector2 world_pos)
 	if (!path_is_inside((String)self.root, abs))
 	{
 		String? copied = self.copy_into_root(abs);
-		if (catch excuse = copied) return -1;
+		if (catch err = copied) return -1;
 		final = copied;
 	}
 
@@ -589,7 +589,7 @@ fn int Project.add_folder_from_disk(&self, String dir, RLVector2 world_pos)
 	self.invalidate_bounds();
 
 	PathList? entries = path::ls(self.allocator, (Path)dir, no_dirs: true, recursive: false, relative: false);
-	if (catch excuse = entries) return index;
+	if (catch err = entries) return index;
 
 	float x             = world_pos[0] + ui::pxf(CLUSTER_PADDING);
 	float y             = world_pos[1] + ui::pxf(CLUSTER_TITLE_HEIGHT) + ui::pxf(CLUSTER_PADDING);
@@ -973,9 +973,9 @@ fn void open_job_load_submodules(OpenJob* job, String root)
 	@pool()
 	{
 		Path? file = ((Path)root).append(tmem, ".gitmodules");
-		if (catch excuse = file) return;
+		if (catch err = file) return;
 		char[]? data = file::load(tmem, file);
-		if (catch excuse = data) return;
+		if (catch err = data) return;
 		String text = (String)data;
 		usz start   = 0;
 		for (usz i = 0; i <= text.len; i++)
@@ -1045,12 +1045,12 @@ fn bool OpenJob.scan_dir(&self, Path dir)
 	@pool()
 	{
 		Path? gitignore_file = dir.append(tmem, ".gitignore");
-		if (catch excuse = gitignore_file) return true;
+		if (catch err = gitignore_file) return true;
 		self.ignore.load_file(gitignore_file, (String)dir);
 	};
 
 	PathList? listing = path::ls(self.allocator, dir, no_dirs: false, recursive: false, relative: false);
-	if (catch excuse = listing) return true;
+	if (catch err = listing) return true;
 	foreach (Path entry : listing)
 	{
 		bool is_dir = path::is_dir(entry);
@@ -1173,7 +1173,7 @@ fn int Project.create_file(&self, int folder_index, String name, RLVector2 world
 
 	String candidate = collision_name(self.allocator, file_stem(name), file_ext(name), 0);
 	Path? appended   = ((Path)dir).append(self.allocator, candidate);
-	if (catch excuse = appended) return -1;
+	if (catch err = appended) return -1;
 	Path dest = appended;
 
 	int index = 1;
@@ -1181,13 +1181,13 @@ fn int Project.create_file(&self, int folder_index, String name, RLVector2 world
 	{
 		String alt = collision_name(self.allocator, file_stem(name), file_ext(name), index);
 		Path? next = ((Path)dir).append(self.allocator, alt);
-		if (catch excuse = next) return -1;
+		if (catch err = next) return -1;
 		dest = next;
 		index++;
 	}
 
 	File? created = file::open(dest, "w");
-	if (catch excuse = created) return -1;
+	if (catch err = created) return -1;
 	(void)created.close();
 
 	self.focused = self.append_card((String)dest, world_pos);
@@ -1202,10 +1202,10 @@ fn int Project.create_folder_on_disk(&self, int parent_index, String name, RLVec
 	String dir = self.folder_path(parent_index);
 
 	Path? appended = ((Path)dir).append(self.allocator, name);
-	if (catch excuse = appended) return -1;
+	if (catch err = appended) return -1;
 	Path dest = appended;
 	if (path::exists(dest)) return -1;
-	if (catch excuse = path::mkdir(dest, recursive: false)) return -1;
+	if (catch err = path::mkdir(dest, recursive: false)) return -1;
 
 	int index = self.add_folder((String)dest, parent_index);
 	self.folders[index].bounds = {
@@ -1256,7 +1256,7 @@ fn bool Project.rename_card(&self, int index, String new_name)
 	defer dir.free(self.allocator);
 
 	Path? appended = ((Path)dir).append(self.allocator, new_name);
-	if (catch excuse = appended) return false;
+	if (catch err = appended) return false;
 	Path dest = appended;
 	defer ((String)dest).free(self.allocator);
 	if (path::exists(dest)) return false;
@@ -1294,7 +1294,7 @@ fn int Project.duplicate_card(&self, int index, RLVector2 world_pos)
 	String name    = collision_name(self.allocator, stem, ext, 0);
 	Path? appended = ((Path)dir).append(self.allocator, name);
 	name.free(self.allocator);
-	if (catch excuse = appended) return -1;
+	if (catch err = appended) return -1;
 	Path dest = appended;
 
 	int counter = 1;
@@ -1303,7 +1303,7 @@ fn int Project.duplicate_card(&self, int index, RLVector2 world_pos)
 		String alt = collision_name(self.allocator, stem, ext, counter);
 		Path? next = ((Path)dir).append(self.allocator, alt);
 		alt.free(self.allocator);
-		if (catch excuse = next)
+		if (catch err = next)
 		{
 			((String)dest).free(self.allocator);
 			return -1;
@@ -1314,13 +1314,13 @@ fn int Project.duplicate_card(&self, int index, RLVector2 world_pos)
 	}
 
 	char[]? data = file::load(self.allocator, src);
-	if (catch excuse = data)
+	if (catch err = data)
 	{
 		((String)dest).free(self.allocator);
 		return -1;
 	}
 	defer alloc::free(self.allocator, data.ptr);
-	if (catch excuse = file::save(dest, data))
+	if (catch err = file::save(dest, data))
 	{
 		((String)dest).free(self.allocator);
 		return -1;
@@ -1336,7 +1336,7 @@ fn bool Project.delete_card_file(&self, int index)
 {
 	if (index < 0 || index >= (int)self.cards.len()) return false;
 	Path path = self.cards[index].path;
-	if (catch excuse = path::delete(path)) return false;
+	if (catch err = path::delete(path)) return false;
 	self.remove_card(index);
 	return true;
 }
@@ -2068,7 +2068,7 @@ fn bool Project.move_card_to_folder(&self, int card_index, int folder_index)
 
 	String name    = collision_name(self.allocator, file_stem(from), file_ext(from), 0);
 	Path? appended = ((Path)dir).append(self.allocator, name);
-	if (catch excuse = appended) return false;
+	if (catch err = appended) return false;
 	Path dest = appended;
 
 	int index = 1;
@@ -2076,7 +2076,7 @@ fn bool Project.move_card_to_folder(&self, int card_index, int folder_index)
 	{
 		String alt = collision_name(self.allocator, file_stem(from), file_ext(from), index);
 		Path? next = ((Path)dir).append(self.allocator, alt);
-		if (catch excuse = next) return false;
+		if (catch err = next) return false;
 		dest = next;
 		index++;
 	}
@@ -2084,9 +2084,9 @@ fn bool Project.move_card_to_folder(&self, int card_index, int folder_index)
 	if (libc::rename((ZString)from.ptr, (ZString)dest.ptr) != 0)
 	{
 		char[]? data = file::load(self.allocator, from);
-		if (catch excuse = data) return false;
-		if (catch excuse = file::save(dest, data)) return false;
-		if (catch excuse = file::delete(from)) return false;
+		if (catch err = data) return false;
+		if (catch err = file::save(dest, data)) return false;
+		if (catch err = file::delete(from)) return false;
 	}
 
 	String dest_str = (String)dest;

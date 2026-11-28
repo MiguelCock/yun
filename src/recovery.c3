@@ -60,11 +60,11 @@ fn bool begin(project::Project* project)
 	@pool()
 	{
 		Path? dir = recovery_dir(tmem, (String)project.root);
-		if (catch excuse = dir) return false;
-		if (catch excuse = path::mkdir(dir, recursive: true)) return false;
+		if (catch err = dir) return false;
+		if (catch err = path::mkdir(dir, recursive: true)) return false;
 		Path? marker = dir.append(tmem, MARKER_FILE);
-		if (catch excuse = marker) return false;
-		if (catch excuse = file::save(marker, "1")) return false;
+		if (catch err = marker) return false;
+		if (catch err = file::save(marker, "1")) return false;
 	};
 	return true;
 }
@@ -75,14 +75,14 @@ fn bool available(project::Project* project)
 	@pool()
 	{
 		Path? dir = recovery_dir(tmem, (String)project.root);
-		if (catch excuse = dir) return false;
+		if (catch err = dir) return false;
 		Path? marker = dir.append(tmem, MARKER_FILE);
-		if (catch excuse = marker) return false;
+		if (catch err = marker) return false;
 		if (!path::exists(marker)) return false;
 		Path? journal = dir.append(tmem, JOURNAL_FILE);
-		if (catch excuse = journal) return false;
+		if (catch err = journal) return false;
 		Path? layout = dir.append(tmem, workspace::WORKSPACE_FILE);
-		if (catch excuse = layout) return false;
+		if (catch err = layout) return false;
 		return path::exists(journal) || path::exists(layout);
 	};
 }
@@ -93,8 +93,8 @@ fn bool journal(project::Project* project, canvas::Canvas* canvas, console::Cons
 	@pool()
 	{
 		Path? dir = recovery_dir(tmem, (String)project.root);
-		if (catch excuse = dir) return false;
-		if (catch excuse = path::mkdir(dir, recursive: true)) return false;
+		if (catch err = dir) return false;
+		if (catch err = path::mkdir(dir, recursive: true)) return false;
 
 		List{RecoveryBuffer} buffers;
 		buffers.init(tmem);
@@ -121,10 +121,10 @@ fn bool journal(project::Project* project, canvas::Canvas* canvas, console::Cons
 		RecoveryState state = { .version = JOURNAL_VER, .buffers = buffers.entries[0:buffers.len()] };
 		String json_text    = json::marshal(tmem, state, JsonIndent.SPACE_2);
 		Path? tmp           = dir.append(tmem, JOURNAL_TMP);
-		if (catch excuse = tmp) return false;
+		if (catch err = tmp) return false;
 		Path? target = dir.append(tmem, JOURNAL_FILE);
-		if (catch excuse = target) return false;
-		if (catch excuse = file::save(tmp, json_text.ptr[0:json_text.len])) return false;
+		if (catch err = target) return false;
+		if (catch err = file::save(tmp, json_text.ptr[0:json_text.len])) return false;
 		if (libc::rename((ZString)tmp.ptr, (ZString)target.ptr) != 0) return false;
 
 		(void)workspace::save_at(project, canvas, console_manager, dir);
@@ -144,11 +144,11 @@ fn bool restore(
 	@pool()
 	{
 		Path? dir = recovery_dir(tmem, (String)project.root);
-		if (catch excuse = dir) return false;
+		if (catch err = dir) return false;
 		Path? journal_path = dir.append(tmem, JOURNAL_FILE);
-		if (catch excuse = journal_path) return false;
+		if (catch err = journal_path) return false;
 		Path? layout_path = dir.append(tmem, workspace::WORKSPACE_FILE);
-		if (catch excuse = layout_path) return false;
+		if (catch err = layout_path) return false;
 
 		if (path::exists(layout_path))
 		{
@@ -157,16 +157,16 @@ fn bool restore(
 
 		if (!path::exists(journal_path)) return true;
 		char[]? data = file::load(tmem, journal_path);
-		if (catch excuse = data) return false;
+		if (catch err = data) return false;
 		RecoveryState? parsed = json::unmarshal(tmem, (String)data, RecoveryState);
-		if (catch excuse = parsed) return false;
+		if (catch err = parsed) return false;
 		RecoveryState state = parsed;
 		if (state.version.compare_to(JOURNAL_VER) != 0) return false;
 
 		for (usz i = 0; i < state.buffers.len; i++)
 		{
 			Path? absolute = ((Path)(String)project.root).append(tmem, state.buffers[i].path);
-			if (catch excuse = absolute) continue;
+			if (catch err = absolute) continue;
 			int index = project.find_card((String)absolute);
 			if (index < 0) continue;
 			FileCard* card = &project.cards[index];
@@ -186,7 +186,7 @@ fn void clear(project::Project* project)
 	@pool()
 	{
 		Path? dir = recovery_dir(tmem, (String)project.root);
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		(void)path::rmtree(dir);
 	};
 }

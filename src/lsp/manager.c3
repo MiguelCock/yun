@@ -255,7 +255,7 @@ fn void Lsp.set_root(&self, String root)
 fn void Lsp.clear_diagnostics(&self, String path)
 {
 	int*? entry = self.diag_index.get_ref(path);
-	if (catch excuse = entry) return;
+	if (catch err = entry) return;
 	sz index = *entry;
 	for (sz d = 0; d < self.diag_files[index].diags.len(); d++)
 	{
@@ -277,7 +277,7 @@ fn void Lsp.clear_diagnostics(&self, String path)
 fn void Lsp.replace_diagnostics(&self, String path, List{LspDiagnostic}* parsed)
 {
 	int*? entry = self.diag_index.get_ref(path);
-	if (catch excuse = entry)
+	if (catch err = entry)
 	{
 		FileDiagnostics file;
 		file.path = path.copy(self.allocator);
@@ -301,7 +301,7 @@ fn void Lsp.replace_diagnostics(&self, String path, List{LspDiagnostic}* parsed)
 fn LspDiagnostic[] Lsp.diagnostics_for(&self, String path)
 {
 	int*? entry = self.diag_index.get_ref(path);
-	if (catch excuse = entry) return NO_DIAGNOSTICS;
+	if (catch err = entry) return NO_DIAGNOSTICS;
 	FileDiagnostics* file = &self.diag_files[*entry];
 	return file.diags.entries[0:file.diags.len()];
 }
@@ -979,7 +979,7 @@ fn void Lsp.handle_notification(&self, String method, Object* params)
 	if (method.compare_to("textDocument/publishDiagnostics") != 0) return;
 
 	String? uri = params.get_string("uri");
-	if (catch excuse = uri) return;
+	if (catch err = uri) return;
 
 	@pool()
 	{
@@ -1274,9 +1274,9 @@ fn void Lsp.update(&self, double now)
 				if (try result = result_opt)
 				{
 					String? text = lsp_normalize_hover(self.allocator, result);
-					if (catch excuse = text)
+					if (catch err = text)
 					{
-						(void)excuse;
+						(void)err;
 					}
 					else
 					{

@@ -175,7 +175,7 @@ fn void CacheFile.destroy(&self, Allocator allocator)
 fn bool load_file(Allocator allocator, String path, String magic, ulong expected_stamp, CacheFile* out)
 {
 	char[]? loaded = file::load(allocator, path);
-	if (catch excuse = loaded) return false;
+	if (catch err = loaded) return false;
 	char[] data = loaded;
 	ByteReader header;
 	header.init(data);
@@ -229,7 +229,7 @@ fn bool save_file(Allocator allocator, String path, String magic, ulong stamp, u
 	{
 		String temp     = string::format(tmem, "%s.tmp", path);
 		String out_view = out.str_view();
-		if (catch excuse = file::save((Path)temp, out_view.ptr[0:out_view.len])) return false;
+		if (catch err = file::save((Path)temp, out_view.ptr[0:out_view.len])) return false;
 		ZString temp_z = temp.zstr_tcopy();
 		ZString path_z = path.zstr_tcopy();
 		if (libc::rename(temp_z, path_z) != 0) return false;

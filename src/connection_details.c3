@@ -663,12 +663,12 @@ fn String load_source(Allocator allocator, project::Project* project, String pat
 		return (String)(*storage);
 	}
 	File? opened = file::open(path, "r");
-	if (catch excuse = opened) return "";
+	if (catch err = opened) return "";
 	File handle = opened;
 	*storage = alloc::new_array(allocator, char, MAX_SCAN_BYTES);
 	sz? read = handle.read(*storage);
 	handle.close();
-	if (catch excuse = read) return "";
+	if (catch err = read) return "";
 	return (String)((*storage)[0:(usz)read]);
 }
 

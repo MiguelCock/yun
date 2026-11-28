@@ -26,24 +26,24 @@ fn void test_jpeg_fallback_decode()
 	@pool()
 	{
 		char[]? bytes = base64::decode(tmem, (char[])TINY_JPEG);
-		if (catch excuse = bytes)
+		if (catch err = bytes)
 		{
 			assert(false);
 			return;
 		}
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? dir = tmp.append(tmem, "yun_image_jpeg_test");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		Path root = dir;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 		Path? file_path = root.append(tmem, "tiny.jpg");
-		if (catch excuse = file_path) return;
-		if (catch excuse = file::save(file_path, bytes)) return;
+		if (catch err = file_path) return;
+		if (catch err = file::save(file_path, bytes)) return;
 
 		DecodedImage? loaded = load_still((String)file_path);
-		if (catch excuse = loaded)
+		if (catch err = loaded)
 		{
 			assert(false);
 			return;

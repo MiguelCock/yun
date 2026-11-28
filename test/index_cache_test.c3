@@ -58,13 +58,13 @@ fn void test_cache_file_roundtrip()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? dir = tmp.append(tmem, "yun_index_cache");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? file_path = dir.append(tmem, "index.bin");
-		if (catch excuse = file_path) return;
+		if (catch err = file_path) return;
 
 		DString body;
 		body.init(mem, 64);
@@ -97,13 +97,13 @@ fn void test_cache_rejects_wrong_header()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? dir = tmp.append(tmem, "yun_index_cache_bad");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? file_path = dir.append(tmem, "index.bin");
-		if (catch excuse = file_path) return;
+		if (catch err = file_path) return;
 
 		DString body;
 		body.init(mem, 16);

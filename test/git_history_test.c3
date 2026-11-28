@@ -60,13 +60,13 @@ fn void test_history_commands()
 fn void test_history_integration()
 {
 	String[] probe = { "git", "--version" };
-	if (catch excuse = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
+	if (catch err = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
 	{
 		return;
 	}
 	String dir = git_test_helpers::temp_dir("yun_git_history_test");
 	defer dir.free(mem);
-	if (catch excuse = path::mkdir(dir, recursive: true)) return;
+	if (catch err = path::mkdir(dir, recursive: true)) return;
 	String file = string::format(tmem, "%s/file.c3", dir);
 	assert(git_test_helpers::save_file(file, "module test;\nint value = 1;\n"));
 	String[] init = { "git", "init", "-q", dir };

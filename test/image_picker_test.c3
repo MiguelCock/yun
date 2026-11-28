@@ -26,30 +26,30 @@ fn void test_image_picker_scan_and_order()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_image_picker_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path root = d;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 
 		Path? pics = root.append(tmem, "pics");
-		if (catch excuse = pics) return;
-		if (catch excuse = path::mkdir(pics)) return;
+		if (catch err = pics) return;
+		if (catch err = path::mkdir(pics)) return;
 		Path? alpha = root.append(tmem, "alpha");
-		if (catch excuse = alpha) return;
-		if (catch excuse = path::mkdir(alpha)) return;
+		if (catch err = alpha) return;
+		if (catch err = path::mkdir(alpha)) return;
 
 		char[] content = { 'x' };
 		Path? png      = root.append(tmem, "b.png");
-		if (catch excuse = png) return;
-		if (catch excuse = file::save(png, content)) return;
+		if (catch err = png) return;
+		if (catch err = file::save(png, content)) return;
 		Path? gif = root.append(tmem, "a.GIF");
-		if (catch excuse = gif) return;
-		if (catch excuse = file::save(gif, content)) return;
+		if (catch err = gif) return;
+		if (catch err = file::save(gif, content)) return;
 		Path? txt = root.append(tmem, "note.txt");
-		if (catch excuse = txt) return;
-		if (catch excuse = file::save(txt, content)) return;
+		if (catch err = txt) return;
+		if (catch err = file::save(txt, content)) return;
 
 		ImagePicker picker;
 		picker.init(tmem);
@@ -76,20 +76,20 @@ fn void test_image_picker_navigation()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_image_picker_nav_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path root = d;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 
 		Path? sub = root.append(tmem, "sub");
-		if (catch excuse = sub) return;
-		if (catch excuse = path::mkdir(sub)) return;
+		if (catch err = sub) return;
+		if (catch err = path::mkdir(sub)) return;
 		char[] content = { 'x' };
 		Path? png      = root.append(tmem, "photo.png");
-		if (catch excuse = png) return;
-		if (catch excuse = file::save(png, content)) return;
+		if (catch err = png) return;
+		if (catch err = file::save(png, content)) return;
 
 		ImagePicker picker;
 		picker.init(tmem);
@@ -128,20 +128,20 @@ fn void test_image_picker_selection_and_cancel()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_image_picker_select_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path root = d;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 
 		char[] content = { 'x' };
 		Path? png      = root.append(tmem, "photo.png");
-		if (catch excuse = png) return;
-		if (catch excuse = file::save(png, content)) return;
+		if (catch err = png) return;
+		if (catch err = file::save(png, content)) return;
 		Path? gif = root.append(tmem, "anim.gif");
-		if (catch excuse = gif) return;
-		if (catch excuse = file::save(gif, content)) return;
+		if (catch err = gif) return;
+		if (catch err = file::save(gif, content)) return;
 
 		ImagePicker picker;
 		picker.init(tmem);
@@ -187,19 +187,19 @@ fn void test_image_picker_preview_state()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_image_picker_preview_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path root = d;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 		Path? sub = root.append(tmem, "sub");
-		if (catch excuse = sub) return;
-		if (catch excuse = path::mkdir(sub)) return;
+		if (catch err = sub) return;
+		if (catch err = path::mkdir(sub)) return;
 		char[] content = { 'x' };
 		Path? png      = root.append(tmem, "photo.png");
-		if (catch excuse = png) return;
-		if (catch excuse = file::save(png, content)) return;
+		if (catch err = png) return;
+		if (catch err = file::save(png, content)) return;
 
 		ImagePicker picker;
 		picker.init(tmem);

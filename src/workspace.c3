@@ -88,7 +88,7 @@ fn bool save(project::Project* project, canvas::Canvas* canvas, console::Console
 	@pool()
 	{
 		Path? dir = ((Path)(String)project.root).append(tmem, WORKSPACE_DIR);
-		if (catch excuse = dir) return false;
+		if (catch err = dir) return false;
 		return save_at(project, canvas, console_manager, dir);
 	};
 }
@@ -181,14 +181,14 @@ fn bool save_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 
 		String json = json::marshal(tmem, state, JsonIndent.SPACE_2);
 
-		if (catch excuse = path::mkdir(dir, recursive: true)) return false;
+		if (catch err = path::mkdir(dir, recursive: true)) return false;
 
 		Path? tmp = dir.append(tmem, WORKSPACE_TMP);
-		if (catch excuse = tmp) return false;
+		if (catch err = tmp) return false;
 		Path? target = dir.append(tmem, WORKSPACE_FILE);
-		if (catch excuse = target) return false;
+		if (catch err = target) return false;
 
-		if (catch excuse = file::save(tmp, json.ptr[0:json.len])) return false;
+		if (catch err = file::save(tmp, json.ptr[0:json.len])) return false;
 		if (libc::rename((ZString)tmp.ptr, (ZString)target.ptr) != 0) return false;
 	};
 	return true;
@@ -205,7 +205,7 @@ fn bool load(project::Project* project, canvas::Canvas* canvas, console::Console
 	@pool()
 	{
 		Path? dir = ((Path)(String)project.root).append(tmem, WORKSPACE_DIR);
-		if (catch excuse = dir) return false;
+		if (catch err = dir) return false;
 		return load_at(project, canvas, console_manager, dir);
 	};
 }
@@ -217,14 +217,14 @@ fn bool load_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 	@pool()
 	{
 		Path? file_path = dir.append(tmem, WORKSPACE_FILE);
-		if (catch excuse = file_path) return false;
+		if (catch err = file_path) return false;
 		if (!path::exists(file_path)) return false;
 
 		char[]? data = file::load(tmem, file_path);
-		if (catch excuse = data) return false;
+		if (catch err = data) return false;
 
 		WorkspaceState? parsed = json::unmarshal(tmem, (String)data, WorkspaceState);
-		if (catch excuse = parsed) return false;
+		if (catch err = parsed) return false;
 		WorkspaceState state = parsed;
 		if (state.version.compare_to(
 			"3"
@@ -234,7 +234,7 @@ fn bool load_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 		for (usz i = 0; i < state.cards.len; i++)
 		{
 			Path? abs = absolute_path(tmem, (String)project.root, state.cards[i].path);
-			if (catch excuse = abs) continue;
+			if (catch err = abs) continue;
 			int index = project.find_card((String)abs);
 			if (index < 0) continue;
 			project.cards[index].rect = {
@@ -252,7 +252,7 @@ fn bool load_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 		for (usz i = 0; i < state.folders.len; i++)
 		{
 			Path? abs = absolute_path(tmem, (String)project.root, state.folders[i].path);
-			if (catch excuse = abs) continue;
+			if (catch err = abs) continue;
 			int index = project.folder_by_path((String)abs);
 			if (index >= 0)
 			{

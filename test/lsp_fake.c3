@@ -76,7 +76,7 @@ fn LspClient* fake_client(Allocator allocator)
 fn void fake_response(LspClient* client, int id, String method, String json_text)
 {
 	Object*? parsed = json::parse(client.allocator, json_text);
-	if (catch excuse = parsed) return;
+	if (catch err = parsed) return;
 	client.responses.push({ .id = id, .method = method.copy(client.allocator), .message = parsed });
 }
 

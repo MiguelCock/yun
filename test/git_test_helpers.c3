@@ -99,7 +99,7 @@ fn String temp_dir(String name)
 }
 fn bool save_file(String path, String content)
 {
-	if (catch excuse = std::io::file::save(path, content)) return false;
+	if (catch err = std::io::file::save(path, content)) return false;
 	return true;
 }
 fn bool run_git(String[] argv)
@@ -120,7 +120,7 @@ fn String capture_git(String[] argv)
 {
 	char[65536] buffer;
 	String? output = std::os::process::run_capture_stdout(&buffer, argv, std::os::process::SpawnOptions.INHERIT_ENV);
-	if (catch excuse = output) return "".copy(mem);
+	if (catch err = output) return "".copy(mem);
 	return ((String)output).copy(mem);
 }
 fn bool wait_history(State* state, String root, ulong revision, int timeout_ms)

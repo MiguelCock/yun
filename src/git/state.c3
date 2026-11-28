@@ -999,9 +999,9 @@ fn bool State.apply_patch(&self, String patch, bool reverse)
 {
 	if (self.busy_or_refreshing() || !self.is_repo || patch.len == 0) return false;
 	Path? temp = path::temp_directory(tmem);
-	if (catch excuse = temp) return false;
+	if (catch err = temp) return false;
 	String patch_file = string::format(self.allocator, "%s/yun_git_patch_%d.patch", (String)temp, (long)self.next_id);
-	if (catch excuse = file::save(patch_file, patch))
+	if (catch err = file::save(patch_file, patch))
 	{
 		patch_file.free(self.allocator);
 		return false;
@@ -1085,7 +1085,7 @@ fn bool State.discard(&self, String[] paths)
 
 fn bool State.discard_untracked(&self, String abs_path, double now)
 {
-	if (catch excuse = file::delete(abs_path)) return false;
+	if (catch err = file::delete(abs_path)) return false;
 	self.mark_dirty(now);
 	self.refresh_requested = true;
 	return true;

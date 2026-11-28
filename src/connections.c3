@@ -297,7 +297,7 @@ fn void Connections.refresh(&self, project::Project* project, imports::ImportInd
 		{
 			String path = (String)project.cards[index.hover.source].path;
 			int*? found = index.file_index.get_ref(path);
-			if (catch excuse = found)
+			if (catch err = found)
 			{
 			}
 			else

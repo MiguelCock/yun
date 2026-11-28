@@ -781,7 +781,7 @@ fn void run_vim_command(App* app, vim_command::CommandLine* line)
 						return;
 					}
 					String? resolved = project::resolve_path(tmem, cmd.arg);
-					if (catch excuse = resolved)
+					if (catch err = resolved)
 					{
 						app.notifier.push("Could not resolve path");
 						return;
@@ -1118,8 +1118,8 @@ fn void visual_suite_begin(App* app, project::Project* project, String dir)
 	g_visual.frame = 0;
 	@pool()
 	{
-		if (catch excuse = path::mkdir((Path)dir, recursive: true)) return;
-		if (catch excuse = path::mkdir((Path)".yun/visual-tmp", recursive: true)) return;
+		if (catch err = path::mkdir((Path)dir, recursive: true)) return;
+		if (catch err = path::mkdir((Path)".yun/visual-tmp", recursive: true)) return;
 		io::printfn("visual suite: writing to %s", dir.zstr_tcopy());
 	};
 	visual_suite_setup(app, project, 0);
@@ -1143,7 +1143,7 @@ fn void visual_suite_tick(App* app, project::Project* project)
 		rl::gl_draw_render_batch_active();
 		rl::take_screenshot(temp_rel.zstr_tcopy());
 		char[]? shot = file::load(tmem, temp_abs);
-		if (catch excuse = shot)
+		if (catch err = shot)
 		{
 			return;
 		}
@@ -1326,7 +1326,7 @@ fn void reset_project_data(App* app)
 	@pool()
 	{
 		Path? dir = ((Path)project.root).append(tmem, ".yun");
-		if (catch excuse = dir)
+		if (catch err = dir)
 		{
 			app.notifier.push("Could not resolve project data");
 			return;
@@ -2365,7 +2365,7 @@ fn void navigate_to_location(
 		if (!project::path_is_inside((String)project.root, path))
 		{
 			String? copied = project.external_copy(path);
-			if (catch excuse = copied)
+			if (catch err = copied)
 			{
 				return;
 			}
@@ -2615,7 +2615,7 @@ fn bool debug_ui_enabled()
 	@pool()
 	{
 		String? value = env::get_var(tmem, "YUN_DEBUG_UI");
-		if (catch excuse = value) return false;
+		if (catch err = value) return false;
 		return value.len > 0 && value[0] != '0';
 	};
 }
@@ -3001,7 +3001,7 @@ fn int main(String[] args)
 	if (open_path)
 	{
 		String? resolved = project::resolve_path(project.allocator, args[1]);
-		if (catch excuse = resolved)
+		if (catch err = resolved)
 		{
 			notifier.push("Could not resolve the given path");
 		}
@@ -3607,7 +3607,7 @@ fn int main(String[] args)
 						@pool()
 						{
 							Path? dir = ((Path)project.root).append(tmem, ".yun");
-							if (catch excuse = dir)
+							if (catch err = dir)
 							{
 								notifier.push("Could not resolve project data");
 							}

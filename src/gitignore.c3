@@ -175,7 +175,7 @@ fn void Gitignore.load_file(&self, Path gitignore_file, String base)
 	@pool()
 	{
 		char[]? data = file::load(tmem, (String)gitignore_file);
-		if (catch excuse = data) return;
+		if (catch err = data) return;
 		String text = (String)data;
 		usz start   = 0;
 		for (usz i = 0; i <= text.len; i++)

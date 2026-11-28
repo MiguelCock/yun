@@ -250,33 +250,33 @@ fn void test_open_job_completes_and_cancels()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_open_job");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		char[] content = { 'x' };
 		Path? sub      = dir.append(tmem, "src");
-		if (catch excuse = sub) return;
-		if (catch excuse = path::mkdir(sub)) return;
+		if (catch err = sub) return;
+		if (catch err = path::mkdir(sub)) return;
 		Path? root_file = dir.append(tmem, "README.md");
-		if (catch excuse = root_file) return;
-		if (catch excuse = file::save(root_file, content)) return;
+		if (catch err = root_file) return;
+		if (catch err = file::save(root_file, content)) return;
 		Path? nested = sub.append(tmem, "main.c3");
-		if (catch excuse = nested) return;
-		if (catch excuse = file::save(nested, content)) return;
+		if (catch err = nested) return;
+		if (catch err = file::save(nested, content)) return;
 
 		Path? env = dir.append(tmem, "env");
-		if (catch excuse = env) return;
-		if (catch excuse = path::mkdir(env)) return;
+		if (catch err = env) return;
+		if (catch err = path::mkdir(env)) return;
 		Path? env_file = env.append(tmem, "site.py");
-		if (catch excuse = env_file) return;
-		if (catch excuse = file::save(env_file, content)) return;
+		if (catch err = env_file) return;
+		if (catch err = file::save(env_file, content)) return;
 		Path? gitignore = dir.append(tmem, ".gitignore");
-		if (catch excuse = gitignore) return;
-		if (catch excuse = file::save(gitignore, "env/\n")) return;
+		if (catch err = gitignore) return;
+		if (catch err = file::save(gitignore, "env/\n")) return;
 
 		Project p;
 		p.init(tmem);
@@ -312,7 +312,7 @@ fn void test_resolve_path_absolute()
 	@pool()
 	{
 		String? r = resolve_path(tmem, "/tmp/foo");
-		if (catch excuse = r)
+		if (catch err = r)
 		{
 			assert(false);
 		}
@@ -325,9 +325,9 @@ fn void test_resolve_path_relative()
 	@pool()
 	{
 		Path? cwd = path::cwd(tmem);
-		if (catch excuse = cwd) return;
+		if (catch err = cwd) return;
 		String? r = resolve_path(tmem, "sub/dir");
-		if (catch excuse = r)
+		if (catch err = r)
 		{
 			assert(false);
 		}
@@ -340,32 +340,32 @@ fn void test_open_scans_directory()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_open_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
 
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? s = dir.append(tmem, "src");
-		if (catch excuse = s) return;
+		if (catch err = s) return;
 		Path src = s;
-		if (catch excuse = path::mkdir(src)) return;
+		if (catch err = path::mkdir(src)) return;
 		Path? sub = src.append(tmem, "sub");
-		if (catch excuse = sub) return;
+		if (catch err = sub) return;
 		Path subdir = sub;
-		if (catch excuse = path::mkdir(subdir)) return;
+		if (catch err = path::mkdir(subdir)) return;
 
 		char[] content = { 'x' };
 		Path? readme   = dir.append(tmem, "README.md");
-		if (catch excuse = readme) return;
-		if (catch excuse = file::save(readme, content)) return;
+		if (catch err = readme) return;
+		if (catch err = file::save(readme, content)) return;
 		Path? fa = src.append(tmem, "a.c3");
-		if (catch excuse = fa) return;
-		if (catch excuse = file::save(fa, content)) return;
+		if (catch err = fa) return;
+		if (catch err = file::save(fa, content)) return;
 		Path? fb = subdir.append(tmem, "b.c3");
-		if (catch excuse = fb) return;
-		if (catch excuse = file::save(fb, content)) return;
+		if (catch err = fb) return;
+		if (catch err = file::save(fb, content)) return;
 
 		Project p;
 		p.init(tmem);
@@ -436,12 +436,12 @@ fn void test_create_file_and_folder()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_create_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		Project p;
 		p.init(tmem);
@@ -531,12 +531,12 @@ fn void test_card_file_operations()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_card_ops");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		Project p;
 		p.init(tmem);
@@ -544,7 +544,7 @@ fn void test_card_file_operations()
 
 		assert(p.create_file(ROOT_FOLDER, "a.txt", { 0.0f, 0.0f }) == 0);
 		Path old = p.cards[0].path.copy(tmem);
-		if (catch excuse = file::save(p.cards[0].path, "hello")) return;
+		if (catch err = file::save(p.cards[0].path, "hello")) return;
 
 		assert(p.rename_card(0, "b.txt"));
 		assert(p.cards[0].name.compare_to("b.txt") == 0);
@@ -624,27 +624,27 @@ fn void test_open_prunes_ignored_dirs()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_prune_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		char[] content        = { 'x' };
 		String[] ignored_dirs = { "node_modules", "build", "out", ".git", "src" };
 		foreach (String name : ignored_dirs)
 		{
 			Path? child = dir.append(tmem, name);
-			if (catch excuse = child) return;
-			if (catch excuse = path::mkdir(child)) return;
+			if (catch err = child) return;
+			if (catch err = path::mkdir(child)) return;
 			Path? f = child.append(tmem, "file.txt");
-			if (catch excuse = f) return;
-			if (catch excuse = file::save(f, content)) return;
+			if (catch err = f) return;
+			if (catch err = file::save(f, content)) return;
 		}
 		Path? root_file = dir.append(tmem, "root.txt");
-		if (catch excuse = root_file) return;
-		if (catch excuse = file::save(root_file, content)) return;
+		if (catch err = root_file) return;
+		if (catch err = file::save(root_file, content)) return;
 
 		Project p;
 		p.init(tmem);
@@ -653,11 +653,11 @@ fn void test_open_prunes_ignored_dirs()
 		assert(p.folders.len() == 1);
 
 		Path? src = dir.append(tmem, "src");
-		if (catch excuse = src) return;
+		if (catch err = src) return;
 		assert(p.folder_by_path((String)src) >= 0);
 
 		Path? ignored = dir.append(tmem, "node_modules");
-		if (catch excuse = ignored) return;
+		if (catch err = ignored) return;
 		assert(p.folder_by_path((String)ignored) == ROOT_FOLDER);
 
 		for (sz i = 0; i < p.cards.len(); i++)
@@ -687,15 +687,15 @@ fn void test_discard_ephemeral()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_ephemeral");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "tmp.c");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "x")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "x")) return;
 
 		Project p;
 		p.init(tmem);
@@ -1285,41 +1285,41 @@ fn void test_open_skips_submodules()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_submodule_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		char[] content = { 'x' };
 		Path? real     = dir.append(tmem, "real.c3");
-		if (catch excuse = real) return;
-		if (catch excuse = file::save(real, content)) return;
+		if (catch err = real) return;
+		if (catch err = file::save(real, content)) return;
 
 		Path? nested = dir.append(tmem, "nested");
-		if (catch excuse = nested) return;
+		if (catch err = nested) return;
 		Path nested_dir = nested;
-		if (catch excuse = path::mkdir(nested_dir)) return;
+		if (catch err = path::mkdir(nested_dir)) return;
 		Path? nested_git = nested_dir.append(tmem, ".git");
-		if (catch excuse = nested_git) return;
-		if (catch excuse = file::save(nested_git, content)) return;
+		if (catch err = nested_git) return;
+		if (catch err = file::save(nested_git, content)) return;
 		Path? inner = nested_dir.append(tmem, "inner.c3");
-		if (catch excuse = inner) return;
-		if (catch excuse = file::save(inner, content)) return;
+		if (catch err = inner) return;
+		if (catch err = file::save(inner, content)) return;
 
 		Path? vendor = dir.append(tmem, "vendorsub");
-		if (catch excuse = vendor) return;
+		if (catch err = vendor) return;
 		Path vendor_dir = vendor;
-		if (catch excuse = path::mkdir(vendor_dir)) return;
+		if (catch err = path::mkdir(vendor_dir)) return;
 		Path? vlib = vendor_dir.append(tmem, "lib.c3");
-		if (catch excuse = vlib) return;
-		if (catch excuse = file::save(vlib, content)) return;
+		if (catch err = vlib) return;
+		if (catch err = file::save(vlib, content)) return;
 
 		Path? mods = dir.append(tmem, ".gitmodules");
-		if (catch excuse = mods) return;
+		if (catch err = mods) return;
 		String modules_text = "[submodule \"vendorsub\"]\n\tpath = vendorsub\n\turl = x\n";
-		if (catch excuse = file::save(mods, modules_text.ptr[0:modules_text.len])) return;
+		if (catch err = file::save(mods, modules_text.ptr[0:modules_text.len])) return;
 
 		Project p;
 		p.init(tmem);
@@ -1341,19 +1341,19 @@ fn void test_focus_mode_restores_rect_and_camera()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_focus_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		char[] content = "fn int main() { return 0; }\n";
 		Path? f        = dir.append(tmem, "a.c3");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, content)) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, content)) return;
 		Path? f2 = dir.append(tmem, "b.c3");
-		if (catch excuse = f2) return;
-		if (catch excuse = file::save(f2, content)) return;
+		if (catch err = f2) return;
+		if (catch err = file::save(f2, content)) return;
 
 		Project p;
 		p.init(tmem);

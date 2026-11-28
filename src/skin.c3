@@ -593,7 +593,7 @@ fn void set_image(SurfaceConfig* cfg, String image, String base)
 	@pool()
 	{
 		Path? resolved = ((Path)base).append(tmem, image);
-		if (catch excuse = resolved)
+		if (catch err = resolved)
 		{
 			cfg.path = image.copy(g_allocator);
 			return;
@@ -1525,7 +1525,7 @@ fn bool draw_surface(SurfaceId id, Rect dest, float radius)
 	SurfaceConfig cfg = g_skin.surfaces[(int)id];
 	if (cfg.path.len == 0 || dest.width <= 0.0f || dest.height <= 0.0f) return false;
 	Asset*? loaded = asset_for(cfg.path);
-	if (catch excuse = loaded)
+	if (catch err = loaded)
 	{
 		return false;
 	}

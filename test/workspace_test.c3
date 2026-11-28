@@ -18,7 +18,7 @@ fn void test_relative_path_roundtrip()
 		assert(rel.compare_to("src/a.c3") == 0);
 
 		Path? back = absolute_path(tmem, root, rel);
-		if (catch excuse = back)
+		if (catch err = back)
 		{
 			assert(false);
 			return;
@@ -32,20 +32,20 @@ fn void test_workspace_save_load_roundtrip()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_ws_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		char[] content = { 'x' };
 		Path? f        = dir.append(tmem, "a.c3");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, content)) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, content)) return;
 		Path? sub = dir.append(tmem, "sub");
-		if (catch excuse = sub) return;
-		if (catch excuse = path::mkdir(sub)) return;
+		if (catch err = sub) return;
+		if (catch err = path::mkdir(sub)) return;
 
 		Project p;
 		p.init(tmem);
@@ -97,19 +97,19 @@ fn void test_workspace_version_mismatch()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_ws_version_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? yun = dir.append(tmem, ".yun");
-		if (catch excuse = yun) return;
-		if (catch excuse = path::mkdir(yun)) return;
+		if (catch err = yun) return;
+		if (catch err = path::mkdir(yun)) return;
 		Path? wf = yun.append(tmem, "workspace.json");
-		if (catch excuse = wf) return;
+		if (catch err = wf) return;
 		char[] json = "{\"version\":\"999\",\"camera\":{\"target_x\":0.0,\"target_y\":0.0,\"zoom\":1.0},\"cards\":[],\"folders\":[]}";
-		if (catch excuse = file::save(wf, json)) return;
+		if (catch err = file::save(wf, json)) return;
 
 		Project p;
 		p.init(tmem);
@@ -126,17 +126,17 @@ fn void test_workspace_drops_unknown_cards()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_ws_drop_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		char[] content = { 'x' };
 		Path? f        = dir.append(tmem, "a.c3");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, content)) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, content)) return;
 
 		Project p;
 		p.init(tmem);
@@ -159,12 +159,12 @@ fn void test_workspace_console_roundtrip()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_ws_console_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		Project p;
 		p.init(tmem);
@@ -206,12 +206,12 @@ fn void test_console_persistence_toggles()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_ws_console_toggles");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		Project p;
 		p.init(tmem);
@@ -262,22 +262,22 @@ fn void test_workspace_v4_folder_body_migration()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_ws_v4_body");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? yun = dir.append(tmem, ".yun");
-		if (catch excuse = yun) return;
-		if (catch excuse = path::mkdir(yun)) return;
+		if (catch err = yun) return;
+		if (catch err = path::mkdir(yun)) return;
 		Path? wf = yun.append(tmem, "workspace.json");
-		if (catch excuse = wf) return;
+		if (catch err = wf) return;
 		char[] json = "{\"version\":\"4\",\"camera\":{\"target_x\":0.0,\"target_y\":0.0,\"zoom\":1.0},\"cards\":[],\"folders\":[{\"path\":\"sub\",\"collapsed\":true,\"x\":100.0,\"y\":200.0,\"w\":300.0,\"h\":150.0}]}";
-		if (catch excuse = file::save(wf, json)) return;
+		if (catch err = file::save(wf, json)) return;
 
 		Path? sub = dir.append(tmem, "sub");
-		if (catch excuse = sub) return;
+		if (catch err = sub) return;
 		Project p;
 		p.init(tmem);
 		p.root = dir.copy(tmem);

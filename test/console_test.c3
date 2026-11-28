@@ -465,14 +465,14 @@ fn void test_runner_kills_process_tree()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? dir = tmp.append(tmem, "yun_console_tree");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		Path root = dir;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 		Path? leaked = root.append(tmem, "leaked.txt");
-		if (catch excuse = leaked) return;
+		if (catch err = leaked) return;
 
 		ConsoleBuffer buffer;
 		buffer.init(mem);

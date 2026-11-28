@@ -158,7 +158,7 @@ fn void Fonts.scan_user(&self)
 	@pool()
 	{
 		String? home = env::get_home_dir(tmem);
-		if (catch excuse = home) return;
+		if (catch err = home) return;
 		self.scan_dir(string::format(tmem, "%s/.config/yun/fonts", home));
 		self.scan_dir(string::format(tmem, "%s/.local/share/fonts", home));
 		self.scan_dir(string::format(tmem, "%s/.fonts", home));

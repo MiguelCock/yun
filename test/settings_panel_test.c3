@@ -435,12 +435,12 @@ fn void test_skin_page_steps_and_persists()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? dir = tmp.append(tmem, "yun_skin_panel_test");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		Path root = dir;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 
 		skin::init_headless(tmem);
 		config::Config cfg;
@@ -460,10 +460,10 @@ fn void test_skin_page_steps_and_persists()
 		assert(skin::preset().compare_to("paper") == 0);
 
 		Path? cfg_path = root.append(tmem, ".yun/config.json");
-		if (catch excuse = cfg_path) return;
+		if (catch err = cfg_path) return;
 		assert(path::exists(cfg_path));
 		char[]? saved = file::load(tmem, cfg_path);
-		if (catch excuse = saved) return;
+		if (catch err = saved) return;
 		String raw = (String)saved;
 		assert(raw.contains("\"skin\""));
 		assert(raw.contains("\"preset\":\"paper\""));
@@ -500,12 +500,12 @@ fn void test_skin_page_text_edit_validation()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? dir = tmp.append(tmem, "yun_skin_panel_edit_test");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		Path root = dir;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 
 		skin::init_headless(tmem);
 		config::Config cfg;
@@ -602,19 +602,19 @@ fn void test_skin_browse_row_opens_picker()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? dir = tmp.append(tmem, "yun_skin_panel_browse_test");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		Path root = dir;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 		Path? yun = root.append(tmem, ".yun");
-		if (catch excuse = yun) return;
-		if (catch excuse = path::mkdir(yun, recursive: true)) return;
+		if (catch err = yun) return;
+		if (catch err = path::mkdir(yun, recursive: true)) return;
 		char[] content = { 'x' };
 		Path? image    = root.append(tmem, "card.png");
-		if (catch excuse = image) return;
-		if (catch excuse = file::save(image, content)) return;
+		if (catch err = image) return;
+		if (catch err = file::save(image, content)) return;
 
 		skin::init_headless(tmem);
 		config::Config cfg;
@@ -662,18 +662,18 @@ fn void test_skin_page_reload_and_reset_actions()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? dir = tmp.append(tmem, "yun_skin_panel_actions_test");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		Path root = dir;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 		Path? yun = root.append(tmem, ".yun");
-		if (catch excuse = yun) return;
-		if (catch excuse = path::mkdir(yun, recursive: true)) return;
+		if (catch err = yun) return;
+		if (catch err = path::mkdir(yun, recursive: true)) return;
 		Path? cfg_path = yun.append(tmem, "config.json");
-		if (catch excuse = cfg_path) return;
-		if (catch excuse = file::save(
+		if (catch err = cfg_path) return;
+		if (catch err = file::save(
 			cfg_path,
 			"{\"skin\":{\"preset\":\"glass\",\"surfaces\":{\"card\":{\"image\":\"/tmp/reload-card.png\"}}}}"
 		)) return;

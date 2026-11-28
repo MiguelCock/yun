@@ -51,15 +51,15 @@ fn void test_scan_file_path()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_search_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "a.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "hello world\nsecond hello\n")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "hello world\nsecond hello\n")) return;
 
 		List{SearchMatch} out;
 		out.init(mem);
@@ -112,15 +112,15 @@ fn void test_replace_closed_file_on_disk()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_search_replace");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "a.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "foo bar\nfoo baz\n")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "foo bar\nfoo baz\n")) return;
 
 		project::Project p;
 		p.init(mem);
@@ -161,7 +161,7 @@ fn void test_replace_closed_file_on_disk()
 		assert(p.cards[0].buffer == null);
 
 		char[]? data = file::load(tmem, (String)f);
-		if (catch excuse = data) return;
+		if (catch err = data) return;
 		assert(((String)data).compare_to("bar bar\nbar baz\n") == 0);
 		s.destroy();
 		p.destroy();
@@ -173,15 +173,15 @@ fn void test_replace_keeps_open_file_dirty()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_search_replace_open");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "a.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "foo\n")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "foo\n")) return;
 
 		project::Project p;
 		p.init(mem);
@@ -222,7 +222,7 @@ fn void test_replace_keeps_open_file_dirty()
 		assert(p.cards[card].buffer.slice(0, p.cards[card].buffer.length(), tmem).compare_to("bar\n") == 0);
 
 		char[]? data = file::load(tmem, (String)f);
-		if (catch excuse = data) return;
+		if (catch err = data) return;
 		assert(((String)data).compare_to("foo\n") == 0);
 
 		s.destroy();

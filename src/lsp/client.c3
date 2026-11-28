@@ -169,7 +169,7 @@ fn bool lsp_process_write(void* ctx, char[] bytes)
 {
 	Process* proc = (Process*)ctx;
 	sz? written   = proc.write_stdin(bytes);
-	if (catch excuse = written) return false;
+	if (catch err = written) return false;
 	return written == bytes.len;
 }
 
@@ -183,7 +183,7 @@ fn bool lsp_process_alive(void* ctx)
 {
 	Process* proc = (Process*)ctx;
 	bool? running = proc.is_running();
-	if (catch excuse = running) return false;
+	if (catch err = running) return false;
 	return running;
 }
 
@@ -219,7 +219,7 @@ fn bool LspClient.spawn(&self, String[] argv)
 		process::CAPTURE,
 		process::CAPTURE
 	);
-	if (catch excuse = spawned)
+	if (catch err = spawned)
 	{
 		self.status = LspStatus.ERROR;
 		io::eprintfn("LSP: failed to start %s server (%s)", self.language, spawn_argv.len > 0 ? spawn_argv[0] : "");
@@ -249,7 +249,7 @@ fn int lsp_reader_main(void* arg)
 	{
 		if (!client.transport.is_alive(client.transport.ctx)) break;
 		sz? read = client.transport.read(client.transport.ctx, &chunk[0], chunk.len);
-		if (catch excuse = read) break;
+		if (catch err = read) break;
 		if (read <= 0) break;
 
 		acc.append_bytes(chunk[0:read]);
@@ -257,7 +257,7 @@ fn int lsp_reader_main(void* arg)
 		{
 			usz consumed = 0;
 			String? body = jsonrpc_try_parse(acc.str_view(), &consumed);
-			if (catch excuse = body)
+			if (catch err = body)
 			{
 				if (consumed > 0)
 				{
@@ -302,7 +302,7 @@ fn int lsp_stderr_main(void* arg)
 		Process* proc = client.process;
 		if (!proc) break;
 		sz? read = proc.read_stderr(&chunk[0], chunk.len);
-		if (catch excuse = read) break;
+		if (catch err = read) break;
 		if (read <= 0) break;
 		for (sz i = 0; i < read; i++)
 		{
@@ -325,9 +325,9 @@ fn int lsp_stderr_main(void* arg)
 fn bool LspClient.start_threads(&self)
 {
 	UnboundedChannel{String}*? incoming = channel::create_unbounded{String}(mem);
-	if (catch excuse = incoming) return false;
+	if (catch err = incoming) return false;
 	UnboundedChannel{String}*? errors = channel::create_unbounded{String}(mem);
-	if (catch excuse = errors)
+	if (catch err = errors)
 	{
 		incoming.destroy();
 		return false;
@@ -335,14 +335,14 @@ fn bool LspClient.start_threads(&self)
 	self.incoming = incoming;
 	self.errors = errors;
 
-	if (catch excuse = self.reader.create(&lsp_reader_main, self))
+	if (catch err = self.reader.create(&lsp_reader_main, self))
 	{
 		self.status = LspStatus.ERROR;
 		return false;
 	}
 	self.reader_started = true;
 
-	if (catch excuse = self.stderr_reader.create(&lsp_stderr_main, self))
+	if (catch err = self.stderr_reader.create(&lsp_stderr_main, self))
 	{
 		self.stderr_started = false;
 	}
@@ -456,7 +456,7 @@ fn void LspClient.pump(&self)
 		while (true)
 		{
 			String? raw = self.incoming.try_pop();
-			if (catch excuse = raw) break;
+			if (catch err = raw) break;
 			self.handle_message(raw);
 			raw.free(mem);
 		}
@@ -466,7 +466,7 @@ fn void LspClient.pump(&self)
 		while (true)
 		{
 			String? line = self.errors.try_pop();
-			if (catch excuse = line) break;
+			if (catch err = line) break;
 			if (lsp_debug()) io::eprintfn("LSP[%s] %s", self.language, line);
 			if (self.last_error.len) self.last_error.free(self.allocator);
 			self.last_error = line.copy(self.allocator);
@@ -570,7 +570,7 @@ fn void LspClient.handle_server_request(&self, long id, String method, Object* m
 fn void LspClient.handle_message(&self, String json)
 {
 	Object*? parsed = json::parse(self.allocator, json);
-	if (catch excuse = parsed) return;
+	if (catch err = parsed) return;
 	Object* message = parsed;
 
 	if (lsp_debug())

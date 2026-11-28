@@ -268,7 +268,7 @@ fn void GitStatus.destroy(&self)
 fn GitEntry* GitStatus.find_abs(&self, String abs_path)
 {
 	int*? index = self.by_abs_path.get_ref(abs_path);
-	if (catch excuse = index) return null;
+	if (catch err = index) return null;
 	if (*index < 0 || *index >= (int)self.entries.len()) return null;
 	return &self.entries[*index];
 }
@@ -360,6 +360,6 @@ fn String path_join_alloc(Allocator allocator, String root, String rel)
 	if (rel.len == 0) return root.copy(allocator);
 	if (rel[0] == '/' || (rel.len > 1 && rel[1] == ':')) return rel.copy(allocator);
 	Path? joined = ((Path)root).append(allocator, rel);
-	if (catch excuse = joined) return root.copy(allocator);
+	if (catch err = joined) return root.copy(allocator);
 	return (String)joined;
 }

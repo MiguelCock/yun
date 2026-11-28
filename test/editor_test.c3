@@ -201,15 +201,15 @@ fn void test_ensure_buffer()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_editor_buffer_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "x.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "hello")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "hello")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		ensure_buffer(&card, tmem);
@@ -329,22 +329,22 @@ fn void test_file_changed()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_ext_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "f.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "abc")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "abc")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		stamp_file(&card);
 		assert(!card.missing);
 		assert(!file_changed(&card));
 
-		if (catch excuse = file::save(f, "abcdef")) return;
+		if (catch err = file::save(f, "abcdef")) return;
 		assert(file_changed(&card));
 
 		stamp_file(&card);
@@ -359,15 +359,15 @@ fn void test_reload_buffer()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_reload_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "g.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "abc")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "abc")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		ensure_buffer(&card, tmem);
@@ -446,15 +446,15 @@ fn void test_unload_buffer()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_close_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "h.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "abc")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "abc")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		ensure_buffer(&card, tmem);
@@ -479,15 +479,15 @@ fn void test_save_buffer()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_save_buffer");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "s.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "one")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "one")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		ensure_buffer(&card, tmem);
@@ -512,15 +512,15 @@ fn void test_destroy_buffer()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_destroy_buffer");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "d.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "abc")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "abc")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		ensure_buffer(&card, tmem);

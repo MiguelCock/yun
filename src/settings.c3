@@ -1593,7 +1593,7 @@ fn void Settings.apply_key(&self, SettingId id, SettingSpec s, Object* obj, Sett
 
 			{
 				int? value = obj.get_int(s.key);
-				if (catch excuse = value)
+				if (catch err = value)
 				{
 					self.push_warning(
 						warnings,
@@ -1610,7 +1610,7 @@ fn void Settings.apply_key(&self, SettingId id, SettingSpec s, Object* obj, Sett
 
 			{
 				double? value = obj.get_float(s.key);
-				if (catch excuse = value)
+				if (catch err = value)
 				{
 					self.push_warning(
 						warnings,
@@ -1627,7 +1627,7 @@ fn void Settings.apply_key(&self, SettingId id, SettingSpec s, Object* obj, Sett
 
 			{
 				bool? value = obj.get_bool(s.key);
-				if (catch excuse = value)
+				if (catch err = value)
 				{
 					self.push_warning(
 						warnings,
@@ -1645,7 +1645,7 @@ fn void Settings.apply_key(&self, SettingId id, SettingSpec s, Object* obj, Sett
 
 			{
 				String? value = obj.get_string(s.key);
-				if (catch excuse = value)
+				if (catch err = value)
 				{
 					self.push_warning(
 						warnings,

@@ -160,11 +160,11 @@ struct ModScanEntry
 fn String mods_global_dir(Allocator allocator)
 {
 	Path? config_dir = env::get_config_dir(allocator);
-	if (catch excuse = config_dir) return "";
+	if (catch err = config_dir) return "";
 	Path? dir = config_dir.append(allocator, "yun");
-	if (catch excuse = dir) return "";
+	if (catch err = dir) return "";
 	Path? mods = dir.append(allocator, "mods");
-	if (catch excuse = mods) return "";
+	if (catch err = mods) return "";
 	return (String)mods;
 }
 
@@ -1025,7 +1025,7 @@ fn RLTexture2D* texture_for(LuaState* l, ModRuntime* runtime, LuaMod* mod, int p
 		return null;
 	}
 	Path? resolved = ((Path)mod.dir).append(runtime.host.allocator, requested);
-	if (catch excuse = resolved)
+	if (catch err = resolved)
 	{
 		(void)lua::l_error(l, "invalid asset path");
 		return null;
@@ -1499,13 +1499,13 @@ fn void scan_mod_dir(List{ModScanEntry}* entries, String dir, int priority, Allo
 {
 	if (dir.len == 0 || !path::is_dir((Path)dir)) return;
 	PathList? files = path::ls(allocator, (Path)dir, no_dirs: true, mask: "*.lua");
-	if (catch excuse = files) return;
+	if (catch err = files) return;
 	defer files.free();
 	foreach (Path file : files)
 	{
 		String name = ((String)file).ends_with(".lua") ? ((String)file)[0:(usz)file.len - 4] : (String)file;
 		Path? full  = ((Path)dir).append(allocator, (String)file);
-		if (catch excuse = full) continue;
+		if (catch err = full) continue;
 		add_scan_entry(entries, (String)full, name, priority);
 	}
 }
@@ -1729,9 +1729,9 @@ fn void Mods.load_project(&self, String root)
 	@pool()
 	{
 		Path? base = ((Path)root).append(tmem, ".yun");
-		if (catch excuse = base) return;
+		if (catch err = base) return;
 		Path? dir = base.append(tmem, "mods");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		String mods_dir = (String)dir;
 		if (!path::is_dir((Path)mods_dir)) return;
 		List{ModScanEntry} entries;

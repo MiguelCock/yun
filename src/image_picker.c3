@@ -163,7 +163,7 @@ fn void ImagePicker.scan(&self)
 		}
 	}
 	PathList? listed = path::ls(self.allocator, (Path)self.dir, no_dirs: false, recursive: false, relative: false);
-	if (catch excuse = listed) return;
+	if (catch err = listed) return;
 	foreach (Path item : listed)
 	{
 		bool dir = path::is_dir(item);
@@ -190,7 +190,7 @@ fn int ImagePicker.initial_selection(&self)
 fn bool ImagePicker.navigate(&self, String dir)
 {
 	Path? absolute = dir.to_absolute_path(self.allocator);
-	if (catch excuse = absolute) return false;
+	if (catch err = absolute) return false;
 	if (!path::is_dir(absolute))
 	{
 		((String)absolute).free(self.allocator);
@@ -233,7 +233,7 @@ fn bool ImagePicker.navigate_parent(&self)
 {
 	if (self.dir.len == 0) return false;
 	Path? parent = ((Path)self.dir).parent();
-	if (catch excuse = parent) return false;
+	if (catch err = parent) return false;
 	String next = (String)parent;
 	if (next.len == 0 && (self.dir[0] == '/' || self.dir[0] == '\\')) next = self.dir[0:1];
 	if (next.len == 0 || next.compare_to(self.dir) == 0) return false;
@@ -390,7 +390,7 @@ fn void ImagePicker.update_preview(&self, double now)
 {
 	if (self.preview.kind != PreviewKind.LOADING || now < self.preview.due) return;
 	Thumbnail? loaded = image::load_thumbnail(self.preview.path, ui::px(PREVIEW_MAX));
-	if (catch excuse = loaded)
+	if (catch err = loaded)
 	{
 		self.preview.kind = PreviewKind.FAILED;
 		return;
