@@ -110,7 +110,7 @@ fn LoadedGrammar load(String lib, String symbol)
 		String target = target_dir();
 
 		String? override = env::get_var(tmem, "YUN_GRAMMAR_DIR");
-		if (catch excuse = override)
+		if (catch err = override)
 		{
 		}
 		else

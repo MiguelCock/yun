@@ -271,7 +271,7 @@ fn bool ConsolePty.start(&self, String root, int cols, int rows)
 			startup.attribute_list = attrs;
 			ConsoleWinProcess process;
 			Char16[]? command = "cmd.exe /Q".to_temp_utf16();
-			if (catch excuse = command)
+			if (catch err = command)
 			{
 				(void)deleteProcThreadAttributeList(attrs);
 				(void)closePseudoConsole(console);
@@ -281,7 +281,7 @@ fn bool ConsolePty.start(&self, String root, int cols, int rows)
 			if (root.len > 0)
 			{
 				Char16[]? converted = root.to_temp_utf16();
-				if (catch excuse = converted)
+				if (catch err = converted)
 				{
 				}
 				else

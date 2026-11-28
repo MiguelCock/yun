@@ -3,33 +3,41 @@ module yun::settings_panel;
 import raylib6::rl;
 import std::collections::list;
 import std::core::dstring;
+import std::io::path;
 import std::math;
 import yun::commands;
 import yun::config;
+import yun::image_picker;
 import yun::keymap;
 import yun::notify;
 import yun::settings;
+import yun::skin;
 import yun::icons;
 import yun::theme;
 import yun::topbar;
 import yun::ui;
 
-const int PANEL_WIDTH       = 1000;
-const int ROW_HEIGHT        = 46;
-const int HEADER_HEIGHT     = 32;
-const int PADDING           = 12;
-const int FIELD_HEIGHT      = 36;
-const int FOOTER_HEIGHT     = 64;
-const int QUERY_MAX         = 64;
-const int EDIT_MAX          = 128;
-const int SIDEBAR_WIDTH     = 190;
-const int CARD_HEIGHT       = 76;
-const int CARD_GAP          = 8;
-const int CARD_MIN_WIDTH    = 280;
-const int KEY_FILTER_HEIGHT = 30;
-const int KEY_FILTER_GAP    = 6;
-const int KEY_ACTION_HEIGHT = 38;
-const int KEY_CHIP_HEIGHT   = 22;
+const int PANEL_WIDTH         = 1000;
+const int ROW_HEIGHT          = 46;
+const int HEADER_HEIGHT       = 32;
+const int PADDING             = 12;
+const int FIELD_HEIGHT        = 36;
+const int FOOTER_HEIGHT       = 64;
+const int QUERY_MAX           = 64;
+const int EDIT_MAX            = 128;
+const int SIDEBAR_WIDTH       = 190;
+const int CARD_HEIGHT         = 76;
+const int CARD_GAP            = 8;
+const int CARD_MIN_WIDTH      = 280;
+const int KEY_FILTER_HEIGHT   = 30;
+const int KEY_FILTER_GAP      = 6;
+const int KEY_ACTION_HEIGHT   = 38;
+const int KEY_CHIP_HEIGHT     = 22;
+const int SKIN_EDIT_MAX       = 512;
+const float SKIN_CLOSED_STEP  = 4.0f;
+const float SKIN_OPACITY_STEP = 0.05f;
+const float SKIN_SPEED_STEP   = 0.1f;
+const float SKIN_FPS_STEP     = 1.0f;
 
 enum RowKind : int
 {
@@ -38,7 +46,58 @@ enum RowKind : int
 	COMMAND,
 	ACTION,
 	PAGE_RESET,
+	SKIN,
 }
+
+enum SkinItem : int
+{
+	PRESET,
+	CARD_STYLE,
+	FOLDER_STYLE,
+	CLOSED_HEIGHT,
+	LANGUAGE_COLORS,
+	IMAGE_SCOPE,
+	CARD_LAYOUT,
+	SURFACE,
+	IMAGE,
+	BROWSE,
+	FIT,
+	OPACITY,
+	TINT,
+	SCRIM,
+	SPEED,
+	FPS,
+	RELOAD,
+	RESET,
+	COUNT,
+}
+
+const SkinItem[] SKIN_STYLE_ITEMS = {
+	SkinItem.PRESET,
+	SkinItem.CARD_STYLE,
+	SkinItem.FOLDER_STYLE,
+	SkinItem.CLOSED_HEIGHT,
+	SkinItem.LANGUAGE_COLORS,
+	SkinItem.IMAGE_SCOPE,
+	SkinItem.CARD_LAYOUT,
+};
+
+const SkinItem[] SKIN_SURFACE_ITEMS = {
+	SkinItem.SURFACE,
+	SkinItem.IMAGE,
+	SkinItem.BROWSE,
+	SkinItem.FIT,
+	SkinItem.OPACITY,
+	SkinItem.TINT,
+	SkinItem.SCRIM,
+	SkinItem.SPEED,
+	SkinItem.FPS,
+};
+
+const SkinItem[] SKIN_ACTION_ITEMS = {
+	SkinItem.RELOAD,
+	SkinItem.RESET,
+};
 
 enum KeyFilter : int
 {
@@ -61,6 +120,7 @@ struct Row
 	RowKind kind;
 	settings::SettingId setting;
 	commands::CommandId command;
+	SkinItem skin;
 	String section;
 	settings::SettingPage page;
 	int grid_col;
@@ -91,6 +151,12 @@ struct Panel
 	float key_content_height;
 	keymap::Keymap* keymap;
 	config::Config* config;
+	skin::SurfaceId skin_surface;
+	bool skin_editing;
+	char[SKIN_EDIT_MAX + 1] skin_edit_buf;
+	int skin_edit_len;
+	SkinItem skin_edit_item;
+	image_picker::ImagePicker image_picker;
 }
 
 fn bool matches(String section, String label, String key, String description, String query)
@@ -191,11 +257,26 @@ fn void Panel.init(&self, Allocator allocator)
 	self.key_content_height = 0.0f;
 	self.keymap = null;
 	self.config = null;
+	self.skin_surface = skin::SurfaceId.APP;
+	self.skin_editing = false;
+	self.skin_edit_len = 0;
+	self.skin_edit_buf[0] = 0;
+	self.skin_edit_item = SkinItem.PRESET;
+	self.image_picker.init(allocator);
 }
 
 fn void Panel.destroy(&self)
 {
+	self.image_picker.destroy();
 	self.rows.free();
+}
+
+fn void Panel.show_page(&self, settings::SettingPage page)
+{
+	self.show();
+	self.page = page;
+	self.rebuild();
+	if (self.selected_row() < 0) self.move_selection(1);
 }
 
 fn void Panel.show(&self)
@@ -211,6 +292,10 @@ fn void Panel.show(&self)
 	self.key_filter = KeyFilter.ALL;
 	self.key_scroll = 0;
 	self.key_columns = 1;
+	self.skin_editing = false;
+	self.skin_edit_len = 0;
+	self.skin_edit_buf[0] = 0;
+	self.image_picker.cancel();
 	self.rebuild();
 	if (self.selected_row() < 0) self.move_selection(1);
 }
@@ -226,6 +311,8 @@ fn void Panel.close(&self)
 	self.open = false;
 	self.editing = false;
 	self.capturing = false;
+	self.skin_editing = false;
+	self.image_picker.cancel();
 }
 
 fn String Panel.query_view(&self)
@@ -236,6 +323,32 @@ fn String Panel.query_view(&self)
 fn String Panel.edit_view(&self)
 {
 	return (String)self.edit_buf[0:self.edit_len];
+}
+
+fn bool ctrl_down()
+{
+	return rl::is_key_down(rl::RLKeyboardKey.LEFT_CONTROL) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_CONTROL);
+}
+
+fn bool shift_down()
+{
+	return rl::is_key_down(rl::RLKeyboardKey.LEFT_SHIFT) || rl::is_key_down(rl::RLKeyboardKey.RIGHT_SHIFT);
+}
+
+fn int skin_paste_text(char* buffer, int len, String text)
+{
+	if (len < 0) len = 0;
+	if (len > SKIN_EDIT_MAX) len = SKIN_EDIT_MAX;
+	String trimmed = text.trim();
+	for (usz i = 0; i < trimmed.len && len < SKIN_EDIT_MAX; i++)
+	{
+		char c = trimmed[i];
+		if (c < 32 || c == 127) continue;
+		buffer[len] = c;
+		len++;
+	}
+	buffer[len] = 0;
+	return len;
 }
 
 fn bool Panel.append_query(&self, int codepoint)
@@ -415,6 +528,208 @@ fn void Panel.build_key_rows(&self, String query)
 	if (has_any) self.rows.push({ .kind = RowKind.ACTION, .section = "keys", .page = settings::SettingPage.KEYS });
 }
 
+fn String skin_item_label(SkinItem item)
+{
+	switch (item)
+	{
+		case SkinItem.PRESET:
+			return "Preset";
+		case SkinItem.CARD_STYLE:
+			return "Card style";
+		case SkinItem.FOLDER_STYLE:
+			return "Folder style";
+		case SkinItem.CLOSED_HEIGHT:
+			return "Closed height";
+		case SkinItem.LANGUAGE_COLORS:
+			return "Language colors";
+		case SkinItem.IMAGE_SCOPE:
+			return "Wallpaper scope";
+		case SkinItem.CARD_LAYOUT:
+			return "Card layout";
+		case SkinItem.SURFACE:
+			return "Surface";
+		case SkinItem.IMAGE:
+			return "Image";
+		case SkinItem.BROWSE:
+			return "Browse for image…";
+		case SkinItem.FIT:
+			return "Fit";
+		case SkinItem.OPACITY:
+			return "Opacity";
+		case SkinItem.TINT:
+			return "Tint";
+		case SkinItem.SCRIM:
+			return "Scrim";
+		case SkinItem.SPEED:
+			return "Speed";
+		case SkinItem.FPS:
+			return "FPS";
+		case SkinItem.RELOAD:
+			return "Reload skin";
+		case SkinItem.RESET:
+			return "Reset skin page";
+		case SkinItem.COUNT:
+			return "";
+	}
+}
+
+fn String skin_item_key(SkinItem item)
+{
+	switch (item)
+	{
+		case SkinItem.PRESET:
+			return "skin_preset";
+		case SkinItem.CARD_STYLE:
+			return "skin_card_style";
+		case SkinItem.FOLDER_STYLE:
+			return "skin_folder_style";
+		case SkinItem.CLOSED_HEIGHT:
+			return "skin_closed_height";
+		case SkinItem.LANGUAGE_COLORS:
+			return "skin_language_colors";
+		case SkinItem.IMAGE_SCOPE:
+			return "skin_image_scope";
+		case SkinItem.CARD_LAYOUT:
+			return "canvas_card_layout";
+		case SkinItem.SURFACE:
+			return "skin_surface";
+		case SkinItem.IMAGE:
+			return "skin_surface_image";
+		case SkinItem.BROWSE:
+			return "skin_surface_browse";
+		case SkinItem.FIT:
+			return "skin_surface_fit";
+		case SkinItem.OPACITY:
+			return "skin_surface_opacity";
+		case SkinItem.TINT:
+			return "skin_surface_tint";
+		case SkinItem.SCRIM:
+			return "skin_surface_scrim";
+		case SkinItem.SPEED:
+			return "skin_surface_speed";
+		case SkinItem.FPS:
+			return "skin_surface_fps";
+		case SkinItem.RELOAD:
+			return "skin_reload";
+		case SkinItem.RESET:
+			return "skin_reset";
+		case SkinItem.COUNT:
+			return "";
+	}
+}
+
+fn String skin_item_description(SkinItem item)
+{
+	switch (item)
+	{
+		case SkinItem.PRESET:
+			return "Classic, paper, or glass preset. Explicit fields below override the preset.";
+		case SkinItem.CARD_STYLE:
+			return "Flat, paper, and glass card fills are rendered.";
+		case SkinItem.FOLDER_STYLE:
+			return "Classic, explorer, and stacked tray folder styles are rendered.";
+		case SkinItem.CLOSED_HEIGHT:
+			return "Height of closed file cards in pixels (40-240).";
+		case SkinItem.LANGUAGE_COLORS:
+			return "Tint card accents by the file language.";
+		case SkinItem.IMAGE_SCOPE:
+			return "Show card and folder wallpapers on the selection only, or on everything.";
+		case SkinItem.CARD_LAYOUT:
+			return "Arrange cards as a grid, a cascading deck, or a fanned deck.";
+		case SkinItem.SURFACE:
+			return "Choose which UI surface the fields below edit.";
+		case SkinItem.IMAGE:
+			return "Relative paths resolve from the config folder. Drop a PNG, JPG, JPEG, GIF, or BMP here.";
+		case SkinItem.BROWSE:
+			return "Pick a PNG, JPG, JPEG, GIF, or BMP image from disk.";
+		case SkinItem.FIT:
+			return "How the image fills the surface: cover, contain, stretch, or tile.";
+		case SkinItem.OPACITY:
+			return "Surface image opacity (0-1).";
+		case SkinItem.TINT:
+			return "Tint colour as #rrggbb or #rrggbbaa.";
+		case SkinItem.SCRIM:
+			return "Overlay colour as #rrggbb or #rrggbbaa.";
+		case SkinItem.SPEED:
+			return "Animation speed multiplier (0 stops animated images).";
+		case SkinItem.FPS:
+			return "Frame rate for animated images.";
+		case SkinItem.RELOAD:
+			return "Re-read the global and project skin sections from disk.";
+		case SkinItem.RESET:
+			return "Clear every skin override in the current scope.";
+		case SkinItem.COUNT:
+			return "";
+	}
+}
+
+fn bool skin_item_is_text(SkinItem item)
+{
+	return item == SkinItem.IMAGE || item == SkinItem.TINT || item == SkinItem.SCRIM;
+}
+
+fn bool image_path_supported(String path)
+{
+	return image_picker::image_path_supported(path);
+}
+
+fn int skin_field_for(SkinItem item)
+{
+	switch (item)
+	{
+		case SkinItem.IMAGE:
+			return (int)skin::SurfaceField.IMAGE;
+		case SkinItem.FIT:
+			return (int)skin::SurfaceField.FIT;
+		case SkinItem.OPACITY:
+			return (int)skin::SurfaceField.OPACITY;
+		case SkinItem.TINT:
+			return (int)skin::SurfaceField.TINT;
+		case SkinItem.SCRIM:
+			return (int)skin::SurfaceField.SCRIM;
+		case SkinItem.SPEED:
+			return (int)skin::SurfaceField.SPEED;
+		case SkinItem.FPS:
+			return (int)skin::SurfaceField.FPS;
+		default:
+			return -1;
+	}
+}
+
+fn bool skin_item_matches(SkinItem item, String query)
+{
+	return matches("skin", skin_item_label(item), skin_item_key(item), skin_item_description(item), query);
+}
+
+fn void Panel.push_skin_rows(&self, String group, SkinItem[] items, String query)
+{
+	bool wrote_header = false;
+	foreach (SkinItem item : items)
+	{
+		if (!skin_item_matches(item, query)) continue;
+		if (!wrote_header)
+		{
+			self.rows.push({ .kind = RowKind.HEADER, .section = group, .page = settings::SettingPage.SKIN });
+			wrote_header = true;
+		}
+		self.rows.push(
+			{
+				.kind = RowKind.SKIN,
+				.skin = item,
+				.section = group,
+				.page = settings::SettingPage.SKIN,
+			}
+		);
+	}
+}
+
+fn void Panel.build_skin_rows(&self, String query)
+{
+	self.push_skin_rows("Style", SKIN_STYLE_ITEMS, query);
+	self.push_skin_rows("Surface", SKIN_SURFACE_ITEMS, query);
+	self.push_skin_rows("Actions", SKIN_ACTION_ITEMS, query);
+}
+
 fn void Panel.rebuild(&self)
 {
 	self.rows.clear();
@@ -423,6 +738,10 @@ fn void Panel.rebuild(&self)
 	{
 		self.build_key_rows(query);
 		self.layout_keys(self.grid_columns());
+	}
+	else if (self.page == settings::SettingPage.SKIN)
+	{
+		self.build_skin_rows(query);
 	}
 	else if (query.len == 0)
 	{
@@ -520,6 +839,452 @@ fn int Panel.selected_command(&self)
 	int index = self.selected_row();
 	if (index < 0 || self.rows[index].kind != RowKind.COMMAND) return -1;
 	return (int)self.rows[index].command;
+}
+
+fn int Panel.selected_skin(&self)
+{
+	int index = self.selected_row();
+	if (index < 0 || self.rows[index].kind != RowKind.SKIN) return -1;
+	return (int)self.rows[index].skin;
+}
+
+fn int Panel.skin_row(&self, SkinItem item)
+{
+	for (int i = 0; i < (int)self.rows.len(); i++)
+	{
+		if (self.rows[i].kind == RowKind.SKIN && self.rows[i].skin == item) return i;
+	}
+	return -1;
+}
+
+fn settings::SettingLayer Panel.skin_source(&self, SkinItem item, config::Config* config)
+{
+	switch (item)
+	{
+		case SkinItem.PRESET:
+			return skin::preset_source();
+		case SkinItem.CARD_STYLE:
+			return skin::card_style_source();
+		case SkinItem.FOLDER_STYLE:
+			return skin::folder_style_source();
+		case SkinItem.CLOSED_HEIGHT:
+			return skin::closed_height_source();
+		case SkinItem.LANGUAGE_COLORS:
+			return skin::language_colors_source();
+		case SkinItem.IMAGE_SCOPE:
+			return skin::image_scope_source();
+		case SkinItem.CARD_LAYOUT:
+			if (config == null) return settings::SettingLayer.DEFAULT;
+			return config.settings.source(settings::SettingId.CANVAS_CARD_LAYOUT);
+		case SkinItem.SURFACE:
+			return skin::surface_source_any(self.skin_surface);
+		case SkinItem.BROWSE:
+			return settings::SettingLayer.DEFAULT;
+		case SkinItem.IMAGE:
+		case SkinItem.FIT:
+		case SkinItem.OPACITY:
+		case SkinItem.TINT:
+		case SkinItem.SCRIM:
+		case SkinItem.SPEED:
+		case SkinItem.FPS:
+
+			{
+				int field = skin_field_for(item);
+				if (field < 0) return settings::SettingLayer.DEFAULT;
+				return skin::surface_source(self.skin_surface, (skin::SurfaceField)field);
+			}
+		case SkinItem.RELOAD:
+		case SkinItem.RESET:
+		case SkinItem.COUNT:
+			return settings::SettingLayer.DEFAULT;
+	}
+}
+
+fn void Panel.skin_value_text(&self, DString* out, SkinItem item, config::Config* config)
+{
+	skin::SurfaceConfig surface = skin::surface(self.skin_surface);
+	switch (item)
+	{
+		case SkinItem.PRESET:
+			out.append_string(skin::preset());
+		case SkinItem.CARD_STYLE:
+			out.append_string(skin::card_style_name(skin::card_style()));
+		case SkinItem.FOLDER_STYLE:
+			out.append_string(skin::folder_style_name(skin::folder_style()));
+		case SkinItem.CLOSED_HEIGHT:
+			(void)out.appendf("%.0f", (double)skin::closed_height());
+		case SkinItem.LANGUAGE_COLORS:
+			out.append_string(skin::language_colors() ? "On" : "Off");
+		case SkinItem.IMAGE_SCOPE:
+			out.append_string(skin::image_scope_name(skin::image_scope()));
+		case SkinItem.CARD_LAYOUT:
+			if (config != null) out.append_string(config.settings.get_string(settings::SettingId.CANVAS_CARD_LAYOUT));
+		case SkinItem.SURFACE:
+			out.append_string(skin::surface_name(self.skin_surface));
+		case SkinItem.IMAGE:
+			if (surface.image.len > 0)
+			{
+				out.append_string(surface.image);
+			}
+			else
+			{
+				out.append_string("(none)");
+			}
+		case SkinItem.BROWSE:
+			out.append_string("Enter");
+		case SkinItem.FIT:
+			out.append_string(skin::fit_name(surface.fit));
+		case SkinItem.OPACITY:
+			(void)out.appendf("%.2f", (double)surface.opacity);
+		case SkinItem.TINT:
+			skin::append_color(out, surface.tint);
+		case SkinItem.SCRIM:
+			skin::append_color(out, surface.scrim);
+		case SkinItem.SPEED:
+			(void)out.appendf("%.2f", (double)surface.speed);
+		case SkinItem.FPS:
+			(void)out.appendf("%.0f", (double)surface.fps);
+		case SkinItem.RELOAD:
+			out.append_string("Enter");
+		case SkinItem.RESET:
+			out.append_string("Enter");
+		case SkinItem.COUNT:
+			break;
+	}
+}
+
+fn void Panel.start_skin_edit(&self, config::Config* config)
+{
+	int index = self.selected_skin();
+	if (index < 0) return;
+	SkinItem item = (SkinItem)index;
+	if (!skin_item_is_text(item)) return;
+	DString text;
+	text.init(tmem, 64);
+	skin::SurfaceConfig surface = skin::surface(self.skin_surface);
+	if (item == SkinItem.IMAGE) text.append_string(surface.image);
+	if (item == SkinItem.TINT) skin::append_color(&text, surface.tint);
+	if (item == SkinItem.SCRIM) skin::append_color(&text, surface.scrim);
+	String value = text.str_view();
+	usz count    = value.len;
+	if (count > (usz)SKIN_EDIT_MAX) count = (usz)SKIN_EDIT_MAX;
+	for (usz i = 0; i < count; i++) self.skin_edit_buf[i] = value[i];
+	self.skin_edit_len = (int)count;
+	self.skin_edit_buf[self.skin_edit_len] = 0;
+	self.skin_edit_item = item;
+	self.skin_editing = true;
+	self.editing = false;
+	text.free();
+}
+
+fn bool Panel.commit_skin_edit(
+	&self,
+	config::Config* config,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
+{
+	if (!self.skin_editing) return false;
+	if (config == null) return false;
+	SkinItem item                = self.skin_edit_item;
+	String value                 = (String)self.skin_edit_buf[0:self.skin_edit_len];
+	settings::SettingLayer layer = self.scope;
+	if (!project_open) layer = settings::SettingLayer.GLOBAL;
+	if (item == SkinItem.IMAGE)
+	{
+		if (value.len > 0 && !image_path_supported(value))
+		{
+			if (notifier != null) notifier.push("Use a PNG, JPG, JPEG, GIF, or BMP image");
+			return false;
+		}
+		skin::set_surface_image(self.skin_surface, value, layer);
+	}
+	else if (item == SkinItem.TINT || item == SkinItem.SCRIM)
+	{
+		if (value.len == 0)
+		{
+			skin::clear_surface_field(
+				self.skin_surface,
+				item == SkinItem.TINT ? skin::SurfaceField.TINT : skin::SurfaceField.SCRIM,
+				layer
+			);
+		}
+		else if (!skin::color_valid(value))
+		{
+			if (notifier != null) notifier.push("Use #rrggbb or #rrggbbaa");
+			return false;
+		}
+		else if (item == SkinItem.TINT)
+		{
+			skin::set_surface_tint(self.skin_surface, skin::parse_color(value, { 255, 255, 255, 255 }), layer);
+		}
+		else
+		{
+			skin::set_surface_scrim(self.skin_surface, skin::parse_color(value, { 0, 0, 0, 0 }), layer);
+		}
+	}
+	else
+	{
+		return false;
+	}
+	self.skin_editing = false;
+	self.persist(config, project_open, project_root);
+	return true;
+}
+
+fn void Panel.change_skin(
+	&self,
+	config::Config* config,
+	int dir,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
+{
+	if (dir == 0) return;
+	int index = self.selected_skin();
+	if (index < 0) return;
+	SkinItem item = (SkinItem)index;
+	if (skin_item_is_text(item))
+	{
+		self.start_skin_edit(config);
+		return;
+	}
+	settings::SettingLayer layer = self.scope;
+	if (!project_open) layer = settings::SettingLayer.GLOBAL;
+	switch (item)
+	{
+		case SkinItem.PRESET:
+			skin::set_preset(enum_next(skin::PRESET_NAMES, skin::preset(), dir), layer);
+		case SkinItem.CARD_STYLE:
+			skin::set_card_style(
+				skin::card_style_for_name(
+					enum_next(skin::CARD_STYLE_NAMES, skin::card_style_name(skin::card_style()), dir)
+				),
+				layer
+			);
+		case SkinItem.FOLDER_STYLE:
+			skin::set_folder_style(
+				skin::folder_style_for_name(
+					enum_next(skin::FOLDER_STYLE_NAMES, skin::folder_style_name(skin::folder_style()), dir)
+				),
+				layer
+			);
+		case SkinItem.CLOSED_HEIGHT:
+			skin::set_closed_height(
+				math::clamp(skin::closed_height() + (float)dir * SKIN_CLOSED_STEP, 40.0f, 240.0f),
+				layer
+			);
+		case SkinItem.LANGUAGE_COLORS:
+			skin::set_language_colors(!skin::language_colors(), layer);
+		case SkinItem.IMAGE_SCOPE:
+			skin::set_image_scope(
+				skin::image_scope_for_name(
+					enum_next(skin::IMAGE_SCOPE_NAMES, skin::image_scope_name(skin::image_scope()), dir)
+				),
+				layer
+			);
+		case SkinItem.CARD_LAYOUT:
+			if (config == null) return;
+			config.settings.set_string(
+				settings::SettingId.CANVAS_CARD_LAYOUT,
+				enum_next(
+					settings::setting_options(settings::SettingId.CANVAS_CARD_LAYOUT),
+					config.settings.get_string(settings::SettingId.CANVAS_CARD_LAYOUT),
+					dir
+				),
+				layer
+			);
+		case SkinItem.SURFACE:
+
+			{
+				int count = (int)skin::SurfaceId.COUNT;
+				int next  = ((int)self.skin_surface + dir + count) % count;
+				self.skin_surface = (skin::SurfaceId)next;
+				return;
+			}
+		case SkinItem.IMAGE:
+		case SkinItem.TINT:
+		case SkinItem.SCRIM:
+			self.start_skin_edit(config);
+			return;
+		case SkinItem.BROWSE:
+			self.open_image_picker(project_open);
+			return;
+		case SkinItem.FIT:
+
+			{
+				skin::SurfaceConfig surface = skin::surface(self.skin_surface);
+				skin::set_surface_fit(
+					self.skin_surface,
+					skin::fit_for_name(enum_next(skin::FIT_NAMES, skin::fit_name(surface.fit), dir)),
+					layer
+				);
+				break;
+			}
+		case SkinItem.OPACITY:
+
+			{
+				skin::SurfaceConfig surface = skin::surface(self.skin_surface);
+				skin::set_surface_opacity(
+					self.skin_surface,
+					math::clamp(surface.opacity + (float)dir * SKIN_OPACITY_STEP, 0.0f, 1.0f),
+					layer
+				);
+				break;
+			}
+		case SkinItem.SPEED:
+
+			{
+				skin::SurfaceConfig surface = skin::surface(self.skin_surface);
+				skin::set_surface_speed(
+					self.skin_surface,
+					math::clamp(surface.speed + (float)dir * SKIN_SPEED_STEP, 0.0f, 10.0f),
+					layer
+				);
+				break;
+			}
+		case SkinItem.FPS:
+
+			{
+				skin::SurfaceConfig surface = skin::surface(self.skin_surface);
+				skin::set_surface_fps(
+					self.skin_surface,
+					math::clamp(surface.fps + (float)dir * SKIN_FPS_STEP, 1.0f, 120.0f),
+					layer
+				);
+				break;
+			}
+		case SkinItem.RELOAD:
+			if (config == null) return;
+			config.reload_skin(project_root);
+			if (notifier != null) notifier.push("Skin reloaded");
+			return;
+		case SkinItem.RESET:
+			skin::clear_layer(layer);
+			self.persist(config, project_open, project_root);
+			if (notifier != null) notifier.push("Skin reset");
+			return;
+		case SkinItem.COUNT:
+			return;
+	}
+	self.persist(config, project_open, project_root);
+}
+
+fn void Panel.activate_skin(
+	&self,
+	config::Config* config,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
+{
+	int index = self.selected_skin();
+	if (index < 0) return;
+	if (skin_item_is_text((SkinItem)index))
+	{
+		self.start_skin_edit(config);
+		return;
+	}
+	self.change_skin(config, 1, project_open, project_root, notifier);
+}
+
+fn void Panel.open_image_picker(&self, bool project_open)
+{
+	settings::SettingLayer layer = self.scope;
+	if (!project_open) layer = settings::SettingLayer.GLOBAL;
+	String start = skin::layer_base(layer);
+	if (start.len == 0) start = ".";
+	String current = skin::surface(self.skin_surface).path;
+	if (current.len > 0)
+	{
+		if (path::is_dir((Path)current))
+		{
+			start = current;
+		}
+		else if (try parent = ((Path)current).parent())
+		{
+			if (path::is_dir(parent)) start = (String)parent;
+		}
+	}
+	(void)self.image_picker.open_at(start);
+}
+
+fn void Panel.accept_image_picker(
+	&self,
+	config::Config* config,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
+{
+	String selected = self.image_picker.result_view();
+	if (selected.len == 0) return;
+	settings::SettingLayer layer = self.scope;
+	if (!project_open) layer = settings::SettingLayer.GLOBAL;
+	skin::set_surface_image(self.skin_surface, selected, layer);
+	self.persist(config, project_open, project_root);
+	if (notifier != null) notifier.push("Skin image updated");
+	self.image_picker.cancel();
+}
+
+fn void Panel.reset_skin_selected(
+	&self,
+	config::Config* config,
+	bool project_open,
+	String project_root,
+	notify::Notifier* notifier
+)
+{
+	int index = self.selected_skin();
+	if (index < 0) return;
+	SkinItem item                = (SkinItem)index;
+	settings::SettingLayer layer = self.scope;
+	if (!project_open) layer = settings::SettingLayer.GLOBAL;
+	switch (item)
+	{
+		case SkinItem.PRESET:
+			skin::clear_preset(layer);
+		case SkinItem.CARD_STYLE:
+			skin::clear_card_style(layer);
+		case SkinItem.FOLDER_STYLE:
+			skin::clear_folder_style(layer);
+		case SkinItem.CLOSED_HEIGHT:
+			skin::clear_closed_height(layer);
+		case SkinItem.LANGUAGE_COLORS:
+			skin::clear_language_colors(layer);
+		case SkinItem.IMAGE_SCOPE:
+			skin::clear_image_scope(layer);
+		case SkinItem.CARD_LAYOUT:
+			if (config == null) return;
+			config.settings.clear(settings::SettingId.CANVAS_CARD_LAYOUT, layer);
+		case SkinItem.SURFACE:
+			skin::clear_surface(self.skin_surface, layer);
+		case SkinItem.BROWSE:
+			return;
+		case SkinItem.IMAGE:
+		case SkinItem.FIT:
+		case SkinItem.OPACITY:
+		case SkinItem.TINT:
+		case SkinItem.SCRIM:
+		case SkinItem.SPEED:
+		case SkinItem.FPS:
+
+			{
+				int field = skin_field_for(item);
+				if (field < 0) return;
+				skin::clear_surface_field(self.skin_surface, (skin::SurfaceField)field, layer);
+			}
+		case SkinItem.RELOAD:
+			return;
+		case SkinItem.RESET:
+			skin::clear_layer(layer);
+		case SkinItem.COUNT:
+			return;
+	}
+	self.persist(config, project_open, project_root);
+	if (notifier != null) notifier.push("Skin override cleared");
 }
 
 fn void Panel.clamp_selection(&self)
@@ -1156,6 +1921,10 @@ fn void Panel.reset_page(
 		config.clear_keymap(self.scope);
 		keymap.build(config);
 	}
+	else if (self.page == settings::SettingPage.SKIN)
+	{
+		skin::clear_layer(self.scope);
+	}
 	else
 	{
 		for (usz i = 0; i < settings::SETTINGS.len; i++)
@@ -1193,6 +1962,17 @@ fn void Panel.update(
 
 	if (!project_open && self.scope == settings::SettingLayer.PROJECT) self.scope = settings::SettingLayer.GLOBAL;
 
+	if (self.image_picker.open)
+	{
+		image_picker::PickerAction action = self.image_picker.update();
+		self.consumed = true;
+		if (action == image_picker::PickerAction.SELECTED)
+		{
+			self.accept_image_picker(config, project_open, project_root, notifier);
+		}
+		return;
+	}
+
 	if (self.capturing)
 	{
 		self.consumed = true;
@@ -1209,6 +1989,54 @@ fn void Panel.update(
 		{
 			self.capturing = false;
 			self.apply_capture(keymap, config, chord, project_open, project_root, notifier);
+		}
+		return;
+	}
+
+	if (self.skin_editing)
+	{
+		self.consumed = true;
+		if (rl::is_key_pressed(rl::RLKeyboardKey.ESCAPE))
+		{
+			self.skin_editing = false;
+			return;
+		}
+		bool paste = (ctrl_down() && rl::is_key_pressed(
+			rl::RLKeyboardKey.V
+		)) || (shift_down() && rl::is_key_pressed(rl::RLKeyboardKey.INSERT));
+		if (paste)
+		{
+			String clip = rl::get_clipboard_text().str_view();
+			if (clip.len > 0)
+			{
+				self.skin_edit_len = 0;
+				self.skin_edit_buf[0] = 0;
+				self.skin_edit_len = skin_paste_text(&self.skin_edit_buf[0], 0, clip);
+			}
+		}
+		if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER))
+		{
+			(void)self.commit_skin_edit(config, project_open, project_root, notifier);
+			return;
+		}
+		if (rl::is_key_pressed(rl::RLKeyboardKey.BACKSPACE) || rl::is_key_pressed_repeat(rl::RLKeyboardKey.BACKSPACE))
+		{
+			if (self.skin_edit_len > 0)
+			{
+				self.skin_edit_len--;
+				self.skin_edit_buf[self.skin_edit_len] = 0;
+			}
+		}
+		int skin_codepoint = rl::get_char_pressed();
+		while (skin_codepoint != 0)
+		{
+			if (skin_codepoint >= 32 && skin_codepoint <= 126 && self.skin_edit_len < SKIN_EDIT_MAX)
+			{
+				self.skin_edit_buf[self.skin_edit_len] = (char)skin_codepoint;
+				self.skin_edit_len++;
+				self.skin_edit_buf[self.skin_edit_len] = 0;
+			}
+			skin_codepoint = rl::get_char_pressed();
 		}
 		return;
 	}
@@ -1245,6 +2073,31 @@ fn void Panel.update(
 				self.edit_buf[self.edit_len] = 0;
 			}
 			codepoint = rl::get_char_pressed();
+		}
+		return;
+	}
+
+	if (self.page == settings::SettingPage.SKIN && rl::is_file_dropped())
+	{
+		self.consumed = true;
+		RLFilePathList files = rl::load_dropped_files();
+		bool applied         = false;
+		for (uint i = 0; i < files.count; i++)
+		{
+			if (!rl::is_path_file(files.paths[i])) continue;
+			String path = files.paths[i].str_view();
+			if (!image_path_supported(path)) continue;
+			settings::SettingLayer layer = self.scope;
+			if (!project_open) layer = settings::SettingLayer.GLOBAL;
+			skin::set_surface_image(self.skin_surface, path, layer);
+			applied = true;
+			break;
+		}
+		rl::unload_dropped_files(files);
+		if (applied)
+		{
+			self.persist(config, project_open, project_root);
+			if (notifier != null) notifier.push("Skin image updated");
 		}
 		return;
 	}
@@ -1300,6 +2153,7 @@ fn void Panel.update(
 	if (typed) self.rebuild();
 
 	bool keys_page = self.page == settings::SettingPage.KEYS;
+	bool skin_page = self.page == settings::SettingPage.SKIN;
 	if (keys_page)
 	{
 		if (keymap.pressed_repeat((int)commands::CommandId.LIST_DOWN, commands::CTX_SETTINGS))
@@ -1378,6 +2232,8 @@ fn void Panel.update(
 					self.reset_all(keymap, config, project_open, project_root, notifier);
 				case RowKind.PAGE_RESET:
 					self.reset_page(keymap, config, project_open, project_root, notifier);
+				case RowKind.SKIN:
+					self.reset_skin_selected(config, project_open, project_root, notifier);
 				default:
 					break;
 			}
@@ -1399,6 +2255,8 @@ fn void Panel.update(
 					self.reset_all(keymap, config, project_open, project_root, notifier);
 				case RowKind.PAGE_RESET:
 					self.reset_page(keymap, config, project_open, project_root, notifier);
+				case RowKind.SKIN:
+					self.activate_skin(config, project_open, project_root, notifier);
 				default:
 					break;
 			}
@@ -1413,7 +2271,14 @@ fn void Panel.update(
 		if (dir != 0)
 		{
 			self.consumed = true;
-			self.change_selected(config, dir, project_open, project_root);
+			if (skin_page)
+			{
+				self.change_skin(config, dir, project_open, project_root, notifier);
+			}
+			else
+			{
+				self.change_selected(config, dir, project_open, project_root);
+			}
 		}
 	}
 
@@ -1507,6 +2372,18 @@ fn void Panel.update(
 						self.reset_all(keymap, config, project_open, project_root, notifier);
 					default:
 						break;
+				}
+			}
+			else if (skin_page)
+			{
+				float value_x = panel.x + panel.width - 260.0f;
+				if (mouse[0] >= value_x && self.rows[row].kind == RowKind.SKIN)
+				{
+					self.activate_skin(config, project_open, project_root, notifier);
+				}
+				else
+				{
+					self.selected = row;
 				}
 			}
 			else
@@ -1649,6 +2526,8 @@ fn icons::IconKind page_icon(settings::SettingPage page)
 			return icons::IconKind.CONSOLE;
 		case settings::SettingPage.ADVANCED:
 			return icons::IconKind.SETTINGS;
+		case settings::SettingPage.SKIN:
+			return icons::IconKind.THEME;
 		case settings::SettingPage.COUNT:
 			return icons::IconKind.SETTINGS;
 	}
@@ -1851,6 +2730,178 @@ fn void Panel.draw_key_grid(&self, RLFont font, keymap::Keymap* keymap, config::
 	rl::end_scissor_mode();
 }
 
+fn void Panel.draw_skin_row(&self, RLFont font, Rect panel, Row row, bool selected, float y, config::Config* config)
+{
+	SkinItem item = row.skin;
+	String label  = skin_item_label(item);
+	draw_text_clipped(
+		font,
+		label,
+		panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
+		y + (float)ui::px(5),
+		(float)ui::tpx(19),
+		panel.width - (float)ui::px(320),
+		theme::current()
+		.panel_text);
+	draw_text_clipped(
+		font,
+		skin_item_description(item),
+		panel.x + (float)ui::px(PADDING) + (float)ui::px(4),
+		y + (float)ui::px(25),
+		(float)ui::tpx(14),
+		panel.width - (float)ui::px(320),
+		theme::current()
+		.panel_dim);
+
+	bool action = item == SkinItem.RELOAD || item == SkinItem.RESET || item == SkinItem.BROWSE;
+	if (!action)
+	{
+		settings::SettingLayer source = self.skin_source(item, config);
+		String source_text            = skin::source_label(source);
+		float source_size             = (float)ui::tpx(15);
+		float source_width            = measure_text(font, source_text, source_size);
+		draw_text(
+			font,
+			source_text,
+			panel.x + panel.width - (float)ui::px(260) - source_width - (float)ui::px(8),
+			y + (float)ui::px(11),
+			source_size,
+			source == settings::SettingLayer.DEFAULT ? theme::current()
+			.panel_dim : theme::current().panel_header);
+	}
+
+	@pool()
+	{
+		DString value_text;
+		value_text.init(tmem, 64);
+		if (self.skin_editing && self.skin_edit_item == item)
+		{
+			value_text.append_string((String)self.skin_edit_buf[0:self.skin_edit_len]);
+			value_text.append_string("_");
+		}
+		else
+		{
+			self.skin_value_text(&value_text, item, config);
+		}
+		float value_size = (float)ui::tpx(20);
+		if (measure_text(font, value_text.str_view(), value_size) > (float)ui::px(240))
+		{
+			draw_text_clipped(
+				font,
+				value_text.str_view(),
+				panel.x + panel.width - (float)ui::px(PADDING) - (float)ui::px(240),
+				y + (float)ui::px(6),
+				value_size,
+				(float)ui::px(240),
+				selected ? theme::current()
+				.panel_text : theme::current().panel_dim);
+		}
+		else
+		{
+			float width = measure_text(font, value_text.str_view(), value_size);
+			draw_text(
+				font,
+				value_text.str_view(),
+				panel.x + panel.width - (float)ui::px(PADDING) - width,
+				y + (float)ui::px(6),
+				value_size,
+				self.skin_editing && self.skin_edit_item == item ? theme::current()
+				.panel_match : (selected ? theme::current().panel_text : theme::current().panel_dim));
+		}
+		value_text.free();
+	};
+}
+
+fn void Panel.draw_skin_page(&self, RLFont font, config::Config* config)
+{
+	Rect panel   = self.panel_rect();
+	float y      = self.list_y();
+	float limit  = panel.y + panel.height - (float)ui::px(FOOTER_HEIGHT);
+	bool has_any = false;
+	for (sz i = 0; i < self.rows.len(); i++)
+	{
+		if (self.rows[i].kind == RowKind.SKIN)
+		{
+			has_any = true;
+			break;
+		}
+	}
+	if (!has_any)
+	{
+		ui::empty_state(
+			font,
+			{
+				.x = panel.x + (float)ui::px(PADDING),
+				.y = y,
+				.width = panel.width - (float)ui::px(PADDING * 2),
+				.height = limit - y,
+			},
+			"No matching skin settings",
+			"Try another search or clear the query."
+		);
+		return;
+	}
+	RLVector2 mouse = rl::get_mouse_position();
+	int hover_row   = self.row_at(mouse);
+	bool pressed    = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
+	for (int index = self.scroll; index < (int)self.rows.len(); index++)
+	{
+		if (y >= limit) break;
+		Row row = self.rows[index];
+		if (row.kind == RowKind.HEADER)
+		{
+			float header_icon = icons::icon_size(16);
+			icons::draw(
+				page_icon(row.page),
+				{
+					.x = panel.x + (float)ui::px(PADDING),
+					.y = y + (float)ui::px(7),
+					.width = header_icon,
+					.height = header_icon,
+				},
+				theme::current()
+				.panel_header);
+			draw_text(
+				font,
+				row.section,
+				panel.x + (float)ui::px(PADDING) + header_icon + (float)ui::px(6),
+				y + (float)ui::px(7),
+				(float)ui::tpx(18),
+				theme::current()
+				.panel_header);
+			y += (float)ui::px(HEADER_HEIGHT);
+			continue;
+		}
+		bool selected = index == self.selected;
+		if (selected)
+		{
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = y,
+					.width = panel.width - 4.0f,
+					.height = (float)ui::px(ROW_HEIGHT),
+				},
+				theme::current()
+				.panel_selected);
+		}
+		else if (index == hover_row)
+		{
+			ui::row(
+				{
+					.x = panel.x + 2.0f,
+					.y = y,
+					.width = panel.width - 4.0f,
+					.height = (float)ui::px(ROW_HEIGHT),
+				},
+				pressed ? theme::current()
+				.panel_selected : theme::current().panel_bg_alt);
+		}
+		if (row.kind == RowKind.SKIN) self.draw_skin_row(font, panel, row, selected, y, config);
+		y += (float)ui::px(ROW_HEIGHT);
+	}
+}
+
 fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap, config::Config* config)
 {
 	if (!self.open) return;
@@ -1995,6 +3046,10 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		self.draw_key_filters(font);
 		self.draw_key_grid(font, keymap, config);
 	}
+	else if (self.page == settings::SettingPage.SKIN)
+	{
+		self.draw_skin_page(font, config);
+	}
 	else
 	{
 		float y         = self.list_y();
@@ -2133,6 +3188,17 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 				theme::current()
 				.panel_dim);
 		}
+		else if (row.kind == RowKind.SKIN)
+		{
+			draw_text(
+				font,
+				"Enter: edit/cycle   Del: clear   Tab: scope   Arrows: navigate",
+				panel.x + (float)ui::px(PADDING),
+				footer_y + (float)ui::px(10),
+				(float)ui::tpx(18),
+				theme::current()
+				.panel_dim);
+		}
 		else
 		{
 			draw_text(
@@ -2153,6 +3219,7 @@ fn void Panel.draw(&self, RLFont font, bool project_open, keymap::Keymap* keymap
 		(float)ui::tpx(15),
 		theme::current()
 		.panel_dim);
+	self.image_picker.draw();
 }
 
 fn void Panel.draw_setting_row(&self, RLFont font, Rect panel, Row row, bool selected, float y, config::Config* config)

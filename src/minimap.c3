@@ -7,6 +7,7 @@ import yun::card;
 import yun::editor;
 import yun::project;
 import yun::text;
+import yun::skin;
 import yun::theme;
 import yun::topbar;
 import yun::ui;
@@ -134,6 +135,8 @@ fn void draw(project::Project* project, canvas::Canvas* canvas)
 
 	Rect panel = minimap_panel(rl::get_screen_width(), rl::get_screen_height());
 	ui::panel(panel, theme::current().minimap_bg, theme::current().minimap_border);
+	skin::draw_screen(skin::SurfaceId.MINIMAP, panel, ui::corner_radius());
+	ui::rounded_rect_lines(panel, ui::corner_radius(), 1.0f, theme::current().minimap_border);
 
 	for (sz i = 0; i < project.folders.len(); i++)
 	{
@@ -226,6 +229,8 @@ fn void draw_file(project::Project* project, editor::EditorMetrics metrics)
 
 	Rect panel = minimap_panel(rl::get_screen_width(), rl::get_screen_height());
 	ui::panel(panel, theme::current().minimap_bg, theme::current().minimap_border);
+	skin::draw_screen(skin::SurfaceId.MINIMAP, panel, ui::corner_radius());
+	ui::rounded_rect_lines(panel, ui::corner_radius(), 1.0f, theme::current().minimap_border);
 	if (line_count == 0 || metrics.line_height <= 0.0f) return;
 
 	int rows = (int)panel.height;

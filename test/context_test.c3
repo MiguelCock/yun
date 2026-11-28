@@ -6,7 +6,7 @@ fn void test_card_items()
 {
 	ContextItem[CONTEXT_MAX_ITEMS] items;
 
-	usz count = build(ContextTarget.CARD, true, false, true, true, items[0:CONTEXT_MAX_ITEMS]);
+	usz count = build(ContextTarget.CARD, true, false, true, true, false, false, false, items[0:CONTEXT_MAX_ITEMS]);
 	assert(count == 9);
 	assert(items[0].action == ContextAction.TOGGLE_CARD);
 	assert(items[0].label.compare_to("Close") == 0);
@@ -21,7 +21,7 @@ fn void test_card_items()
 	assert(items[7].action == ContextAction.REFERENCES);
 	assert(items[8].action == ContextAction.CODE_ACTIONS);
 
-	usz closed = build(ContextTarget.CARD, false, true, true, false, items[0:CONTEXT_MAX_ITEMS]);
+	usz closed = build(ContextTarget.CARD, false, true, true, false, false, false, false, items[0:CONTEXT_MAX_ITEMS]);
 	assert(closed == 9);
 	assert(items[0].label.compare_to("Open") == 0);
 	assert(!items[1].enabled);
@@ -36,13 +36,33 @@ fn void test_cluster_and_canvas_items()
 {
 	ContextItem[CONTEXT_MAX_ITEMS] items;
 
-	usz cluster = build(ContextTarget.CLUSTER, false, false, true, false, items[0:CONTEXT_MAX_ITEMS]);
+	usz cluster = build(
+		ContextTarget.CLUSTER,
+		false,
+		false,
+		true,
+		false,
+		false,
+		false,
+		false,
+		items[0:CONTEXT_MAX_ITEMS]
+	);
 	assert(cluster == 2);
 	assert(items[0].action == ContextAction.NEW_FILE);
 	assert(items[0].enabled);
 	assert(items[1].action == ContextAction.NEW_FOLDER);
 
-	usz canvas = build(ContextTarget.CANVAS, false, false, false, false, items[0:CONTEXT_MAX_ITEMS]);
+	usz canvas = build(
+		ContextTarget.CANVAS,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
+		items[0:CONTEXT_MAX_ITEMS]
+	);
 	assert(canvas == 3);
 	assert(items[0].action == ContextAction.NEW_FILE);
 	assert(!items[0].enabled);
@@ -62,4 +82,26 @@ fn void test_command_mapping()
 	assert(command_for(ContextAction.TOGGLE_CARD) == (int)commands::CommandId.TOGGLE_CARD);
 	assert(command_for(ContextAction.RENAME_CARD) == (int)commands::CommandId.RENAME_CARD);
 	assert(command_for(ContextAction.DUPLICATE_CARD) == (int)commands::CommandId.DUPLICATE_CARD);
+}
+fn void test_editor_items_and_focus_exit()
+{
+	ContextItem[CONTEXT_MAX_ITEMS] items;
+	usz count = build(ContextTarget.CARD, true, false, true, true, true, true, false, items[0:CONTEXT_MAX_ITEMS]);
+	assert(count == 18);
+	assert(items[9].action == ContextAction.UNDO);
+	assert(items[11].action == ContextAction.CUT);
+	assert(items[11].enabled);
+	assert(items[12].action == ContextAction.COPY);
+	assert(items[12].enabled);
+	assert(items[13].action == ContextAction.PASTE);
+	assert(items[17].action == ContextAction.SAVE);
+	assert(command_for(ContextAction.CUT) == (int)commands::CommandId.CUT);
+	assert(command_for(ContextAction.PASTE) == (int)commands::CommandId.PASTE);
+	assert(command_for(ContextAction.FIND) == (int)commands::CommandId.FIND);
+	assert(command_for(ContextAction.SAVE) == (int)commands::CommandId.SAVE);
+
+	usz focus = build(ContextTarget.CARD, true, false, true, true, true, false, true, items[0:CONTEXT_MAX_ITEMS]);
+	assert(focus == 19);
+	assert(items[18].action == ContextAction.EXIT_FOCUS);
+	assert(command_for(ContextAction.EXIT_FOCUS) == (int)commands::CommandId.TOGGLE_FOCUS_MODE);
 }

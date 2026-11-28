@@ -7,7 +7,7 @@ import std::io::path;
 fn bool git_marker_exists(String dir)
 {
 	Path? marker = ((Path)dir).append(tmem, ".git");
-	if (catch excuse = marker) return false;
+	if (catch err = marker) return false;
 	return path::exists(marker);
 }
 
@@ -19,7 +19,7 @@ fn bool git_find_marker(String start)
 	{
 		if (git_marker_exists(dir)) return true;
 		Path? parent = dir.parent();
-		if (catch excuse = parent) break;
+		if (catch err = parent) break;
 		if (parent.len >= dir.len) break;
 		dir = parent;
 	}

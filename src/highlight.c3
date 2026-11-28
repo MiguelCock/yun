@@ -89,7 +89,7 @@ fn char[] load_query_text(Allocator allocator, String rel)
 	if (file::exists(rel))
 	{
 		char[]? text = file::load(allocator, rel);
-		if (catch excuse = text) return { };
+		if (catch err = text) return { };
 		return text;
 	}
 	@pool()
@@ -99,7 +99,7 @@ fn char[] load_query_text(Allocator allocator, String rel)
 		if (file::exists(joined))
 		{
 			char[]? text = file::load(allocator, joined);
-			if (catch excuse = text) return { };
+			if (catch err = text) return { };
 			return text;
 		}
 	};

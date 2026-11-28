@@ -62,7 +62,7 @@ fn void Browser.scan(&self)
 {
 	self.free_entries();
 	PathList? list = path::ls(self.allocator, self.dir, no_dirs: false, recursive: false, relative: false);
-	if (catch excuse = list) return;
+	if (catch err = list) return;
 	foreach (Path entry : list)
 	{
 		if (path::is_dir(entry)) self.entries.push(entry.copy(self.allocator));

@@ -128,7 +128,7 @@ fn void test_status_args()
 fn void test_status_integration()
 {
 	String[] probe = { "git", "--version" };
-	if (catch excuse = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
+	if (catch err = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
 	{
 		return;
 	}
@@ -136,14 +136,14 @@ fn void test_status_integration()
 	String dir = git_test_helpers::temp_dir("yun_git_status_test");
 	defer dir.free(mem);
 	(void)path::delete((PathCommon)dir);
-	if (catch excuse = path::mkdir(dir, recursive: true)) return;
+	if (catch err = path::mkdir(dir, recursive: true)) return;
 	defer (void)path::delete((PathCommon)dir);
 
 	String file = string::format(tmem, "%s/file.c3", dir);
-	if (catch excuse = file::save(file, "module test;\n")) return;
+	if (catch err = file::save(file, "module test;\n")) return;
 
 	String[] init = { "git", "init", "-q", dir };
-	if (catch excuse = process::run(init, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
+	if (catch err = process::run(init, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
 	{
 		return;
 	}
@@ -155,7 +155,7 @@ fn void test_status_integration()
 	(void)process::run(add, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
 	String[] commit = { "git", "-C", dir, "commit", "-q", "-m", "init" };
 	(void)process::run(commit, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
-	if (catch excuse = file::save(file, "module test;\n// changed\n")) return;
+	if (catch err = file::save(file, "module test;\n// changed\n")) return;
 
 	GitSettings previous = settings();
 	GitSettings fast     = previous;
@@ -179,7 +179,7 @@ fn void test_status_integration()
 fn void test_actions_integration()
 {
 	String[] probe = { "git", "--version" };
-	if (catch excuse = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
+	if (catch err = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
 	{
 		return;
 	}
@@ -187,13 +187,13 @@ fn void test_actions_integration()
 	String dir = git_test_helpers::temp_dir("yun_git_actions_test");
 	defer dir.free(mem);
 	(void)path::delete((PathCommon)dir);
-	if (catch excuse = path::mkdir(dir, recursive: true)) return;
+	if (catch err = path::mkdir(dir, recursive: true)) return;
 	defer (void)path::delete((PathCommon)dir);
 
 	String file = string::format(tmem, "%s/file.c3", dir);
-	if (catch excuse = file::save(file, "module test;\n")) return;
+	if (catch err = file::save(file, "module test;\n")) return;
 	String[] init = { "git", "init", "-q", dir };
-	if (catch excuse = process::run(init, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
+	if (catch err = process::run(init, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
 	{
 		return;
 	}
@@ -205,7 +205,7 @@ fn void test_actions_integration()
 	(void)process::run(add, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
 	String[] commit = { "git", "-C", dir, "commit", "-q", "-m", "init" };
 	(void)process::run(commit, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
-	if (catch excuse = file::save(file, "module test;\n// changed\n")) return;
+	if (catch err = file::save(file, "module test;\n// changed\n")) return;
 
 	GitSettings previous = settings();
 	GitSettings fast     = previous;
@@ -238,7 +238,7 @@ fn void test_actions_integration()
 	assert(git_test_helpers::wait_status_revision(&state, dir, status_revision, 5000));
 	assert(state.status.entries.len() == 0);
 
-	if (catch excuse = file::save(file, "module test;\n// changed again\n")) return;
+	if (catch err = file::save(file, "module test;\n// changed again\n")) return;
 	state.refresh_now(git_test_helpers::now_seconds());
 	assert(git_test_helpers::wait_for_status(&state, dir, 5000));
 	assert(git_test_helpers::wait_idle(&state, dir, 5000));
@@ -248,7 +248,7 @@ fn void test_actions_integration()
 	assert(state.diff.output.contains("+// changed again"));
 
 	String untracked = string::format(tmem, "%s/new.c3", dir);
-	if (catch excuse = file::save(untracked, "module new;\n")) return;
+	if (catch err = file::save(untracked, "module new;\n")) return;
 	state.refresh_now(git_test_helpers::now_seconds());
 	assert(git_test_helpers::wait_for_status(&state, dir, 5000));
 	assert(git_test_helpers::wait_idle(&state, dir, 5000));

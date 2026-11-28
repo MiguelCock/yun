@@ -61,6 +61,8 @@ cat > "$project/README.md" <<'MD'
 This project exists only for deterministic UI screenshots.
 MD
 printf '{\n  "name": "visual-fixture"\n}\n' > "$project/package.json"
+cp "$root/docs/screenshots/canvas.png" "$project/preview.png"
+python3 -c 'import struct,sys; w=h=64; row=bytes((0,120,255))*w; pad=(4-(w*3)%4)%4; pixels=(row+bytes(pad))*h; open(sys.argv[1],"wb").write(struct.pack("<2sIHHI",b"BM",54+len(pixels),0,0,54)+struct.pack("<IiiHHIIiiII",40,w,h,1,24,0,len(pixels),2835,2835,0,0)+pixels)' "$project/wallpaper.bmp"
 git -C "$project" init -q
 
 (cd "$root" && c3c build)
@@ -88,6 +90,9 @@ expected=(
 	notifications
 	imports
 	imports-far
+	skin
+	image-picker
+	wallpaper
 )
 
 for name in "${expected[@]}"; do

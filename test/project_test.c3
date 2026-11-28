@@ -206,12 +206,14 @@ fn void test_layout_packs_clusters()
 
 		p.layout();
 
-		// each level packs folders as chips, so expanded boxes overlap
-		assert(rect_intersects(p.cluster_bounds(a), p.cluster_bounds(b)));
+		// expanded folders reserve their content bounds, so sibling boxes never overlap
+		assert(!rect_intersects(p.cluster_bounds(a), p.cluster_bounds(b)));
 
 		// collapsed chips are packed tightly and never overlap
 		p.folders[a].collapsed = true;
 		p.folders[b].collapsed = true;
+		assert(p.cluster_visual_bounds(a).height == CLUSTER_COLLAPSED_BODY);
+		assert(p.cluster_visual_bounds(b).height == CLUSTER_COLLAPSED_BODY);
 		assert(!rect_intersects(p.cluster_visual_bounds(a), p.cluster_visual_bounds(b)));
 	};
 }
@@ -248,33 +250,33 @@ fn void test_open_job_completes_and_cancels()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_open_job");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		char[] content = { 'x' };
 		Path? sub      = dir.append(tmem, "src");
-		if (catch excuse = sub) return;
-		if (catch excuse = path::mkdir(sub)) return;
+		if (catch err = sub) return;
+		if (catch err = path::mkdir(sub)) return;
 		Path? root_file = dir.append(tmem, "README.md");
-		if (catch excuse = root_file) return;
-		if (catch excuse = file::save(root_file, content)) return;
+		if (catch err = root_file) return;
+		if (catch err = file::save(root_file, content)) return;
 		Path? nested = sub.append(tmem, "main.c3");
-		if (catch excuse = nested) return;
-		if (catch excuse = file::save(nested, content)) return;
+		if (catch err = nested) return;
+		if (catch err = file::save(nested, content)) return;
 
 		Path? env = dir.append(tmem, "env");
-		if (catch excuse = env) return;
-		if (catch excuse = path::mkdir(env)) return;
+		if (catch err = env) return;
+		if (catch err = path::mkdir(env)) return;
 		Path? env_file = env.append(tmem, "site.py");
-		if (catch excuse = env_file) return;
-		if (catch excuse = file::save(env_file, content)) return;
+		if (catch err = env_file) return;
+		if (catch err = file::save(env_file, content)) return;
 		Path? gitignore = dir.append(tmem, ".gitignore");
-		if (catch excuse = gitignore) return;
-		if (catch excuse = file::save(gitignore, "env/\n")) return;
+		if (catch err = gitignore) return;
+		if (catch err = file::save(gitignore, "env/\n")) return;
 
 		Project p;
 		p.init(tmem);
@@ -310,7 +312,7 @@ fn void test_resolve_path_absolute()
 	@pool()
 	{
 		String? r = resolve_path(tmem, "/tmp/foo");
-		if (catch excuse = r)
+		if (catch err = r)
 		{
 			assert(false);
 		}
@@ -323,9 +325,9 @@ fn void test_resolve_path_relative()
 	@pool()
 	{
 		Path? cwd = path::cwd(tmem);
-		if (catch excuse = cwd) return;
+		if (catch err = cwd) return;
 		String? r = resolve_path(tmem, "sub/dir");
-		if (catch excuse = r)
+		if (catch err = r)
 		{
 			assert(false);
 		}
@@ -338,32 +340,32 @@ fn void test_open_scans_directory()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_open_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
 
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? s = dir.append(tmem, "src");
-		if (catch excuse = s) return;
+		if (catch err = s) return;
 		Path src = s;
-		if (catch excuse = path::mkdir(src)) return;
+		if (catch err = path::mkdir(src)) return;
 		Path? sub = src.append(tmem, "sub");
-		if (catch excuse = sub) return;
+		if (catch err = sub) return;
 		Path subdir = sub;
-		if (catch excuse = path::mkdir(subdir)) return;
+		if (catch err = path::mkdir(subdir)) return;
 
 		char[] content = { 'x' };
 		Path? readme   = dir.append(tmem, "README.md");
-		if (catch excuse = readme) return;
-		if (catch excuse = file::save(readme, content)) return;
+		if (catch err = readme) return;
+		if (catch err = file::save(readme, content)) return;
 		Path? fa = src.append(tmem, "a.c3");
-		if (catch excuse = fa) return;
-		if (catch excuse = file::save(fa, content)) return;
+		if (catch err = fa) return;
+		if (catch err = file::save(fa, content)) return;
 		Path? fb = subdir.append(tmem, "b.c3");
-		if (catch excuse = fb) return;
-		if (catch excuse = file::save(fb, content)) return;
+		if (catch err = fb) return;
+		if (catch err = file::save(fb, content)) return;
 
 		Project p;
 		p.init(tmem);
@@ -406,9 +408,10 @@ fn void test_collapsed_cluster_is_compact()
 
 		p.toggle_collapse(f);
 		Rect collapsed = p.cluster_visual_bounds(f);
-		assert(collapsed.height == CLUSTER_TITLE_HEIGHT);
+		assert(collapsed.height == CLUSTER_COLLAPSED_BODY);
 		assert(collapsed.width == CLUSTER_COLLAPSED_WIDTH);
-		assert(collapsed.x == expanded.x && collapsed.y == expanded.y);
+		assert(collapsed.x == expanded.x);
+		assert(collapsed.y == expanded.y);
 
 		p.toggle_collapse(f);
 		Rect again = p.cluster_visual_bounds(f);
@@ -433,12 +436,12 @@ fn void test_create_file_and_folder()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_create_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		Project p;
 		p.init(tmem);
@@ -528,12 +531,12 @@ fn void test_card_file_operations()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_card_ops");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		Project p;
 		p.init(tmem);
@@ -541,7 +544,7 @@ fn void test_card_file_operations()
 
 		assert(p.create_file(ROOT_FOLDER, "a.txt", { 0.0f, 0.0f }) == 0);
 		Path old = p.cards[0].path.copy(tmem);
-		if (catch excuse = file::save(p.cards[0].path, "hello")) return;
+		if (catch err = file::save(p.cards[0].path, "hello")) return;
 
 		assert(p.rename_card(0, "b.txt"));
 		assert(p.cards[0].name.compare_to("b.txt") == 0);
@@ -621,27 +624,27 @@ fn void test_open_prunes_ignored_dirs()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_prune_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		char[] content        = { 'x' };
 		String[] ignored_dirs = { "node_modules", "build", "out", ".git", "src" };
 		foreach (String name : ignored_dirs)
 		{
 			Path? child = dir.append(tmem, name);
-			if (catch excuse = child) return;
-			if (catch excuse = path::mkdir(child)) return;
+			if (catch err = child) return;
+			if (catch err = path::mkdir(child)) return;
 			Path? f = child.append(tmem, "file.txt");
-			if (catch excuse = f) return;
-			if (catch excuse = file::save(f, content)) return;
+			if (catch err = f) return;
+			if (catch err = file::save(f, content)) return;
 		}
 		Path? root_file = dir.append(tmem, "root.txt");
-		if (catch excuse = root_file) return;
-		if (catch excuse = file::save(root_file, content)) return;
+		if (catch err = root_file) return;
+		if (catch err = file::save(root_file, content)) return;
 
 		Project p;
 		p.init(tmem);
@@ -650,11 +653,11 @@ fn void test_open_prunes_ignored_dirs()
 		assert(p.folders.len() == 1);
 
 		Path? src = dir.append(tmem, "src");
-		if (catch excuse = src) return;
+		if (catch err = src) return;
 		assert(p.folder_by_path((String)src) >= 0);
 
 		Path? ignored = dir.append(tmem, "node_modules");
-		if (catch excuse = ignored) return;
+		if (catch err = ignored) return;
 		assert(p.folder_by_path((String)ignored) == ROOT_FOLDER);
 
 		for (sz i = 0; i < p.cards.len(); i++)
@@ -684,15 +687,15 @@ fn void test_discard_ephemeral()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_ephemeral");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "tmp.c");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "x")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "x")) return;
 
 		Project p;
 		p.init(tmem);
@@ -730,6 +733,9 @@ fn void test_cluster_title_hit_only_top_bar()
 
 		p.toggle_collapse(f);
 		assert(p.cluster_title_hit(f, { 50.0f, 10.0f }));
+		assert(!p.cluster_title_hit(f, { 50.0f, 50.0f }));
+		assert(p.cluster_hit({ 50.0f, 50.0f }) == f);
+		assert(p.folder_at({ 50.0f, 50.0f }) == f);
 	};
 }
 fn void test_jump_fade()
@@ -1163,9 +1169,9 @@ fn void test_layout_compact_square()
 		assert(rd.x + rd.width <= ra.x + ra.width + 0.01f);
 		assert(rd.y + rd.height <= ra.y + ra.height + 0.01f);
 
-		// top-level siblings overlap because each level packs only chip footprints
+		// top-level siblings reserve their full expanded footprints and never overlap
 		Rect rb = p.cluster_bounds(b);
-		assert(rect_intersects(ra, rb));
+		assert(!rect_intersects(ra, rb));
 
 		// the overall footprint is roughly square
 		Rect out;
@@ -1279,41 +1285,41 @@ fn void test_open_skips_submodules()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_submodule_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		char[] content = { 'x' };
 		Path? real     = dir.append(tmem, "real.c3");
-		if (catch excuse = real) return;
-		if (catch excuse = file::save(real, content)) return;
+		if (catch err = real) return;
+		if (catch err = file::save(real, content)) return;
 
 		Path? nested = dir.append(tmem, "nested");
-		if (catch excuse = nested) return;
+		if (catch err = nested) return;
 		Path nested_dir = nested;
-		if (catch excuse = path::mkdir(nested_dir)) return;
+		if (catch err = path::mkdir(nested_dir)) return;
 		Path? nested_git = nested_dir.append(tmem, ".git");
-		if (catch excuse = nested_git) return;
-		if (catch excuse = file::save(nested_git, content)) return;
+		if (catch err = nested_git) return;
+		if (catch err = file::save(nested_git, content)) return;
 		Path? inner = nested_dir.append(tmem, "inner.c3");
-		if (catch excuse = inner) return;
-		if (catch excuse = file::save(inner, content)) return;
+		if (catch err = inner) return;
+		if (catch err = file::save(inner, content)) return;
 
 		Path? vendor = dir.append(tmem, "vendorsub");
-		if (catch excuse = vendor) return;
+		if (catch err = vendor) return;
 		Path vendor_dir = vendor;
-		if (catch excuse = path::mkdir(vendor_dir)) return;
+		if (catch err = path::mkdir(vendor_dir)) return;
 		Path? vlib = vendor_dir.append(tmem, "lib.c3");
-		if (catch excuse = vlib) return;
-		if (catch excuse = file::save(vlib, content)) return;
+		if (catch err = vlib) return;
+		if (catch err = file::save(vlib, content)) return;
 
 		Path? mods = dir.append(tmem, ".gitmodules");
-		if (catch excuse = mods) return;
+		if (catch err = mods) return;
 		String modules_text = "[submodule \"vendorsub\"]\n\tpath = vendorsub\n\turl = x\n";
-		if (catch excuse = file::save(mods, modules_text.ptr[0:modules_text.len])) return;
+		if (catch err = file::save(mods, modules_text.ptr[0:modules_text.len])) return;
 
 		Project p;
 		p.init(tmem);
@@ -1335,21 +1341,24 @@ fn void test_focus_mode_restores_rect_and_camera()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_focus_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		char[] content = "fn int main() { return 0; }\n";
 		Path? f        = dir.append(tmem, "a.c3");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, content)) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, content)) return;
+		Path? f2 = dir.append(tmem, "b.c3");
+		if (catch err = f2) return;
+		if (catch err = file::save(f2, content)) return;
 
 		Project p;
 		p.init(tmem);
 		assert(p.open((String)dir));
-		assert(p.cards.len() == 1);
+		assert(p.cards.len() == 2);
 
 		Canvas canvas;
 		canvas.init();
@@ -1357,18 +1366,38 @@ fn void test_focus_mode_restores_rect_and_camera()
 		canvas.camera.target = { 40.0f, 30.0f };
 		canvas.target = canvas.camera;
 
-		Rect saved = p.cards[0].rect;
+		Rect saved  = p.cards[0].rect;
+		Rect saved2 = p.cards[1].rect;
+		assert(p.focused == -1);
 		assert(p.begin_focus(0, &canvas));
 		assert(p.focus_card == 0);
+		assert(p.focused == 0);
 		assert(p.cards[0].buffer != null);
 		assert(p.cards[0].rect.width != saved.width);
 
-		p.end_focus(&canvas);
-		assert(p.focus_card == -1);
+		assert(p.refocus(1, &canvas));
+		assert(p.focus_card == 1);
+		assert(p.focused == 1);
+		assert(p.selected == 1);
 		assert(p.cards[0].rect.x == saved.x && p.cards[0].rect.y == saved.y);
 		assert(p.cards[0].rect.width == saved.width && p.cards[0].rect.height == saved.height);
+
+		p.end_focus(&canvas);
+		assert(p.focus_card == -1);
+		assert(p.focused == -1);
+		assert(p.cards[1].rect.x == saved2.x && p.cards[1].rect.y == saved2.y);
+		assert(p.cards[1].rect.width == saved2.width && p.cards[1].rect.height == saved2.height);
 		assert(canvas.camera.zoom == 2.0f);
 		assert(canvas.camera.target[0] == 40.0f && canvas.camera.target[1] == 30.0f);
+
+		p.focused = 0;
+		p.selected = 0;
+		assert(p.begin_focus(0, &canvas));
+		assert(p.refocus(1, &canvas));
+		p.end_focus(&canvas);
+		assert(p.focused == 1);
+		assert(p.selected == 1);
+		assert(p.cards[1].rect.x == saved2.x && p.cards[1].rect.y == saved2.y);
 
 		(void)path::rmtree(dir);
 	};
@@ -1386,11 +1415,11 @@ fn void test_focus_syncs_selection()
 		p.selected_cluster = 0;
 
 		int index = p.focus(0);
-		assert(index == 1);
-		assert(p.focused == 1);
-		assert(p.selected == 1);
+		assert(index == 0);
+		assert(p.focused == 0);
+		assert(p.selected == 0);
 		assert(p.selected_cluster == -1);
-		assert(p.cards[1].name.compare_to("a.c3") == 0);
+		assert(p.cards[0].name.compare_to("a.c3") == 0);
 	};
 }
 
@@ -1555,5 +1584,426 @@ fn void test_discard_ephemeral_keeps_bounds_when_empty()
 		assert(p.folders[folder].bounds_valid);
 
 		p.destroy();
+	};
+}
+fn void test_stack_card_layout_positions()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.card_layout = CardLayout.DECK;
+		List{int} ids;
+		ids.init(tmem);
+		for (int i = 0; i < 12; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/%d.c3", i),
+					.name = string::format(tmem, "%d.c3", i),
+					.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+					.folder = ROOT_FOLDER,
+				}
+			);
+			ids.push(i);
+		}
+		p.place_cards_block(&ids, 0.0f, 0.0f, 100.0f, 50.0f, 10.0f);
+		assert(p.cards[0].rect.x == 0.0f && p.cards[0].rect.y == 0.0f);
+		assert(p.cards[1].rect.x > 0.0f && p.cards[1].rect.y > 0.0f);
+		assert(p.cards[10].rect.x > p.cards[0].rect.x);
+		assert(p.cards[10].rect.y == 0.0f);
+
+		p.card_layout = CardLayout.FAN;
+		p.place_cards_block(&ids, 0.0f, 0.0f, 100.0f, 50.0f, 10.0f);
+		assert(p.cards[1].rect.x > p.cards[0].rect.x);
+		p.destroy();
+		ids.free();
+	};
+}
+fn void test_layout_is_selection_independent()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.card_layout = CardLayout.DECK;
+		for (int i = 0; i < 12; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/%d.c3", i),
+					.name = string::format(tmem, "%d.c3", i),
+					.folder = ROOT_FOLDER,
+					.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				}
+			);
+		}
+		p.layout();
+		Rect[12] before;
+		for (int i = 0; i < 12; i++) before[i] = p.cards[i].rect;
+		for (int i = 0; i < 12; i++)
+		{
+			p.select_card(i);
+			p.layout();
+			for (int k = 0; k < 12; k++)
+			{
+				assert(p.cards[k].rect.x == before[k].x);
+				assert(p.cards[k].rect.y == before[k].y);
+			}
+			p.focus(i);
+			for (int k = 0; k < 12; k++)
+			{
+				assert(p.cards[k].rect.x == before[k].x);
+				assert(p.cards[k].rect.y == before[k].y);
+			}
+		}
+		p.destroy();
+	};
+}
+
+fn void test_deck_direction_nav_walks_full_stack()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.card_layout = CardLayout.DECK;
+		for (int i = 0; i < 10; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/%d.c3", i),
+					.name = string::format(tmem, "%d.c3", i),
+					.folder = ROOT_FOLDER,
+					.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				}
+			);
+		}
+		p.layout();
+		p.select_card(8);
+		NavItem item;
+		assert(p.item_in_direction(Dir.UP, &item));
+		assert(!item.folder && item.index == 7);
+		p.select_nav_item(item);
+		assert(p.item_in_direction(Dir.UP, &item));
+		assert(!item.folder && item.index == 6);
+		p.destroy();
+	};
+}
+
+fn void test_deck_hit_test_after_keyboard_selection()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.card_layout = CardLayout.DECK;
+		for (int i = 0; i < 10; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/%d.c3", i),
+					.name = string::format(tmem, "%d.c3", i),
+					.folder = ROOT_FOLDER,
+					.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				}
+			);
+		}
+		p.layout();
+		p.selected = 5;
+		p.focused = 0;
+		p.editing = false;
+		for (int i = 0; i < 10; i++)
+		{
+			RLVector2 title = { p.cards[i].rect.x + 20.0f, p.cards[i].rect.y + 10.0f };
+			assert(p.hit_test(title) == i);
+		}
+		p.destroy();
+	};
+}
+
+fn void test_layout_skips_active_interactions()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.card_layout = CardLayout.DECK;
+		for (int i = 0; i < 4; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/%d.c3", i),
+					.name = string::format(tmem, "%d.c3", i),
+					.folder = ROOT_FOLDER,
+					.rect = { .x = 0.0f, .y = 0.0f, .width = 100.0f, .height = 50.0f },
+				}
+			);
+		}
+		p.layout();
+		Rect before = p.cards[0].rect;
+		p.drag_card = true;
+		p.drag_index = 0;
+		p.drag_origin_rect = before;
+		assert(!p.layout_idle());
+		assert(p.cards[0].rect.x == before.x && p.cards[0].rect.y == before.y);
+		p.drag_card = false;
+		p.resizing = true;
+		p.resize_card = 1;
+		assert(!p.layout_idle());
+		p.resizing = false;
+		p.selecting = true;
+		assert(!p.layout_idle());
+		p.selecting = false;
+		assert(p.layout_idle());
+		p.destroy();
+	};
+}
+fn void test_collapsed_body_is_stable_when_hidden_content_changes()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		int f = p.add_folder("/root/a", ROOT_FOLDER);
+		p.cards.push(
+			{
+				.path = (Path)"/root/a/x.c3".copy(tmem),
+				.rect = { .x = 0.0f, .y = 0.0f, .width = 1000.0f, .height = 1000.0f },
+				.folder = f,
+			}
+		);
+		p.layout();
+		p.toggle_collapse(f);
+		Rect body = p.cluster_visual_bounds(f);
+		p.cards[0].move_by({ 400.0f, 500.0f });
+		p.invalidate_bounds_for_card(0);
+		Rect moved = p.cluster_visual_bounds(f);
+		assert(moved.x == body.x && moved.y == body.y);
+		assert(moved.width == body.width && moved.height == body.height);
+		p.destroy();
+	};
+}
+
+fn void test_no_folder_clone_at_viewport_origin()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		int f = p.add_folder("/root/a", ROOT_FOLDER);
+		p.folders[f].collapsed = true;
+		p.folders[f].body = { .x = 1000.0f, .y = 1000.0f, .width = 240.0f, .height = 140.0f };
+		assert(p.cluster_hit({ 0.0f, 0.0f }) == ROOT_FOLDER);
+		assert(p.folder_at({ 0.0f, 0.0f }) == ROOT_FOLDER);
+		p.destroy();
+	};
+}
+fn void test_collapsed_bodies_group_with_cards()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int b = p.add_folder("/root/b", ROOT_FOLDER);
+		p.cards.push(
+			{
+				.path = (Path)"/root/root.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .width = 1.0f, .height = 1.0f },
+			}
+		);
+		for (int i = 0; i < 4; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/%d.c3", i),
+					.folder = a,
+					.rect = { .width = 1.0f, .height = 1.0f },
+				}
+			);
+		}
+		for (int i = 0; i < 4; i++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/b/%d.c3", i),
+					.folder = b,
+					.rect = { .width = 1.0f, .height = 1.0f },
+				}
+			);
+		}
+		p.layout();
+		p.folders[a].collapsed = true;
+		p.folders[b].collapsed = true;
+		Rect ra = p.cluster_visual_bounds(a);
+		Rect rb = p.cluster_visual_bounds(b);
+		Rect rc = p.cards[0].rect;
+		assert(!rect_intersects(ra, rb));
+		assert(!rect_intersects(ra, rc));
+		assert(!rect_intersects(rb, rc));
+		Rect all;
+		assert(p.content_bounds(&all));
+		assert(ra.x >= all.x && ra.y >= all.y && ra.x + ra.width <= all.x + all.width
+			&& ra.y + ra.height <= all.y + all.height);
+		p.destroy();
+	};
+}
+fn void test_opening_folder_collapses_descendants()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int b = p.add_folder("/root/a/b", a);
+		p.folders[a].collapsed = true;
+		p.folders[b].collapsed = false;
+		p.enter_folder(a);
+		assert(!p.folders[a].collapsed);
+		assert(p.folders[b].collapsed);
+		p.destroy();
+	};
+}
+
+fn void test_title_expansion_collapses_descendants()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		int b = p.add_folder("/root/a/b", a);
+		p.folders[a].collapsed = true;
+		p.folders[b].collapsed = false;
+		p.toggle_collapse(a);
+		assert(!p.folders[a].collapsed);
+		assert(p.folders[b].collapsed);
+		p.destroy();
+	};
+}
+
+fn void test_layout_expanded_cluster_does_not_overlap_root_cards()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		for (int k = 0; k < 8; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/f%d.c3", k)
+				.copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
+		int root_card = (int)p.cards.len();
+		p.cards.push(
+			{
+				.path = (Path)"/root/root.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .width = 1.0f, .height = 1.0f },
+			}
+		);
+		p.layout();
+		assert(!rect_intersects(p.cluster_bounds(a), p.cards[root_card].rect));
+	};
+}
+
+fn void test_layout_expanded_child_does_not_overlap_sibling()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a      = p.add_folder("/root/a", ROOT_FOLDER);
+		int open   = p.add_folder("/root/a/open", a);
+		int closed = p.add_folder("/root/a/closed", a);
+		for (int k = 0; k < 8; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/open/f%d.c3", k)
+				.copy(tmem), .folder = open, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
+		p.folders[a].collapsed = false;
+		p.folders[open].collapsed = false;
+		p.folders[closed].collapsed = true;
+		p.layout();
+		assert(!rect_intersects(p.cluster_bounds(open), p.cluster_visual_bounds(closed)));
+	};
+}
+fn void test_enter_folder_relayouts_expanded_content()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		for (int k = 0; k < 8; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/f%d.c3", k)
+				.copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
+		int root_card = (int)p.cards.len();
+		p.cards.push(
+			{
+				.path = (Path)"/root/root.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .width = 1.0f, .height = 1.0f },
+			}
+		);
+		p.folders[a].collapsed = true;
+		p.layout();
+		p.enter_folder(a);
+		assert(!p.folders[a].collapsed);
+		assert(!rect_intersects(p.cluster_bounds(a), p.cards[root_card].rect));
+	};
+}
+fn void test_title_expansion_relayouts_when_content_overlaps()
+{
+	@pool()
+	{
+		Project p;
+		p.init(tmem);
+		p.root = (Path)"/root".copy(tmem);
+		int a = p.add_folder("/root/a", ROOT_FOLDER);
+		for (int k = 0; k < 8; k++)
+		{
+			p.cards.push(
+				{
+					.path = (Path)string::format(tmem, "/root/a/f%d.c3", k)
+				.copy(tmem), .folder = a, .rect = { .width = 1.0f, .height = 1.0f }, });
+		}
+		int root_card = (int)p.cards.len();
+		p.cards.push(
+			{
+				.path = (Path)"/root/root.c3".copy(tmem),
+				.folder = ROOT_FOLDER,
+				.rect = { .width = 1.0f, .height = 1.0f },
+			}
+		);
+		p.layout();
+		Rect expanded = p.cluster_bounds(a);
+		p.cards[root_card].rect = {
+			.x = expanded.x + expanded.width * 0.5f,
+			.y = expanded.y + expanded.height * 0.5f,
+			.width = 100.0f,
+			.height = 100.0f,
+		};
+		p.toggle_collapse(a);
+		assert(p.folders[a].collapsed);
+		p.toggle_collapse(a);
+		assert(!p.folders[a].collapsed);
+		assert(!rect_intersects(p.cluster_bounds(a), p.cards[root_card].rect));
 	};
 }

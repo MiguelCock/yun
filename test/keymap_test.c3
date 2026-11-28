@@ -84,7 +84,7 @@ fn void test_override()
 		config::Config c;
 		c.init(tmem);
 		c.reset();
-		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+Alt+S\"}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+Alt+S\"}}", "", settings::SettingLayer.GLOBAL));
 
 		Keymap k;
 		k.init(tmem);
@@ -102,7 +102,7 @@ fn void test_unknown_command_warns()
 		config::Config c;
 		c.init(tmem);
 		c.reset();
-		assert(c.apply_json("{\"keymap\":{\"nope\":\"Ctrl+K\"}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"keymap\":{\"nope\":\"Ctrl+K\"}}", "", settings::SettingLayer.GLOBAL));
 
 		Keymap k;
 		k.init(tmem);
@@ -120,7 +120,7 @@ fn void test_invalid_chord_warns()
 		config::Config c;
 		c.init(tmem);
 		c.reset();
-		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+\"}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+\"}}", "", settings::SettingLayer.GLOBAL));
 
 		Keymap k;
 		k.init(tmem);
@@ -139,7 +139,7 @@ fn void test_conflict_warns()
 		config::Config c;
 		c.init(tmem);
 		c.reset();
-		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+N\"}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+N\"}}", "", settings::SettingLayer.GLOBAL));
 
 		Keymap k;
 		k.init(tmem);
@@ -267,7 +267,7 @@ fn void test_unbind_via_config()
 		config::Config c;
 		c.init(tmem);
 		c.reset();
-		assert(c.apply_json("{\"keymap\":{\"save\":\"\"}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"keymap\":{\"save\":\"\"}}", "", settings::SettingLayer.GLOBAL));
 
 		Keymap k;
 		k.init(tmem);

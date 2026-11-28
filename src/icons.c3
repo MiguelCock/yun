@@ -77,9 +77,9 @@ fn void init(Allocator allocator)
 	@pool()
 	{
 		Path? config_dir = env::get_config_dir(tmem);
-		if (catch excuse = config_dir) return;
+		if (catch err = config_dir) return;
 		Path? dir = config_dir.append(tmem, "yun/icons");
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		g_override_dir = ((String)dir).copy(allocator);
 	};
 }

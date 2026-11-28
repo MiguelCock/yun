@@ -200,7 +200,7 @@ fn void extract_file(Allocator allocator, String path, language::Language langua
 	@pool()
 	{
 		char[]? data = file::load(tmem, path);
-		if (catch excuse = data) return;
+		if (catch err = data) return;
 		String text = (String)data;
 
 		TSParser* parser = tree_sitter::ts_parser_new();
@@ -288,7 +288,7 @@ fn void symbol_worker(void* arg)
 fn CardSymbols* Symbols.file_for_path(&self, String path)
 {
 	int*? entry = self.file_index.get_ref(path);
-	if (catch excuse = entry) return null;
+	if (catch err = entry) return null;
 	return &self.files[*entry];
 }
 
@@ -319,13 +319,13 @@ fn void Symbols.init_pool(&self)
 	int workers = os::num_cpu();
 	if (workers < 2) workers = 2;
 	if (workers > MAX_SYMBOL_WORKERS) workers = MAX_SYMBOL_WORKERS;
-	if (catch excuse = self.pool.init(self.allocator, workers))
+	if (catch err = self.pool.init(self.allocator, workers))
 	{
 		self.pool_ready = false;
 		return;
 	}
 	UnboundedChannel{SymbolBatch}*? created = channel::create_unbounded{SymbolBatch}(self.allocator);
-	if (catch excuse = created)
+	if (catch err = created)
 	{
 		self.pool.destroy();
 		self.pool_ready = false;
@@ -379,7 +379,7 @@ fn void Symbols.destroy(&self)
 		while (true)
 		{
 			SymbolBatch? maybe = self.results.try_pop();
-			if (catch excuse = maybe) break;
+			if (catch err = maybe) break;
 			SymbolBatch batch = maybe;
 			self.free_batch(&batch);
 		}
@@ -422,7 +422,7 @@ fn String cache_abs_path(Allocator allocator, String root, String relative)
 {
 	if (relative.len == 0) return "";
 	Path? appended = ((Path)root).append(allocator, relative);
-	if (catch excuse = appended) return "";
+	if (catch err = appended) return "";
 	return (String)appended;
 }
 
@@ -503,7 +503,7 @@ fn bool Symbols.load_cache(&self, project::Project* project)
 		if (valid)
 		{
 			long? size = file::get_size(absolute);
-			if (catch excuse = size)
+			if (catch err = size)
 			{
 				valid = false;
 			}
@@ -592,7 +592,7 @@ fn void Symbols.save_cache(&self, project::Project* project)
 	{
 		CardSymbols* file = &self.files[i];
 		int*? card_index  = card_paths.get_ref(file.path);
-		if (catch excuse = card_index) continue;
+		if (catch err = card_index) continue;
 		if (*card_index < 0 || *card_index >= (int)project.cards.len()) continue;
 		FileCard* card = &project.cards[*card_index];
 		if (card.dirty || card.missing) continue;
@@ -600,7 +600,7 @@ fn void Symbols.save_cache(&self, project::Project* project)
 		String relative = cache_rel_path(self.allocator, (String)project.root, file.path);
 		if (relative.len == 0) continue;
 		long? size = file::get_size(file.path);
-		if (catch excuse = size)
+		if (catch err = size)
 		{
 			relative.free(self.allocator);
 			continue;
@@ -636,7 +636,7 @@ fn void Symbols.save_cache(&self, project::Project* project)
 	{
 		String dir  = string::format(tmem, "%s/.yun/cache", project.root);
 		String path = string::format(tmem, "%s/symbols.bin", dir);
-		if (catch excuse = path::mkdir((Path)dir, recursive: true))
+		if (catch err = path::mkdir((Path)dir, recursive: true))
 		{
 			body.free();
 			card_paths.free();
@@ -710,7 +710,7 @@ fn void Symbols.start_scan(&self, project::Project* project)
 			work.path = path.copy(self.allocator);
 			work.language = language;
 			work.generation = self.generation;
-			if (catch excuse = self.pool.add_task(&symbol_worker, work))
+			if (catch err = self.pool.add_task(&symbol_worker, work))
 			{
 				work.path.free(self.allocator);
 				alloc::free(self.allocator, work);
@@ -780,7 +780,7 @@ fn void Symbols.merge_lsp(&self, List{lsp::LspSymbol}* symbols)
 			lsp::LspSymbol source = symbols.get(i);
 			int*? existing        = group_index.get_ref(source.path);
 			sz group              = 0;
-			if (catch excuse = existing)
+			if (catch err = existing)
 			{
 				CardSymbols created;
 				created.path = source.path.copy(self.allocator);
@@ -832,7 +832,7 @@ fn void Symbols.merge_lsp(&self, List{lsp::LspSymbol}* symbols)
 fn void Symbols.store(&self, String path, List{Symbol}* symbols)
 {
 	int*? existing = self.file_index.get_ref(path);
-	if (catch excuse = existing)
+	if (catch err = existing)
 	{
 		CardSymbols entry;
 		entry.path = path.copy(self.allocator);
@@ -892,7 +892,7 @@ fn void Symbols.pump(&self, project::Project* project, double now)
 		while (budget-- > 0)
 		{
 			SymbolBatch? maybe = self.results.try_pop();
-			if (catch excuse = maybe) break;
+			if (catch err = maybe) break;
 			SymbolBatch batch = maybe;
 			if (batch.generation == self.generation)
 			{

@@ -30,6 +30,7 @@ enum SettingPage : int
 	KEYS,
 	CONSOLE,
 	ADVANCED,
+	SKIN,
 	COUNT,
 }
 
@@ -92,6 +93,7 @@ enum SettingId : int
 	CANVAS_JUMP_ZOOM_TARGET,
 	CANVAS_FIT_ON_OPEN,
 	CANVAS_FIT_MIN_ZOOM,
+	CANVAS_CARD_LAYOUT,
 	MINIMAP_ENABLED,
 	MINIMAP_SIZE,
 	MINIMAP_ZOOM_THRESHOLD,
@@ -752,6 +754,15 @@ const SettingSpec[] SETTINGS = {
 		.step = 0.05,
 	},
 	{
+		.section = "canvas",
+		.key = "card_layout",
+		.label = "Card layout",
+		.description = "Arrange cards as a grid, a cascading deck, or a fanned deck.",
+		.kind = SettingKind.ENUM,
+		.fallback = { .s = "deck" },
+		.options = { "grid", "deck", "fan" },
+	},
+	{
 		.section = "minimap",
 		.key = "enabled",
 		.label = "Minimap",
@@ -1278,6 +1289,8 @@ fn String page_label(SettingPage page)
 			return "Console";
 		case SettingPage.ADVANCED:
 			return "Advanced";
+		case SettingPage.SKIN:
+			return "Skin";
 		case SettingPage.COUNT:
 			return "";
 	}
@@ -1580,7 +1593,7 @@ fn void Settings.apply_key(&self, SettingId id, SettingSpec s, Object* obj, Sett
 
 			{
 				int? value = obj.get_int(s.key);
-				if (catch excuse = value)
+				if (catch err = value)
 				{
 					self.push_warning(
 						warnings,
@@ -1597,7 +1610,7 @@ fn void Settings.apply_key(&self, SettingId id, SettingSpec s, Object* obj, Sett
 
 			{
 				double? value = obj.get_float(s.key);
-				if (catch excuse = value)
+				if (catch err = value)
 				{
 					self.push_warning(
 						warnings,
@@ -1614,7 +1627,7 @@ fn void Settings.apply_key(&self, SettingId id, SettingSpec s, Object* obj, Sett
 
 			{
 				bool? value = obj.get_bool(s.key);
-				if (catch excuse = value)
+				if (catch err = value)
 				{
 					self.push_warning(
 						warnings,
@@ -1632,7 +1645,7 @@ fn void Settings.apply_key(&self, SettingId id, SettingSpec s, Object* obj, Sett
 
 			{
 				String? value = obj.get_string(s.key);
-				if (catch excuse = value)
+				if (catch err = value)
 				{
 					self.push_warning(
 						warnings,

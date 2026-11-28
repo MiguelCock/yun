@@ -242,11 +242,11 @@ fn void scan_file_path(
 	@pool()
 	{
 		long? size = path::file_size((Path)path);
-		if (catch excuse = size) return;
+		if (catch err = size) return;
 		if (size > (long)g_search_settings.max_file_mb * 1024L * 1024L) return;
 
 		char[]? data = file::load(tmem, path);
-		if (catch excuse = data) return;
+		if (catch err = data) return;
 		String content = (String)data;
 		if (looks_binary(content)) return;
 		scan_content(allocator, content, query, case_sensitive, whole_word, out);
@@ -289,13 +289,13 @@ fn void Search.init_pool(&self)
 	int workers = g_search_settings.workers;
 	if (workers < 1) workers = 1;
 	if (workers > MAX_SEARCH_WORKERS) workers = MAX_SEARCH_WORKERS;
-	if (catch excuse = self.pool.init(self.allocator, workers))
+	if (catch err = self.pool.init(self.allocator, workers))
 	{
 		self.pool_ready = false;
 		return;
 	}
 	UnboundedChannel{SearchBatch}*? created = channel::create_unbounded{SearchBatch}(self.allocator);
-	if (catch excuse = created)
+	if (catch err = created)
 	{
 		self.pool.destroy();
 		self.pool_ready = false;
@@ -371,7 +371,7 @@ fn void Search.destroy(&self)
 		while (true)
 		{
 			SearchBatch? maybe = self.results.try_pop();
-			if (catch excuse = maybe) break;
+			if (catch err = maybe) break;
 			SearchBatch batch = maybe;
 			free_batch(self.allocator, &batch);
 		}
@@ -494,7 +494,7 @@ fn void Search.start(&self, project::Project* project)
 			work.case_sensitive = self.case_sensitive;
 			work.whole_word = self.whole_word;
 			work.generation = self.generation;
-			if (catch excuse = self.pool.add_task(&search_worker, work))
+			if (catch err = self.pool.add_task(&search_worker, work))
 			{
 				work.path.free(self.allocator);
 				work.query.free(self.allocator);
@@ -513,7 +513,7 @@ fn void Search.merge_batch(&self, SearchBatch* batch)
 	{
 		int group      = -1;
 		int*? existing =  self.group_index.get_ref(batch.path);
-		if (catch excuse = existing)
+		if (catch err = existing)
 		{
 			SearchGroup created;
 			created.path = batch.path.copy(self.allocator);
@@ -616,7 +616,7 @@ fn bool Search.replace_current(&self, project::Project* project, double now, Str
 		return false;
 	}
 	int*? group_index = self.group_index.get_ref(path);
-	if (catch excuse = group_index) return false;
+	if (catch err = group_index) return false;
 	SearchGroup* group = &self.groups[*group_index];
 	for (sz m = 0; m < group.matches.len(); m++)
 	{
@@ -675,7 +675,7 @@ fn void Search.pump(&self, project::Project* project, double now)
 		while (budget-- > 0)
 		{
 			SearchBatch? maybe = self.results.try_pop();
-			if (catch excuse = maybe) break;
+			if (catch err = maybe) break;
 			SearchBatch batch = maybe;
 			if (batch.generation == self.generation)
 			{

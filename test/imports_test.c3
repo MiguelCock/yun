@@ -49,18 +49,18 @@ fn void test_import_cache_roundtrip()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_import_cache");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? a = dir.append(tmem, "a.c3");
-		if (catch excuse = a) return;
+		if (catch err = a) return;
 		Path? b = dir.append(tmem, "b.c3");
-		if (catch excuse = b) return;
-		if (catch excuse = file::save(a, "module a;\nimport b;\n")) return;
-		if (catch excuse = file::save(b, "module b;\n")) return;
+		if (catch err = b) return;
+		if (catch err = file::save(a, "module a;\nimport b;\n")) return;
+		if (catch err = file::save(b, "module b;\n")) return;
 
 		project::Project p;
 		p.init(mem);
@@ -744,7 +744,7 @@ fn void test_fixture_resolution()
 			}
 
 			char[]? data = file::load(tmem, source);
-			if (catch excuse = data) continue;
+			if (catch err = data) continue;
 			String text = (String)data;
 
 			List{ImportRef} refs;
@@ -1031,7 +1031,7 @@ macro void assert_orthogonal(route)
 	}
 }
 
-fn void test_focus_reorders_cached_edges()
+fn void test_focus_keeps_cached_edges()
 {
 	@pool()
 	{
@@ -1062,7 +1062,7 @@ fn void test_focus_reorders_cached_edges()
 		assert(index.edges[0].target_card == b);
 
 		int focused = p.focus(a);
-		assert(focused == 1);
+		assert(focused == 0);
 		index.ensure_edges(&p);
 		assert(index.edges.len() == 1);
 		assert(index.edges[0].source_card == focused);
@@ -1127,4 +1127,20 @@ fn void test_draw_on_top_toggle()
 	assert(draw_on_top());
 	set_draw_on_top(false);
 	assert(!draw_on_top());
+}
+fn void test_arrow_mode_cycles_off_related_all()
+{
+	ImportSettings saved = settings();
+	ImportSettings s     = saved;
+	s.enabled = false;
+	s.related_only = true;
+	set_settings(s);
+	assert(mode() == ArrowMode.OFF);
+	cycle_mode();
+	assert(mode() == ArrowMode.RELATED);
+	cycle_mode();
+	assert(mode() == ArrowMode.ALL);
+	cycle_mode();
+	assert(mode() == ArrowMode.OFF);
+	set_settings(saved);
 }

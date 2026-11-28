@@ -71,11 +71,11 @@ fn bool PieceTable.init_from_file(&self, Allocator allocator, String path)
 {
 	self.init_empty(allocator);
 	long? size = file::get_size(path);
-	if (catch excuse = size) return false;
+	if (catch err = size) return false;
 	if (size == 0) return true;
 
 	FileMmap? mapped = file::mmap_open(path, "rb");
-	if (catch excuse = mapped) return false;
+	if (catch err = mapped) return false;
 	self.mmap = mapped;
 	self.has_mmap = true;
 	self.original = self.mmap.bytes();
@@ -295,7 +295,7 @@ fn bool PieceTable.save_to_file(&self, String path, Allocator allocator)
 		String tmp = string::format(allocator, "%s.yun-tmp", path);
 		defer tmp.free(allocator);
 
-		if (catch excuse = file::save(tmp, data)) return false;
+		if (catch err = file::save(tmp, data)) return false;
 		if (libc::rename(tmp.zstr_tcopy(), path.zstr_tcopy()) != 0)
 		{
 			(void)libc::remove(tmp.zstr_tcopy());

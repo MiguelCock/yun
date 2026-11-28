@@ -32,13 +32,13 @@ fn void test_hunk_patch_builder()
 fn void test_hunk_apply_integration()
 {
 	String[] probe = { "git", "--version" };
-	if (catch excuse = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
+	if (catch err = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
 	{
 		return;
 	}
 	String dir = git_test_helpers::temp_dir("yun_git_patch_test");
 	defer dir.free(mem);
-	if (catch excuse = path::mkdir(dir, recursive: true)) return;
+	if (catch err = path::mkdir(dir, recursive: true)) return;
 	String file    = string::format(tmem, "%s/file.c3", dir);
 	String content = "module test;\n";
 	for (int i = 0; i < 10; i++) content = string::format(tmem, "%sint line%d = 0;\n", content, i);

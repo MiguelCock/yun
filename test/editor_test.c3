@@ -84,9 +84,9 @@ fn void test_inner_rect()
 	Rect card             = { .x = 10.0f, .y = 20.0f, .width = 240.0f, .height = 160.0f };
 	Rect inner            = inner_rect(card, metrics);
 	assert(inner.x == 18.0f);
-	assert(inner.y == 54.0f);
+	assert(inner.y == 60.0f);
 	assert(inner.width == 224.0f);
-	assert(inner.height == 120.0f);
+	assert(inner.height == 114.0f);
 }
 
 fn void test_placeholder_bar_width()
@@ -201,15 +201,15 @@ fn void test_ensure_buffer()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_editor_buffer_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "x.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "hello")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "hello")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		ensure_buffer(&card, tmem);
@@ -260,7 +260,7 @@ fn void test_effective_rect_and_marker()
 	assert(card.minimize_marker_hit({ 230.0f, 10.0f }));
 
 	card.open = false;
-	assert(card.effective_rect().height == 28.0f);
+	assert(card.effective_rect().height > card::CARD_TITLE_HEIGHT);
 	assert(!card.contains({ 50.0f, 100.0f }));
 	assert(card.contains({ 50.0f, 10.0f }));
 }
@@ -288,7 +288,7 @@ fn void test_gutter_and_text_rects()
 	Rect card             = { .x = 10.0f, .y = 20.0f, .width = 240.0f, .height = 160.0f };
 	Rect gutter           = gutter_rect(card, metrics, 9);
 	Rect text             = text_rect(card, metrics, 9);
-	assert(gutter.x == 18.0f && gutter.y == 54.0f);
+	assert(gutter.x == 18.0f && gutter.y == 60.0f);
 	assert(gutter.width == 24.0f);
 	assert(text.x == 42.0f);
 	assert(text.width == 200.0f);
@@ -329,22 +329,22 @@ fn void test_file_changed()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_ext_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "f.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "abc")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "abc")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		stamp_file(&card);
 		assert(!card.missing);
 		assert(!file_changed(&card));
 
-		if (catch excuse = file::save(f, "abcdef")) return;
+		if (catch err = file::save(f, "abcdef")) return;
 		assert(file_changed(&card));
 
 		stamp_file(&card);
@@ -359,15 +359,15 @@ fn void test_reload_buffer()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_reload_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "g.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "abc")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "abc")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		ensure_buffer(&card, tmem);
@@ -392,7 +392,7 @@ fn void test_min_card_size()
 {
 	EditorMetrics metrics = { .char_width = 8.0f, .line_height = 16.0f, .padding_x = 8.0f, .padding_y = 6.0f };
 	assert(min_card_width(metrics) == 704.0f);
-	assert(min_card_height(metrics) == 520.0f);
+	assert(min_card_height(metrics) == 526.0f);
 }
 
 fn void test_resize_handle_at()
@@ -446,15 +446,15 @@ fn void test_unload_buffer()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_close_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "h.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "abc")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "abc")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		ensure_buffer(&card, tmem);
@@ -479,15 +479,15 @@ fn void test_save_buffer()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_save_buffer");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "s.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "one")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "one")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		ensure_buffer(&card, tmem);
@@ -512,15 +512,15 @@ fn void test_destroy_buffer()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_destroy_buffer");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "d.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "abc")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "abc")) return;
 
 		FileCard card = { .path = (Path)((String)f).copy(tmem) };
 		ensure_buffer(&card, tmem);
@@ -668,7 +668,7 @@ fn void test_region_at()
 	assert(region_at(&card, { 400.0f, 400.0f }, metrics, camera) == CardRegion.NONE);
 
 	card.open = false;
-	assert(region_at(&card, { 100.0f, 80.0f }, metrics, camera) == CardRegion.NONE);
+	assert(region_at(&card, { 100.0f, 120.0f }, metrics, camera) == CardRegion.NONE);
 	assert(region_at(&card, { 100.0f, 10.0f }, metrics, camera) == CardRegion.TITLE);
 }
 fn void test_diagnostic_offsets()
@@ -899,9 +899,9 @@ fn void test_title_button_rects()
 	Rect preview  = card.title_button_rect(0);
 	Rect maximize = card.title_button_rect(1);
 	Rect minimize = card.title_button_rect(2);
-	assert(preview.x == 164.0f);
-	assert(maximize.x == 190.0f);
-	assert(minimize.x == 216.0f);
+	assert(preview.x == 156.0f);
+	assert(maximize.x == 185.0f);
+	assert(minimize.x == 214.0f);
 	assert(minimize.x + minimize.width == 240.0f);
 	assert(preview.x + preview.width < maximize.x);
 	assert(maximize.x + maximize.width < minimize.x);

@@ -17,7 +17,7 @@ fn String temp_root(Allocator allocator)
 fn bool prepare_root(Allocator allocator, String root)
 {
 	(void)path::rmtree((Path)root);
-	if (catch excuse = path::mkdir((Path)root, recursive: true)) return false;
+	if (catch err = path::mkdir((Path)root, recursive: true)) return false;
 	return true;
 }
 

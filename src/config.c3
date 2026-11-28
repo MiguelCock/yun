@@ -10,6 +10,7 @@ import std::io::path;
 import std::os::env;
 import yun::commands;
 import yun::settings;
+import yun::skin;
 
 const String CONFIG_DIR     = "yun";
 const String CONFIG_FILE    = "config.json";
@@ -308,7 +309,7 @@ fn void Config.apply_run_profile(&self, String name, Object* value)
 		return;
 	}
 	Object*? command_obj = value.get("command");
-	if (catch excuse = command_obj)
+	if (catch err = command_obj)
 	{
 		self.add_warning(string::format(self.allocator, "Run profile \"%s\" is missing a command", name));
 		return;
@@ -375,7 +376,7 @@ fn void Config.apply_run(&self, Object* map)
 	};
 }
 
-fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
+fn void Config.apply_object(&self, Object* obj, String base, settings::SettingLayer layer)
 {
 	if (!obj.is_map())
 	{
@@ -385,7 +386,13 @@ fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
 
 	obj.@each_entry(; String key, Object* value)
 	{
-		bool handled = key.compare_to("keymap") == 0 || key.compare_to("lsp") == 0 || key.compare_to("run") == 0;
+		bool handled = key.compare_to(
+			"keymap"
+		) == 0 || key.compare_to("lsp") == 0 || key.compare_to("run") == 0 || key.compare_to("skin") == 0;
+		if (key.compare_to("skin") == 0)
+		{
+			skin::apply_object(value, base, layer);
+		}
 		if (!handled && settings::is_section(key))
 		{
 			self.settings.apply_section(key, value, layer, &self.warnings);
@@ -400,7 +407,7 @@ fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
 	if (obj.has_key("keymap"))
 	{
 		Object*? keymap = obj.get("keymap");
-		if (catch excuse = keymap)
+		if (catch err = keymap)
 		{
 			self.add_warning("Config \"keymap\" is invalid");
 		}
@@ -416,7 +423,7 @@ fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
 	if (obj.has_key("lsp"))
 	{
 		Object*? lsp = obj.get("lsp");
-		if (catch excuse = lsp)
+		if (catch err = lsp)
 		{
 			self.add_warning("Config \"lsp\" is invalid");
 		}
@@ -432,7 +439,7 @@ fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
 	if (obj.has_key("run"))
 	{
 		Object*? run = obj.get("run");
-		if (catch excuse = run)
+		if (catch err = run)
 		{
 			self.add_warning("Config \"run\" is invalid");
 		}
@@ -447,40 +454,113 @@ fn void Config.apply_object(&self, Object* obj, settings::SettingLayer layer)
 	}
 }
 
-fn bool Config.apply_json(&self, String json_text, settings::SettingLayer layer)
+fn bool Config.apply_json(&self, String json_text, String base, settings::SettingLayer layer)
 {
 	Object*? parsed = json::parse(self.allocator, json_text);
-	if (catch excuse = parsed) return false;
+	if (catch err = parsed) return false;
 	Object* obj = parsed;
-	self.apply_object(obj, layer);
+	self.apply_object(obj, base, layer);
 	obj.free();
 	return true;
 }
 
-fn bool Config.load_path(&self, Path path, settings::SettingLayer layer)
+fn bool Config.load_path(&self, Path path, String base, settings::SettingLayer layer)
 {
 	if (!path::exists(path)) return false;
 	bool ok = false;
 	@pool()
 	{
 		char[]? data = file::load(tmem, path);
-		if (catch excuse = data)
+		if (catch err = data)
 		{
 			ok = false;
 		}
 		else
 		{
-			ok = self.apply_json((String)data, layer);
+			ok = self.apply_json((String)data, base, layer);
 		}
 	};
 	if (!ok) self.add_warning(string::format(self.allocator, "Malformed config: %s", (String)path));
 	return ok;
 }
 
+fn bool Config.apply_skin_json(&self, String json_text, String base, settings::SettingLayer layer)
+{
+	Object*? parsed = json::parse(self.allocator, json_text);
+	if (catch err = parsed) return false;
+	Object* obj       = parsed;
+	Object*? skin_obj = obj.get("skin");
+	if (try value = skin_obj)
+	{
+		if (value.is_map()) skin::apply_object(value, base, layer);
+	}
+	obj.free();
+	return true;
+}
+
+fn bool Config.load_skin_path(&self, Path path, String base, settings::SettingLayer layer)
+{
+	if (!path::exists(path)) return false;
+	bool ok = false;
+	@pool()
+	{
+		char[]? data = file::load(tmem, path);
+		if (catch err = data)
+		{
+			ok = false;
+		}
+		else
+		{
+			ok = self.apply_skin_json((String)data, base, layer);
+		}
+	};
+	if (!ok) self.add_warning(string::format(self.allocator, "Malformed config: %s", (String)path));
+	return ok;
+}
+
+fn void Config.reload_skin(&self, String project_root)
+{
+	if (!skin::is_ready()) skin::init_headless(self.allocator);
+	skin::reset();
+	@pool()
+	{
+		Path? config_dir = env::get_config_dir(tmem);
+		if (catch err = config_dir)
+		{
+		}
+		else
+		{
+			Path? dir = config_dir.append(tmem, CONFIG_DIR);
+			if (try global_dir = dir)
+			{
+				skin::set_base((String)global_dir, settings::SettingLayer.GLOBAL);
+				Path? file = global_dir.append(tmem, CONFIG_FILE);
+				if (try global_file = file)
+				{
+					self.load_skin_path(global_file, (String)global_dir, settings::SettingLayer.GLOBAL);
+				}
+			}
+		}
+		if (project_root.len > 0)
+		{
+			Path? dir = ((Path)project_root).append(tmem, PROJECT_DIR);
+			if (try project_dir = dir)
+			{
+				skin::set_base((String)project_dir, settings::SettingLayer.PROJECT);
+				Path? file = project_dir.append(tmem, CONFIG_FILE);
+				if (try project_file = file)
+				{
+					self.load_skin_path(project_file, (String)project_dir, settings::SettingLayer.PROJECT);
+				}
+			}
+		}
+	};
+}
+
 fn void Config.ensure_defaults(&self, Path dir, Path file)
 {
 	if (path::exists(file)) return;
-	if (catch excuse = path::mkdir(dir, recursive: true)) return;
+	if (catch err = path::mkdir(dir, recursive: true)) return;
 	(void)file::save(file, DEFAULT_CONFIG);
 }
 
@@ -489,25 +569,26 @@ fn void Config.load_global(&self)
 	@pool()
 	{
 		Path? config_dir = env::get_config_dir(tmem);
-		if (catch excuse = config_dir)
+		if (catch err = config_dir)
 		{
 			self.add_warning("Could not resolve config directory");
 			return;
 		}
 		Path? dir = config_dir.append(tmem, CONFIG_DIR);
-		if (catch excuse = dir)
+		if (catch err = dir)
 		{
 			self.add_warning("Could not resolve config directory");
 			return;
 		}
 		Path? file = dir.append(tmem, CONFIG_FILE);
-		if (catch excuse = file)
+		if (catch err = file)
 		{
 			self.add_warning("Could not resolve config path");
 			return;
 		}
+		skin::set_base((String)dir, settings::SettingLayer.GLOBAL);
 		self.ensure_defaults(dir, file);
-		self.load_path(file, settings::SettingLayer.GLOBAL);
+		self.load_path(file, (String)dir, settings::SettingLayer.GLOBAL);
 	};
 }
 
@@ -517,16 +598,18 @@ fn void Config.load_project(&self, String project_root)
 	@pool()
 	{
 		Path? dir = ((Path)project_root).append(tmem, PROJECT_DIR);
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		Path? file = dir.append(tmem, CONFIG_FILE);
-		if (catch excuse = file) return;
-		self.load_path(file, settings::SettingLayer.PROJECT);
+		if (catch err = file) return;
+		skin::set_base((String)dir, settings::SettingLayer.PROJECT);
+		self.load_path(file, (String)dir, settings::SettingLayer.PROJECT);
 	};
 }
 
 fn void Config.load(&self, String project_root)
 {
 	self.reset();
+	skin::reset();
 	self.load_global();
 	self.load_project(project_root);
 	self.lsp_enabled = self.settings.get_bool(settings::SettingId.LSP_ENABLED);
@@ -592,7 +675,13 @@ fn void Config.save_path(&self, Path path, settings::SettingLayer scope)
 			out.append_string(": ");
 			append_json_string(&out, self.lsp[i].command);
 		}
-		out.append_string("}\n}\n");
+		out.append_string("}");
+		if (skin::has_output(scope))
+		{
+			out.append_string(",\n  \"skin\": ");
+			skin::write_json(&out, scope);
+		}
+		out.append_string("\n}\n");
 		(void)file::save(path, out.str_view());
 		out.free();
 	};
@@ -603,12 +692,12 @@ fn void Config.save_global(&self)
 	@pool()
 	{
 		Path? config_dir = env::get_config_dir(tmem);
-		if (catch excuse = config_dir) return;
+		if (catch err = config_dir) return;
 		Path? dir = config_dir.append(tmem, CONFIG_DIR);
-		if (catch excuse = dir) return;
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = dir) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? file = dir.append(tmem, CONFIG_FILE);
-		if (catch excuse = file) return;
+		if (catch err = file) return;
 		self.save_path(file, settings::SettingLayer.GLOBAL);
 	};
 }
@@ -619,10 +708,10 @@ fn void Config.save_project(&self, String project_root)
 	@pool()
 	{
 		Path? dir = ((Path)project_root).append(tmem, PROJECT_DIR);
-		if (catch excuse = dir) return;
+		if (catch err = dir) return;
 		Path? file = dir.append(tmem, CONFIG_FILE);
-		if (catch excuse = file) return;
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = file) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		self.save_path(file, settings::SettingLayer.PROJECT);
 	};
 }

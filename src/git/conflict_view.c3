@@ -85,7 +85,7 @@ fn void ConflictView.open_file(&self, String rel, String abs)
 	self.path_rel = rel.copy(self.allocator);
 	self.path_abs = abs.copy(self.allocator);
 	char[]? data = file::load(self.allocator, abs);
-	if (catch excuse = data)
+	if (catch err = data)
 	{
 		self.error = "Could not read the conflicted file.".copy(self.allocator);
 		return;
@@ -168,7 +168,7 @@ fn void ConflictView.save(&self, State* git)
 	{
 		return;
 	}
-	if (catch excuse = file::save(self.path_abs, resolved))
+	if (catch err = file::save(self.path_abs, resolved))
 	{
 		resolved.free(self.allocator);
 		if (self.error.len > 0) self.error.free(self.allocator);

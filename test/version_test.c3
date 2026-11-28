@@ -9,17 +9,17 @@ fn void test_app_version_matches_project_json()
 	@pool()
 	{
 		char[]? data = file::load(tmem, "project.json");
-		if (catch excuse = data)
+		if (catch err = data)
 		{
 			assert(false);
 		}
 		Object*? parsed = json::parse(tmem, (String)data);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
 		String? project_version = parsed.get_string("version");
-		if (catch excuse = project_version)
+		if (catch err = project_version)
 		{
 			assert(false);
 		}

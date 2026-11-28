@@ -8,24 +8,24 @@ fn void test_browser_lists_directories_only()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_browser_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		Path? alpha = dir.append(tmem, "alpha");
-		if (catch excuse = alpha) return;
-		if (catch excuse = path::mkdir(alpha)) return;
+		if (catch err = alpha) return;
+		if (catch err = path::mkdir(alpha)) return;
 		Path? beta = dir.append(tmem, "beta");
-		if (catch excuse = beta) return;
-		if (catch excuse = path::mkdir(beta)) return;
+		if (catch err = beta) return;
+		if (catch err = path::mkdir(beta)) return;
 
 		char[] content = { 'x' };
 		Path? note     = dir.append(tmem, "note.txt");
-		if (catch excuse = note) return;
-		if (catch excuse = file::save(note, content)) return;
+		if (catch err = note) return;
+		if (catch err = file::save(note, content)) return;
 
 		Browser b;
 		b.init(tmem);

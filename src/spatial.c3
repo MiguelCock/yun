@@ -58,7 +58,7 @@ fn int Grid.bucket_for(&self, int cx, int cy)
 {
 	long key    = cell_key(cx, cy);
 	int*? found = self.lookup.get_ref(key);
-	if (catch excuse = found)
+	if (catch err = found)
 	{
 		// Not present yet: fall through and create a bucket.
 	}
@@ -105,7 +105,7 @@ fn void Grid.query_point(&self, RLVector2 world, List{int}* out)
 	int cx      = (int)math::floor(world[0] / self.cell);
 	int cy      = (int)math::floor(world[1] / self.cell);
 	int*? found = self.lookup.get_ref(cell_key(cx, cy));
-	if (catch excuse = found) return;
+	if (catch err = found) return;
 	List{int} items = self.buckets[*found].items;
 	for (sz i = 0; i < items.len(); i++) out.push(items[i]);
 }
@@ -138,7 +138,7 @@ fn void Grid.query_rect(&self, Rect rect, List{int}* out)
 		for (int cx = cx0; cx <= cx1; cx++)
 		{
 			int*? found = self.lookup.get_ref(cell_key(cx, cy));
-			if (catch excuse = found) continue;
+			if (catch err = found) continue;
 			List{int} items = self.buckets[*found].items;
 			for (sz i = 0; i < items.len(); i++)
 			{
