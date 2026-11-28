@@ -72,7 +72,7 @@ fn void test_clamp_high()
 		warnings.init(tmem);
 
 		Object*? parsed = json::parse(tmem, "{\"editor\":{\"font_size\":999}}");
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -107,7 +107,7 @@ fn void test_clamp_low()
 		warnings.init(tmem);
 
 		Object*? parsed = json::parse(tmem, "{\"editor\":{\"font_size\":1}}");
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -142,7 +142,7 @@ fn void test_type_mismatch_warns()
 		warnings.init(tmem);
 
 		Object*? parsed = json::parse(tmem, "{\"editor\":{\"font_size\":\"big\"}}");
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -177,7 +177,7 @@ fn void test_unknown_key_warns()
 		warnings.init(tmem);
 
 		Object*? parsed = json::parse(tmem, "{\"editor\":{\"nope\":1}}");
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -219,7 +219,7 @@ fn void test_write_sections_roundtrip()
 		out.append_string("  \"keymap\": {}\n}\n");
 
 		Object*? parsed = json::parse(tmem, out.str_view());
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -368,7 +368,7 @@ fn void test_editor_clamp()
 		List{String} warnings;
 		warnings.init(tmem);
 		Object*? parsed = json::parse(tmem, "{\"editor\":{\"indent_width\":999}}");
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -428,7 +428,7 @@ fn void test_canvas_clamp()
 			tmem,
 			"{\"canvas\":{\"grid_cell\":9999,\"zoom_min\":0.0001,\"grid_min_px\":500}}"
 		);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -480,7 +480,7 @@ fn void test_legacy_arrow_keys_are_ignored()
 			"{\"arrows\":{\"aggregation\":\"folder\",\"show_internal\":true,\"show_external\":true,"
 				"\"external_style\":\"dashed\"}}"
 		);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}
@@ -516,7 +516,7 @@ fn void test_arrows_clamp()
 			tmem,
 			"{\"arrows\":{\"scan_workers\":99,\"line_thickness\":0.0,\"arrowhead_size\":999,\"min_zoom\":99}}"
 		);
-		if (catch excuse = parsed)
+		if (catch err = parsed)
 		{
 			assert(false);
 		}

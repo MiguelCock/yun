@@ -446,3 +446,27 @@ fn void test_follow_center_and_unfollow()
 	c.key_pan({ 10.0f, 0.0f });
 	assert(!c.following);
 }
+fn void test_follow_clears_on_manual_zoom()
+{
+	Canvas c = { };
+	c.target.zoom = 1.0f;
+	c.follow({ 120.0f, 80.0f });
+	assert(c.following);
+	c.key_zoom(1.0f);
+	assert(!c.following);
+	c.follow({ 10.0f, 20.0f });
+	assert(c.following);
+	c.reset_zoom();
+	assert(!c.following);
+}
+
+fn void test_follow_settles_and_releases()
+{
+	Canvas c = { };
+	c.target.target = { 100.0f, 100.0f };
+	c.camera = c.target;
+	c.follow({ 100.0f, 100.0f });
+	assert(c.following);
+	c.ease_camera(0.016f);
+	assert(!c.following);
+}

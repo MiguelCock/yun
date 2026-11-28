@@ -40,6 +40,7 @@ import yun::recovery;
 import yun::search;
 import yun::settings;
 import yun::settings_panel;
+import yun::skin;
 import yun::symbols;
 import yun::theme;
 import yun::topbar;
@@ -152,22 +153,31 @@ fn void finish_open(
 )
 {
 	config.load((String)project.root);
+	apply_card_layout(project, config);
 	set_console_settings(config);
 	set_git_settings(config);
 	ui::set_ui_scale((float)config.settings.get_float(settings::SettingId.APP_UI_SCALE));
 	bool restored = workspace::load(project, canvas, console_manager);
 	if (restored)
 	{
-		project.place_unrestored();
+		if (workspace::migrated())
+		{
+			project.layout();
+			notifier.push("Workspace upgraded; canvas relaid out");
+		}
+		else
+		{
+			project.place_unrestored();
+		}
 		project.invalidate_bounds();
 	}
 	else
 	{
-		project.layout();
 		for (sz i = 0; i < project.folders.len(); i++)
 		{
 			project.folders[i].collapsed = true;
 		}
+		project.layout();
 		if (config.settings.get_bool(settings::SettingId.CANVAS_FIT_ON_OPEN))
 		{
 			Rect bounds;
@@ -202,6 +212,23 @@ fn void apply_chrome_insets(canvas::Canvas* canvas, git::Panel* git_panel, bool 
 	}
 }
 
+fn void apply_card_layout(project::Project* project, config::Config* config)
+{
+	String card_layout = config.settings.get_string(settings::SettingId.CANVAS_CARD_LAYOUT);
+	if (card_layout.compare_to("grid") == 0)
+	{
+		project.card_layout = project::CardLayout.GRID;
+	}
+	else if (card_layout.compare_to("fan") == 0)
+	{
+		project.card_layout = project::CardLayout.FAN;
+	}
+	else
+	{
+		project.card_layout = project::CardLayout.DECK;
+	}
+}
+
 fn void apply_settings(
 	config::Config* config,
 	fonts::Fonts* fonts,
@@ -217,6 +244,7 @@ fn void apply_settings(
 	mods::Mods* mods
 )
 {
+	apply_card_layout(project, config);
 	if (mods)
 	{
 		mods.apply_settings(
@@ -623,6 +651,7 @@ struct App
 	bool* project_open;
 	bool* content_changed;
 	bool* quit_requested;
+	bool suppress_workspace_save;
 	UiMode* ui_mode;
 	UiMode* focus_saved_mode;
 	UiMode* console_saved_mode;
@@ -752,7 +781,7 @@ fn void run_vim_command(App* app, vim_command::CommandLine* line)
 						return;
 					}
 					String? resolved = project::resolve_path(tmem, cmd.arg);
-					if (catch excuse = resolved)
+					if (catch err = resolved)
 					{
 						app.notifier.push("Could not resolve path");
 						return;
@@ -869,6 +898,9 @@ const String[] VISUAL_STATE_NAMES = {
 	"notifications",
 	"imports",
 	"imports-far",
+	"skin",
+	"image-picker",
+	"wallpaper",
 };
 
 const int VISUAL_STATE_COUNT = (int)VISUAL_STATE_NAMES.len;
@@ -1042,6 +1074,38 @@ fn void visual_suite_setup(App* app, project::Project* project, int state)
 			}
 			app.canvas.camera.zoom = 0.05f;
 			app.canvas.target.zoom = 0.05f;
+		case 20:
+			app.settings_panel.show_page(settings::SettingPage.SKIN);
+		case 21:
+			@pool()
+			{
+				String image_path = string::format(tmem, "%s/preview.png", (String)project.root);
+				skin::set_surface_image(skin::SurfaceId.APP, image_path, settings::SettingLayer.PROJECT);
+				app.settings_panel.scope = settings::SettingLayer.PROJECT;
+				app.settings_panel.skin_surface = skin::SurfaceId.APP;
+				app.settings_panel.show_page(settings::SettingPage.SKIN);
+				app.settings_panel.open_image_picker(true);
+				app.settings_panel.image_picker.select_path(image_path);
+			};
+		case 22:
+			@pool()
+			{
+				String image_path = string::format(tmem, "%s/wallpaper.bmp", (String)project.root);
+				skin::set_surface_image(skin::SurfaceId.CARD, image_path, settings::SettingLayer.PROJECT);
+				skin::set_surface_opacity(skin::SurfaceId.CARD, 0.35f, settings::SettingLayer.PROJECT);
+				skin::set_image_scope(skin::ImageScope.ALL, settings::SettingLayer.PROJECT);
+				if (project.cards.len() > 0)
+				{
+					int index = project.focus(0);
+					project.selected = index;
+					editor::ensure_buffer(&project.cards[index], project.allocator);
+					Rect card = project.cards[index].rect;
+					app.canvas.camera.target = { card.x + card.width / 2.0f, card.y + card.height / 2.0f };
+					app.canvas.target.target = app.canvas.camera.target;
+					app.canvas.camera.zoom = 1.0f;
+					app.canvas.target.zoom = 1.0f;
+				}
+			};
 	}
 }
 
@@ -1054,8 +1118,8 @@ fn void visual_suite_begin(App* app, project::Project* project, String dir)
 	g_visual.frame = 0;
 	@pool()
 	{
-		if (catch excuse = path::mkdir((Path)dir, recursive: true)) return;
-		if (catch excuse = path::mkdir((Path)".yun/visual-tmp", recursive: true)) return;
+		if (catch err = path::mkdir((Path)dir, recursive: true)) return;
+		if (catch err = path::mkdir((Path)".yun/visual-tmp", recursive: true)) return;
 		io::printfn("visual suite: writing to %s", dir.zstr_tcopy());
 	};
 	visual_suite_setup(app, project, 0);
@@ -1079,7 +1143,7 @@ fn void visual_suite_tick(App* app, project::Project* project)
 		rl::gl_draw_render_batch_active();
 		rl::take_screenshot(temp_rel.zstr_tcopy());
 		char[]? shot = file::load(tmem, temp_abs);
-		if (catch excuse = shot)
+		if (catch err = shot)
 		{
 			return;
 		}
@@ -1209,14 +1273,19 @@ fn void open_context_menu(App* app, context::ContextTarget target, int card, int
 	app.context_world = world;
 	app.context_offset = offset;
 
-	bool card_open    = card >= 0 && project.cards[card].open;
-	bool card_missing = card >= 0 && project.cards[card].missing;
+	bool card_open     = card >= 0 && project.cards[card].open;
+	bool card_missing  = card >= 0 && project.cards[card].missing;
+	bool editing       = offset >= 0 && card_open && card >= 0 && card == project.focused;
+	bool has_selection = editing && project.has_selection();
 	app.context_item_count = context::build(
 		target,
 		card_open,
 		card_missing,
 		*app.project_open,
 		offset >= 0,
+		editing,
+		has_selection,
+		project.focus_card >= 0,
 		app.context_items[0:context::CONTEXT_MAX_ITEMS]
 	);
 	if (app.mods && target == context::ContextTarget.CANVAS)
@@ -1249,6 +1318,51 @@ fn void open_context_menu(App* app, context::ContextTarget target, int card, int
 		RLVector2 screen = rl::get_world_to_screen2d(world, app.canvas.camera);
 		app.context_menu.open_with(screen, labels[0:app.context_item_count], enabled[0:app.context_item_count]);
 	};
+}
+
+fn void reset_project_data(App* app)
+{
+	project::Project* project = app.project;
+	@pool()
+	{
+		Path? dir = ((Path)project.root).append(tmem, ".yun");
+		if (catch err = dir)
+		{
+			app.notifier.push("Could not resolve project data");
+			return;
+		}
+		(void)path::rmtree(dir);
+	};
+	app.suppress_workspace_save = true;
+	project.layout();
+	for (sz i = 0; i < project.folders.len(); i++) project.folders[i].collapsed = true;
+	project.editor_exit();
+	project.clear_selection();
+	project.invalidate_bounds();
+	Rect bounds;
+	if (project.content_bounds(&bounds))
+	{
+		float floor = (float)app.config.settings.get_float(settings::SettingId.CANVAS_FIT_MIN_ZOOM);
+		app.canvas.fit_zoom_floor(bounds, rl::get_screen_width(), rl::get_screen_height(), floor);
+	}
+	app.notifier.push("Project data reset");
+}
+
+fn void fit_selected_for_grab(project::Project* project, canvas::Canvas* canvas)
+{
+	Rect item = project.selected_item_rect();
+	if (item.width <= 0.0f || item.height <= 0.0f) return;
+	float usable_w = canvas.usable_width();
+	float usable_h = canvas.usable_height();
+	if (usable_w <= 1.0f || usable_h <= 1.0f) return;
+	float margin_x = math::max(40.0f, usable_w * 0.08f);
+	float margin_y = math::max(40.0f, usable_h * 0.08f);
+	float fit_x    = (usable_w - margin_x * 2.0f) / item.width;
+	float fit_y    = (usable_h - margin_y * 2.0f) / item.height;
+	float fit      = math::min(fit_x, fit_y);
+	if (fit < canvas::settings().min_zoom) fit = canvas::settings().min_zoom;
+	if (fit < canvas.target.zoom) canvas.target.zoom = fit;
+	canvas.ensure_item_visible(item, 0.08f);
 }
 
 fn void run_command(commands::CommandId id, App* app)
@@ -1751,15 +1865,14 @@ fn void run_command(commands::CommandId id, App* app)
 					if (canvas::settings().follow_selection)
 					{
 						Rect item = project.selected_item_rect();
-						if (item.width > 0.0f) app.canvas.follow(
-							{ item.x + item.width / 2.0f, item.y + item.height / 2.0f }
-						);
+						if (item.width > 0.0f) app.canvas.ensure_item_visible(item, 0.12f);
 					}
 					*app.ui_mode = UiMode.TOP_BAR;
 					app.bar.clamp_selection(*app.project_open, has_focused_buffer(project));
 				}
 				else if (project.has_selected_item())
 				{
+					fit_selected_for_grab(project, app.canvas);
 					project.begin_grab();
 					project.grabbing = true;
 				}
@@ -1771,6 +1884,13 @@ fn void run_command(commands::CommandId id, App* app)
 				return;
 			}
 		case commands::CommandId.MINIMIZE_CARD:
+			if (project.focus_card >= 0)
+			{
+				project.end_focus(app.canvas);
+				*app.ui_mode = *app.focus_saved_mode;
+				project.editor_exit();
+				return;
+			}
 			project.minimize_selected(app.metrics);
 			return;
 		case commands::CommandId.TOGGLE_FOCUS_MODE:
@@ -2013,9 +2133,34 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.PROJECT_DATA:
+
+			{
+				app.pending_delete_card = -2;
+				RLVector2 center = {
+					(float)rl::get_screen_width() / 2.0f,
+					(float)rl::get_screen_height() / 2.0f,
+				};
+				app.delete_menu.open_at(center, { "Open .yun", "Reset project data", "Cancel" });
+				return;
+			}
 		case commands::CommandId.TOGGLE_ARROWS_OVERLAY:
-			imports::set_draw_on_top(!imports::draw_on_top());
-			return;
+
+			{
+				imports::cycle_mode();
+				imports::ImportSettings is = imports::settings();
+				app.config.settings.set_bool(
+					settings::SettingId.ARROWS_ENABLED,
+					is.enabled,
+					settings::SettingLayer.GLOBAL
+				);
+				app.config.settings.set_bool(
+					settings::SettingId.ARROWS_RELATED_ONLY,
+					is.related_only,
+					settings::SettingLayer.GLOBAL
+				);
+				return;
+			}
 		case commands::CommandId.QUIT:
 
 			{
@@ -2163,6 +2308,19 @@ fn void run_command(commands::CommandId id, App* app)
 				}
 				return;
 			}
+		case commands::CommandId.RELAYOUT:
+
+			{
+				if (!project.layout_idle())
+				{
+					app.notifier.push("Finish the current interaction first");
+					return;
+				}
+				project.invalidate_bounds();
+				project.clear_selection();
+				app.notifier.push("Canvas relaid out");
+				return;
+			}
 		default:
 			return;
 	}
@@ -2176,6 +2334,12 @@ fn void focus_camera_on_line(
 	usz line
 )
 {
+	if (project.focus_card >= 0)
+	{
+		if (project.focused != project.focus_card) (void)project.refocus(project.focused, canvas);
+		project.mark_jump((String)card.path, line, rl::get_time());
+		return;
+	}
 	Rect text        = editor::text_rect(card.rect, metrics, card.buffer.line_count());
 	float world_y    = text.y + editor::line_y(line, card.scroll, metrics) + metrics.line_height * 0.5f;
 	RLVector2 center = card.center();
@@ -2201,7 +2365,7 @@ fn void navigate_to_location(
 		if (!project::path_is_inside((String)project.root, path))
 		{
 			String? copied = project.external_copy(path);
-			if (catch excuse = copied)
+			if (catch err = copied)
 			{
 				return;
 			}
@@ -2451,7 +2615,7 @@ fn bool debug_ui_enabled()
 	@pool()
 	{
 		String? value = env::get_var(tmem, "YUN_DEBUG_UI");
-		if (catch excuse = value) return false;
+		if (catch err = value) return false;
 		return value.len > 0 && value[0] != '0';
 	};
 }
@@ -2623,6 +2787,9 @@ fn int main(String[] args)
 
 	notify::Notifier notifier;
 	notifier.init(mem);
+
+	skin::init(mem);
+	defer skin::shutdown();
 
 	config::Config config;
 	config.init(mem);
@@ -2834,7 +3001,7 @@ fn int main(String[] args)
 	if (open_path)
 	{
 		String? resolved = project::resolve_path(project.allocator, args[1]);
-		if (catch excuse = resolved)
+		if (catch err = resolved)
 		{
 			notifier.push("Could not resolve the given path");
 		}
@@ -2948,6 +3115,7 @@ fn int main(String[] args)
 		.project_open = &project_open,
 		.content_changed = &content_changed,
 		.quit_requested = &quit_requested,
+		.suppress_workspace_save = false,
 		.ui_mode = &ui_mode,
 		.focus_saved_mode = &focus_saved_mode,
 		.console_saved_mode = &console_saved_mode,
@@ -3432,7 +3600,30 @@ fn int main(String[] args)
 			int chosen = delete_menu.update(&keymap);
 			if (chosen >= 0)
 			{
-				if (chosen == 0 && app.pending_delete_card >= 0 && app.pending_delete_card < (int)project.cards.len())
+				if (app.pending_delete_card == -2)
+				{
+					if (chosen == 0)
+					{
+						@pool()
+						{
+							Path? dir = ((Path)project.root).append(tmem, ".yun");
+							if (catch err = dir)
+							{
+								notifier.push("Could not resolve project data");
+							}
+							else
+							{
+								app.browser.open_at((String)dir);
+							}
+						};
+					}
+					else if (chosen == 1)
+					{
+						reset_project_data(&app);
+					}
+				}
+				else if (chosen == 0 && app.pending_delete_card >= 0
+					&& app.pending_delete_card < (int)project.cards.len())
 				{
 					mods.dispatch_file_close(app.pending_delete_card);
 					if (project.delete_card_file(app.pending_delete_card))
@@ -3666,6 +3857,36 @@ fn int main(String[] args)
 							}
 							break;
 						}
+					case context::ContextAction.UNDO:
+						run_command(commands::CommandId.UNDO, &app);
+						break;
+					case context::ContextAction.REDO:
+						run_command(commands::CommandId.REDO, &app);
+						break;
+					case context::ContextAction.CUT:
+						run_command(commands::CommandId.CUT, &app);
+						break;
+					case context::ContextAction.COPY:
+						run_command(commands::CommandId.COPY, &app);
+						break;
+					case context::ContextAction.PASTE:
+						run_command(commands::CommandId.PASTE, &app);
+						break;
+					case context::ContextAction.SELECT_ALL:
+						run_command(commands::CommandId.SELECT_ALL, &app);
+						break;
+					case context::ContextAction.FIND:
+						run_command(commands::CommandId.FIND, &app);
+						break;
+					case context::ContextAction.REPLACE:
+						run_command(commands::CommandId.REPLACE, &app);
+						break;
+					case context::ContextAction.SAVE:
+						run_command(commands::CommandId.SAVE, &app);
+						break;
+					case context::ContextAction.EXIT_FOCUS:
+						run_command(commands::CommandId.TOGGLE_FOCUS_MODE, &app);
+						break;
 					case context::ContextAction.MOD_ITEM:
 
 						{
@@ -4038,9 +4259,7 @@ fn int main(String[] args)
 						if (canvas::settings().follow_selection)
 						{
 							Rect item = project.selected_item_rect();
-							if (item.width > 0.0f) canvas.follow(
-								{ item.x + item.width / 2.0f, item.y + item.height / 2.0f }
-							);
+							if (item.width > 0.0f) canvas.ensure_item_visible(item, 0.12f);
 						}
 					}
 					else
@@ -4213,7 +4432,7 @@ fn int main(String[] args)
 						{
 							if (canvas::settings().follow_selection)
 							{
-								canvas.follow({ r.x + r.width / 2.0f, r.y + r.height / 2.0f });
+								canvas.ensure_item_visible(r, 0.12f);
 							}
 							else
 							{
@@ -4320,6 +4539,27 @@ fn int main(String[] args)
 						);
 					}
 				}
+				if (offset >= 0 && card >= 0)
+				{
+					int index    = project.focus(card);
+					FileCard* cc = &project.cards[index];
+					editor::ensure_buffer(cc, project.allocator);
+					if (cc.buffer)
+					{
+						usz sel_start = 0;
+						usz sel_end   = 0;
+						editor::selection_range(cc.selection_anchor, cc.cursor, &sel_start, &sel_end);
+						if (offset < (int)sel_start || offset > (int)sel_end)
+						{
+							cc.cursor = (usz)offset;
+							cc.selection_anchor = cc.cursor;
+						}
+						usz line = cc.buffer.line_of(cc.cursor);
+						cc.preferred_column = editor::column_for_offset(cc.buffer, line, cc.cursor);
+						*app.ui_mode = UiMode.EDIT;
+						*app.edit_grace_frames = 2;
+					}
+				}
 				open_context_menu(&app, target, card, folder, world, offset);
 			}
 
@@ -4361,6 +4601,7 @@ fn int main(String[] args)
 			bool suppress_edit_input = (ui_mode == UiMode.EDIT && edit_grace_frames > 0) || ui_mode == UiMode.CONSOLE
 				|| vim_cmd.open;
 			double update_t0         = rl::get_time();
+			project.editing = ui_mode == UiMode.EDIT;
 			project.update(&canvas, &keymap, suppress_edit_input, metrics, over_top || font_wheel, &content_changed);
 			if (canvas::settings()
 				.follow_selection && ui_mode
@@ -4371,7 +4612,7 @@ fn int main(String[] args)
 				Rect item = project.selected_item_rect();
 				if (item.width > 0.0f && item.height > 0.0f)
 				{
-					canvas.follow({ item.x + item.width / 2.0f, item.y + item.height / 2.0f });
+					canvas.ensure_item_visible(item, 0.12f);
 				}
 			}
 			last_follow_selection = project.selected;
@@ -4761,6 +5002,16 @@ fn int main(String[] args)
 			if (focus_active)
 			{
 				rl::clear_background(theme::current().window_bg);
+				Rect screen = {
+					.x = 0.0f,
+					.y = 0.0f,
+					.width = (float)rl::get_screen_width(),
+					.height = (float)rl::get_screen_height(),
+				};
+				if (!skin::draw_screen(skin::SurfaceId.FOCUS_BACKDROP, screen, 0.0f))
+				{
+					skin::draw_screen(skin::SurfaceId.APP, screen, 0.0f);
+				}
 			}
 			else
 			{
@@ -4778,6 +5029,7 @@ fn int main(String[] args)
 						metrics,
 						&find_bar,
 						project.focus_card,
+						ui_mode == UiMode.EDIT,
 						git_status
 					);
 				}
@@ -4785,7 +5037,16 @@ fn int main(String[] args)
 				{
 					project.draw_folders(canvas.camera);
 					if (!imports::draw_on_top()) import_index.draw(&project, canvas.camera, font);
-					project.draw_cards(canvas.camera, font, editor_font, metrics, &find_bar, -1, git_status);
+					project.draw_cards(
+						canvas.camera,
+						font,
+						editor_font,
+						metrics,
+						&find_bar,
+						-1,
+						ui_mode == UiMode.EDIT,
+						git_status
+					);
 					if (imports::draw_on_top()) import_index.draw(&project, canvas.camera, font);
 				}
 			};
@@ -4918,6 +5179,35 @@ fn int main(String[] args)
 					String fp = (String)project.folders[project.current_folder].path;
 					folder_label = fp.len > project.root.len + 1 ? fp[project.root.len + 1..] : fp;
 				}
+				String selection_name = "";
+				if (project.selected_cluster >= 0 && project.selected_cluster < (int)project.folders.len())
+				{
+					String fp = (String)project.folders[project.selected_cluster].path;
+					selection_name = rl::get_file_name((ZString)fp.ptr).str_view();
+				}
+				else if (project.selected >= 0 && project.selected < (int)project.cards.len())
+				{
+					selection_name = project.cards[project.selected].name;
+				}
+				else if (project.focused >= 0 && project.focused < (int)project.cards.len())
+				{
+					selection_name = project.cards[project.focused].name;
+				}
+				if (selection_name.len > 0 && canvas.camera.zoom < 0.6f)
+				{
+					if (folder_label.len == 0 || folder_label.compare_to(selection_name) == 0)
+					{
+						folder_label = selection_name;
+					}
+					else if (folder_label.len + selection_name.len + 3 < 160)
+					{
+						folder_label = string::format(tmem, "%s / %s", folder_label, selection_name);
+					}
+					else
+					{
+						folder_label = selection_name;
+					}
+				}
 			}
 			int lsp_errors   = 0;
 			int lsp_warnings = 0;
@@ -4989,6 +5279,21 @@ fn int main(String[] args)
 							0.0f,
 							theme::current()
 							.panel_dim);
+						String cards_stat = string::format(
+							tmem,
+							"cards: %d in view / %d hidden by folder / %d culled",
+							(long)project.stat_visible_cards,
+							(long)project.stat_hidden_cards,
+							(long)project.stat_culled_cards
+						);
+						rl::draw_text_ex(
+							font,
+							cards_stat.zstr_tcopy(),
+							{ content.x + (float)ui::px(10), content.y + (float)ui::px(94) },
+							(float)ui::tpx(14),
+							0.0f,
+							theme::current()
+							.panel_dim);
 						String perf = string::format(
 							tmem,
 							"frame %.2fms  update %.2f  draw %.2f  scan %.2f",
@@ -5050,7 +5355,7 @@ fn int main(String[] args)
 	}
 
 	if (project.focus_card >= 0) project.end_focus(&canvas);
-	if (project_open)
+	if (project_open && !app.suppress_workspace_save)
 	{
 		recovery::clear(&project);
 		if (import_index.cache_dirty) import_index.save_cache(&project);

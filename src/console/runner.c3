@@ -191,7 +191,7 @@ fn bool ConsoleRunner.start_display(&self, ConsoleBuffer* output, String root, S
 		$endif
 	$endif
 	Process? spawned = console_spawn(root, command, grouped);
-	if (catch excuse = spawned)
+	if (catch err = spawned)
 	{
 		if (grouped)
 		{
@@ -199,7 +199,7 @@ fn bool ConsoleRunner.start_display(&self, ConsoleBuffer* output, String root, S
 			spawned = console_spawn(root, command, false);
 		}
 	}
-	if (catch excuse = spawned)
+	if (catch err = spawned)
 	{
 		self.status = ConsoleStatus.FAILED;
 		self.notify_pending = true;

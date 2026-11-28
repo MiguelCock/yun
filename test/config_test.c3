@@ -2,8 +2,10 @@ module yun::config @test;
 
 import std::io::file;
 import std::io::path;
+import std::math;
 import yun::commands;
 import yun::settings;
+import yun::skin;
 
 fn void test_defaults()
 {
@@ -32,12 +34,13 @@ fn void test_apply_and_layering()
 
 		assert(c.apply_json(
 			"{\"app\":{\"theme\":\"light\"},\"editor\":{\"font_size\":14}}",
+			"",
 			settings::SettingLayer.GLOBAL
 		));
 		assert(c.settings.get_string(settings::SettingId.APP_THEME).compare_to("light") == 0);
 		assert(c.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE) == 14);
 
-		assert(c.apply_json("{\"app\":{\"theme\":\"dark\"}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"app\":{\"theme\":\"dark\"}}", "", settings::SettingLayer.GLOBAL));
 		assert(c.settings.get_string(settings::SettingId.APP_THEME).compare_to("dark") == 0);
 		assert(c.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE) == 14);
 	};
@@ -50,7 +53,7 @@ fn void test_unknown_key_warns()
 		Config c;
 		c.init(tmem);
 		c.reset();
-		assert(c.apply_json("{\"nope\":1,\"editor\":{\"font_size\":12}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"nope\":1,\"editor\":{\"font_size\":12}}", "", settings::SettingLayer.GLOBAL));
 		assert(c.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE) == 12);
 		assert(c.warnings.len() == 1);
 		assert(c.warnings[0].compare_to("Unknown config key: nope") == 0);
@@ -66,6 +69,7 @@ fn void test_type_mismatch_warns()
 		c.reset();
 		assert(c.apply_json(
 			"{\"app\":{\"theme\":42},\"editor\":{\"font_size\":\"big\"}}",
+			"",
 			settings::SettingLayer.GLOBAL
 		));
 		assert(c.settings.get_string(settings::SettingId.APP_THEME).compare_to("dark") == 0);
@@ -83,6 +87,7 @@ fn void test_keymap_and_lsp_accessors()
 		c.reset();
 		assert(c.apply_json(
 			"{\"keymap\":{\"save\":\"Ctrl+Shift+S\"},\"lsp\":{\"c3\":\"c3-lsp\"}}",
+			"",
 			settings::SettingLayer.GLOBAL
 		));
 
@@ -91,7 +96,7 @@ fn void test_keymap_and_lsp_accessors()
 		assert(c.lsp_command("c3").compare_to("c3-lsp") == 0);
 		assert(c.lsp_command("python").len == 0);
 
-		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+Alt+S\"}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"keymap\":{\"save\":\"Ctrl+Alt+S\"}}", "", settings::SettingLayer.GLOBAL));
 		assert(c.key_binding(commands::CommandId.SAVE).compare_to("Ctrl+Alt+S") == 0);
 		assert(c.keymap_global.len() == 1);
 	};
@@ -102,20 +107,20 @@ fn void test_malformed_file_warns()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_bad");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "config.json");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "{ not json")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "{ not json")) return;
 
 		Config c;
 		c.init(tmem);
 		c.reset();
-		assert(!c.load_path(f, settings::SettingLayer.GLOBAL));
+		assert(!c.load_path(f, "", settings::SettingLayer.GLOBAL));
 		assert(c.warnings.len() == 1);
 
 		(void)path::rmtree(dir);
@@ -127,24 +132,25 @@ fn void test_project_overrides_global()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_project");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path root = d;
 		(void)path::rmtree(root);
-		if (catch excuse = path::mkdir(root, recursive: true)) return;
+		if (catch err = path::mkdir(root, recursive: true)) return;
 		Path? yun = root.append(tmem, ".yun");
-		if (catch excuse = yun) return;
-		if (catch excuse = path::mkdir(yun, recursive: true)) return;
+		if (catch err = yun) return;
+		if (catch err = path::mkdir(yun, recursive: true)) return;
 		Path? f = yun.append(tmem, "config.json");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "{\"app\":{\"theme\":\"light\"},\"editor\":{\"font_size\":20}}")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "{\"app\":{\"theme\":\"light\"},\"editor\":{\"font_size\":20}}")) return;
 
 		Config c;
 		c.init(tmem);
 		c.reset();
 		assert(c.apply_json(
 			"{\"app\":{\"theme\":\"dark\"},\"editor\":{\"font_size\":14}}",
+			"",
 			settings::SettingLayer.GLOBAL
 		));
 		c.load_project((String)root);
@@ -161,21 +167,21 @@ fn void test_ensure_defaults_creates_valid_file()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_defaults");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "config.json");
-		if (catch excuse = f) return;
+		if (catch err = f) return;
 
 		Config c;
 		c.init(tmem);
 		c.reset();
 		c.ensure_defaults(dir, f);
 		assert(path::exists(f));
-		assert(c.load_path(f, settings::SettingLayer.GLOBAL));
+		assert(c.load_path(f, "", settings::SettingLayer.GLOBAL));
 		assert(c.settings.get_string(settings::SettingId.APP_THEME).compare_to("dark") == 0);
 		assert(c.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE) == 16);
 		assert(c.warnings.len() == 0);
@@ -189,14 +195,14 @@ fn void test_save_load_roundtrip()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_save");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "config.json");
-		if (catch excuse = f) return;
+		if (catch err = f) return;
 		Path file = f;
 
 		Config c;
@@ -209,7 +215,7 @@ fn void test_save_load_roundtrip()
 
 		Config loaded;
 		loaded.init(tmem);
-		assert(loaded.load_path(file, settings::SettingLayer.GLOBAL));
+		assert(loaded.load_path(file, "", settings::SettingLayer.GLOBAL));
 		assert(loaded.settings.get_string(settings::SettingId.APP_THEME).compare_to("dracula") == 0);
 		assert(loaded.settings.get_int(settings::SettingId.EDITOR_FONT_SIZE) == 20);
 		assert(loaded.key_binding(commands::CommandId.FIND).compare_to("Ctrl+Shift+F") == 0);
@@ -227,14 +233,14 @@ fn void test_empty_chord_roundtrip()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_empty_chord");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "config.json");
-		if (catch excuse = f) return;
+		if (catch err = f) return;
 		Path file = f;
 
 		Config c;
@@ -244,7 +250,7 @@ fn void test_empty_chord_roundtrip()
 
 		Config loaded;
 		loaded.init(tmem);
-		assert(loaded.load_path(file, settings::SettingLayer.GLOBAL));
+		assert(loaded.load_path(file, "", settings::SettingLayer.GLOBAL));
 		assert(loaded.keymap_global.len() == 1);
 		assert(loaded.keymap_global[0].chord.len == 0);
 		assert(loaded.key_binding(commands::CommandId.SAVE).len == 0);
@@ -279,17 +285,17 @@ fn void test_keymap_scope_save()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_config_keymap_layers");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 
 		Path? gf = dir.append(tmem, "global.json");
-		if (catch excuse = gf) return;
+		if (catch err = gf) return;
 		Path? pf = dir.append(tmem, "project.json");
-		if (catch excuse = pf) return;
+		if (catch err = pf) return;
 
 		Config c;
 		c.init(tmem);
@@ -300,8 +306,8 @@ fn void test_keymap_scope_save()
 
 		Config loaded;
 		loaded.init(tmem);
-		assert(loaded.load_path(gf, settings::SettingLayer.GLOBAL));
-		assert(loaded.load_path(pf, settings::SettingLayer.PROJECT));
+		assert(loaded.load_path(gf, "", settings::SettingLayer.GLOBAL));
+		assert(loaded.load_path(pf, "", settings::SettingLayer.PROJECT));
 		assert(loaded.key_binding(commands::CommandId.SAVE).compare_to("Ctrl+Alt+S") == 0);
 		assert(loaded.key_binding(commands::CommandId.OPEN).compare_to("Ctrl+Alt+O") == 0);
 		assert(loaded.keymap_global.len() == 1);
@@ -321,6 +327,7 @@ fn void test_run_profiles()
 		c.reset();
 		assert(c.apply_json(
 			"{\"run\":{\"build\":{\"command\":\"c3c build\",\"cwd\":\"src\",\"env\":{\"MODE\":\"debug\"}}}}",
+			"",
 			settings::SettingLayer.GLOBAL
 		));
 		assert(c.run_profiles.len() == 1);
@@ -332,12 +339,156 @@ fn void test_run_profiles()
 		assert(c.run_profiles[0].env[0].value.compare_to("debug") == 0);
 		assert(c.warnings.len() == 0);
 
-		assert(c.apply_json("{\"run\":{\"build\":{\"command\":\"c3c test\"}}}", settings::SettingLayer.PROJECT));
+		assert(c.apply_json("{\"run\":{\"build\":{\"command\":\"c3c test\"}}}", "", settings::SettingLayer.PROJECT));
 		assert(c.run_profiles.len() == 1);
 		assert(c.run_profiles[0].command.compare_to("c3c test") == 0);
 		assert(c.run_profiles[0].cwd.compare_to(".") == 0);
 
-		assert(c.apply_json("{\"run\":{\"bad\":{}}}", settings::SettingLayer.GLOBAL));
+		assert(c.apply_json("{\"run\":{\"bad\":{}}}", "", settings::SettingLayer.GLOBAL));
 		assert(c.warnings.len() == 1);
+	};
+}
+fn void test_save_serializes_skin_overrides()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch err = tmp) return;
+		Path? dir = tmp.append(tmem, "yun_skin_save_test");
+		if (catch err = dir) return;
+		(void)path::rmtree(dir);
+		if (catch err = path::mkdir(dir, recursive: true)) return;
+		Path? input = dir.append(tmem, "config.json");
+		if (catch err = input) return;
+		String skin_json = "{\n  \"app\": {\"theme\": \"dark\"},\n  \"skin\": {\"surfaces\": {\"card\": {\"image\": \"paper.png\"}}, \"legacy\": true},\n  \"keymap\": {}\n}";
+		if (catch err = file::save(input, skin_json)) return;
+		skin::init_headless(tmem);
+		Config c;
+		c.init(tmem);
+		assert(c.load_path(input, (String)dir, settings::SettingLayer.GLOBAL));
+		assert(c.warnings.len() == 0);
+		skin::set_surface_fit(skin::SurfaceId.CARD, skin::SurfaceFit.TILE, settings::SettingLayer.GLOBAL);
+		c.save_path(input, settings::SettingLayer.GLOBAL);
+		char[]? saved = file::load(tmem, input);
+		if (catch err = saved) return;
+		String raw = (String)saved;
+		assert(raw.contains("\"skin\""));
+		assert(raw.contains("\"image\":\"paper.png\""));
+		assert(raw.contains("\"fit\":\"tile\""));
+		assert(!raw.contains("legacy"));
+		c.destroy();
+		(void)path::rmtree(dir);
+	};
+}
+
+fn void test_save_omits_empty_skin()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch err = tmp) return;
+		Path? dir = tmp.append(tmem, "yun_skin_empty_test");
+		if (catch err = dir) return;
+		(void)path::rmtree(dir);
+		if (catch err = path::mkdir(dir, recursive: true)) return;
+		Path? input = dir.append(tmem, "config.json");
+		if (catch err = input) return;
+		skin::init_headless(tmem);
+		Config c;
+		c.init(tmem);
+		c.save_path(input, settings::SettingLayer.GLOBAL);
+		char[]? saved = file::load(tmem, input);
+		if (catch err = saved) return;
+		assert(!((String)saved).contains("\"skin\""));
+		c.destroy();
+		(void)path::rmtree(dir);
+	};
+}
+
+fn void test_project_save_contains_only_project_skin()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch err = tmp) return;
+		Path? dir = tmp.append(tmem, "yun_skin_layers_test");
+		if (catch err = dir) return;
+		(void)path::rmtree(dir);
+		if (catch err = path::mkdir(dir, recursive: true)) return;
+		Path? gf = dir.append(tmem, "global.json");
+		if (catch err = gf) return;
+		Path? pf = dir.append(tmem, "project.json");
+		if (catch err = pf) return;
+
+		skin::init_headless(tmem);
+		Config c;
+		c.init(tmem);
+		skin::set_preset("paper", settings::SettingLayer.GLOBAL);
+		skin::set_card_style(skin::CardStyle.FLAT, settings::SettingLayer.PROJECT);
+		c.save_path(gf, settings::SettingLayer.GLOBAL);
+		c.save_path(pf, settings::SettingLayer.PROJECT);
+
+		char[]? saved_global = file::load(tmem, gf);
+		if (catch err = saved_global) return;
+		String global_raw = (String)saved_global;
+		assert(global_raw.contains("\"skin\""));
+		assert(global_raw.contains("\"preset\":\"paper\""));
+		assert(!global_raw.contains("\"cards\""));
+
+		char[]? saved_project = file::load(tmem, pf);
+		if (catch err = saved_project) return;
+		String project_raw = (String)saved_project;
+		assert(project_raw.contains("\"skin\""));
+		assert(project_raw.contains("\"cards\":{\"style\":\"flat\"}"));
+		assert(!project_raw.contains("\"preset\""));
+
+		c.destroy();
+		(void)path::rmtree(dir);
+	};
+}
+
+fn void test_reload_skin()
+{
+	@pool()
+	{
+		Path? tmp = path::temp_directory(tmem);
+		if (catch err = tmp) return;
+		Path? root_opt = tmp.append(tmem, "yun_skin_reload_test");
+		if (catch err = root_opt) return;
+		Path root = root_opt;
+		(void)path::rmtree(root);
+		if (catch err = path::mkdir(root, recursive: true)) return;
+		Path? yun_opt = root.append(tmem, ".yun");
+		if (catch err = yun_opt) return;
+		Path yun = yun_opt;
+		if (catch err = path::mkdir(yun, recursive: true)) return;
+		Path? cfg_opt = yun.append(tmem, "config.json");
+		if (catch err = cfg_opt) return;
+		Path cfg = cfg_opt;
+		if (catch err = file::save(
+			cfg,
+			"{\"app\":{\"theme\":\"light\"},\"skin\":{\"preset\":\"glass\",\"surfaces\":{\"card\":{\"image\":\"/tmp/project-card.png\",\"opacity\":0.6}}}}"
+		)) return;
+
+		skin::init_headless(tmem);
+		Config c;
+		c.init(tmem);
+		c.reset();
+		c.settings.set_string(settings::SettingId.APP_THEME, "dracula", settings::SettingLayer.GLOBAL);
+		c.set_key_binding("save", "Ctrl+Alt+S", settings::SettingLayer.GLOBAL);
+		c.set_lsp_command("c3", "c3-lsp");
+		c.reload_skin((String)root);
+
+		assert(skin::preset().compare_to("glass") == 0);
+		assert(skin::surface(skin::SurfaceId.CARD).image.compare_to("/tmp/project-card.png") == 0);
+		assert(skin::surface(skin::SurfaceId.CARD).path.compare_to("/tmp/project-card.png") == 0);
+		assert(math::abs(skin::surface(skin::SurfaceId.CARD).opacity - 0.6f) < 0.0001f);
+		assert(c.settings.get_string(settings::SettingId.APP_THEME).compare_to("dracula") == 0);
+		assert(c.key_binding(commands::CommandId.SAVE).compare_to("Ctrl+Alt+S") == 0);
+		assert(c.lsp_command("c3").compare_to("c3-lsp") == 0);
+
+		skin::shutdown();
+		c.destroy();
+		(void)path::rmtree(root);
 	};
 }

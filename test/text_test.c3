@@ -95,15 +95,15 @@ fn void test_mmap_file()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_text_test");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "text.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "line1\nline2")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "line1\nline2")) return;
 
 		PieceTable t;
 		assert(t.init_from_file(tmem, (String)f));
@@ -121,15 +121,15 @@ fn void test_save_to_file()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_text_save");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "save.txt");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "abc")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "abc")) return;
 
 		PieceTable t;
 		assert(t.init_from_file(tmem, (String)f));

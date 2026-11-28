@@ -27,6 +27,7 @@ in every file card.
 - [Markdown preview](markdown.md)
 - [Mods and the Lua runtime](mods.md)
 - [tree-sitter grammar pipeline](tree-sitter.md)
+- [Skins and surfaces](skin.md)
 
 ## Project
 

@@ -6,6 +6,7 @@ import std::math;
 import yun::commands;
 import yun::editor;
 import yun::keymap;
+import yun::skin;
 import yun::theme;
 import yun::topbar;
 import yun::ui;
@@ -1670,8 +1671,11 @@ fn void ConsolePanel.draw(
 	Rect output     = self.output_rect();
 	Rect input      = self.input_rect();
 
-	float radius = ui::corner_radius();
-	ui::rounded_top(panel, radius, theme::current().panel_bg);
+	float radius       = ui::corner_radius();
+	RLColor panel_base = theme::current().panel_bg;
+	if (skin::has_image(skin::SurfaceId.CONSOLE)) panel_base.a = 255;
+	ui::rounded_top(panel, radius, panel_base);
+	skin::draw_screen(skin::SurfaceId.CONSOLE, panel, radius);
 	RLColor border = self.focused ? theme::current().card_focus : theme::current().panel_border;
 	rl::draw_rectangle_rec(
 		{ .x = panel.x + radius, .y = panel.y, .width = panel.width - radius * 2.0f, .height = 1.0f },

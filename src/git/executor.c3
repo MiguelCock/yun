@@ -150,7 +150,7 @@ fn GitResult git_run_request(GitExecutor* executor, GitRequest* request)
 		options = options | process::SpawnOptions.NO_WINDOW;
 	$endif
 	Process? spawned = process::spawn(request.argv, options, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE);
-	if (catch excuse = spawned)
+	if (catch err = spawned)
 	{
 		result.spawn_failed = true;
 		result.error.append_string("Could not start Git");
@@ -260,14 +260,14 @@ fn int git_worker_main(void* arg)
 		if (stopping) break;
 
 		GitRequest? maybe = executor.requests.pop();
-		if (catch excuse = maybe) break;
+		if (catch err = maybe) break;
 		GitRequest request = maybe;
 		GitResult result   = git_run_request(executor, &request);
 		git_free_argv(executor.allocator, request.argv);
 		if (request.rev.len > 0) request.rev.free(executor.allocator);
 		if (request.path.len > 0) request.path.free(executor.allocator);
 		if (request.orig_path.len > 0) request.orig_path.free(executor.allocator);
-		if (catch excuse = executor.results.push(result))
+		if (catch err = executor.results.push(result))
 		{
 			result.destroy(executor.allocator);
 			break;
@@ -291,16 +291,16 @@ fn bool GitExecutor.ensure_started(&self)
 {
 	if (self.started) return true;
 	UnboundedChannel{GitRequest}*? requests = channel::create_unbounded{GitRequest}(self.allocator);
-	if (catch excuse = requests) return false;
+	if (catch err = requests) return false;
 	UnboundedChannel{GitResult}*? results = channel::create_unbounded{GitResult}(self.allocator);
-	if (catch excuse = results)
+	if (catch err = results)
 	{
 		requests.destroy();
 		return false;
 	}
 	self.requests = requests;
 	self.results = results;
-	if (catch excuse = self.worker.create(&git_worker_main, self))
+	if (catch err = self.worker.create(&git_worker_main, self))
 	{
 		self.requests.destroy();
 		self.results.destroy();
@@ -323,7 +323,7 @@ fn bool GitExecutor.submit(&self, GitRequest* request)
 		if (request.orig_path.len > 0) request.orig_path.free(self.allocator);
 		return false;
 	}
-	if (catch excuse = self.requests.push(*request))
+	if (catch err = self.requests.push(*request))
 	{
 		git_free_argv(self.allocator, request.argv);
 		if (request.rev.len > 0) request.rev.free(self.allocator);
@@ -345,7 +345,7 @@ fn bool GitExecutor.try_pop(&self, GitResult* out)
 {
 	if (self.results == null) return false;
 	GitResult? maybe = self.results.try_pop();
-	if (catch excuse = maybe) return false;
+	if (catch err = maybe) return false;
 	*out = maybe;
 	return true;
 }
@@ -365,7 +365,7 @@ fn void GitExecutor.stop(&self)
 	while (true)
 	{
 		GitRequest? maybe = self.requests.try_pop();
-		if (catch excuse = maybe) break;
+		if (catch err = maybe) break;
 		GitRequest request = maybe;
 		git_free_argv(self.allocator, request.argv);
 		if (request.rev.len > 0) request.rev.free(self.allocator);

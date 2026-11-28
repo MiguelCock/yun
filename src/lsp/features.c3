@@ -121,14 +121,14 @@ fn Object* lsp_workspace_symbol_params(Allocator allocator, String query)
 fn uint lsp_token_uint(Object* value)
 {
 	uint? number = value.to_value(uint);
-	if (catch excuse = number) return 0;
+	if (catch err = number) return 0;
 	return number;
 }
 
 fn uint lsp_feature_uint(Object* obj, String key)
 {
 	uint? value = obj.get_uint(key);
-	if (catch excuse = value) return 0;
+	if (catch err = value) return 0;
 	return value;
 }
 
@@ -136,7 +136,7 @@ fn bool lsp_feature_range(Object* value, uint* start_line, uint* start_character
 {
 	if (!value.is_map()) return false;
 	Object*? start_opt = value.get("start");
-	if (catch excuse = start_opt) return false;
+	if (catch err = start_opt) return false;
 	Object*? end_opt = value.get("end");
 	if (catch end_excuse = end_opt) return false;
 	*start_line = lsp_feature_uint(start_opt, "line");
@@ -149,7 +149,7 @@ fn bool lsp_feature_range(Object* value, uint* start_line, uint* start_character
 fn bool lsp_parse_text_edit(Allocator allocator, Object* value, WorkspaceTextEdit* out)
 {
 	Object*? range_opt = value.get("range");
-	if (catch excuse = range_opt) return false;
+	if (catch err = range_opt) return false;
 	if (!lsp_feature_range(range_opt, &out.start_line, &out.start_character, &out.end_line, &out.end_character))
 	{
 		return false;
@@ -230,7 +230,7 @@ fn bool lsp_parse_workspace_edit(Allocator allocator, Object* result, WorkspaceE
 				Object* change = document_changes.get_at(i);
 				if (!change.is_map()) continue;
 				Object*? doc_opt = change.get("textDocument");
-				if (catch excuse = doc_opt) continue;
+				if (catch err = doc_opt) continue;
 				if (!doc_opt.is_map()) continue;
 				Object*? uri_opt = doc_opt.get("uri");
 				if (catch uri_excuse = uri_opt) continue;
@@ -258,7 +258,7 @@ fn void lsp_parse_code_actions(Allocator allocator, Object* result, List{CodeAct
 		Object* value = result.get_at(i);
 		if (!value.is_map()) continue;
 		Object*? title_opt = value.get("title");
-		if (catch excuse = title_opt) continue;
+		if (catch err = title_opt) continue;
 		if (!title_opt.is_string()) continue;
 		Object*? edit_opt = value.get("edit");
 		if (catch edit_excuse = edit_opt) continue;
@@ -282,7 +282,7 @@ fn void lsp_parse_document_symbols(Allocator allocator, Object* result, String p
 		Object* value = result.get_at(i);
 		if (!value.is_map()) continue;
 		Object*? name_opt = value.get("name");
-		if (catch excuse = name_opt) continue;
+		if (catch err = name_opt) continue;
 		if (!name_opt.is_string()) continue;
 		uint start_line        = 0;
 		uint start_character   = 0;
@@ -318,7 +318,7 @@ fn void lsp_parse_workspace_symbols(Allocator allocator, Object* result, List{Ls
 		Object* value = result.get_at(i);
 		if (!value.is_map()) continue;
 		Object*? name_opt = value.get("name");
-		if (catch excuse = name_opt) continue;
+		if (catch err = name_opt) continue;
 		if (!name_opt.is_string()) continue;
 		Object*? location_opt = value.get("location");
 		if (catch location_excuse = location_opt) continue;
@@ -376,7 +376,7 @@ fn void lsp_parse_signature_help(Allocator allocator, Object* result, String* ou
 	*out = "";
 	if (!result.is_map()) return;
 	Object*? signatures_opt = result.get("signatures");
-	if (catch excuse = signatures_opt) return;
+	if (catch err = signatures_opt) return;
 	if (!signatures_opt.is_array() || signatures_opt.get_len() == 0) return;
 	uint active = lsp_feature_uint(result, "activeSignature");
 	if (active >= (uint)signatures_opt.get_len()) active = 0;
@@ -393,7 +393,7 @@ fn void lsp_parse_semantic_tokens(Allocator allocator, Object* result, List{Sema
 	(void)allocator;
 	if (!result.is_map()) return;
 	Object*? data_opt = result.get("data");
-	if (catch excuse = data_opt) return;
+	if (catch err = data_opt) return;
 	if (!data_opt.is_array()) return;
 	sz count       = data_opt.get_len();
 	uint line      = 0;

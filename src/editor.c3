@@ -657,12 +657,12 @@ fn void stamp_file(FileCard* card)
 {
 	Time_t? mtime = os::native_get_modified_time((String)card.path);
 	long? size    = os::native_file_size((String)card.path);
-	if (catch excuse = mtime)
+	if (catch err = mtime)
 	{
 		card.missing = true;
 		return;
 	}
-	if (catch excuse = size)
+	if (catch err = size)
 	{
 		card.missing = true;
 		return;
@@ -676,8 +676,8 @@ fn bool file_changed(FileCard* card)
 {
 	Time_t? mtime = os::native_get_modified_time((String)card.path);
 	long? size    = os::native_file_size((String)card.path);
-	if (catch excuse = mtime) return true;
-	if (catch excuse = size) return true;
+	if (catch err = mtime) return true;
+	if (catch err = size) return true;
 	return (long)mtime != card.mtime || size != card.size;
 }
 

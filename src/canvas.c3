@@ -2,6 +2,7 @@ module yun::canvas;
 
 import raylib6::rl;
 import std::math;
+import yun::skin;
 import yun::theme;
 
 const float BASE_CELL                  = 64.0f;
@@ -279,6 +280,14 @@ fn Rect Canvas.usable_rect(&self)
 	);
 }
 
+fn Rect Canvas.usable_world_rect(&self)
+{
+	Rect usable  = self.usable_rect();
+	RLVector2 tl = screen_to_world_camera(self.camera, { usable.x, usable.y });
+	RLVector2 br = screen_to_world_camera(self.camera, { usable.x + usable.width, usable.y + usable.height });
+	return { .x = tl[0], .y = tl[1], .width = br[0] - tl[0], .height = br[1] - tl[1] };
+}
+
 fn void Canvas.begin_drag(&self, RLMouseButton button, RLVector2 mouse)
 {
 	self.following = false;
@@ -414,11 +423,39 @@ fn RLVector2 keep_item_in_view_delta(Rect item, Rect safe, float zoom)
 	return delta;
 }
 
+fn void Canvas.ensure_item_visible(&self, Rect item, float margin_ratio)
+{
+	if (item.width <= 0.0f || item.height <= 0.0f) return;
+	float zoom  = self.target.zoom > 0.0f ? self.target.zoom : 1.0f;
+	RLVector2 a = rl::get_world_to_screen2d({ item.x, item.y }, self.target);
+	RLVector2 b = rl::get_world_to_screen2d({ item.x + item.width, item.y + item.height }, self.target);
+	Rect screen_item = {
+		.x = math::min(a[0], b[0]),
+		.y = math::min(a[1], b[1]),
+		.width = math::abs(b[0] - a[0]),
+		.height = math::abs(b[1] - a[1]),
+	};
+	Rect usable    = self.usable_rect();
+	float margin_x = math::max(GRAB_FOLLOW_MIN_X, usable.width * margin_ratio);
+	float margin_y = math::max(GRAB_FOLLOW_MIN_Y, usable.height * margin_ratio);
+	Rect safe = {
+		.x = usable.x + margin_x,
+		.y = usable.y + margin_y,
+		.width = usable.width - margin_x * 2.0f,
+		.height = usable.height - margin_y * 2.0f,
+	};
+	RLVector2 delta = keep_item_in_view_delta(screen_item, safe, zoom);
+	self.following = false;
+	self.target.target[0] += delta[0];
+	self.target.target[1] += delta[1];
+}
+
 fn void Canvas.ease_camera(&self, float dt)
 {
 	if (!g_canvas_settings.smoothing)
 	{
 		self.camera = self.target;
+		self.following = false;
 		return;
 	}
 
@@ -447,6 +484,12 @@ fn void Canvas.ease_camera(&self, float dt)
 	{
 		self.camera.zoom = self.target.zoom;
 	}
+	if (self.following && !self.dragging && math::abs(
+		self.target.target[0] - self.camera.target[0]
+	) < CAMERA_SNAP_EPSILON && math::abs(self.target.target[1] - self.camera.target[1]) < CAMERA_SNAP_EPSILON)
+	{
+		self.following = false;
+	}
 }
 
 fn void Canvas.zoom_at(&self, float wheel, RLVector2 screen_anchor)
@@ -467,6 +510,7 @@ fn void Canvas.zoom_at(&self, float wheel, RLVector2 screen_anchor)
 fn void Canvas.pan_by(&self, RLVector2 screen_delta)
 {
 	if (self.target.zoom <= 0.0f) return;
+	self.following = false;
 	self.target.target[0] -= screen_delta[0] / self.target.zoom;
 	self.target.target[1] -= screen_delta[1] / self.target.zoom;
 }
@@ -482,6 +526,7 @@ fn void Canvas.key_pan(&self, RLVector2 screen_delta)
 
 fn void Canvas.key_zoom(&self, float direction)
 {
+	self.following = false;
 	float zoom = self.target.zoom > 0.0f ? self.target.zoom : 1.0f;
 	self.target.zoom = math::clamp(
 		zoom * math::pow(g_canvas_settings.zoom_step, direction),
@@ -492,6 +537,7 @@ fn void Canvas.key_zoom(&self, float direction)
 
 fn void Canvas.reset_zoom(&self)
 {
+	self.following = false;
 	self.target.zoom = 1.0f;
 }
 
@@ -612,6 +658,11 @@ fn void Canvas.draw_grid(&self)
 fn void Canvas.draw(&self)
 {
 	rl::clear_background(theme::current().window_bg);
+	skin::draw_screen(
+		skin::SurfaceId.APP,
+		{ .x = 0.0f, .y = 0.0f, .width = (float)rl::get_screen_width(), .height = (float)rl::get_screen_height() },
+		0.0f
+	);
 	rl::@mode2d(self.camera)
 	{
 		self.draw_grid();

@@ -305,7 +305,7 @@ fn void lsp_append_marked_string(Allocator allocator, Object* item, DString* out
 	if (!item.is_map()) return;
 	Object*? language_opt = item.get("language");
 	Object*? value_opt    = item.get("value");
-	if (catch excuse = value_opt) return;
+	if (catch err = value_opt) return;
 	if (try language = language_opt)
 	{
 		@pool()
@@ -325,7 +325,7 @@ fn String? lsp_normalize_hover(Allocator allocator, Object* result)
 	if (!result.is_map()) return LSP_NO_HOVER~;
 
 	Object*? contents_opt = result.get("contents");
-	if (catch excuse = contents_opt) return LSP_NO_HOVER~;
+	if (catch err = contents_opt) return LSP_NO_HOVER~;
 	Object* contents = contents_opt;
 
 	if (contents.is_string()) return contents.s.copy(allocator);
@@ -411,7 +411,7 @@ fn void lsp_add_definition(Allocator allocator, Object* item, List{DefinitionTar
 	if (!range_obj || !range_obj.is_map()) return;
 
 	Object*? start_opt = range_obj.get("start");
-	if (catch excuse = start_opt) return;
+	if (catch err = start_opt) return;
 
 	out.push(
 		{
@@ -439,7 +439,7 @@ fn void lsp_add_completion_item(Allocator allocator, Object* item, List{Completi
 {
 	if (!item.is_map()) return;
 	Object*? label_opt = item.get("label");
-	if (catch excuse = label_opt) return;
+	if (catch err = label_opt) return;
 	if (!label_opt.is_string()) return;
 
 	String label = label_opt.s.copy(allocator);
@@ -548,7 +548,7 @@ fn void lsp_normalize_completion(Allocator allocator, Object* result, List{Compl
 	if (!result.is_map()) return;
 
 	Object*? items_opt = result.get("items");
-	if (catch excuse = items_opt)
+	if (catch err = items_opt)
 	{
 		lsp_add_completion_item(allocator, result, out);
 		return;
@@ -597,7 +597,7 @@ fn void lsp_parse_formatting(Allocator allocator, Object* result, List{Formattin
 		}
 
 		Object*? text_opt = entry.get("newText");
-		if (catch excuse = text_opt) continue;
+		if (catch err = text_opt) continue;
 		if (!text_opt.is_string()) continue;
 		edit.new_text = text_opt.s.copy(allocator);
 		out.push(edit);
@@ -607,7 +607,7 @@ fn void lsp_parse_formatting(Allocator allocator, Object* result, List{Formattin
 fn bool lsp_provider_enabled(Object* caps, String key)
 {
 	Object*? value_opt = caps.get(key);
-	if (catch excuse = value_opt) return false;
+	if (catch err = value_opt) return false;
 	if (value_opt.is_bool()) return value_opt.b;
 	return true;
 }
@@ -616,7 +616,7 @@ fn void lsp_parse_capabilities(Allocator allocator, Object* result, LspCapabilit
 {
 	if (!result.is_map()) return;
 	Object*? caps_opt = result.get("capabilities");
-	if (catch excuse = caps_opt) return;
+	if (catch err = caps_opt) return;
 	Object* caps = caps_opt;
 	for (sz i = 0; i < out.trigger_characters.len(); i++) out.trigger_characters[i].free(allocator);
 	out.trigger_characters.clear();
@@ -694,9 +694,9 @@ fn void lsp_parse_capabilities(Allocator allocator, Object* result, LspCapabilit
 fn uint lsp_object_uint(Object* obj, String key)
 {
 	Object*? value_opt = obj.get(key);
-	if (catch excuse = value_opt) return 0;
+	if (catch err = value_opt) return 0;
 	uint? number = value_opt.to_value(uint);
-	if (catch excuse = number) return 0;
+	if (catch err = number) return 0;
 	return number;
 }
 
@@ -718,7 +718,7 @@ fn void lsp_parse_inlay_hints(Allocator allocator, Object* result, List{InlayHin
 		Object* value = result.get_at(i);
 		if (!value.is_map()) continue;
 		Object*? position_opt = value.get("position");
-		if (catch excuse = position_opt) continue;
+		if (catch err = position_opt) continue;
 		if (!position_opt.is_map()) continue;
 		uint line          = lsp_object_uint(position_opt, "line");
 		uint character     = lsp_object_uint(position_opt, "character");
@@ -763,7 +763,7 @@ fn void lsp_parse_inlay_hints(Allocator allocator, Object* result, List{InlayHin
 fn void lsp_parse_diagnostics(Allocator allocator, Object* params, List{LspDiagnostic}* out)
 {
 	Object*? list_opt = params.get("diagnostics");
-	if (catch excuse = list_opt) return;
+	if (catch err = list_opt) return;
 	if (!list_opt.is_array()) return;
 
 	for (sz i = 0; i < list_opt.get_len(); i++)

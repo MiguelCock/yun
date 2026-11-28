@@ -248,7 +248,7 @@ fn void test_event_marshalling_and_buffer_cap()
 		@pool()
 		{
 			Path? demo_opt = ((Path)root).append(tmem, ".yun/mods/demo.c3");
-			if (catch excuse = demo_opt) assert(false);
+			if (catch err = demo_opt) assert(false);
 			Path demo = demo_opt;
 			int index = project.append_card((String)demo, { 0.0f, 0.0f });
 			assert(index == 0);

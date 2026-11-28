@@ -11,15 +11,15 @@ fn void test_recovery_roundtrip()
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_recovery");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? f = dir.append(tmem, "a.c3");
-		if (catch excuse = f) return;
-		if (catch excuse = file::save(f, "fn int main() { return 0; }\n")) return;
+		if (catch err = f) return;
+		if (catch err = file::save(f, "fn int main() { return 0; }\n")) return;
 
 		project::Project p;
 		p.init(mem);

@@ -14,9 +14,15 @@
   "authors": [
     "MiguelCock <macockc@outlook.com>"
   ],
-  "version": "0.4.0",
+  "version": "0.5.0",
   "sources": [
     "src/**"
+  ],
+  "c-sources": [
+    "third_party/yun_stb_image.c"
+  ],
+  "c-include-dirs": [
+    "third_party"
   ],
   "test-sources": [
     "test/**"

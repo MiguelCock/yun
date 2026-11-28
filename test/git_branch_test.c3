@@ -50,19 +50,19 @@ fn void test_branch_commands()
 fn void test_branch_integration()
 {
 	String[] probe = { "git", "--version" };
-	if (catch excuse = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
+	if (catch err = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
 	{
 		return;
 	}
 	String dir = git_test_helpers::temp_dir("yun_git_branches_test");
 	defer dir.free(mem);
 	(void)path::delete((PathCommon)dir);
-	if (catch excuse = path::mkdir(dir, recursive: true)) return;
+	if (catch err = path::mkdir(dir, recursive: true)) return;
 	defer (void)path::delete((PathCommon)dir);
 	String file = string::format(tmem, "%s/file.c3", dir);
-	if (catch excuse = file::save(file, "module test;\n")) return;
+	if (catch err = file::save(file, "module test;\n")) return;
 	String[] init = { "git", "init", "-q", dir };
-	if (catch excuse = process::run(init, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
+	if (catch err = process::run(init, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
 	{
 		return;
 	}

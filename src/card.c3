@@ -8,13 +8,14 @@ import yun::git;
 import yun::highlight;
 import yun::icons;
 import yun::markdown;
+import yun::skin;
 import yun::text;
 import yun::theme;
 import yun::ui;
 
-const float CARD_TITLE_HEIGHT     = 28.0f;
-const float CARD_TITLE_BUTTON     = 24.0f;
-const float CARD_TITLE_BUTTON_GAP = 2.0f;
+const float CARD_TITLE_HEIGHT     = 34.0f;
+const float CARD_TITLE_BUTTON     = 26.0f;
+const float CARD_TITLE_BUTTON_GAP = 3.0f;
 const float HANDLE_PX             = 10.0f;
 
 struct FileCard
@@ -44,10 +45,26 @@ struct FileCard
 	markdown::View* view;
 }
 
+fn RLColor card_body_fill()
+{
+	RLColor base = theme::current().card_body;
+	if (skin::card_style() == skin::CardStyle.PAPER) return theme::mix(base, { 84, 68, 50, 255 }, 0.45f);
+	if (skin::card_style() == skin::CardStyle.GLASS) return theme::with_alpha(base, 210);
+	return base;
+}
+
+fn RLColor card_title_fill()
+{
+	RLColor base = theme::current().card_title;
+	if (skin::card_style() == skin::CardStyle.PAPER) return theme::mix(base, { 105, 82, 56, 255 }, 0.55f);
+	if (skin::card_style() == skin::CardStyle.GLASS) return theme::with_alpha(base, 220);
+	return base;
+}
+
 fn Rect FileCard.effective_rect(&self)
 {
 	Rect r = self.rect;
-	if (!self.open) r.height = ui::pxf(CARD_TITLE_HEIGHT);
+	if (!self.open) r.height = ui::pxf(skin::closed_height());
 	return r;
 }
 
@@ -137,6 +154,7 @@ fn void draw_title_button(Rect button, icons::IconKind icon, bool active, bool h
 fn void FileCard.draw(
 	&self,
 	bool focused,
+	bool selected,
 	RLCamera2D camera,
 	RLVector2 mouse_world,
 	bool focus_mode,
@@ -146,14 +164,33 @@ fn void FileCard.draw(
 	float zoom   = camera.zoom;
 	Rect r       = self.effective_rect();
 	float radius = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
-	ui::rounded_rect(r, radius, theme::current().card_body);
+	bool images  = skin::show_image(
+		selected
+	) && (skin::has_image(
+		skin::SurfaceId.CARD
+	) || skin::has_image(
+		skin::SurfaceId.CARD_TITLE
+	) || skin::has_image(skin::SurfaceId.CARD_EDITOR) || skin::has_image(skin::SurfaceId.CLOSED_CARD));
+	RLColor body = card_body_fill();
+	if (images) body.a = 255;
+	ui::rounded_rect(r, radius, body);
+	if (skin::show_image(selected))
+	{
+		skin::draw_world(skin::SurfaceId.CARD, r, zoom, ui::corner_radius());
+	}
 	Rect title = {
 		.x = r.x,
 		.y = r.y,
 		.width = r.width,
 		.height = ui::pxf(CARD_TITLE_HEIGHT),
 	};
-	ui::rounded_top(title, radius, theme::current().card_title);
+	RLColor title_fill = card_title_fill();
+	if (images) title_fill.a = 255;
+	ui::rounded_top(title, radius, title_fill);
+	if (skin::show_image(selected))
+	{
+		skin::draw_world(skin::SurfaceId.CARD_TITLE, title, zoom, ui::corner_radius());
+	}
 	if (focused)
 	{
 		ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_focus);
@@ -162,7 +199,20 @@ fn void FileCard.draw(
 	{
 		ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 	}
-	float file_icon_size = (float)ui::px(16);
+	float file_icon_size    = (float)ui::px(18);
+	RLColor language_accent = skin::language_colors() ? skin::language_color((String)self.path) : rl::WHITE;
+	if (skin::language_colors())
+	{
+		rl::draw_rectangle_rec(
+			{
+				.x = r.x,
+				.y = title.y + radius,
+				.width = screen_thickness(3.0f, zoom),
+				.height = title.height - radius,
+			},
+			language_accent
+		);
+	}
 	bool has_file_icon = icons::draw_file(
 		(String)self.path,
 		{
@@ -171,7 +221,7 @@ fn void FileCard.draw(
 			.width = file_icon_size,
 			.height = file_icon_size,
 		},
-		rl::WHITE
+		language_accent
 	);
 	float name_x = r.x + (float)ui::px(10);
 	if (has_file_icon) name_x += file_icon_size + (float)ui::px(4);
@@ -180,12 +230,54 @@ fn void FileCard.draw(
 		rl::draw_text_ex(
 			ui::font(),
 			self.name.zstr_tcopy(),
-			{ name_x, r.y + (float)ui::px(7) },
-			(float)ui::tpx(16),
+			{ name_x, r.y + (float)ui::px(9) },
+			(float)ui::tpx(18),
 			0.0f,
 			theme::current()
 			.card_text);
 	};
+	if (!self.open)
+	{
+		if (skin::show_image(selected))
+		{
+			skin::draw_world(
+				skin::SurfaceId.CLOSED_CARD,
+				{
+					.x = r.x,
+					.y = r.y + ui::pxf(CARD_TITLE_HEIGHT),
+					.width = r.width,
+					.height = r.height - ui::pxf(CARD_TITLE_HEIGHT)
+				},
+				zoom,
+				0.0f
+			);
+		}
+		float top    = r.y + ui::pxf(CARD_TITLE_HEIGHT) + (float)ui::px(8);
+		float bottom = r.y + r.height - (float)ui::px(8);
+		float gap    = math::max((float)ui::px(10), (float)ui::tpx(16));
+		float margin = r.x + (float)ui::px(22);
+		RLColor rule = theme::current().card_border;
+		rule.a = 90;
+		RLColor margin_rule = theme::current().diag_error;
+		margin_rule.a = 70;
+		for (float y = top; y < bottom; y += gap)
+		{
+			rl::draw_line_ex(
+				{ r.x + (float)ui::px(10), y },
+				{ r.x + r.width - (float)ui::px(10), y },
+				1.0f / (zoom > 0.0f ? zoom : 1.0f),
+				rule
+			);
+		}
+		rl::draw_line_ex({ margin, top }, { margin, bottom }, 1.0f / (zoom > 0.0f ? zoom : 1.0f), margin_rule);
+		float ear = (float)ui::px(18);
+		rl::draw_triangle(
+			{ r.x + r.width - ear, r.y + r.height },
+			{ r.x + r.width, r.y + r.height - ear },
+			{ r.x + r.width, r.y + r.height },
+			card_title_fill()
+		);
+	}
 	bool pressed         = rl::is_mouse_button_down(rl::RLMouseButton.LEFT);
 	Rect preview_button  = self.title_button_rect(0);
 	Rect maximize_button = self.title_button_rect(1);
@@ -258,30 +350,57 @@ fn void FileCard.draw_lod(&self, float zoom)
 {
 	Rect r       = self.effective_rect();
 	float radius = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
-	ui::rounded_rect(r, radius, theme::current().card_body);
+	ui::rounded_rect(r, radius, card_body_fill());
 	ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
 }
 
-fn void FileCard.draw_lod_title(&self, RLFont font, float zoom)
+fn void FileCard.draw_lod_title(&self, RLFont font, float zoom, bool selected)
 {
 	Rect r       = self.effective_rect();
 	float radius = zoom > 0.0f ? ui::corner_radius() / zoom : ui::corner_radius();
-	ui::rounded_rect(r, radius, theme::current().card_body);
+	bool images  = skin::show_image(
+		selected
+	) && (skin::has_image(skin::SurfaceId.CARD) || skin::has_image(skin::SurfaceId.CARD_TITLE));
+	RLColor body = card_body_fill();
+	if (images) body.a = 255;
+	ui::rounded_rect(r, radius, body);
+	if (skin::show_image(selected))
+	{
+		skin::draw_world(skin::SurfaceId.CARD, r, zoom, ui::corner_radius());
+	}
 	Rect title = {
 		.x = r.x,
 		.y = r.y,
 		.width = r.width,
 		.height = ui::pxf(CARD_TITLE_HEIGHT),
 	};
-	ui::rounded_top(title, radius, theme::current().card_title);
+	RLColor title_fill = card_title_fill();
+	if (images) title_fill.a = 255;
+	ui::rounded_top(title, radius, title_fill);
+	if (skin::show_image(selected))
+	{
+		skin::draw_world(skin::SurfaceId.CARD_TITLE, title, zoom, ui::corner_radius());
+	}
 	ui::rounded_rect_lines(r, radius, screen_thickness(1.0f, zoom), theme::current().card_border);
+	if (skin::language_colors())
+	{
+		rl::draw_rectangle_rec(
+			{
+				.x = r.x,
+				.y = r.y + radius,
+				.width = screen_thickness(3.0f, zoom),
+				.height = ui::pxf(CARD_TITLE_HEIGHT) - radius,
+			},
+			skin::language_color((String)self.path)
+		);
+	}
 	@pool()
 	{
 		rl::draw_text_ex(
 			font,
 			self.name.zstr_tcopy(),
-			{ r.x + (float)ui::px(10), r.y + (float)ui::px(7) },
-			(float)ui::tpx(16),
+			{ r.x + (float)ui::px(10), r.y + (float)ui::px(9) },
+			(float)ui::tpx(18),
 			0.0f,
 			theme::current()
 			.card_text);

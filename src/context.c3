@@ -17,6 +17,16 @@ enum ContextAction
 	COPY_PATH,
 	DELETE_CARD,
 	MINIMIZE_CARD,
+	UNDO,
+	REDO,
+	CUT,
+	COPY,
+	PASTE,
+	SELECT_ALL,
+	FIND,
+	REPLACE,
+	SAVE,
+	EXIT_FOCUS,
 	NEW_FILE,
 	NEW_FOLDER,
 	OPEN_PROJECT,
@@ -42,6 +52,9 @@ fn usz build(
 	bool card_missing,
 	bool has_project,
 	bool can_define,
+	bool editing,
+	bool has_selection,
+	bool focus_mode,
 	ContextItem[] out
 )
 {
@@ -83,6 +96,32 @@ fn usz build(
 				.enabled = can_define,
 			};
 			count++;
+			if (editing)
+			{
+				out[count] = { .label = "Undo", .action = ContextAction.UNDO, .enabled = true };
+				count++;
+				out[count] = { .label = "Redo", .action = ContextAction.REDO, .enabled = true };
+				count++;
+				out[count] = { .label = "Cut", .action = ContextAction.CUT, .enabled = has_selection };
+				count++;
+				out[count] = { .label = "Copy", .action = ContextAction.COPY, .enabled = has_selection };
+				count++;
+				out[count] = { .label = "Paste", .action = ContextAction.PASTE, .enabled = true };
+				count++;
+				out[count] = { .label = "Select All", .action = ContextAction.SELECT_ALL, .enabled = true };
+				count++;
+				out[count] = { .label = "Find", .action = ContextAction.FIND, .enabled = true };
+				count++;
+				out[count] = { .label = "Replace", .action = ContextAction.REPLACE, .enabled = true };
+				count++;
+				out[count] = { .label = "Save", .action = ContextAction.SAVE, .enabled = true };
+				count++;
+				if (focus_mode)
+				{
+					out[count] = { .label = "Exit Focus", .action = ContextAction.EXIT_FOCUS, .enabled = true };
+					count++;
+				}
+			}
 			break;
 		case ContextTarget.CLUSTER:
 			out[count] = { .label = "New File", .action = ContextAction.NEW_FILE, .enabled = has_project };
@@ -130,6 +169,26 @@ fn int command_for(ContextAction action)
 			return (int)commands::CommandId.DELETE_CARD;
 		case ContextAction.MINIMIZE_CARD:
 			return (int)commands::CommandId.MINIMIZE_CARD;
+		case ContextAction.UNDO:
+			return (int)commands::CommandId.UNDO;
+		case ContextAction.REDO:
+			return (int)commands::CommandId.REDO;
+		case ContextAction.CUT:
+			return (int)commands::CommandId.CUT;
+		case ContextAction.COPY:
+			return (int)commands::CommandId.COPY;
+		case ContextAction.PASTE:
+			return (int)commands::CommandId.PASTE;
+		case ContextAction.SELECT_ALL:
+			return (int)commands::CommandId.SELECT_ALL;
+		case ContextAction.FIND:
+			return (int)commands::CommandId.FIND;
+		case ContextAction.REPLACE:
+			return (int)commands::CommandId.REPLACE;
+		case ContextAction.SAVE:
+			return (int)commands::CommandId.SAVE;
+		case ContextAction.EXIT_FOCUS:
+			return (int)commands::CommandId.TOGGLE_FOCUS_MODE;
 		case ContextAction.MOD_ITEM:
 			return -1;
 		default:

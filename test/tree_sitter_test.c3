@@ -267,7 +267,7 @@ fn void test_highlights_query_loads()
 	for (int i = 0; i < 4; i++)
 	{
 		char[]? data = file::load(tmem, query_paths[i]);
-		if (catch excuse = data) assert(false);
+		if (catch err = data) assert(false);
 
 		uint offset        = 0;
 		TSQueryError error = TS_QUERY_ERROR_NONE;

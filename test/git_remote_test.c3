@@ -39,7 +39,7 @@ fn void test_remote_commands()
 fn void test_remote_integration()
 {
 	String[] probe = { "git", "--version" };
-	if (catch excuse = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
+	if (catch err = process::run(probe, { }, { }, process::CAPTURE, process::CAPTURE, process::CAPTURE))
 	{
 		return;
 	}

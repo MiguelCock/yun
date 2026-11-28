@@ -68,6 +68,13 @@ fn ArrowStyle parse_arrow_style(String value)
 	return ArrowStyle.SOLID;
 }
 
+enum ArrowMode : int
+{
+	OFF,
+	RELATED,
+	ALL,
+}
+
 ImportSettings g_import_settings = {
 	.enabled = true,
 	.related_only = true,
@@ -87,6 +94,41 @@ ImportSettings g_import_settings = {
 fn ImportSettings settings()
 {
 	return g_import_settings;
+}
+
+fn ArrowMode mode()
+{
+	if (!g_import_settings.enabled) return ArrowMode.OFF;
+	return g_import_settings.related_only ? ArrowMode.RELATED : ArrowMode.ALL;
+}
+
+fn String mode_name()
+{
+	switch (mode())
+	{
+		case ArrowMode.OFF:
+			return "off";
+		case ArrowMode.RELATED:
+			return "related";
+		case ArrowMode.ALL:
+			return "all";
+	}
+}
+
+fn void cycle_mode()
+{
+	switch (mode())
+	{
+		case ArrowMode.OFF:
+			g_import_settings.enabled = true;
+			g_import_settings.related_only = true;
+		case ArrowMode.RELATED:
+			g_import_settings.enabled = true;
+			g_import_settings.related_only = false;
+		case ArrowMode.ALL:
+			g_import_settings.enabled = false;
+			g_import_settings.related_only = true;
+	}
 }
 
 bool g_draw_on_top = false;
@@ -318,13 +360,13 @@ fn void ImportIndex.init_pool(&self)
 {
 	int workers = resolve_scan_workers();
 	self.workers = workers;
-	if (catch excuse = self.pool.init(self.allocator, workers))
+	if (catch err = self.pool.init(self.allocator, workers))
 	{
 		self.pool_ready = false;
 		return;
 	}
 	UnboundedChannel{ScanResult}*? created = channel::create_unbounded{ScanResult}(self.allocator);
-	if (catch excuse = created)
+	if (catch err = created)
 	{
 		self.pool.destroy();
 		self.pool_ready = false;
@@ -356,7 +398,7 @@ fn void ImportIndex.destroy_pool(&self)
 		while (true)
 		{
 			ScanResult? maybe = self.results.try_pop();
-			if (catch excuse = maybe) break;
+			if (catch err = maybe) break;
 			ScanResult result = maybe;
 			free_scan_result(self.allocator, &result);
 		}
@@ -678,7 +720,7 @@ const String[] INDEX_EXTS = { ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".in
 fn String read_text(Allocator allocator, String path)
 {
 	char[]? data = file::load(allocator, path);
-	if (catch excuse = data) return "";
+	if (catch err = data) return "";
 	return (String)data;
 }
 
@@ -1879,7 +1921,7 @@ fn void ImportIndex.resolve_one(&self, project::Project* project, String path)
 	{
 		CardImports[] all_files = self.files.entries[0:self.files.len()];
 		int*? entry             = self.file_index.get_ref(path);
-		if (catch excuse = entry) return;
+		if (catch err = entry) return;
 		self.resolve_file(project, all_files, &self.files[*entry]);
 	};
 	self.edges_dirty = true;
@@ -1891,7 +1933,7 @@ fn String cache_abs_path(Allocator allocator, String root, String relative)
 {
 	if (relative.len == 0) return "";
 	Path? appended = ((Path)root).append(allocator, relative);
-	if (catch excuse = appended) return "";
+	if (catch err = appended) return "";
 	return (String)appended;
 }
 
@@ -1952,7 +1994,7 @@ fn bool ImportIndex.load_cache(&self, project::Project* project)
 		if (valid)
 		{
 			long? size = file::get_size(absolute);
-			if (catch excuse = size)
+			if (catch err = size)
 			{
 				valid = false;
 			}
@@ -2052,7 +2094,7 @@ fn void ImportIndex.save_cache(&self, project::Project* project)
 	{
 		CardImports* file = &self.files[i];
 		int*? card_index  = self.card_paths.get_ref(file.path);
-		if (catch excuse = card_index) continue;
+		if (catch err = card_index) continue;
 		if (*card_index < 0 || *card_index >= (int)project.cards.len()) continue;
 		FileCard* card = &project.cards[*card_index];
 		if (card.dirty || card.missing) continue;
@@ -2060,13 +2102,13 @@ fn void ImportIndex.save_cache(&self, project::Project* project)
 		String relative = cache_rel_path(self.allocator, (String)project.root, file.path);
 		if (relative.len == 0) continue;
 		long? size = file::get_size(file.path);
-		if (catch excuse = size)
+		if (catch err = size)
 		{
 			relative.free(self.allocator);
 			continue;
 		}
 		Time? mtime = file::last_modified(file.path);
-		if (catch excuse = mtime)
+		if (catch err = mtime)
 		{
 			relative.free(self.allocator);
 			continue;
@@ -2103,7 +2145,7 @@ fn void ImportIndex.save_cache(&self, project::Project* project)
 	{
 		String dir  = string::format(tmem, "%s/.yun/cache", project.root);
 		String path = string::format(tmem, "%s/imports.bin", dir);
-		if (catch excuse = path::mkdir((Path)dir, recursive: true))
+		if (catch err = path::mkdir((Path)dir, recursive: true))
 		{
 			body.free();
 			return;
@@ -2161,7 +2203,7 @@ fn void ImportIndex.start_scan(&self, project::Project* project)
 		work.path = ((String)card.path).copy(self.allocator);
 		work.language = language;
 		work.generation = self.generation;
-		if (catch excuse = self.pool.add_task(&import_scan_worker, work))
+		if (catch err = self.pool.add_task(&import_scan_worker, work))
 		{
 			work.path.free(self.allocator);
 			alloc::free(self.allocator, work);
@@ -2180,7 +2222,7 @@ fn void ImportIndex.sync(&self, project::Project* project)
 fn void ImportIndex.store(&self, String path, List{ImportRef}* refs, String module_name, bool is_test)
 {
 	int*? existing = self.file_index.get_ref(path);
-	if (catch excuse = existing)
+	if (catch err = existing)
 	{
 		CardImports file;
 		file.path = path.copy(self.allocator);
@@ -2222,7 +2264,7 @@ fn void ImportIndex.scan_one(&self, project::Project* project, int card_index)
 		else
 		{
 			char[]? data = file::load(tmem, (String)card.path);
-			if (catch excuse = data) return;
+			if (catch err = data) return;
 			text = (String)data;
 		}
 
@@ -2286,7 +2328,7 @@ fn void ImportIndex.pump(&self, project::Project* project)
 		while (budget-- > 0)
 		{
 			ScanResult? maybe = self.results.try_pop();
-			if (catch excuse = maybe) break;
+			if (catch err = maybe) break;
 			ScanResult result = maybe;
 			if (result.generation != self.generation)
 			{
@@ -2325,7 +2367,7 @@ fn void ImportIndex.pump(&self, project::Project* project)
 fn String ImportIndex.module_for_path(&self, Allocator allocator, String path)
 {
 	int*? entry = self.file_index.get_ref(path);
-	if (catch excuse = entry) return "";
+	if (catch err = entry) return "";
 	return self.files[*entry].module_name.copy(allocator);
 }
 
@@ -2374,7 +2416,7 @@ fn void ImportIndex.importers_of(&self, String target_path, List{ImporterRef}* o
 fn ImportRef[] ImportIndex.imports_for(&self, String path)
 {
 	int*? entry = self.file_index.get_ref(path);
-	if (catch excuse = entry) return NO_IMPORTS;
+	if (catch err = entry) return NO_IMPORTS;
 	CardImports* file = &self.files[*entry];
 	return file.imports.entries[0:file.imports.len()];
 }
@@ -2429,7 +2471,7 @@ fn void import_extract_file(
 	@pool()
 	{
 		char[]? data = file::load(tmem, path);
-		if (catch excuse = data) return;
+		if (catch err = data) return;
 		String text = (String)data;
 
 		TSParser* parser = tree_sitter::ts_parser_new();
@@ -2489,14 +2531,14 @@ fn void ImportIndex.build_edges(&self, project::Project* project, List{ImportEdg
 			ImportRef ref = refs[r];
 			if (!ref.resolved || ref.target_path.len == 0) continue;
 			int*? target = self.card_paths.get_ref(ref.target_path);
-			if (catch excuse = target) continue;
+			if (catch err = target) continue;
 			int target_card = *target;
 			if (target_card < 0 || target_card >= (int)project.cards.len()) continue;
 			if (target_card == (int)c) continue;
 
 			long key       = ((long)(uint)(int)c << 32) | (long)(uint)target_card;
 			int*? existing = seen.get_ref(key);
-			if (catch excuse = existing)
+			if (catch err = existing)
 			{
 				seen.set(key, (int)out.len());
 				out.push(
@@ -2535,7 +2577,7 @@ fn void ImportIndex.collect_group(&self, project::Project* project, ImportHit hi
 	if (!hit.valid) return;
 	if (hit.source < 0 || hit.source >= (int)project.cards.len()) return;
 	int*? source = self.file_index.get_ref((String)project.cards[hit.source].path);
-	if (catch excuse = source) return;
+	if (catch err = source) return;
 	CardImports* source_file = &self.files[*source];
 	if ((sz)hit.ref_index >= source_file.imports.len()) return;
 	ImportRef first = source_file.imports[(sz)hit.ref_index];
@@ -2940,7 +2982,7 @@ fn void ImportIndex.draw_tooltip(&self, project::Project* project, RLFont font)
 		{
 			String target_name = "";
 			int*? target       = self.card_paths.get_ref(ref.target_path);
-			if (catch excuse = target)
+			if (catch err = target)
 			{
 				target_name = "";
 			}

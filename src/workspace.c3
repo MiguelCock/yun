@@ -10,11 +10,13 @@ import yun::canvas;
 import yun::card;
 import yun::console;
 import yun::project;
+import yun::ui;
 
-const String WORKSPACE_VERSION = "4";
+const String WORKSPACE_VERSION = "5";
 const String WORKSPACE_DIR     = ".yun";
 const String WORKSPACE_FILE    = "workspace.json";
 const String WORKSPACE_TMP     = "workspace.tmp";
+bool g_migrated;
 
 struct CameraState
 {
@@ -86,7 +88,7 @@ fn bool save(project::Project* project, canvas::Canvas* canvas, console::Console
 	@pool()
 	{
 		Path? dir = ((Path)(String)project.root).append(tmem, WORKSPACE_DIR);
-		if (catch excuse = dir) return false;
+		if (catch err = dir) return false;
 		return save_at(project, canvas, console_manager, dir);
 	};
 }
@@ -128,15 +130,15 @@ fn bool save_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 		folders.init(tmem);
 		for (sz i = 0; i < project.folders.len(); i++)
 		{
-			Rect bounds = project.cluster_bounds((int)i);
+			Rect body = project.folders[i].body;
 			folders.push(
 				{
 					.path = relative_path(tmem, (String)project.root, (String)project.folders[i].path),
 					.collapsed = project.folders[i].collapsed,
-					.x = bounds.x,
-					.y = bounds.y,
-					.w = bounds.width,
-					.h = bounds.height,
+					.x = body.x,
+					.y = body.y,
+					.w = body.width,
+					.h = body.height,
 				}
 			);
 		}
@@ -179,17 +181,22 @@ fn bool save_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 
 		String json = json::marshal(tmem, state, JsonIndent.SPACE_2);
 
-		if (catch excuse = path::mkdir(dir, recursive: true)) return false;
+		if (catch err = path::mkdir(dir, recursive: true)) return false;
 
 		Path? tmp = dir.append(tmem, WORKSPACE_TMP);
-		if (catch excuse = tmp) return false;
+		if (catch err = tmp) return false;
 		Path? target = dir.append(tmem, WORKSPACE_FILE);
-		if (catch excuse = target) return false;
+		if (catch err = target) return false;
 
-		if (catch excuse = file::save(tmp, json.ptr[0:json.len])) return false;
+		if (catch err = file::save(tmp, json.ptr[0:json.len])) return false;
 		if (libc::rename((ZString)tmp.ptr, (ZString)target.ptr) != 0) return false;
 	};
 	return true;
+}
+
+fn bool migrated()
+{
+	return g_migrated;
 }
 
 fn bool load(project::Project* project, canvas::Canvas* canvas, console::ConsoleManager* console_manager = null)
@@ -198,32 +205,36 @@ fn bool load(project::Project* project, canvas::Canvas* canvas, console::Console
 	@pool()
 	{
 		Path? dir = ((Path)(String)project.root).append(tmem, WORKSPACE_DIR);
-		if (catch excuse = dir) return false;
+		if (catch err = dir) return false;
 		return load_at(project, canvas, console_manager, dir);
 	};
 }
 
 fn bool load_at(project::Project* project, canvas::Canvas* canvas, console::ConsoleManager* console_manager, Path dir)
 {
+	g_migrated = false;
 	if (project.root.len == 0) return false;
 	@pool()
 	{
 		Path? file_path = dir.append(tmem, WORKSPACE_FILE);
-		if (catch excuse = file_path) return false;
+		if (catch err = file_path) return false;
 		if (!path::exists(file_path)) return false;
 
 		char[]? data = file::load(tmem, file_path);
-		if (catch excuse = data) return false;
+		if (catch err = data) return false;
 
 		WorkspaceState? parsed = json::unmarshal(tmem, (String)data, WorkspaceState);
-		if (catch excuse = parsed) return false;
+		if (catch err = parsed) return false;
 		WorkspaceState state = parsed;
-		if (state.version.compare_to("3") != 0 && state.version.compare_to(WORKSPACE_VERSION) != 0) return false;
+		if (state.version.compare_to(
+			"3"
+		) != 0 && state.version.compare_to("4") != 0 && state.version.compare_to(WORKSPACE_VERSION) != 0) return false;
+		g_migrated = state.version.compare_to(WORKSPACE_VERSION) != 0;
 
 		for (usz i = 0; i < state.cards.len; i++)
 		{
 			Path? abs = absolute_path(tmem, (String)project.root, state.cards[i].path);
-			if (catch excuse = abs) continue;
+			if (catch err = abs) continue;
 			int index = project.find_card((String)abs);
 			if (index < 0) continue;
 			project.cards[index].rect = {
@@ -237,19 +248,22 @@ fn bool load_at(project::Project* project, canvas::Canvas* canvas, console::Cons
 			project.cards[index].restored = true;
 		}
 
+		bool body_version = state.version.compare_to(WORKSPACE_VERSION) == 0;
 		for (usz i = 0; i < state.folders.len; i++)
 		{
 			Path? abs = absolute_path(tmem, (String)project.root, state.folders[i].path);
-			if (catch excuse = abs) continue;
+			if (catch err = abs) continue;
 			int index = project.folder_by_path((String)abs);
 			if (index >= 0)
 			{
 				project.folders[index].collapsed = state.folders[i].collapsed;
-				project.folders[index].bounds = {
+				project.folders[index].body = {
 					.x = state.folders[i].x,
 					.y = state.folders[i].y,
-					.width = state.folders[i].w,
-					.height = state.folders[i].h,
+					.width = body_version && state.folders[i].w > 0.0f ? state.folders[i].w
+						: ui::pxf(project::CLUSTER_COLLAPSED_WIDTH),
+					.height = body_version && state.folders[i].h > 0.0f ? state.folders[i].h
+						: ui::pxf(project::CLUSTER_COLLAPSED_BODY),
 				};
 				project.folders[index].bounds_valid = false;
 			}

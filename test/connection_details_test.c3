@@ -11,18 +11,18 @@ fn void test_named_import_alias_and_usage() @test
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_connection_details");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? source_path = dir.append(tmem, "source.ts");
-		if (catch excuse = source_path) return;
+		if (catch err = source_path) return;
 		Path? target_path = dir.append(tmem, "target.ts");
-		if (catch excuse = target_path) return;
-		if (catch excuse = file::save(source_path, "import { foo as bar } from \"target\";\nbar();\nfoo();\n")) return;
-		if (catch excuse = file::save(target_path, "export function foo() {}\n")) return;
+		if (catch err = target_path) return;
+		if (catch err = file::save(source_path, "import { foo as bar } from \"target\";\nbar();\nfoo();\n")) return;
+		if (catch err = file::save(target_path, "export function foo() {}\n")) return;
 
 		project::Project p;
 		p.init(mem);
@@ -59,18 +59,15 @@ fn void test_external_named_clause() @test
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_connection_details_external");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? source_path = dir.append(tmem, "source.ts");
-		if (catch excuse = source_path) return;
-		if (catch excuse = file::save(
-			source_path,
-			"import { foo, bar as baz } from \"pkg\";\nfoo();\nbaz();\n"
-		)) return;
+		if (catch err = source_path) return;
+		if (catch err = file::save(source_path, "import { foo, bar as baz } from \"pkg\";\nfoo();\nbaz();\n")) return;
 
 		project::Project p;
 		p.init(mem);
@@ -107,21 +104,21 @@ fn void test_module_only_fallback() @test
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_connection_details_module");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? source_path = dir.append(tmem, "source.c3");
-		if (catch excuse = source_path) return;
+		if (catch err = source_path) return;
 		Path? target_path = dir.append(tmem, "util.c3");
-		if (catch excuse = target_path) return;
-		if (catch excuse = file::save(
+		if (catch err = target_path) return;
+		if (catch err = file::save(
 			source_path,
 			"module app;\nimport util;\nfn void hello()\n{\n\tutil::add(1, 2);\n}\n"
 		)) return;
-		if (catch excuse = file::save(
+		if (catch err = file::save(
 			target_path,
 			"module util;\n\nfn int add(int a, int b)\n{\n\treturn a + b;\n}\n"
 		)) return;
@@ -167,15 +164,15 @@ fn void test_python_from_clause() @test
 	@pool()
 	{
 		Path? tmp = path::temp_directory(tmem);
-		if (catch excuse = tmp) return;
+		if (catch err = tmp) return;
 		Path? d = tmp.append(tmem, "yun_connection_details_python");
-		if (catch excuse = d) return;
+		if (catch err = d) return;
 		Path dir = d;
 		(void)path::rmtree(dir);
-		if (catch excuse = path::mkdir(dir, recursive: true)) return;
+		if (catch err = path::mkdir(dir, recursive: true)) return;
 		Path? source_path = dir.append(tmem, "source.py");
-		if (catch excuse = source_path) return;
-		if (catch excuse = file::save(source_path, "from pkg import foo as f\nf()\n")) return;
+		if (catch err = source_path) return;
+		if (catch err = file::save(source_path, "from pkg import foo as f\nf()\n")) return;
 
 		project::Project p;
 		p.init(mem);
